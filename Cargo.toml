@@ -1,0 +1,59 @@
+[package]
+name = "al-call-hierarchy"
+version = "0.1.0"
+edition = "2021"
+authors = ["SShadowS"]
+description = "Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter"
+license = "GPL-3.0"
+repository = "https://github.com/SShadowS/al-call-hierarchy"
+
+[dependencies]
+# Tree-sitter
+tree-sitter = "0.26"
+streaming-iterator = "0.1"
+
+# Parallelism
+rayon = "1.10"
+
+# LSP
+lsp-server = "0.7"
+lsp-types = "0.97"
+
+# Data structures
+string-interner = "0.17"
+smallvec = "1.11"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# File system
+walkdir = "2"
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
