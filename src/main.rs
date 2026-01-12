@@ -3,6 +3,8 @@ use clap::Parser;
 use log::info;
 use std::path::PathBuf;
 
+mod app_package;
+mod dependencies;
 mod graph;
 mod handlers;
 mod indexer;
@@ -51,8 +53,16 @@ fn main() -> Result<()> {
         let mut indexer = Indexer::new();
         indexer.index_directory(&project)?;
 
+        // Index external dependencies from .app packages
+        if project.join("app.json").exists() {
+            if let Err(e) = indexer.index_dependencies(&project) {
+                log::warn!("Failed to index dependencies: {}", e);
+            }
+        }
+
         let graph = indexer.into_graph();
         info!("Indexed {} definitions", graph.definition_count());
+        info!("Indexed {} external definitions", graph.external_definition_count());
         info!("Found {} call sites", graph.call_site_count());
     } else {
         // LSP server mode (default)

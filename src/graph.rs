@@ -120,6 +120,30 @@ pub struct Definition {
     pub kind: DefinitionKind,
 }
 
+/// Source of an external definition (from a .app package)
+#[derive(Debug, Clone)]
+pub struct ExternalSource {
+    /// App name (interned)
+    pub app_name: Symbol,
+    /// App version string
+    pub app_version: String,
+}
+
+/// An external definition from a .app package (no file/range available)
+#[derive(Debug, Clone)]
+pub struct ExternalDefinition {
+    /// Source app metadata
+    pub source: ExternalSource,
+    /// Type of containing object
+    pub object_type: ObjectType,
+    /// Name of containing object (interned)
+    pub object_name: Symbol,
+    /// Name of the procedure/trigger (interned)
+    pub name: Symbol,
+    /// Kind of definition
+    pub kind: DefinitionKind,
+}
+
 /// A call site (where a procedure is called)
 #[derive(Debug, Clone)]
 pub struct CallSite {
@@ -189,6 +213,12 @@ pub struct CallGraph {
 
     /// File -> procedures with variables in that file (for cleanup)
     file_variables: HashMap<SharedPath, Vec<QualifiedName>>,
+
+    /// External definitions from .app packages (no file/range)
+    external_definitions: HashMap<QualifiedName, ExternalDefinition>,
+
+    /// External object types (from .app packages)
+    external_object_types: HashMap<Symbol, ObjectType>,
 }
 
 impl CallGraph {
@@ -205,6 +235,8 @@ impl CallGraph {
             object_types: HashMap::new(),
             variable_bindings: HashMap::new(),
             file_variables: HashMap::new(),
+            external_definitions: HashMap::new(),
+            external_object_types: HashMap::new(),
         }
     }
 
@@ -240,6 +272,35 @@ impl CallGraph {
     /// Register an object type
     pub fn register_object(&mut self, name: Symbol, object_type: ObjectType) {
         self.object_types.insert(name, object_type);
+    }
+
+    /// Register an external object type (from .app package)
+    pub fn register_external_object(&mut self, name: Symbol, object_type: ObjectType) {
+        self.external_object_types.insert(name, object_type);
+    }
+
+    /// Add an external definition (from .app package)
+    pub fn add_external_definition(&mut self, def: ExternalDefinition) {
+        let qname = QualifiedName {
+            object: def.object_name,
+            procedure: def.name,
+        };
+        self.external_definitions.insert(qname, def);
+    }
+
+    /// Get an external definition by qualified name
+    pub fn get_external_definition(&self, qname: &QualifiedName) -> Option<&ExternalDefinition> {
+        self.external_definitions.get(qname)
+    }
+
+    /// Check if a qualified name refers to an external definition
+    pub fn is_external(&self, qname: &QualifiedName) -> bool {
+        self.external_definitions.contains_key(qname)
+    }
+
+    /// Get count of external definitions
+    pub fn external_definition_count(&self) -> usize {
+        self.external_definitions.len()
     }
 
     /// Add a variable binding for a procedure scope
@@ -319,8 +380,16 @@ impl CallGraph {
     /// Resolve a call to its target definition (by CallSite reference)
     fn resolve_call(&self, caller_qname: &QualifiedName, call: &CallSite) -> Option<QualifiedName> {
         if let Some(obj) = call.callee_object {
-            // First, check if obj is a known object name (O(1) lookup)
+            // First, check if obj is a known local object name (O(1) lookup)
             if self.object_types.contains_key(&obj) {
+                return Some(QualifiedName {
+                    object: obj,
+                    procedure: call.callee_method,
+                });
+            }
+
+            // Check if obj is a known external object name (from .app packages)
+            if self.external_object_types.contains_key(&obj) {
                 return Some(QualifiedName {
                     object: obj,
                     procedure: call.callee_method,
@@ -335,7 +404,7 @@ impl CallGraph {
                 });
             }
 
-            // Fall back to using the object name as-is (may be external)
+            // Fall back to using the object name as-is (may be unresolved external)
             Some(QualifiedName {
                 object: obj,
                 procedure: call.callee_method,

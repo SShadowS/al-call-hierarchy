@@ -9,7 +9,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
-use crate::graph::{CallGraph, CallSite, Definition, QualifiedName};
+use crate::app_package::ParsedAppPackage;
+use crate::dependencies;
+use crate::graph::{
+    CallGraph, CallSite, Definition, DefinitionKind, ExternalDefinition, ExternalSource,
+    QualifiedName,
+};
 use crate::parser::{AlParser, ParsedFile};
 
 // Thread-local parser to avoid recompiling queries for every file
@@ -224,6 +229,77 @@ impl Indexer {
     /// Consume the indexer and return the graph
     pub fn into_graph(self) -> CallGraph {
         self.graph.into_inner().unwrap()
+    }
+
+    /// Index external dependencies from .app packages
+    ///
+    /// Looks for app.json in the project root, resolves dependencies from
+    /// the .alpackages folder, and adds external definitions to the graph.
+    pub fn index_dependencies(&self, project_root: &Path) -> Result<usize> {
+        use std::time::Instant;
+
+        let start = Instant::now();
+        let resolved = dependencies::resolve_all(project_root)?;
+
+        if resolved.is_empty() {
+            debug!("No dependencies to index");
+            return Ok(0);
+        }
+
+        let mut graph = self.graph.lock().unwrap();
+        let mut total_defs = 0;
+
+        for dep in resolved {
+            let count = self.add_app_to_graph(&mut graph, &dep.package);
+            total_defs += count;
+            debug!(
+                "Added {} external definitions from {}",
+                count, dep.package.metadata.name
+            );
+        }
+
+        info!(
+            "Indexed {} external definitions in {:.1}ms",
+            total_defs,
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        Ok(total_defs)
+    }
+
+    /// Add definitions from a parsed .app package to the graph
+    fn add_app_to_graph(&self, graph: &mut CallGraph, package: &ParsedAppPackage) -> usize {
+        let app_name = graph.intern(&package.metadata.name);
+        let source = ExternalSource {
+            app_name,
+            app_version: package.metadata.version.clone(),
+        };
+
+        let mut count = 0;
+
+        for obj in &package.objects {
+            let object_name = graph.intern(&obj.name);
+
+            // Register the external object type
+            graph.register_external_object(object_name, obj.object_type);
+
+            // Add each method as an external definition
+            for method in &obj.methods {
+                let method_name = graph.intern(&method.name);
+
+                graph.add_external_definition(ExternalDefinition {
+                    source: source.clone(),
+                    object_type: obj.object_type,
+                    object_name,
+                    name: method_name,
+                    kind: DefinitionKind::Procedure,
+                });
+
+                count += 1;
+            }
+        }
+
+        count
     }
 }
 

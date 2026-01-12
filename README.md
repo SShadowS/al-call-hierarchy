@@ -7,6 +7,7 @@ Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter.
 - **Sub-millisecond queries** - Pre-computed call graph with O(1) lookups
 - **Parallel indexing** - Uses all CPU cores for initial index
 - **Incremental updates** - Re-parse only changed files
+- **External dependency support** - Resolves calls to .app packages in `.alpackages`
 - **LSP integration** - Works with any LSP-compatible client
 
 ## Building
@@ -70,7 +71,28 @@ case "textDocument/prepareCallHierarchy",
 | Qualified calls (Object.Method) | Yes |
 | Record methods | Partial |
 | Event subscribers | Yes |
-| External .app dependencies | No |
+| External .app dependencies | Yes |
+
+## External Dependencies
+
+The server automatically resolves calls to procedures defined in external .app packages:
+
+1. Reads `app.json` in the project root for declared dependencies
+2. Finds matching .app files in the `.alpackages` folder
+3. Extracts procedure definitions from `SymbolReference.json` inside each .app
+4. Shows "(from AppName)" in call hierarchy for resolved external calls
+
+### Version Matching
+
+When multiple versions of the same app exist in `.alpackages`, the server selects the highest compatible version based on the dependency declaration in `app.json`.
+
+### Supported .app Structure
+
+The server parses .app files with the standard BC format:
+- 40-byte NAVX header (skipped)
+- ZIP archive containing:
+  - `NavxManifest.xml` - App metadata
+  - `SymbolReference.json` - Symbol definitions
 
 ## License
 

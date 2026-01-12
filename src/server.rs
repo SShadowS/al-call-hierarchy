@@ -63,27 +63,40 @@ fn index_workspaces(indexer: &Arc<RwLock<Indexer>>, params: &InitializeParams) -
         for folder in folders {
             if let Some(path) = uri_to_path(&folder.uri) {
                 info!("Indexing workspace folder: {}", path.display());
-                if let Err(e) = indexer
-                    .write()
-                    .expect("Indexer lock poisoned")
-                    .index_directory(&path)
-                {
+                let mut idx = indexer.write().expect("Indexer lock poisoned");
+
+                // Index local AL files
+                if let Err(e) = idx.index_directory(&path) {
                     error!("Failed to index {}: {}", path.display(), e);
-                } else {
-                    workspace_roots.push(path);
+                    continue;
                 }
+
+                // Index external dependencies from .app packages
+                if path.join("app.json").exists() {
+                    if let Err(e) = idx.index_dependencies(&path) {
+                        warn!("Failed to index dependencies for {}: {}", path.display(), e);
+                    }
+                }
+
+                workspace_roots.push(path);
             }
         }
     } else if let Some(ref uri) = params.root_uri {
         if let Some(path) = uri_to_path(uri) {
             info!("Indexing root: {}", path.display());
-            if let Err(e) = indexer
-                .write()
-                .expect("Indexer lock poisoned")
-                .index_directory(&path)
-            {
+            let mut idx = indexer.write().expect("Indexer lock poisoned");
+
+            // Index local AL files
+            if let Err(e) = idx.index_directory(&path) {
                 error!("Failed to index {}: {}", path.display(), e);
             } else {
+                // Index external dependencies from .app packages
+                if path.join("app.json").exists() {
+                    if let Err(e) = idx.index_dependencies(&path) {
+                        warn!("Failed to index dependencies for {}: {}", path.display(), e);
+                    }
+                }
+
                 workspace_roots.push(path);
             }
         }

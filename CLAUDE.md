@@ -55,6 +55,8 @@ AL Source Files → Tree-sitter Parser (language.rs) → Parsed Definitions/Call
 - `language.rs` - Tree-sitter queries for definitions, calls, event subscribers, variables
 - `watcher.rs` - File system watcher for incremental updates
 - `resolver.rs` - Call resolution logic (qualified and unqualified calls)
+- `app_package.rs` - Parser for .app files (extracts SymbolReference.json)
+- `dependencies.rs` - Dependency resolution from app.json and .alpackages
 
 **Core Patterns:**
 - **String interning** (`string-interner`): All symbol names deduplicated for memory efficiency
@@ -94,4 +96,10 @@ CallSite { file, range, caller, callee_object, callee_method }  // Call location
 | Qualified calls (Object.Method) | Yes |
 | Record methods | Partial |
 | Event subscribers | Yes |
-| External .app dependencies | No |
+| External .app dependencies | Yes |
+
+## Development Guidelines
+
+- **CHANGELOG.md must be updated** after making any feature additions, bug fixes, or breaking changes
+- Follow [Keep a Changelog](https://keepachangelog.com/) format
+- Group changes under: Added, Changed, Deprecated, Removed, Fixed, Security

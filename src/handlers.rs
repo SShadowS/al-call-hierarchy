@@ -210,6 +210,7 @@ fn outgoing_calls(
                 };
 
                 if let Some(target_def) = graph.get_definition(&target_qname) {
+                    // Local definition found
                     CallHierarchyItem {
                         name: callee_method.to_string(),
                         kind: SymbolKind::FUNCTION,
@@ -223,8 +224,24 @@ fn outgoing_calls(
                             "procedure": callee_method,
                         })),
                     }
+                } else if let Some(ext_def) = graph.get_external_definition(&target_qname) {
+                    // External definition found (from .app package)
+                    let app_name = graph.resolve(ext_def.source.app_name).unwrap_or("external");
+                    CallHierarchyItem {
+                        name: callee_method.to_string(),
+                        kind: SymbolKind::FUNCTION,
+                        tags: None,
+                        detail: Some(format!("{} (from {})", detail, app_name)),
+                        uri: path_to_uri(&call.file),
+                        range: call.range,
+                        selection_range: call.range,
+                        data: Some(serde_json::json!({
+                            "external": true,
+                            "app": app_name,
+                        })),
+                    }
                 } else {
-                    // External/unresolved call
+                    // Unresolved external call
                     CallHierarchyItem {
                         name: callee_method.to_string(),
                         kind: SymbolKind::FUNCTION,
