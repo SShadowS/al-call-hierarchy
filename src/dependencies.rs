@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 /// A dependency declared in app.json
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppDependency {
-    pub id: String,
     pub name: String,
     pub publisher: String,
     pub version: String,

@@ -12,8 +12,8 @@ use walkdir::WalkDir;
 use crate::app_package::ParsedAppPackage;
 use crate::dependencies;
 use crate::graph::{
-    CallGraph, CallSite, Definition, DefinitionKind, ExternalDefinition, ExternalSource,
-    QualifiedName,
+    CallGraph, CallSite, Definition, DefinitionKind, EventSubscription, ExternalDefinition,
+    ExternalSource, ObjectType, QualifiedName,
 };
 use crate::parser::{AlParser, ParsedFile};
 
@@ -152,6 +152,8 @@ impl Indexer {
                 object_name,
                 name: name_sym,
                 kind: def.kind,
+                complexity: def.complexity,
+                parameter_count: def.parameter_count,
             });
         }
 
@@ -202,6 +204,28 @@ impl Indexer {
                     callee_method,
                 },
             );
+        }
+
+        // Add event subscriptions
+        for sub in parsed.event_subscribers {
+            let subscriber_name = graph.intern(&sub.subscriber_name);
+            let publisher_object = graph.intern(&sub.publisher_object);
+            let publisher_event = graph.intern(&sub.publisher_event);
+            let publisher_object_type = sub.publisher_object_type.as_ref().and_then(|t| ObjectType::try_from(t.as_str()).ok());
+
+            let subscriber_qname = QualifiedName {
+                object: object_name,
+                procedure: subscriber_name,
+            };
+
+            graph.add_event_subscription(EventSubscription {
+                subscriber: subscriber_qname,
+                file: shared_path.clone(),
+                range: sub.range,
+                publisher_object_type,
+                publisher_object,
+                publisher_event,
+            });
         }
     }
 
@@ -270,9 +294,10 @@ impl Indexer {
     /// Add definitions from a parsed .app package to the graph
     fn add_app_to_graph(&self, graph: &mut CallGraph, package: &ParsedAppPackage) -> usize {
         let app_name = graph.intern(&package.metadata.name);
+        let app_version = graph.intern(&package.metadata.version);
         let source = ExternalSource {
             app_name,
-            app_version: package.metadata.version.clone(),
+            app_version,
         };
 
         let mut count = 0;
@@ -288,7 +313,7 @@ impl Indexer {
                 let method_name = graph.intern(&method.name);
 
                 graph.add_external_definition(ExternalDefinition {
-                    source: source.clone(),
+                    source,
                     object_type: obj.object_type,
                     object_name,
                     name: method_name,

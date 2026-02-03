@@ -6,6 +6,7 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Parser, Query, QueryCursor};
 
+use crate::analysis;
 use crate::graph::{DefinitionKind, ObjectType};
 use crate::language;
 
@@ -22,6 +23,8 @@ pub struct ParsedFile {
     pub calls: Vec<ParsedCall>,
     /// All variable declarations
     pub variables: Vec<ParsedVariable>,
+    /// All event subscribers
+    pub event_subscribers: Vec<ParsedEventSubscriber>,
 }
 
 /// A parsed procedure/trigger definition
@@ -30,6 +33,10 @@ pub struct ParsedDefinition {
     pub name: String,
     pub range: Range,
     pub kind: DefinitionKind,
+    /// Cyclomatic complexity (calculated from AST)
+    pub complexity: u32,
+    /// Parameter count
+    pub parameter_count: u32,
 }
 
 /// A parsed call site
@@ -58,12 +65,28 @@ pub struct ParsedVariable {
     pub containing_procedure: Option<String>,
 }
 
+/// A parsed event subscriber
+#[derive(Debug)]
+pub struct ParsedEventSubscriber {
+    /// Name of the subscriber procedure
+    pub subscriber_name: String,
+    /// Range of the subscriber procedure
+    pub range: Range,
+    /// Publisher object type (e.g., "Codeunit")
+    pub publisher_object_type: Option<String>,
+    /// Publisher object name (e.g., "Sales-Post")
+    pub publisher_object: String,
+    /// Publisher event name (e.g., "OnBeforePostSalesDoc")
+    pub publisher_event: String,
+}
+
 /// AL file parser using tree-sitter
 pub struct AlParser {
     parser: Parser,
     definitions_query: Query,
     calls_query: Query,
     variables_query: Query,
+    event_subscribers_query: Query,
 }
 
 impl AlParser {
@@ -82,11 +105,15 @@ impl AlParser {
         let variables_query = Query::new(&lang, language::queries::VARIABLES)
             .context("Failed to compile variables query")?;
 
+        let event_subscribers_query = Query::new(&lang, language::queries::EVENT_SUBSCRIBERS)
+            .context("Failed to compile event subscribers query")?;
+
         Ok(Self {
             parser,
             definitions_query,
             calls_query,
             variables_query,
+            event_subscribers_query,
         })
     }
 
@@ -108,6 +135,9 @@ impl AlParser {
 
         // Extract variable declarations
         self.extract_variables(&root, source, &mut result);
+
+        // Extract event subscribers
+        self.extract_event_subscribers(&root, source, &mut result);
 
         Ok(result)
     }
@@ -186,10 +216,14 @@ impl AlParser {
                     // Procedure definitions
                     "proc.name" => {
                         if let Some(parent) = node.parent() {
+                            let complexity = analysis::calculate_complexity(&parent);
+                            let parameter_count = count_parameters(&parent, source);
                             result.definitions.push(ParsedDefinition {
                                 name: clean_name(text),
                                 range: node_range(&parent),
                                 kind: DefinitionKind::Procedure,
+                                complexity,
+                                parameter_count,
                             });
                         }
                     }
@@ -197,10 +231,14 @@ impl AlParser {
                     // Trigger definitions
                     "trigger.name" => {
                         if let Some(parent) = node.parent() {
+                            let complexity = analysis::calculate_complexity(&parent);
+                            // Triggers don't have parameters in the same way
                             result.definitions.push(ParsedDefinition {
                                 name: clean_name(text),
                                 range: node_range(&parent),
                                 kind: DefinitionKind::Trigger,
+                                complexity,
+                                parameter_count: 0,
                             });
                         }
                     }
@@ -209,10 +247,13 @@ impl AlParser {
                     "named_trigger.def" | "onrun.def" => {
                         // Extract trigger name from the node type or first child
                         let name = extract_trigger_name(&node, source);
+                        let complexity = analysis::calculate_complexity(&node);
                         result.definitions.push(ParsedDefinition {
                             name,
                             range: node_range(&node),
                             kind: DefinitionKind::Trigger,
+                            complexity,
+                            parameter_count: 0,
                         });
                     }
 
@@ -301,6 +342,96 @@ impl AlParser {
                 }
             }
         }
+    }
+
+    fn extract_event_subscribers(&self, root: &Node, source: &str, result: &mut ParsedFile) {
+        let mut cursor = QueryCursor::new();
+        let source_bytes = source.as_bytes();
+
+        let mut matches = cursor.matches(&self.event_subscribers_query, *root, source_bytes);
+
+        while let Some(m) = matches.next() {
+            let mut proc_name: Option<String> = None;
+            let mut proc_range: Option<Range> = None;
+            let mut attr_args: Option<String> = None;
+
+            for capture in m.captures {
+                let node = capture.node;
+                let capture_name = &self.event_subscribers_query.capture_names()[capture.index as usize];
+
+                match capture_name.as_ref() {
+                    "proc.name" => {
+                        proc_name = Some(clean_name(node_text(&node, source)));
+                    }
+                    "subscriber" => {
+                        proc_range = Some(node_range(&node));
+                    }
+                    "attr.args" => {
+                        attr_args = Some(node_text(&node, source).to_string());
+                    }
+                    _ => {}
+                }
+            }
+
+            if let (Some(name), Some(range), Some(args)) = (proc_name, proc_range, attr_args) {
+                // Parse the EventSubscriber attribute arguments
+                // Format: (ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnBeforePostSalesDoc', ...)
+                if let Some((obj_type, obj_name, event_name)) = parse_event_subscriber_args(&args) {
+                    result.event_subscribers.push(ParsedEventSubscriber {
+                        subscriber_name: name,
+                        range,
+                        publisher_object_type: obj_type,
+                        publisher_object: obj_name,
+                        publisher_event: event_name,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Parse EventSubscriber attribute arguments
+/// Format: (ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnBeforePostSalesDoc', '', false, false)
+fn parse_event_subscriber_args(args: &str) -> Option<(Option<String>, String, String)> {
+    // Remove parentheses and split by comma
+    let trimmed = args.trim().trim_start_matches('(').trim_end_matches(')');
+    let parts: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
+
+    if parts.len() < 3 {
+        return None;
+    }
+
+    // Parse object type (e.g., "ObjectType::Codeunit")
+    let obj_type = if parts[0].contains("::") {
+        parts[0].split("::").last().map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    // Parse object name (e.g., "Codeunit::\"Sales-Post\"" or "Database::\"Customer\"")
+    let obj_name = extract_object_name(parts[1]);
+
+    // Parse event name (e.g., "'OnBeforePostSalesDoc'" or "\"OnBeforePostSalesDoc\"")
+    let event_name = clean_name(parts[2]);
+
+    if obj_name.is_empty() || event_name.is_empty() {
+        return None;
+    }
+
+    Some((obj_type, obj_name, event_name))
+}
+
+/// Extract object name from expressions like "Codeunit::\"Sales-Post\"" or "Database::\"Customer\""
+fn extract_object_name(expr: &str) -> String {
+    let trimmed = expr.trim();
+
+    // Handle "Type::Name" format
+    if let Some(idx) = trimmed.find("::") {
+        let after_colons = &trimmed[idx + 2..];
+        clean_name(after_colons)
+    } else {
+        // Just a plain name
+        clean_name(trimmed)
     }
 }
 
@@ -470,6 +601,38 @@ fn extract_trigger_name(node: &Node, source: &str) -> String {
 
     // Fallback: use the node type
     node.kind().to_string()
+}
+
+/// Count parameters in a procedure node
+fn count_parameters(proc_node: &Node, _source: &str) -> u32 {
+    // Find parameter_list child and count parameters
+    let mut count = 0;
+    let mut cursor = proc_node.walk();
+
+    if cursor.goto_first_child() {
+        loop {
+            let child = cursor.node();
+            if child.kind() == "parameter_list" {
+                // Count parameter children
+                let mut param_cursor = child.walk();
+                if param_cursor.goto_first_child() {
+                    loop {
+                        if param_cursor.node().kind() == "parameter" {
+                            count += 1;
+                        }
+                        if !param_cursor.goto_next_sibling() {
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+    count
 }
 
 #[cfg(test)]

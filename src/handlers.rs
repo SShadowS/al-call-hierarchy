@@ -6,12 +6,12 @@ use lsp_server::Request;
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    SymbolKind,
+    CodeLens, CodeLensParams, Command, SymbolKind,
 };
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
-use crate::graph::{DefinitionKind, QualifiedName};
+use crate::graph::{CallGraph, DefinitionKind, QualifiedName};
 use crate::indexer::Indexer;
 use crate::protocol::{path_to_uri, uri_to_path};
 
@@ -35,6 +35,11 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<V
             let params: CallHierarchyOutgoingCallsParams =
                 serde_json::from_value(req.params.clone())?;
             let result = outgoing_calls(indexer, params)?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "textDocument/codeLens" => {
+            let params: CodeLensParams = serde_json::from_value(req.params.clone())?;
+            let result = code_lens(indexer, params)?;
             Ok(serde_json::to_value(result)?)
         }
         _ => {
@@ -130,6 +135,7 @@ fn incoming_calls(
         let calls = graph.get_incoming_calls(&qname);
         let mut results = Vec::new();
 
+        // Add direct call sites
         for call in calls {
             let caller_name = graph.resolve(call.caller).unwrap_or("Unknown");
 
@@ -149,6 +155,32 @@ fn incoming_calls(
             results.push(CallHierarchyIncomingCall {
                 from: from_item,
                 from_ranges: vec![call.range],
+            });
+        }
+
+        // Add event subscribers (if this is a trigger/event)
+        let event_subscribers = graph.get_event_subscribers(&qname);
+        for sub in event_subscribers {
+            let subscriber_obj = graph.resolve(sub.subscriber.object).unwrap_or("Unknown");
+            let subscriber_proc = graph.resolve(sub.subscriber.procedure).unwrap_or("Unknown");
+
+            let from_item = CallHierarchyItem {
+                name: subscriber_proc.to_string(),
+                kind: SymbolKind::EVENT,
+                tags: None,
+                detail: Some(format!("{}.{} [EventSubscriber]", subscriber_obj, subscriber_proc)),
+                uri: path_to_uri(&sub.file),
+                range: sub.range,
+                selection_range: sub.range,
+                data: Some(serde_json::json!({
+                    "object": subscriber_obj,
+                    "procedure": subscriber_proc,
+                })),
+            };
+
+            results.push(CallHierarchyIncomingCall {
+                from: from_item,
+                from_ranges: vec![sub.range],
             });
         }
 
@@ -277,4 +309,123 @@ fn outgoing_calls(
     } else {
         Ok(None)
     }
+}
+
+/// Get code lens - reference counts and quality metrics for procedures
+fn code_lens(
+    indexer: &Arc<RwLock<Indexer>>,
+    params: CodeLensParams,
+) -> Result<Option<Vec<CodeLens>>> {
+    let uri = &params.text_document.uri;
+    let path = uri_to_path(uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
+
+    let indexer = indexer.read().unwrap();
+    let graph = indexer.graph();
+
+    let definitions = graph.get_definitions_in_file(&path);
+    let mut results = Vec::new();
+
+    for def in definitions {
+        let qname = QualifiedName {
+            object: def.object_name,
+            procedure: def.name,
+        };
+
+        let ref_count = graph.get_incoming_call_count(&qname);
+        let proc_name = graph.resolve(def.name).unwrap_or("Unknown");
+        let obj_name = graph.resolve(def.object_name).unwrap_or("Unknown");
+
+        // Calculate line count from range
+        let line_count = def.range.end.line.saturating_sub(def.range.start.line) + 1;
+
+        // Create a Code Lens showing reference count and quality metrics with threshold indicators
+        let ref_text = if ref_count == 0 {
+            "0 references".to_string()
+        } else if ref_count == 1 {
+            "1 reference".to_string()
+        } else {
+            format!("{} references", ref_count)
+        };
+
+        // Add threshold indicators for metrics
+        // Complexity: ≥5 warning, ≥10 critical
+        let complexity_text = if def.complexity >= 10 {
+            format!("complexity: {} ⚠️ (>10)", def.complexity)
+        } else if def.complexity >= 5 {
+            format!("complexity: {} (>5)", def.complexity)
+        } else {
+            format!("complexity: {}", def.complexity)
+        };
+
+        // Lines: >50 is concerning
+        let lines_text = if line_count > 50 {
+            format!("lines: {} ⚠️ (>50)", line_count)
+        } else {
+            format!("lines: {}", line_count)
+        };
+
+        // Parameters: ≥4 warning, ≥7 critical
+        let params_text = if def.parameter_count >= 7 {
+            format!("params: {} ⚠️ (>7)", def.parameter_count)
+        } else if def.parameter_count >= 4 {
+            format!("params: {} (>4)", def.parameter_count)
+        } else {
+            format!("params: {}", def.parameter_count)
+        };
+
+        let title = format!(
+            "{} | {}, {}, {}",
+            ref_text, complexity_text, lines_text, params_text
+        );
+
+        results.push(CodeLens {
+            range: def.range,
+            command: Some(Command {
+                title,
+                command: "al-call-hierarchy.showReferences".to_string(),
+                arguments: Some(vec![serde_json::json!({
+                    "object": obj_name,
+                    "procedure": proc_name,
+                    "uri": uri.to_string(),
+                })]),
+            }),
+            data: None,
+        });
+    }
+
+    Ok(Some(results))
+}
+
+/// Helper function to get file diagnostics (used by server.rs for publishing)
+pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<lsp_types::Diagnostic>)> {
+    use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag};
+    use std::collections::HashMap;
+
+    let unused = graph.get_unused_procedures();
+    let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
+
+    for (_, def) in unused {
+        let proc_name = graph.resolve(def.name).unwrap_or("Unknown");
+        let obj_name = graph.resolve(def.object_name).unwrap_or("Unknown");
+
+        let diagnostic = Diagnostic {
+            range: def.range,
+            severity: Some(DiagnosticSeverity::HINT),
+            code: Some(lsp_types::NumberOrString::String("unused-procedure".to_string())),
+            source: Some("al-call-hierarchy".to_string()),
+            message: format!("Procedure '{}.{}' is never called", obj_name, proc_name),
+            related_information: None,
+            tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+            code_description: None,
+            data: None,
+        };
+
+        let file_path = def.file.to_string_lossy().to_string();
+        file_diagnostics
+            .entry(file_path)
+            .or_default()
+            .push(diagnostic);
+    }
+
+    file_diagnostics.into_iter().collect()
 }

@@ -2,16 +2,21 @@
 
 use anyhow::{Context, Result};
 use log::{error, info, warn};
-use lsp_server::{Connection, Message, Response};
-use lsp_types::{InitializeParams, InitializeResult, ServerCapabilities};
+use lsp_server::{Connection, Message, Notification, Response};
+use lsp_types::{
+    CodeLensOptions, Diagnostic, DiagnosticSeverity, InitializeParams,
+    InitializeResult, PublishDiagnosticsParams, ServerCapabilities,
+};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use crate::handlers::{handle_notification, handle_request};
+use crate::graph::CallGraph;
+use crate::handlers::{get_unused_procedure_diagnostics, handle_notification, handle_request};
 use crate::indexer::Indexer;
-use crate::protocol::uri_to_path;
+use crate::protocol::{path_to_uri, uri_to_path};
 use crate::watcher::{AlFileWatcher, FileChange};
 
 /// Run the LSP server
@@ -26,6 +31,22 @@ pub fn run_server() -> Result<()> {
 
     let capabilities = ServerCapabilities {
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
+        code_lens_provider: Some(CodeLensOptions {
+            resolve_provider: Some(false),
+        }),
+        text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Options(
+            lsp_types::TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: Some(lsp_types::TextDocumentSyncKind::NONE),
+                will_save: None,
+                will_save_wait_until: None,
+                save: Some(lsp_types::TextDocumentSyncSaveOptions::SaveOptions(
+                    lsp_types::SaveOptions {
+                        include_text: Some(false),
+                    },
+                )),
+            },
+        )),
         ..Default::default()
     };
 
@@ -44,6 +65,9 @@ pub fn run_server() -> Result<()> {
     let indexer = Arc::new(RwLock::new(Indexer::new()));
     let workspace_roots = index_workspaces(&indexer, &init_params);
 
+    // Publish diagnostics after initial indexing
+    publish_all_diagnostics(&connection, &indexer);
+
     // Start file watcher thread for incremental updates
     start_file_watcher(Arc::clone(&indexer), workspace_roots);
 
@@ -56,6 +80,7 @@ pub fn run_server() -> Result<()> {
 }
 
 /// Index all workspace folders
+#[allow(deprecated)] // root_uri is deprecated but kept for backward compatibility with older LSP clients
 fn index_workspaces(indexer: &Arc<RwLock<Indexer>>, params: &InitializeParams) -> Vec<PathBuf> {
     let mut workspace_roots = Vec::new();
 
@@ -81,6 +106,7 @@ fn index_workspaces(indexer: &Arc<RwLock<Indexer>>, params: &InitializeParams) -
                 workspace_roots.push(path);
             }
         }
+    // Fallback to deprecated root_uri for backward compatibility with older LSP clients
     } else if let Some(ref uri) = params.root_uri {
         if let Some(path) = uri_to_path(uri) {
             info!("Indexing root: {}", path.display());
@@ -192,4 +218,202 @@ fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) -> Result<
     }
 
     Ok(())
+}
+
+/// Publish all diagnostics (unused procedures + code quality)
+fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) {
+    let indexer = indexer.read().expect("Indexer lock poisoned");
+    let graph = indexer.graph();
+
+    // Collect all diagnostics by file
+    let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
+
+    // Get unused procedure diagnostics
+    for (file_path, diagnostics) in get_unused_procedure_diagnostics(&graph) {
+        file_diagnostics
+            .entry(file_path)
+            .or_default()
+            .extend(diagnostics);
+    }
+
+    // Get code quality diagnostics
+    for (file_path, diagnostics) in get_code_quality_diagnostics(&graph) {
+        file_diagnostics
+            .entry(file_path)
+            .or_default()
+            .extend(diagnostics);
+    }
+
+    // Publish diagnostics for each file
+    for (file_path, diagnostics) in file_diagnostics {
+        let uri = path_to_uri(std::path::Path::new(&file_path));
+        let params = PublishDiagnosticsParams {
+            uri,
+            diagnostics,
+            version: None,
+        };
+
+        let notification = Notification::new(
+            "textDocument/publishDiagnostics".to_string(),
+            serde_json::to_value(params).unwrap(),
+        );
+
+        if let Err(e) = connection.sender.send(Message::Notification(notification)) {
+            warn!("Failed to publish diagnostics for {}: {}", file_path, e);
+        }
+    }
+
+    info!("Published diagnostics for all files");
+}
+
+// Thresholds for code quality diagnostics (matching analysis.rs)
+const COMPLEXITY_WARNING: u32 = 5;
+const COMPLEXITY_CRITICAL: u32 = 10;
+const LENGTH_CRITICAL: u32 = 50;
+const PARAMS_WARNING: u32 = 4;
+const PARAMS_CRITICAL: u32 = 7;
+const FAN_IN_WARNING: usize = 20;
+
+/// Get code quality diagnostics from the call graph
+fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnostic>)> {
+    let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
+
+    // Iterate over all definitions and check for quality issues
+    for (qname, def) in graph.iter_definitions() {
+        let proc_name = graph.resolve(def.name).unwrap_or("Unknown");
+        let obj_name = graph.resolve(def.object_name).unwrap_or("Unknown");
+        let file_path = def.file.to_string_lossy().to_string();
+
+        // Get the number of lines (approximation from range)
+        let line_count = def.range.end.line.saturating_sub(def.range.start.line) + 1;
+        let incoming_count = graph.get_incoming_call_count(qname);
+
+        // Cyclomatic complexity warnings
+        if def.complexity >= COMPLEXITY_CRITICAL {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: Some(lsp_types::NumberOrString::String("high-complexity".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' has cyclomatic complexity {} (critical threshold: {}) - consider simplifying",
+                    obj_name, proc_name, def.complexity, COMPLEXITY_CRITICAL
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path.clone())
+                .or_default()
+                .push(diagnostic);
+        } else if def.complexity >= COMPLEXITY_WARNING {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: Some(lsp_types::NumberOrString::String("high-complexity".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' has cyclomatic complexity {} (warning threshold: {})",
+                    obj_name, proc_name, def.complexity, COMPLEXITY_WARNING
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path.clone())
+                .or_default()
+                .push(diagnostic);
+        }
+
+        // Parameter count warnings
+        if def.parameter_count >= PARAMS_CRITICAL {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: Some(lsp_types::NumberOrString::String("too-many-parameters".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' has {} parameters (critical threshold: {}) - consider using a record or reducing parameters",
+                    obj_name, proc_name, def.parameter_count, PARAMS_CRITICAL
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path.clone())
+                .or_default()
+                .push(diagnostic);
+        } else if def.parameter_count >= PARAMS_WARNING {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: Some(lsp_types::NumberOrString::String("too-many-parameters".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' has {} parameters (warning threshold: {})",
+                    obj_name, proc_name, def.parameter_count, PARAMS_WARNING
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path.clone())
+                .or_default()
+                .push(diagnostic);
+        }
+
+        // High fan-in warning (many callers)
+        if incoming_count > FAN_IN_WARNING {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: Some(lsp_types::NumberOrString::String("high-fan-in".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' has {} callers - consider if it's doing too much",
+                    obj_name, proc_name, incoming_count
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path.clone())
+                .or_default()
+                .push(diagnostic);
+        }
+
+        // Long method warning
+        if line_count > LENGTH_CRITICAL {
+            let diagnostic = Diagnostic {
+                range: def.range,
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: Some(lsp_types::NumberOrString::String("long-method".to_string())),
+                source: Some("al-call-hierarchy".to_string()),
+                message: format!(
+                    "Procedure '{}.{}' spans {} lines - consider breaking it down",
+                    obj_name, proc_name, line_count
+                ),
+                related_information: None,
+                tags: None,
+                code_description: None,
+                data: None,
+            };
+            file_diagnostics
+                .entry(file_path)
+                .or_default()
+                .push(diagnostic);
+        }
+    }
+
+    file_diagnostics.into_iter().collect()
 }

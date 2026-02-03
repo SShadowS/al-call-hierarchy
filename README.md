@@ -8,6 +8,9 @@ Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter.
 - **Parallel indexing** - Uses all CPU cores for initial index
 - **Incremental updates** - Re-parse only changed files
 - **External dependency support** - Resolves calls to .app packages in `.alpackages`
+- **Event subscriber integration** - Shows `[EventSubscriber]` procedures in call hierarchy
+- **Code Lens** - Reference counts above each procedure
+- **Diagnostics** - Unused procedure detection and code quality warnings
 - **LSP integration** - Works with any LSP-compatible client
 
 ## Building
@@ -32,6 +35,8 @@ Communicates via stdio using the LSP protocol. Handles:
 - `textDocument/prepareCallHierarchy`
 - `callHierarchy/incomingCalls`
 - `callHierarchy/outgoingCalls`
+- `textDocument/codeLens`
+- `textDocument/publishDiagnostics` (server push)
 
 ### CLI Mode (testing)
 
@@ -43,12 +48,13 @@ al-call-hierarchy --project /path/to/al-project --no-lsp
 
 ### With AL LSP Wrapper
 
-The Go/Python wrapper spawns this server and routes call hierarchy requests:
+The Go/Python wrapper spawns this server and routes requests. See [LSP.md](LSP.md) for detailed integration guide.
 
 ```go
 case "textDocument/prepareCallHierarchy",
      "callHierarchy/incomingCalls",
-     "callHierarchy/outgoingCalls":
+     "callHierarchy/outgoingCalls",
+     "textDocument/codeLens":
     return callHierarchyServer.Request(method, params)
 ```
 

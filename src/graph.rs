@@ -118,15 +118,19 @@ pub struct Definition {
     pub name: Symbol,
     /// Kind of definition
     pub kind: DefinitionKind,
+    /// Cyclomatic complexity (calculated during parsing)
+    pub complexity: u32,
+    /// Parameter count
+    pub parameter_count: u32,
 }
 
 /// Source of an external definition (from a .app package)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExternalSource {
     /// App name (interned)
     pub app_name: Symbol,
-    /// App version string
-    pub app_version: String,
+    /// App version (interned)
+    pub app_version: Symbol,
 }
 
 /// An external definition from a .app package (no file/range available)
@@ -177,6 +181,23 @@ pub struct VariableBinding {
     pub type_kind: Option<String>,
 }
 
+/// An event subscription linking a subscriber procedure to a publisher event
+#[derive(Debug, Clone)]
+pub struct EventSubscription {
+    /// The subscriber procedure (the one with [EventSubscriber] attribute)
+    pub subscriber: QualifiedName,
+    /// File containing the subscriber
+    pub file: SharedPath,
+    /// Range of the subscriber procedure
+    pub range: Range,
+    /// Object type of the publisher (e.g., Codeunit)
+    pub publisher_object_type: Option<ObjectType>,
+    /// Name of the publisher object (e.g., "Sales-Post")
+    pub publisher_object: Symbol,
+    /// Name of the event being subscribed to (e.g., "OnBeforePostSalesDoc")
+    pub publisher_event: Symbol,
+}
+
 /// The call graph index
 pub struct CallGraph {
     /// String interner for symbols
@@ -219,6 +240,13 @@ pub struct CallGraph {
 
     /// External object types (from .app packages)
     external_object_types: HashMap<Symbol, ObjectType>,
+
+    /// Event subscriptions: maps publisher qualified name to list of subscribers
+    /// Key is (publisher_object, publisher_event), value is list of subscriptions
+    event_subscriptions: HashMap<QualifiedName, Vec<EventSubscription>>,
+
+    /// File -> event subscriptions in that file (for incremental removal)
+    file_event_subscriptions: HashMap<SharedPath, Vec<QualifiedName>>,
 }
 
 impl CallGraph {
@@ -237,6 +265,8 @@ impl CallGraph {
             file_variables: HashMap::new(),
             external_definitions: HashMap::new(),
             external_object_types: HashMap::new(),
+            event_subscriptions: HashMap::new(),
+            file_event_subscriptions: HashMap::new(),
         }
     }
 
@@ -293,14 +323,38 @@ impl CallGraph {
         self.external_definitions.get(qname)
     }
 
-    /// Check if a qualified name refers to an external definition
-    pub fn is_external(&self, qname: &QualifiedName) -> bool {
-        self.external_definitions.contains_key(qname)
-    }
-
     /// Get count of external definitions
     pub fn external_definition_count(&self) -> usize {
         self.external_definitions.len()
+    }
+
+    /// Add an event subscription
+    pub fn add_event_subscription(&mut self, subscription: EventSubscription) {
+        let publisher_qname = QualifiedName {
+            object: subscription.publisher_object,
+            procedure: subscription.publisher_event,
+        };
+
+        // Track for file-based cleanup
+        self.file_event_subscriptions
+            .entry(subscription.file.clone())
+            .or_default()
+            .push(publisher_qname);
+
+        // Add to event subscriptions index
+        self.event_subscriptions
+            .entry(publisher_qname)
+            .or_default()
+            .push(subscription);
+    }
+
+    /// Get all event subscribers for a given publisher event
+    /// Returns subscriptions where the publisher_object and publisher_event match the given qname
+    pub fn get_event_subscribers(&self, qname: &QualifiedName) -> Vec<&EventSubscription> {
+        self.event_subscriptions
+            .get(qname)
+            .map(|subs| subs.iter().collect())
+            .unwrap_or_default()
     }
 
     /// Add a variable binding for a procedure scope
@@ -523,6 +577,18 @@ impl CallGraph {
             calls.retain(|&idx| self.call_sites.get(idx as usize).map(|s| s.is_some()).unwrap_or(false));
         }
 
+        // Clean up event subscriptions from this file
+        if let Some(publisher_qnames) = self.file_event_subscriptions.remove(&shared_path) {
+            for qname in publisher_qnames {
+                if let Some(subs) = self.event_subscriptions.get_mut(&qname) {
+                    subs.retain(|sub| sub.file != shared_path);
+                    if subs.is_empty() {
+                        self.event_subscriptions.remove(&qname);
+                    }
+                }
+            }
+        }
+
         // Remove from path cache
         self.path_cache.remove(file);
     }
@@ -535,6 +601,61 @@ impl CallGraph {
     /// Get count of call sites (active, non-tombstoned)
     pub fn call_site_count(&self) -> usize {
         self.call_sites.iter().filter(|s| s.is_some()).count()
+    }
+
+    /// Get all definitions in a specific file
+    /// Returns an iterator over definitions for Code Lens support
+    pub fn get_definitions_in_file(&self, file: &Path) -> Vec<&Definition> {
+        let shared_path = match self.path_cache.get(file) {
+            Some(p) => p,
+            None => return vec![],
+        };
+
+        self.file_definitions
+            .get(shared_path)
+            .map(|qnames| {
+                qnames
+                    .iter()
+                    .filter_map(|qname| self.definitions.get(qname))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get the count of incoming calls for a procedure
+    pub fn get_incoming_call_count(&self, qname: &QualifiedName) -> usize {
+        // Count direct calls
+        let direct_calls = self.incoming_calls
+            .get(qname)
+            .map(|indices| indices.iter().filter(|&&idx| self.get_call_site(idx).is_some()).count())
+            .unwrap_or(0);
+
+        // Count event subscribers (if this is a trigger/event)
+        let subscriber_count = self.event_subscriptions
+            .get(qname)
+            .map(|subs| subs.len())
+            .unwrap_or(0);
+
+        direct_calls + subscriber_count
+    }
+
+    /// Get all unused procedures (procedures with no incoming calls)
+    /// Excludes triggers and event subscribers since they are called implicitly
+    pub fn get_unused_procedures(&self) -> Vec<(&QualifiedName, &Definition)> {
+        self.definitions
+            .iter()
+            .filter(|(qname, def)| {
+                // Only check procedures (not triggers or event subscribers)
+                def.kind == DefinitionKind::Procedure &&
+                // Check if there are no incoming calls
+                self.get_incoming_call_count(qname) == 0
+            })
+            .collect()
+    }
+
+    /// Iterate over all definitions
+    pub fn iter_definitions(&self) -> impl Iterator<Item = (&QualifiedName, &Definition)> {
+        self.definitions.iter()
     }
 }
 
@@ -618,6 +739,8 @@ mod tests {
             object_name: obj_name,
             name: proc_name,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let qname = QualifiedName {
@@ -644,6 +767,8 @@ mod tests {
             object_name: obj_name,
             name: proc1,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -653,6 +778,8 @@ mod tests {
             object_name: obj_name,
             name: proc2,
             kind: DefinitionKind::Trigger,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         assert_eq!(graph.definition_count(), 2);
@@ -690,6 +817,8 @@ mod tests {
             object_name: obj1,
             name: proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -699,6 +828,8 @@ mod tests {
             object_name: obj2,
             name: proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         assert_eq!(graph.definition_count(), 2);
@@ -758,6 +889,8 @@ mod tests {
             object_name: obj_name,
             name: proc_name,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         // Inside range
@@ -784,6 +917,8 @@ mod tests {
             object_name: obj_name,
             name: proc_name,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         // Before range
@@ -807,6 +942,8 @@ mod tests {
             object_name: obj_name,
             name: proc_name,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let other_file = Path::new("other.al");
@@ -833,6 +970,8 @@ mod tests {
             object_name: obj_name,
             name: caller_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -842,6 +981,8 @@ mod tests {
             object_name: obj_name,
             name: callee_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let caller_qname = QualifiedName {
@@ -895,6 +1036,8 @@ mod tests {
             object_name: caller_obj,
             name: caller_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -904,6 +1047,8 @@ mod tests {
             object_name: callee_obj,
             name: callee_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let caller_qname = QualifiedName {
@@ -957,6 +1102,8 @@ mod tests {
                 object_name: obj,
                 name: proc,
                 kind: DefinitionKind::Procedure,
+                complexity: 0,
+                parameter_count: 0,
             });
         }
 
@@ -1017,6 +1164,8 @@ mod tests {
                 object_name: obj,
                 name: proc,
                 kind: DefinitionKind::Procedure,
+                complexity: 0,
+                parameter_count: 0,
             });
         }
 
@@ -1165,6 +1314,8 @@ mod tests {
             object_name: caller_obj,
             name: caller_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         // Add target definition on the table
@@ -1175,6 +1326,8 @@ mod tests {
             object_name: record_table,
             name: callee_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let caller_qname = QualifiedName {
@@ -1222,6 +1375,8 @@ mod tests {
             object_name: obj,
             name: proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         assert_eq!(graph.definition_count(), 1);
@@ -1248,6 +1403,8 @@ mod tests {
             object_name: obj,
             name: caller,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -1257,6 +1414,8 @@ mod tests {
             object_name: obj,
             name: callee,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let caller_qname = QualifiedName {
@@ -1324,6 +1483,8 @@ mod tests {
             object_name: obj1,
             name: proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         graph.add_definition(Definition {
@@ -1333,6 +1494,8 @@ mod tests {
             object_name: obj2,
             name: proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         assert_eq!(graph.definition_count(), 2);
@@ -1369,6 +1532,8 @@ mod tests {
             object_name: obj1,
             name: caller,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         // Callee in file2
@@ -1379,6 +1544,8 @@ mod tests {
             object_name: obj2,
             name: callee,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         let caller_qname = QualifiedName {
@@ -1440,6 +1607,8 @@ mod tests {
             object_name: obj_name,
             name: callee_proc,
             kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
         });
 
         // Call to TestCodeunit.CalleeProc - should resolve because object is registered

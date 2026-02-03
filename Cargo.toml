@@ -1,6 +1,6 @@
 [package]
 name = "al-call-hierarchy"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["SShadowS"]
 description = "Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter"
