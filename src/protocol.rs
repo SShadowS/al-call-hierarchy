@@ -40,9 +40,20 @@ pub fn path_to_uri(path: &Path) -> Uri {
     let uri_str = format!("file:///{}", path_str.replace('\\', "/"));
     #[cfg(not(windows))]
     let uri_str = format!("file://{}", path_str);
-    uri_str
-        .parse()
-        .unwrap_or_else(|_| "file:///unknown".parse().unwrap())
+
+    match uri_str.parse() {
+        Ok(uri) => uri,
+        Err(e) => {
+            // Log the problematic path for debugging
+            log::warn!(
+                "Failed to parse URI '{}' from path '{}': {}. Using fallback.",
+                uri_str,
+                path.display(),
+                e
+            );
+            "file:///unknown".parse().unwrap()
+        }
+    }
 }
 
 #[cfg(test)]
