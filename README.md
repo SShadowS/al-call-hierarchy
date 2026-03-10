@@ -100,6 +100,33 @@ The server parses .app files with the standard BC format:
   - `NavxManifest.xml` - App metadata
   - `SymbolReference.json` - Symbol definitions
 
+## Configuration
+
+Diagnostic thresholds are configurable via `.al-call-hierarchy.json` in the workspace root. All values are optional — missing values use defaults.
+
+```json
+{
+  "diagnostics": {
+    "complexity": { "warning": 5, "critical": 10 },
+    "parameters": { "warning": 4, "critical": 7 },
+    "lineCount": { "warning": 20, "critical": 50 },
+    "fanIn": { "warning": 20 },
+    "unusedProcedures": true
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `complexity.warning` | 5 | Cyclomatic complexity information threshold |
+| `complexity.critical` | 10 | Cyclomatic complexity warning threshold |
+| `parameters.warning` | 4 | Parameter count information threshold |
+| `parameters.critical` | 7 | Parameter count warning threshold |
+| `lineCount.warning` | 20 | Method length information threshold |
+| `lineCount.critical` | 50 | Method length warning threshold |
+| `fanIn.warning` | 20 | Incoming call count information threshold |
+| `unusedProcedures` | true | Enable/disable unused procedure detection |
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
