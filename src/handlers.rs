@@ -48,6 +48,11 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<V
             let result = field_properties(params)?;
             Ok(serde_json::to_value(result)?)
         }
+        "al-call-hierarchy/actionProperties" => {
+            let params: ActionPropertiesParams = serde_json::from_value(req.params.clone())?;
+            let result = action_properties(params)?;
+            Ok(serde_json::to_value(result)?)
+        }
         _ => {
             debug!("Unhandled method: {}", req.method);
             Ok(Value::Null)
@@ -558,6 +563,169 @@ fn extract_property_value(node: &tree_sitter::Node, source: &str) -> String {
     }
 }
 
+// --- Action Properties ---
+
+/// Parameters for al-call-hierarchy/actionProperties
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActionPropertiesParams {
+    uri: String,
+    action_name: String,
+}
+
+/// Response for al-call-hierarchy/actionProperties
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ActionPropertiesResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_object: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_page_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_page_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_page_view: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tooltip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    promoted: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    promoted_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shortcut_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visible: Option<String>,
+}
+
+/// Extract action properties from an AL source file using tree-sitter
+fn action_properties(params: ActionPropertiesParams) -> Result<ActionPropertiesResult> {
+    use crate::language;
+    use tree_sitter::Parser;
+
+    let uri: lsp_types::Uri = params.uri.parse().context("Invalid URI")?;
+    let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
+
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    let lang = language::language();
+    let mut parser = Parser::new();
+    parser.set_language(&lang).context("Failed to set language")?;
+
+    let tree = parser.parse(&source, None).context("Failed to parse file")?;
+    let root = tree.root_node();
+
+    let target_name = params.action_name.trim().trim_matches('"').to_lowercase();
+
+    let mut cursor = root.walk();
+    let result = find_action_properties(&mut cursor, &source, &target_name);
+
+    Ok(result.unwrap_or_default())
+}
+
+/// Recursively search for an action_declaration matching the target name
+fn find_action_properties(
+    cursor: &mut tree_sitter::TreeCursor,
+    source: &str,
+    target_name: &str,
+) -> Option<ActionPropertiesResult> {
+    loop {
+        let node = cursor.node();
+
+        if node.kind() == "action_declaration" {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = &source[name_node.byte_range()];
+                let clean = name.trim().trim_matches('"').to_lowercase();
+                if clean == target_name {
+                    return Some(extract_action_props(&node, source));
+                }
+            }
+        }
+
+        // Recurse into children
+        if cursor.goto_first_child() {
+            if let Some(result) = find_action_properties(cursor, source, target_name) {
+                return Some(result);
+            }
+            cursor.goto_parent();
+        }
+
+        if !cursor.goto_next_sibling() {
+            return None;
+        }
+    }
+}
+
+/// Extract properties from an action_declaration node
+fn extract_action_props(action_node: &tree_sitter::Node, source: &str) -> ActionPropertiesResult {
+    let mut result = ActionPropertiesResult::default();
+
+    let mut cursor = action_node.walk();
+    if !cursor.goto_first_child() {
+        return result;
+    }
+
+    loop {
+        let child = cursor.node();
+        match child.kind() {
+            "caption_property" => {
+                result.caption = Some(extract_property_value(&child, source));
+            }
+            "image_property" => {
+                result.image = Some(extract_property_value(&child, source));
+            }
+            "run_object_property" => {
+                result.run_object = Some(extract_property_value(&child, source));
+            }
+            "run_page_link_property" => {
+                result.run_page_link = Some(extract_property_value(&child, source));
+            }
+            "run_page_mode_property" => {
+                result.run_page_mode = Some(extract_property_value(&child, source));
+            }
+            "run_page_view_property" => {
+                result.run_page_view = Some(extract_property_value(&child, source));
+            }
+            "tool_tip_property" => {
+                result.tooltip = Some(extract_property_value(&child, source));
+            }
+            "promoted_property" => {
+                result.promoted = Some(extract_property_value(&child, source));
+            }
+            "promoted_category_property" => {
+                result.promoted_category = Some(extract_property_value(&child, source));
+            }
+            "shortcut_key_property" => {
+                result.shortcut_key = Some(extract_property_value(&child, source));
+            }
+            "scope_property" => {
+                result.scope = Some(extract_property_value(&child, source));
+            }
+            "enabled_property" => {
+                result.enabled = Some(extract_property_value(&child, source));
+            }
+            "visible_property" => {
+                result.visible = Some(extract_property_value(&child, source));
+            }
+            _ => {}
+        }
+
+        if !cursor.goto_next_sibling() {
+            break;
+        }
+    }
+
+    result
+}
+
 /// Helper function to get file diagnostics (used by server.rs for publishing)
 pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<lsp_types::Diagnostic>)> {
     use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag};
@@ -661,5 +829,76 @@ table 50000 "TEST Customer"
         assert_eq!(result.data_classification.as_deref(), Some("CustomerContent"));
         assert!(result.field_class.is_none());
         assert!(result.calc_formula.is_none());
+    }
+
+    #[test]
+    fn test_action_properties_extraction() {
+        use crate::language;
+        use tree_sitter::Parser;
+
+        let source = r#"
+page 50001 "TEST Customer Card"
+{
+    PageType = Card;
+    SourceTable = "TEST Customer";
+
+    actions
+    {
+        area(Navigation)
+        {
+            action(LedgerEntries)
+            {
+                ApplicationArea = All;
+                Caption = 'Ledger E&ntries';
+                Image = CustomerLedger;
+                RunObject = page "Customer Ledger Entries";
+                RunPageLink = "Customer No." = field("No.");
+                RunPageView = sorting("Customer No.");
+                ShortcutKey = 'Ctrl+F7';
+                ToolTip = 'View the history of transactions for the customer.';
+            }
+
+            action(CheckCreditLimit)
+            {
+                ApplicationArea = All;
+                Caption = 'Check Credit Limit';
+                Image = Check;
+                ToolTip = 'Check if the customer has exceeded their credit limit.';
+
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#;
+
+        let lang = language::language();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        // Test LedgerEntries action (with RunObject)
+        let mut cursor = root.walk();
+        let result = find_action_properties(&mut cursor, source, "ledgerentries").unwrap();
+        assert_eq!(result.caption.as_deref(), Some("'Ledger E&ntries'"));
+        assert_eq!(result.image.as_deref(), Some("CustomerLedger"));
+        assert!(result.run_object.is_some());
+        assert!(result.run_object.as_ref().unwrap().contains("Customer Ledger Entries"));
+        assert!(result.run_page_link.is_some());
+        assert!(result.run_page_view.is_some());
+        assert_eq!(result.shortcut_key.as_deref(), Some("'Ctrl+F7'"));
+        assert!(result.tooltip.is_some());
+        assert!(result.tooltip.as_ref().unwrap().contains("history of transactions"));
+
+        // Test CheckCreditLimit action (no RunObject, has trigger)
+        let mut cursor = root.walk();
+        let result = find_action_properties(&mut cursor, source, "checkcreditlimit").unwrap();
+        assert_eq!(result.caption.as_deref(), Some("'Check Credit Limit'"));
+        assert_eq!(result.image.as_deref(), Some("Check"));
+        assert!(result.run_object.is_none());
+        assert!(result.tooltip.is_some());
     }
 }
