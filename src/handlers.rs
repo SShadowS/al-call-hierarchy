@@ -44,12 +44,12 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<V
             Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/fieldProperties" => {
-            let params: FieldPropertiesParams = serde_json::from_value(req.params.clone())?;
+            let params: SymbolPropertiesParams = serde_json::from_value(req.params.clone())?;
             let result = field_properties(params)?;
             Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/actionProperties" => {
-            let params: ActionPropertiesParams = serde_json::from_value(req.params.clone())?;
+            let params: SymbolPropertiesParams = serde_json::from_value(req.params.clone())?;
             let result = action_properties(params)?;
             Ok(serde_json::to_value(result)?)
         }
@@ -407,42 +407,64 @@ fn code_lens(
     Ok(Some(results))
 }
 
-// --- Field Properties ---
+// --- Symbol Properties (generic for fields, actions, and any AL declaration) ---
 
-/// Parameters for al-call-hierarchy/fieldProperties
+/// Parameters for al-call-hierarchy/fieldProperties and al-call-hierarchy/actionProperties
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct FieldPropertiesParams {
+struct SymbolPropertiesParams {
     uri: String,
+    /// For fieldProperties
+    #[serde(default)]
     field_name: String,
+    /// For actionProperties
+    #[serde(default)]
+    action_name: String,
 }
 
-/// Response for al-call-hierarchy/fieldProperties
+/// Generic response: all declared properties as key-value pairs.
+/// Keys are human-readable property names (e.g., "Caption", "CalcFormula").
+/// Only properties explicitly declared in source are included.
 #[derive(Debug, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct FieldPropertiesResult {
+struct SymbolPropertiesResult {
+    /// For fields: the field ID number
     #[serde(skip_serializing_if = "Option::is_none")]
     field_id: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    caption: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    field_class: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    calc_formula: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    table_relation: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    editable: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data_classification: Option<String>,
+    /// All declared properties from source (key = property name, value = property value)
+    properties: Vec<PropertyEntry>,
 }
 
-/// Extract field properties from an AL source file using tree-sitter
-fn field_properties(params: FieldPropertiesParams) -> Result<FieldPropertiesResult> {
+/// A single property entry preserving declaration order
+#[derive(Debug, Serialize)]
+struct PropertyEntry {
+    name: String,
+    value: String,
+}
+
+/// Parse a file with tree-sitter and extract all properties for a field
+fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+    let (tree, source) = parse_file_from_uri(&params.uri)?;
+    let target = params.field_name.trim().trim_matches('"').to_lowercase();
+    let mut cursor = tree.root_node().walk();
+    Ok(find_node_properties(&mut cursor, &source, "field_declaration", &target, true)
+        .unwrap_or_default())
+}
+
+/// Parse a file with tree-sitter and extract all properties for an action
+fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+    let (tree, source) = parse_file_from_uri(&params.uri)?;
+    let target = params.action_name.trim().trim_matches('"').to_lowercase();
+    let mut cursor = tree.root_node().walk();
+    Ok(find_node_properties(&mut cursor, &source, "action_declaration", &target, false)
+        .unwrap_or_default())
+}
+
+/// Parse an AL file from a URI and return the tree + source
+fn parse_file_from_uri(uri_str: &str) -> Result<(tree_sitter::Tree, String)> {
     use crate::language;
     use tree_sitter::Parser;
 
-    let uri: lsp_types::Uri = params.uri.parse().context("Invalid URI")?;
+    let uri: lsp_types::Uri = uri_str.parse().context("Invalid URI")?;
     let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
 
     let source = std::fs::read_to_string(&path)
@@ -453,41 +475,34 @@ fn field_properties(params: FieldPropertiesParams) -> Result<FieldPropertiesResu
     parser.set_language(&lang).context("Failed to set language")?;
 
     let tree = parser.parse(&source, None).context("Failed to parse file")?;
-    let root = tree.root_node();
 
-    // Normalize the target field name for comparison (case-insensitive, unquoted)
-    let target_name = params.field_name.trim().trim_matches('"').to_lowercase();
-
-    // Walk the tree to find field_declaration nodes
-    let mut cursor = root.walk();
-    let result = find_field_properties(&mut cursor, &source, &target_name);
-
-    Ok(result.unwrap_or_default())
+    Ok((tree, source))
 }
 
-/// Recursively search for a field_declaration matching the target name
-fn find_field_properties(
+/// Recursively search for a declaration node matching the target name,
+/// then extract all properties from it.
+fn find_node_properties(
     cursor: &mut tree_sitter::TreeCursor,
     source: &str,
+    node_kind: &str,
     target_name: &str,
-) -> Option<FieldPropertiesResult> {
+    extract_field_id: bool,
+) -> Option<SymbolPropertiesResult> {
     loop {
         let node = cursor.node();
 
-        if node.kind() == "field_declaration" {
-            // Check the field name
+        if node.kind() == node_kind {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = &source[name_node.byte_range()];
                 let clean = name.trim().trim_matches('"').to_lowercase();
                 if clean == target_name {
-                    return Some(extract_field_props(&node, source));
+                    return Some(extract_all_properties(&node, source, extract_field_id));
                 }
             }
         }
 
-        // Recurse into children
         if cursor.goto_first_child() {
-            if let Some(result) = find_field_properties(cursor, source, target_name) {
+            if let Some(result) = find_node_properties(cursor, source, node_kind, target_name, extract_field_id) {
                 return Some(result);
             }
             cursor.goto_parent();
@@ -499,45 +514,41 @@ fn find_field_properties(
     }
 }
 
-/// Extract properties from a field_declaration node
-fn extract_field_props(field_node: &tree_sitter::Node, source: &str) -> FieldPropertiesResult {
-    let mut result = FieldPropertiesResult::default();
+/// Extract ALL properties from a declaration node.
+/// Any child node whose kind ends with "_property" is collected.
+fn extract_all_properties(
+    decl_node: &tree_sitter::Node,
+    source: &str,
+    extract_field_id: bool,
+) -> SymbolPropertiesResult {
+    let mut result = SymbolPropertiesResult::default();
 
-    // Extract field ID
-    if let Some(id_node) = field_node.child_by_field_name("id") {
-        if let Ok(id) = source[id_node.byte_range()].trim().parse::<u32>() {
-            result.field_id = Some(id);
+    // Extract field ID if requested (for field_declaration nodes)
+    if extract_field_id {
+        if let Some(id_node) = decl_node.child_by_field_name("id") {
+            if let Ok(id) = source[id_node.byte_range()].trim().parse::<u32>() {
+                result.field_id = Some(id);
+            }
         }
     }
 
-    // Walk children to find property nodes
-    let mut cursor = field_node.walk();
+    let mut cursor = decl_node.walk();
     if !cursor.goto_first_child() {
         return result;
     }
 
     loop {
         let child = cursor.node();
-        match child.kind() {
-            "caption_property" => {
-                result.caption = Some(extract_property_value(&child, source));
-            }
-            "field_class_property" => {
-                result.field_class = Some(extract_property_value(&child, source));
-            }
-            "calc_formula_property" => {
-                result.calc_formula = Some(extract_property_value(&child, source));
-            }
-            "table_relation_property" => {
-                result.table_relation = Some(extract_property_value(&child, source));
-            }
-            "editable_property" => {
-                result.editable = Some(extract_property_value(&child, source));
-            }
-            "data_classification_property" => {
-                result.data_classification = Some(extract_property_value(&child, source));
-            }
-            _ => {}
+        let kind = child.kind();
+
+        // Collect any node whose kind ends with "_property"
+        if kind.ends_with("_property") {
+            let prop_name = property_display_name(kind);
+            let prop_value = extract_property_value(&child, source);
+            result.properties.push(PropertyEntry {
+                name: prop_name,
+                value: prop_value,
+            });
         }
 
         if !cursor.goto_next_sibling() {
@@ -546,6 +557,25 @@ fn extract_field_props(field_node: &tree_sitter::Node, source: &str) -> FieldPro
     }
 
     result
+}
+
+/// Convert a tree-sitter node kind like "calc_formula_property" to a display name like "CalcFormula"
+fn property_display_name(kind: &str) -> String {
+    // Strip the "_property" suffix
+    let base = kind.strip_suffix("_property").unwrap_or(kind);
+    // Convert snake_case to PascalCase
+    base.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => {
+                    let upper: String = c.to_uppercase().collect();
+                    upper + chars.as_str()
+                }
+            }
+        })
+        .collect()
 }
 
 /// Extract the value portion of a property node (everything after the '=')
@@ -561,169 +591,6 @@ fn extract_property_value(node: &tree_sitter::Node, source: &str) -> String {
     } else {
         text.to_string()
     }
-}
-
-// --- Action Properties ---
-
-/// Parameters for al-call-hierarchy/actionProperties
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ActionPropertiesParams {
-    uri: String,
-    action_name: String,
-}
-
-/// Response for al-call-hierarchy/actionProperties
-#[derive(Debug, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct ActionPropertiesResult {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    caption: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    image: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    run_object: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    run_page_link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    run_page_mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    run_page_view: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tooltip: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    promoted: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    promoted_category: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    shortcut_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scope: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    enabled: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    visible: Option<String>,
-}
-
-/// Extract action properties from an AL source file using tree-sitter
-fn action_properties(params: ActionPropertiesParams) -> Result<ActionPropertiesResult> {
-    use crate::language;
-    use tree_sitter::Parser;
-
-    let uri: lsp_types::Uri = params.uri.parse().context("Invalid URI")?;
-    let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
-
-    let source = std::fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    let lang = language::language();
-    let mut parser = Parser::new();
-    parser.set_language(&lang).context("Failed to set language")?;
-
-    let tree = parser.parse(&source, None).context("Failed to parse file")?;
-    let root = tree.root_node();
-
-    let target_name = params.action_name.trim().trim_matches('"').to_lowercase();
-
-    let mut cursor = root.walk();
-    let result = find_action_properties(&mut cursor, &source, &target_name);
-
-    Ok(result.unwrap_or_default())
-}
-
-/// Recursively search for an action_declaration matching the target name
-fn find_action_properties(
-    cursor: &mut tree_sitter::TreeCursor,
-    source: &str,
-    target_name: &str,
-) -> Option<ActionPropertiesResult> {
-    loop {
-        let node = cursor.node();
-
-        if node.kind() == "action_declaration" {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name = &source[name_node.byte_range()];
-                let clean = name.trim().trim_matches('"').to_lowercase();
-                if clean == target_name {
-                    return Some(extract_action_props(&node, source));
-                }
-            }
-        }
-
-        // Recurse into children
-        if cursor.goto_first_child() {
-            if let Some(result) = find_action_properties(cursor, source, target_name) {
-                return Some(result);
-            }
-            cursor.goto_parent();
-        }
-
-        if !cursor.goto_next_sibling() {
-            return None;
-        }
-    }
-}
-
-/// Extract properties from an action_declaration node
-fn extract_action_props(action_node: &tree_sitter::Node, source: &str) -> ActionPropertiesResult {
-    let mut result = ActionPropertiesResult::default();
-
-    let mut cursor = action_node.walk();
-    if !cursor.goto_first_child() {
-        return result;
-    }
-
-    loop {
-        let child = cursor.node();
-        match child.kind() {
-            "caption_property" => {
-                result.caption = Some(extract_property_value(&child, source));
-            }
-            "image_property" => {
-                result.image = Some(extract_property_value(&child, source));
-            }
-            "run_object_property" => {
-                result.run_object = Some(extract_property_value(&child, source));
-            }
-            "run_page_link_property" => {
-                result.run_page_link = Some(extract_property_value(&child, source));
-            }
-            "run_page_mode_property" => {
-                result.run_page_mode = Some(extract_property_value(&child, source));
-            }
-            "run_page_view_property" => {
-                result.run_page_view = Some(extract_property_value(&child, source));
-            }
-            "tool_tip_property" => {
-                result.tooltip = Some(extract_property_value(&child, source));
-            }
-            "promoted_property" => {
-                result.promoted = Some(extract_property_value(&child, source));
-            }
-            "promoted_category_property" => {
-                result.promoted_category = Some(extract_property_value(&child, source));
-            }
-            "shortcut_key_property" => {
-                result.shortcut_key = Some(extract_property_value(&child, source));
-            }
-            "scope_property" => {
-                result.scope = Some(extract_property_value(&child, source));
-            }
-            "enabled_property" => {
-                result.enabled = Some(extract_property_value(&child, source));
-            }
-            "visible_property" => {
-                result.visible = Some(extract_property_value(&child, source));
-            }
-            _ => {}
-        }
-
-        if !cursor.goto_next_sibling() {
-            break;
-        }
-    }
-
-    result
 }
 
 /// Helper function to get file diagnostics (used by server.rs for publishing)
@@ -804,31 +671,36 @@ table 50000 "TEST Customer"
         let tree = parser.parse(source, None).unwrap();
         let root = tree.root_node();
 
+        // Helper to find a property by name in the result
+        fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
+            result.properties.iter().find(|p| p.name == name).map(|p| p.value.clone())
+        }
+
         // Test Balance field (FlowField with CalcFormula)
         let mut cursor = root.walk();
-        let result = find_field_properties(&mut cursor, source, "balance").unwrap();
+        let result = find_node_properties(&mut cursor, source, "field_declaration", "balance", true).unwrap();
         assert_eq!(result.field_id, Some(11));
-        assert_eq!(result.caption.as_deref(), Some("'Balance'"));
-        assert_eq!(result.editable.as_deref(), Some("false"));
-        assert_eq!(result.field_class.as_deref(), Some("FlowField"));
-        assert!(result.calc_formula.is_some());
-        assert!(result.calc_formula.as_ref().unwrap().contains("Cust. Ledger Entry"));
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Balance'"));
+        assert_eq!(prop(&result, "Editable").as_deref(), Some("false"));
+        assert_eq!(prop(&result, "FieldClass").as_deref(), Some("FlowField"));
+        assert!(prop(&result, "CalcFormula").is_some());
+        assert!(prop(&result, "CalcFormula").unwrap().contains("Cust. Ledger Entry"));
 
         // Test Payment Terms Code field (with TableRelation)
         let mut cursor = root.walk();
-        let result = find_field_properties(&mut cursor, source, "payment terms code").unwrap();
+        let result = find_node_properties(&mut cursor, source, "field_declaration", "payment terms code", true).unwrap();
         assert_eq!(result.field_id, Some(20));
-        assert!(result.table_relation.is_some());
-        assert!(result.table_relation.as_ref().unwrap().contains("Payment Terms"));
+        assert!(prop(&result, "TableRelation").is_some());
+        assert!(prop(&result, "TableRelation").unwrap().contains("Payment Terms"));
 
         // Test No. field (basic field)
         let mut cursor = root.walk();
-        let result = find_field_properties(&mut cursor, source, "no.").unwrap();
+        let result = find_node_properties(&mut cursor, source, "field_declaration", "no.", true).unwrap();
         assert_eq!(result.field_id, Some(1));
-        assert_eq!(result.caption.as_deref(), Some("'No.'"));
-        assert_eq!(result.data_classification.as_deref(), Some("CustomerContent"));
-        assert!(result.field_class.is_none());
-        assert!(result.calc_formula.is_none());
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'No.'"));
+        assert_eq!(prop(&result, "DataClassification").as_deref(), Some("CustomerContent"));
+        assert!(prop(&result, "FieldClass").is_none());
+        assert!(prop(&result, "CalcFormula").is_none());
     }
 
     #[test]
@@ -880,25 +752,30 @@ page 50001 "TEST Customer Card"
         let tree = parser.parse(source, None).unwrap();
         let root = tree.root_node();
 
+        // Helper to find a property by name
+        fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
+            result.properties.iter().find(|p| p.name == name).map(|p| p.value.clone())
+        }
+
         // Test LedgerEntries action (with RunObject)
         let mut cursor = root.walk();
-        let result = find_action_properties(&mut cursor, source, "ledgerentries").unwrap();
-        assert_eq!(result.caption.as_deref(), Some("'Ledger E&ntries'"));
-        assert_eq!(result.image.as_deref(), Some("CustomerLedger"));
-        assert!(result.run_object.is_some());
-        assert!(result.run_object.as_ref().unwrap().contains("Customer Ledger Entries"));
-        assert!(result.run_page_link.is_some());
-        assert!(result.run_page_view.is_some());
-        assert_eq!(result.shortcut_key.as_deref(), Some("'Ctrl+F7'"));
-        assert!(result.tooltip.is_some());
-        assert!(result.tooltip.as_ref().unwrap().contains("history of transactions"));
+        let result = find_node_properties(&mut cursor, source, "action_declaration", "ledgerentries", false).unwrap();
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Ledger E&ntries'"));
+        assert_eq!(prop(&result, "Image").as_deref(), Some("CustomerLedger"));
+        assert!(prop(&result, "RunObject").is_some());
+        assert!(prop(&result, "RunObject").unwrap().contains("Customer Ledger Entries"));
+        assert!(prop(&result, "RunPageLink").is_some());
+        assert!(prop(&result, "RunPageView").is_some());
+        assert_eq!(prop(&result, "ShortcutKey").as_deref(), Some("'Ctrl+F7'"));
+        assert!(prop(&result, "ToolTip").is_some());
+        assert!(prop(&result, "ToolTip").unwrap().contains("history of transactions"));
 
         // Test CheckCreditLimit action (no RunObject, has trigger)
         let mut cursor = root.walk();
-        let result = find_action_properties(&mut cursor, source, "checkcreditlimit").unwrap();
-        assert_eq!(result.caption.as_deref(), Some("'Check Credit Limit'"));
-        assert_eq!(result.image.as_deref(), Some("Check"));
-        assert!(result.run_object.is_none());
-        assert!(result.tooltip.is_some());
+        let result = find_node_properties(&mut cursor, source, "action_declaration", "checkcreditlimit", false).unwrap();
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Check Credit Limit'"));
+        assert_eq!(prop(&result, "Image").as_deref(), Some("Check"));
+        assert!(prop(&result, "RunObject").is_none());
+        assert!(prop(&result, "ToolTip").is_some());
     }
 }
