@@ -13,6 +13,9 @@ Cargo.lock
 .claude/
 tmpclaude-*
 
+# Local copy of tree-sitter-al for cross-compilation
+/tree-sitter-al/
+
 # OS
 .DS_Store
 Thumbs.db
