@@ -290,7 +290,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
         let incoming_count = graph.get_incoming_call_count(qname);
 
         // Cyclomatic complexity warnings
-        if def.complexity >= config.complexity_critical {
+        if config.complexity_enabled && def.complexity >= config.complexity_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -309,7 +309,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
                 .entry(file_path.clone())
                 .or_default()
                 .push(diagnostic);
-        } else if def.complexity >= config.complexity_warning {
+        } else if config.complexity_enabled && def.complexity >= config.complexity_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -331,7 +331,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
         }
 
         // Parameter count warnings
-        if def.parameter_count >= config.params_critical {
+        if config.params_enabled && def.parameter_count >= config.params_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -350,7 +350,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
                 .entry(file_path.clone())
                 .or_default()
                 .push(diagnostic);
-        } else if def.parameter_count >= config.params_warning {
+        } else if config.params_enabled && def.parameter_count >= config.params_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -372,7 +372,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
         }
 
         // High fan-in warning (many callers)
-        if incoming_count > config.fan_in_warning {
+        if config.fan_in_enabled && incoming_count > config.fan_in_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -394,7 +394,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
         }
 
         // Long method warning
-        if line_count > config.length_critical {
+        if config.length_enabled && line_count > config.length_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),

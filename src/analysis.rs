@@ -142,7 +142,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
     let procedure = format!("{}.{}", metrics.object_name, metrics.procedure_name);
 
     // Complexity findings
-    if metrics.complexity >= config.complexity_critical {
+    if config.complexity_enabled && metrics.complexity >= config.complexity_critical {
         findings.push(Finding {
             category: "high_complexity".to_string(),
             severity: "critical".to_string(),
@@ -153,7 +153,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
                 metrics.complexity, config.complexity_critical
             ),
         });
-    } else if metrics.complexity >= config.complexity_warning {
+    } else if config.complexity_enabled && metrics.complexity >= config.complexity_warning {
         findings.push(Finding {
             category: "high_complexity".to_string(),
             severity: "warning".to_string(),
@@ -167,7 +167,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
     }
 
     // Length findings
-    if metrics.line_count >= config.length_critical {
+    if config.length_enabled && metrics.line_count >= config.length_critical {
         findings.push(Finding {
             category: "long_method".to_string(),
             severity: "critical".to_string(),
@@ -178,7 +178,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
                 metrics.line_count, config.length_critical
             ),
         });
-    } else if metrics.line_count >= config.length_warning {
+    } else if config.length_enabled && metrics.line_count >= config.length_warning {
         findings.push(Finding {
             category: "long_method".to_string(),
             severity: "warning".to_string(),
@@ -192,7 +192,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
     }
 
     // Parameter findings
-    if metrics.parameter_count >= config.params_critical {
+    if config.params_enabled && metrics.parameter_count >= config.params_critical {
         findings.push(Finding {
             category: "too_many_parameters".to_string(),
             severity: "critical".to_string(),
@@ -203,7 +203,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) 
                 metrics.parameter_count, config.params_critical
             ),
         });
-    } else if metrics.parameter_count >= config.params_warning {
+    } else if config.params_enabled && metrics.parameter_count >= config.params_warning {
         findings.push(Finding {
             category: "too_many_parameters".to_string(),
             severity: "warning".to_string(),

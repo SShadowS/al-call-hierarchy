@@ -107,23 +107,29 @@ Diagnostic thresholds are configurable via `.al-call-hierarchy.json` in the work
 ```json
 {
   "diagnostics": {
-    "complexity": { "warning": 5, "critical": 10 },
-    "parameters": { "warning": 4, "critical": 7 },
-    "lineCount": { "warning": 20, "critical": 50 },
-    "fanIn": { "warning": 20 },
+    "complexity": { "enabled": true, "warning": 5, "critical": 10 },
+    "parameters": { "enabled": true, "warning": 4, "critical": 7 },
+    "lineCount": { "enabled": true, "warning": 20, "critical": 50 },
+    "fanIn": { "enabled": true, "warning": 20 },
     "unusedProcedures": true
   }
 }
 ```
 
+Each category can be disabled entirely by setting `"enabled": false`. All values are optional — missing values use defaults.
+
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `complexity.enabled` | true | Enable/disable complexity diagnostics |
 | `complexity.warning` | 5 | Cyclomatic complexity information threshold |
 | `complexity.critical` | 10 | Cyclomatic complexity warning threshold |
+| `parameters.enabled` | true | Enable/disable parameter count diagnostics |
 | `parameters.warning` | 4 | Parameter count information threshold |
 | `parameters.critical` | 7 | Parameter count warning threshold |
+| `lineCount.enabled` | true | Enable/disable method length diagnostics |
 | `lineCount.warning` | 20 | Method length information threshold |
 | `lineCount.critical` | 50 | Method length warning threshold |
+| `fanIn.enabled` | true | Enable/disable fan-in diagnostics |
 | `fanIn.warning` | 20 | Incoming call count information threshold |
 | `unusedProcedures` | true | Enable/disable unused procedure detection |
 
