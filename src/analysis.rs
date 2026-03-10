@@ -45,13 +45,7 @@ pub struct AnalysisResult {
     pub summary: AnalysisSummary,
 }
 
-// Thresholds for findings
-const COMPLEXITY_WARNING: u32 = 5;
-const COMPLEXITY_CRITICAL: u32 = 10;
-const LENGTH_WARNING: u32 = 20;
-const LENGTH_CRITICAL: u32 = 50;
-const PARAMS_WARNING: u32 = 4;
-const PARAMS_CRITICAL: u32 = 7;
+use crate::config::DiagnosticConfig;
 
 /// Calculate cyclomatic complexity by walking the AST subtree
 ///
@@ -142,13 +136,13 @@ pub fn calculate_quality_score(complexity: u32, line_count: u32, params: u32) ->
 }
 
 /// Generate findings based on metrics
-pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
+pub fn generate_findings(metrics: &ProcedureMetrics, config: &DiagnosticConfig) -> Vec<Finding> {
     let mut findings = Vec::new();
     let location = format!("{}:{}", metrics.file, metrics.line);
     let procedure = format!("{}.{}", metrics.object_name, metrics.procedure_name);
 
     // Complexity findings
-    if metrics.complexity >= COMPLEXITY_CRITICAL {
+    if metrics.complexity >= config.complexity_critical {
         findings.push(Finding {
             category: "high_complexity".to_string(),
             severity: "critical".to_string(),
@@ -156,10 +150,10 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure: procedure.clone(),
             description: format!(
                 "Cyclomatic complexity {} exceeds critical threshold of {}",
-                metrics.complexity, COMPLEXITY_CRITICAL
+                metrics.complexity, config.complexity_critical
             ),
         });
-    } else if metrics.complexity >= COMPLEXITY_WARNING {
+    } else if metrics.complexity >= config.complexity_warning {
         findings.push(Finding {
             category: "high_complexity".to_string(),
             severity: "warning".to_string(),
@@ -167,13 +161,13 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure: procedure.clone(),
             description: format!(
                 "Cyclomatic complexity {} exceeds warning threshold of {}",
-                metrics.complexity, COMPLEXITY_WARNING
+                metrics.complexity, config.complexity_warning
             ),
         });
     }
 
     // Length findings
-    if metrics.line_count >= LENGTH_CRITICAL {
+    if metrics.line_count >= config.length_critical {
         findings.push(Finding {
             category: "long_method".to_string(),
             severity: "critical".to_string(),
@@ -181,10 +175,10 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure: procedure.clone(),
             description: format!(
                 "Method length {} lines exceeds critical threshold of {}",
-                metrics.line_count, LENGTH_CRITICAL
+                metrics.line_count, config.length_critical
             ),
         });
-    } else if metrics.line_count >= LENGTH_WARNING {
+    } else if metrics.line_count >= config.length_warning {
         findings.push(Finding {
             category: "long_method".to_string(),
             severity: "warning".to_string(),
@@ -192,13 +186,13 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure: procedure.clone(),
             description: format!(
                 "Method length {} lines exceeds warning threshold of {}",
-                metrics.line_count, LENGTH_WARNING
+                metrics.line_count, config.length_warning
             ),
         });
     }
 
     // Parameter findings
-    if metrics.parameter_count >= PARAMS_CRITICAL {
+    if metrics.parameter_count >= config.params_critical {
         findings.push(Finding {
             category: "too_many_parameters".to_string(),
             severity: "critical".to_string(),
@@ -206,10 +200,10 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure: procedure.clone(),
             description: format!(
                 "Parameter count {} exceeds critical threshold of {}",
-                metrics.parameter_count, PARAMS_CRITICAL
+                metrics.parameter_count, config.params_critical
             ),
         });
-    } else if metrics.parameter_count >= PARAMS_WARNING {
+    } else if metrics.parameter_count >= config.params_warning {
         findings.push(Finding {
             category: "too_many_parameters".to_string(),
             severity: "warning".to_string(),
@@ -217,7 +211,7 @@ pub fn generate_findings(metrics: &ProcedureMetrics) -> Vec<Finding> {
             procedure,
             description: format!(
                 "Parameter count {} exceeds warning threshold of {}",
-                metrics.parameter_count, PARAMS_WARNING
+                metrics.parameter_count, config.params_warning
             ),
         });
     }
@@ -520,7 +514,8 @@ mod tests {
             parameter_count: 2,
             quality_score: 5.0,
         };
-        let findings = generate_findings(&metrics);
+        let config = DiagnosticConfig::default();
+        let findings = generate_findings(&metrics, &config);
         assert!(findings.iter().any(|f| f.category == "high_complexity" && f.severity == "critical"));
     }
 }

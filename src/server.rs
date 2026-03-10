@@ -13,6 +13,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
+use crate::config::DiagnosticConfig;
 use crate::graph::CallGraph;
 use crate::handlers::{get_unused_procedure_diagnostics, handle_notification, handle_request};
 use crate::indexer::Indexer;
@@ -65,14 +66,20 @@ pub fn run_server() -> Result<()> {
     let indexer = Arc::new(RwLock::new(Indexer::new()));
     let workspace_roots = index_workspaces(&indexer, &init_params);
 
+    // Load config from first workspace root (or use defaults)
+    let config = workspace_roots
+        .first()
+        .map(|root| DiagnosticConfig::load(root))
+        .unwrap_or_default();
+
     // Publish diagnostics after initial indexing
-    publish_all_diagnostics(&connection, &indexer);
+    publish_all_diagnostics(&connection, &indexer, &config);
 
     // Start file watcher thread for incremental updates
     start_file_watcher(Arc::clone(&indexer), workspace_roots);
 
     // Main loop
-    main_loop(&connection, &indexer)?;
+    main_loop(&connection, &indexer, &config)?;
 
     io_threads.join()?;
     info!("Server shut down");
@@ -187,7 +194,7 @@ fn start_file_watcher(indexer: Arc<RwLock<Indexer>>, workspace_roots: Vec<PathBu
 }
 
 /// Main message processing loop
-fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) -> Result<()> {
+fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>, config: &DiagnosticConfig) -> Result<()> {
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
@@ -195,7 +202,7 @@ fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) -> Result<
                     break;
                 }
 
-                let result = handle_request(indexer, &req);
+                let result = handle_request(indexer, &req, config);
                 let response = match result {
                     Ok(value) => Response::new_ok(req.id, value),
                     Err(e) => Response::new_err(
@@ -221,23 +228,25 @@ fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) -> Result<
 }
 
 /// Publish all diagnostics (unused procedures + code quality)
-fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer>>) {
+fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer>>, config: &DiagnosticConfig) {
     let indexer = indexer.read().expect("Indexer lock poisoned");
     let graph = indexer.graph();
 
     // Collect all diagnostics by file
     let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
-    // Get unused procedure diagnostics
-    for (file_path, diagnostics) in get_unused_procedure_diagnostics(&graph) {
-        file_diagnostics
-            .entry(file_path)
-            .or_default()
-            .extend(diagnostics);
+    // Get unused procedure diagnostics (if enabled)
+    if config.unused_procedures {
+        for (file_path, diagnostics) in get_unused_procedure_diagnostics(&graph) {
+            file_diagnostics
+                .entry(file_path)
+                .or_default()
+                .extend(diagnostics);
+        }
     }
 
     // Get code quality diagnostics
-    for (file_path, diagnostics) in get_code_quality_diagnostics(&graph) {
+    for (file_path, diagnostics) in get_code_quality_diagnostics(&graph, config) {
         file_diagnostics
             .entry(file_path)
             .or_default()
@@ -266,16 +275,8 @@ fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer
     info!("Published diagnostics for all files");
 }
 
-// Thresholds for code quality diagnostics (matching analysis.rs)
-const COMPLEXITY_WARNING: u32 = 5;
-const COMPLEXITY_CRITICAL: u32 = 10;
-const LENGTH_CRITICAL: u32 = 50;
-const PARAMS_WARNING: u32 = 4;
-const PARAMS_CRITICAL: u32 = 7;
-const FAN_IN_WARNING: usize = 20;
-
 /// Get code quality diagnostics from the call graph
-fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnostic>)> {
+fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) -> Vec<(String, Vec<Diagnostic>)> {
     let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
     // Iterate over all definitions and check for quality issues
@@ -289,7 +290,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
         let incoming_count = graph.get_incoming_call_count(qname);
 
         // Cyclomatic complexity warnings
-        if def.complexity >= COMPLEXITY_CRITICAL {
+        if def.complexity >= config.complexity_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -297,7 +298,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has cyclomatic complexity {} (critical threshold: {}) - consider simplifying",
-                    obj_name, proc_name, def.complexity, COMPLEXITY_CRITICAL
+                    obj_name, proc_name, def.complexity, config.complexity_critical
                 ),
                 related_information: None,
                 tags: None,
@@ -308,7 +309,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 .entry(file_path.clone())
                 .or_default()
                 .push(diagnostic);
-        } else if def.complexity >= COMPLEXITY_WARNING {
+        } else if def.complexity >= config.complexity_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -316,7 +317,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has cyclomatic complexity {} (warning threshold: {})",
-                    obj_name, proc_name, def.complexity, COMPLEXITY_WARNING
+                    obj_name, proc_name, def.complexity, config.complexity_warning
                 ),
                 related_information: None,
                 tags: None,
@@ -330,7 +331,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
         }
 
         // Parameter count warnings
-        if def.parameter_count >= PARAMS_CRITICAL {
+        if def.parameter_count >= config.params_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -338,7 +339,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has {} parameters (critical threshold: {}) - consider using a record or reducing parameters",
-                    obj_name, proc_name, def.parameter_count, PARAMS_CRITICAL
+                    obj_name, proc_name, def.parameter_count, config.params_critical
                 ),
                 related_information: None,
                 tags: None,
@@ -349,7 +350,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 .entry(file_path.clone())
                 .or_default()
                 .push(diagnostic);
-        } else if def.parameter_count >= PARAMS_WARNING {
+        } else if def.parameter_count >= config.params_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -357,7 +358,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has {} parameters (warning threshold: {})",
-                    obj_name, proc_name, def.parameter_count, PARAMS_WARNING
+                    obj_name, proc_name, def.parameter_count, config.params_warning
                 ),
                 related_information: None,
                 tags: None,
@@ -371,7 +372,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
         }
 
         // High fan-in warning (many callers)
-        if incoming_count > FAN_IN_WARNING {
+        if incoming_count > config.fan_in_warning {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
@@ -393,7 +394,7 @@ fn get_code_quality_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<Diagnosti
         }
 
         // Long method warning
-        if line_count > LENGTH_CRITICAL {
+        if line_count > config.length_critical {
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),

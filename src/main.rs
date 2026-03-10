@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod analysis;
 mod app_package;
+mod config;
 mod dependencies;
 mod graph;
 mod handlers;
@@ -160,10 +161,11 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
         })
         .collect();
 
-    // Generate findings
+    // Generate findings using config from project root
+    let config = config::DiagnosticConfig::load(project);
     let mut all_findings = Vec::new();
     for metrics in &all_metrics {
-        all_findings.extend(generate_findings(metrics));
+        all_findings.extend(generate_findings(metrics, &config));
     }
 
     // Build summary
@@ -190,7 +192,7 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
             print_csv(&result);
         }
         OutputFormat::Text => {
-            print_text(&result, project);
+            print_text(&result, project, &config);
         }
     }
 
@@ -388,7 +390,7 @@ fn print_csv(result: &analysis::AnalysisResult) {
 }
 
 /// Print results in human-readable text format
-fn print_text(result: &analysis::AnalysisResult, project: &PathBuf) {
+fn print_text(result: &analysis::AnalysisResult, project: &PathBuf, config: &config::DiagnosticConfig) {
     println!("\nCode Quality Analysis: {}\n", project.display());
     println!("═══════════════════════════════════════════════════════════════════════════════\n");
 
@@ -411,9 +413,9 @@ fn print_text(result: &analysis::AnalysisResult, project: &PathBuf) {
             name
         };
 
-        let severity = if m.complexity >= 10 {
+        let severity = if m.complexity >= config.complexity_critical {
             " [CRITICAL]"
-        } else if m.complexity >= 5 {
+        } else if m.complexity >= config.complexity_warning {
             " [WARNING]"
         } else {
             ""

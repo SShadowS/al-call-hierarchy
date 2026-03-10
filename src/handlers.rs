@@ -12,12 +12,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
+use crate::config::DiagnosticConfig;
 use crate::graph::{CallGraph, DefinitionKind, QualifiedName};
 use crate::indexer::Indexer;
 use crate::protocol::{path_to_uri, uri_to_path};
 
 /// Handle an LSP request
-pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<Value> {
+pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request, config: &DiagnosticConfig) -> Result<Value> {
     debug!("Request: {} - {:?}", req.method, req.params);
 
     match req.method.as_str() {
@@ -40,7 +41,7 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<V
         }
         "textDocument/codeLens" => {
             let params: CodeLensParams = serde_json::from_value(req.params.clone())?;
-            let result = code_lens(indexer, params)?;
+            let result = code_lens(indexer, params, config)?;
             Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/fieldProperties" => {
@@ -326,6 +327,7 @@ fn outgoing_calls(
 fn code_lens(
     indexer: &Arc<RwLock<Indexer>>,
     params: CodeLensParams,
+    config: &DiagnosticConfig,
 ) -> Result<Option<Vec<CodeLens>>> {
     let uri = &params.text_document.uri;
     let path = uri_to_path(uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
@@ -359,27 +361,24 @@ fn code_lens(
         };
 
         // Add threshold indicators for metrics
-        // Complexity: ≥5 warning, ≥10 critical
-        let complexity_text = if def.complexity >= 10 {
-            format!("complexity: {} ⚠️ (>10)", def.complexity)
-        } else if def.complexity >= 5 {
-            format!("complexity: {} (>5)", def.complexity)
+        let complexity_text = if def.complexity >= config.complexity_critical {
+            format!("complexity: {} ⚠️ (>{})", def.complexity, config.complexity_critical)
+        } else if def.complexity >= config.complexity_warning {
+            format!("complexity: {} (>{})", def.complexity, config.complexity_warning)
         } else {
             format!("complexity: {}", def.complexity)
         };
 
-        // Lines: >50 is concerning
-        let lines_text = if line_count > 50 {
-            format!("lines: {} ⚠️ (>50)", line_count)
+        let lines_text = if line_count > config.length_critical {
+            format!("lines: {} ⚠️ (>{})", line_count, config.length_critical)
         } else {
             format!("lines: {}", line_count)
         };
 
-        // Parameters: ≥4 warning, ≥7 critical
-        let params_text = if def.parameter_count >= 7 {
-            format!("params: {} ⚠️ (>7)", def.parameter_count)
-        } else if def.parameter_count >= 4 {
-            format!("params: {} (>4)", def.parameter_count)
+        let params_text = if def.parameter_count >= config.params_critical {
+            format!("params: {} ⚠️ (>{})", def.parameter_count, config.params_critical)
+        } else if def.parameter_count >= config.params_warning {
+            format!("params: {} (>{})", def.parameter_count, config.params_warning)
         } else {
             format!("params: {}", def.parameter_count)
         };
