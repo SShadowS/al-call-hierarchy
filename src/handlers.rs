@@ -8,6 +8,7 @@ use lsp_types::{
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     CodeLens, CodeLensParams, Command, SymbolKind,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
@@ -40,6 +41,11 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request) -> Result<V
         "textDocument/codeLens" => {
             let params: CodeLensParams = serde_json::from_value(req.params.clone())?;
             let result = code_lens(indexer, params)?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "al-call-hierarchy/fieldProperties" => {
+            let params: FieldPropertiesParams = serde_json::from_value(req.params.clone())?;
+            let result = field_properties(params)?;
             Ok(serde_json::to_value(result)?)
         }
         _ => {
@@ -396,6 +402,162 @@ fn code_lens(
     Ok(Some(results))
 }
 
+// --- Field Properties ---
+
+/// Parameters for al-call-hierarchy/fieldProperties
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FieldPropertiesParams {
+    uri: String,
+    field_name: String,
+}
+
+/// Response for al-call-hierarchy/fieldProperties
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FieldPropertiesResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    calc_formula: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    table_relation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    editable: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_classification: Option<String>,
+}
+
+/// Extract field properties from an AL source file using tree-sitter
+fn field_properties(params: FieldPropertiesParams) -> Result<FieldPropertiesResult> {
+    use crate::language;
+    use tree_sitter::Parser;
+
+    let uri: lsp_types::Uri = params.uri.parse().context("Invalid URI")?;
+    let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
+
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    let lang = language::language();
+    let mut parser = Parser::new();
+    parser.set_language(&lang).context("Failed to set language")?;
+
+    let tree = parser.parse(&source, None).context("Failed to parse file")?;
+    let root = tree.root_node();
+
+    // Normalize the target field name for comparison (case-insensitive, unquoted)
+    let target_name = params.field_name.trim().trim_matches('"').to_lowercase();
+
+    // Walk the tree to find field_declaration nodes
+    let mut cursor = root.walk();
+    let result = find_field_properties(&mut cursor, &source, &target_name);
+
+    Ok(result.unwrap_or_default())
+}
+
+/// Recursively search for a field_declaration matching the target name
+fn find_field_properties(
+    cursor: &mut tree_sitter::TreeCursor,
+    source: &str,
+    target_name: &str,
+) -> Option<FieldPropertiesResult> {
+    loop {
+        let node = cursor.node();
+
+        if node.kind() == "field_declaration" {
+            // Check the field name
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = &source[name_node.byte_range()];
+                let clean = name.trim().trim_matches('"').to_lowercase();
+                if clean == target_name {
+                    return Some(extract_field_props(&node, source));
+                }
+            }
+        }
+
+        // Recurse into children
+        if cursor.goto_first_child() {
+            if let Some(result) = find_field_properties(cursor, source, target_name) {
+                return Some(result);
+            }
+            cursor.goto_parent();
+        }
+
+        if !cursor.goto_next_sibling() {
+            return None;
+        }
+    }
+}
+
+/// Extract properties from a field_declaration node
+fn extract_field_props(field_node: &tree_sitter::Node, source: &str) -> FieldPropertiesResult {
+    let mut result = FieldPropertiesResult::default();
+
+    // Extract field ID
+    if let Some(id_node) = field_node.child_by_field_name("id") {
+        if let Ok(id) = source[id_node.byte_range()].trim().parse::<u32>() {
+            result.field_id = Some(id);
+        }
+    }
+
+    // Walk children to find property nodes
+    let mut cursor = field_node.walk();
+    if !cursor.goto_first_child() {
+        return result;
+    }
+
+    loop {
+        let child = cursor.node();
+        match child.kind() {
+            "caption_property" => {
+                result.caption = Some(extract_property_value(&child, source));
+            }
+            "field_class_property" => {
+                result.field_class = Some(extract_property_value(&child, source));
+            }
+            "calc_formula_property" => {
+                result.calc_formula = Some(extract_property_value(&child, source));
+            }
+            "table_relation_property" => {
+                result.table_relation = Some(extract_property_value(&child, source));
+            }
+            "editable_property" => {
+                result.editable = Some(extract_property_value(&child, source));
+            }
+            "data_classification_property" => {
+                result.data_classification = Some(extract_property_value(&child, source));
+            }
+            _ => {}
+        }
+
+        if !cursor.goto_next_sibling() {
+            break;
+        }
+    }
+
+    result
+}
+
+/// Extract the value portion of a property node (everything after the '=')
+fn extract_property_value(node: &tree_sitter::Node, source: &str) -> String {
+    let text = source[node.byte_range()].trim();
+    // Properties follow the pattern: PropertyName = value;
+    // Extract everything after '=' and before the trailing ';'
+    if let Some(eq_pos) = text.find('=') {
+        let value = text[eq_pos + 1..].trim();
+        // Remove trailing semicolon
+        let value = value.strip_suffix(';').unwrap_or(value).trim();
+        value.to_string()
+    } else {
+        text.to_string()
+    }
+}
+
 /// Helper function to get file diagnostics (used by server.rs for publishing)
 pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<lsp_types::Diagnostic>)> {
     use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag};
@@ -428,4 +590,76 @@ pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<l
     }
 
     file_diagnostics.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_field_properties_extraction() {
+        use crate::language;
+        use tree_sitter::Parser;
+
+        let source = r#"
+table 50000 "TEST Customer"
+{
+    fields
+    {
+        field(1; "No."; Code[20])
+        {
+            Caption = 'No.';
+            DataClassification = CustomerContent;
+        }
+
+        field(11; Balance; Decimal)
+        {
+            Caption = 'Balance';
+            Editable = false;
+            FieldClass = FlowField;
+            CalcFormula = sum("Cust. Ledger Entry".Amount where("Customer No." = field("No.")));
+        }
+
+        field(20; "Payment Terms Code"; Code[10])
+        {
+            Caption = 'Payment Terms Code';
+            DataClassification = CustomerContent;
+            TableRelation = "Payment Terms";
+        }
+    }
+}
+"#;
+
+        let lang = language::language();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        // Test Balance field (FlowField with CalcFormula)
+        let mut cursor = root.walk();
+        let result = find_field_properties(&mut cursor, source, "balance").unwrap();
+        assert_eq!(result.field_id, Some(11));
+        assert_eq!(result.caption.as_deref(), Some("'Balance'"));
+        assert_eq!(result.editable.as_deref(), Some("false"));
+        assert_eq!(result.field_class.as_deref(), Some("FlowField"));
+        assert!(result.calc_formula.is_some());
+        assert!(result.calc_formula.as_ref().unwrap().contains("Cust. Ledger Entry"));
+
+        // Test Payment Terms Code field (with TableRelation)
+        let mut cursor = root.walk();
+        let result = find_field_properties(&mut cursor, source, "payment terms code").unwrap();
+        assert_eq!(result.field_id, Some(20));
+        assert!(result.table_relation.is_some());
+        assert!(result.table_relation.as_ref().unwrap().contains("Payment Terms"));
+
+        // Test No. field (basic field)
+        let mut cursor = root.walk();
+        let result = find_field_properties(&mut cursor, source, "no.").unwrap();
+        assert_eq!(result.field_id, Some(1));
+        assert_eq!(result.caption.as_deref(), Some("'No.'"));
+        assert_eq!(result.data_classification.as_deref(), Some("CustomerContent"));
+        assert!(result.field_class.is_none());
+        assert!(result.calc_formula.is_none());
+    }
 }
