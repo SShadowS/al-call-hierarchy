@@ -46,6 +46,10 @@ struct Args {
     #[arg(short, long, value_enum, default_value = "text")]
     format: OutputFormat,
 
+    /// Disable the file system watcher (use LSP notifications for changes instead)
+    #[arg(long)]
+    no_watcher: bool,
+
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
@@ -92,7 +96,7 @@ fn main() -> Result<()> {
     } else {
         // LSP server mode (default)
         info!("Starting AL Call Hierarchy LSP server");
-        run_server()?;
+        run_server(args.no_watcher)?;
     }
 
     Ok(())

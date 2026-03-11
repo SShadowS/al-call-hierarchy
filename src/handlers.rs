@@ -1,7 +1,7 @@
 //! LSP request and notification handlers
 
 use anyhow::{Context, Result};
-use log::debug;
+use log::{debug, error};
 use lsp_server::Request;
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
@@ -62,13 +62,25 @@ pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request, config: &Di
 }
 
 /// Handle an LSP notification
-pub fn handle_notification(_indexer: &Arc<RwLock<Indexer>>, notif: &lsp_server::Notification) {
+pub fn handle_notification(indexer: &Arc<RwLock<Indexer>>, notif: &lsp_server::Notification) {
     debug!("Notification: {}", notif.method);
 
     match notif.method.as_str() {
-        "textDocument/didSave" | "textDocument/didChange" => {
-            // Could trigger re-indexing here
+        "textDocument/didSave" => {
+            if let Ok(params) = serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params.clone()) {
+                if let Some(path) = uri_to_path(&params.text_document.uri) {
+                    if path.extension().map(|e| e.eq_ignore_ascii_case("al")).unwrap_or(false) {
+                        debug!("Re-indexing saved file: {}", path.display());
+                        if let Err(e) = indexer.write().expect("Indexer lock poisoned").reindex_file(&path) {
+                            error!("Failed to re-index {}: {}", path.display(), e);
+                        }
+                    }
+                }
+            }
         }
+        "textDocument/didClose" => {}
+        "textDocument/didOpen" => {}
+        "textDocument/didChange" => {}
         _ => {}
     }
 }

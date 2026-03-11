@@ -21,7 +21,7 @@ use crate::protocol::{path_to_uri, uri_to_path};
 use crate::watcher::{AlFileWatcher, FileChange};
 
 /// Run the LSP server
-pub fn run_server() -> Result<()> {
+pub fn run_server(no_watcher: bool) -> Result<()> {
     info!("Starting AL Call Hierarchy LSP server");
 
     let (connection, io_threads) = Connection::stdio();
@@ -75,8 +75,12 @@ pub fn run_server() -> Result<()> {
     // Publish diagnostics after initial indexing
     publish_all_diagnostics(&connection, &indexer, &config);
 
-    // Start file watcher thread for incremental updates
-    start_file_watcher(Arc::clone(&indexer), workspace_roots);
+    // Start file watcher thread for incremental updates (unless disabled)
+    if no_watcher {
+        info!("File watcher disabled (--no-watcher). Using LSP notifications for changes.");
+    } else {
+        start_file_watcher(Arc::clone(&indexer), workspace_roots);
+    }
 
     // Main loop
     main_loop(&connection, &indexer, &config)?;
