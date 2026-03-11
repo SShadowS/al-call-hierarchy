@@ -102,7 +102,24 @@ The server parses .app files with the standard BC format:
 
 ## Configuration
 
-Diagnostic thresholds are configurable via `.al-call-hierarchy.json` in the workspace root. All values are optional — missing values use defaults.
+Diagnostic thresholds are configurable at two levels. Workspace config overrides global config per field (deep merge). All values are optional — missing values use defaults.
+
+### Global Config
+
+Set defaults for all projects in `~/.al-call-hierarchy/config.json`:
+
+```json
+{
+  "diagnostics": {
+    "complexity": { "warning": 8, "critical": 15 },
+    "unusedProcedures": false
+  }
+}
+```
+
+### Workspace Config
+
+Override per project in `{workspace}/.al-call-hierarchy.json`:
 
 ```json
 {
@@ -116,7 +133,15 @@ Diagnostic thresholds are configurable via `.al-call-hierarchy.json` in the work
 }
 ```
 
-Each category can be disabled entirely by setting `"enabled": false`. All values are optional — missing values use defaults.
+### Resolution Order
+
+1. Built-in defaults
+2. Global config (`~/.al-call-hierarchy/config.json`)
+3. Workspace config (`{workspace}/.al-call-hierarchy.json`)
+
+Each field merges independently — a workspace config only needs to specify fields it wants to override.
+
+Each category can be disabled entirely by setting `"enabled": false`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|

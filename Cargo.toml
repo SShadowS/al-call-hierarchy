@@ -35,6 +35,9 @@ notify = { version = "7", default-features = false, features = ["macos_fsevent"]
 zip = "2"
 roxmltree = "0.20"
 
+# Home directory (cross-platform)
+dirs = "6"
+
 # Logging
 log = "0.4"
 env_logger = "0.11"
