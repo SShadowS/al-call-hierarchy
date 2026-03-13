@@ -6,6 +6,8 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+use crate::protocol::normalize_path;
 use std::sync::Arc;
 use string_interner::backend::StringBackend;
 use string_interner::{DefaultSymbol, StringInterner};
@@ -271,13 +273,15 @@ impl CallGraph {
     }
 
     /// Get or create a shared path reference
-    /// This deduplicates path storage across multiple definitions and call sites
+    /// This deduplicates path storage across multiple definitions and call sites.
+    /// Paths are normalized (lowercased on Windows) for case-insensitive matching.
     pub fn get_shared_path(&mut self, path: &Path) -> SharedPath {
-        if let Some(shared) = self.path_cache.get(path) {
+        let normalized = normalize_path(path);
+        if let Some(shared) = self.path_cache.get(&normalized) {
             Arc::clone(shared)
         } else {
-            let shared = Arc::new(path.to_path_buf());
-            self.path_cache.insert(path.to_path_buf(), Arc::clone(&shared));
+            let shared = Arc::new(normalized.clone());
+            self.path_cache.insert(normalized, Arc::clone(&shared));
             shared
         }
     }
@@ -491,8 +495,9 @@ impl CallGraph {
     /// Find definition at a file position
     /// Uses file_definitions index for O(1) file lookup, then O(k) where k = definitions in file
     pub fn find_definition_at(&self, file: &Path, line: u32, character: u32) -> Option<&Definition> {
-        // Look up the SharedPath from path cache, or find by value in file_definitions
-        let shared_path = self.path_cache.get(file)?;
+        // Look up the SharedPath from path cache (normalized for case-insensitive matching)
+        let normalized = normalize_path(file);
+        let shared_path = self.path_cache.get(&normalized)?;
         let qnames = self.file_definitions.get(shared_path)?;
 
         for qname in qnames {
@@ -537,8 +542,9 @@ impl CallGraph {
 
     /// Remove all definitions from a file (for incremental update)
     pub fn remove_file(&mut self, file: &Path) {
-        // Get the shared path if it exists
-        let shared_path = match self.path_cache.get(file) {
+        // Get the shared path if it exists (normalized for case-insensitive matching)
+        let normalized = normalize_path(file);
+        let shared_path = match self.path_cache.get(&normalized) {
             Some(p) => Arc::clone(p),
             None => return, // File was never indexed
         };
@@ -590,7 +596,7 @@ impl CallGraph {
         }
 
         // Remove from path cache
-        self.path_cache.remove(file);
+        self.path_cache.remove(&normalized);
     }
 
     /// Get count of definitions
@@ -606,7 +612,8 @@ impl CallGraph {
     /// Get all definitions in a specific file
     /// Returns an iterator over definitions for Code Lens support
     pub fn get_definitions_in_file(&self, file: &Path) -> Vec<&Definition> {
-        let shared_path = match self.path_cache.get(file) {
+        let normalized = normalize_path(file);
+        let shared_path = match self.path_cache.get(&normalized) {
             Some(p) => p,
             None => return vec![],
         };
@@ -948,6 +955,46 @@ mod tests {
 
         let other_file = Path::new("other.al");
         assert!(graph.find_definition_at(other_file, 15, 10).is_none());
+    }
+
+    #[test]
+    fn test_get_shared_path_case_insensitive_on_windows() {
+        let mut graph = CallGraph::new();
+
+        // On Windows, differently-cased paths should map to the same SharedPath
+        let path1 = graph.get_shared_path(Path::new("C:\\Git\\Project\\AL\\File.al"));
+        let path2 = graph.get_shared_path(Path::new("C:\\Git\\Project\\al\\file.al"));
+
+        #[cfg(windows)]
+        assert!(Arc::ptr_eq(&path1, &path2), "Same file with different case should deduplicate on Windows");
+        #[cfg(not(windows))]
+        assert!(!Arc::ptr_eq(&path1, &path2), "Different case paths are distinct on non-Windows");
+    }
+
+    #[test]
+    fn test_find_definition_at_case_insensitive_on_windows() {
+        let mut graph = CallGraph::new();
+        let obj_name = graph.intern("TestCodeunit");
+        let proc_name = graph.intern("TestProc");
+        // Index with one casing
+        let file = graph.get_shared_path(Path::new("C:\\Git\\Project\\AL\\Codeunit\\File.al"));
+
+        graph.add_definition(Definition {
+            file,
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj_name,
+            name: proc_name,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        // Look up with different casing (simulating URI-derived path vs WalkDir path)
+        let lookup_path = Path::new("C:\\Git\\Project\\al\\codeunit\\file.al");
+        #[cfg(windows)]
+        assert!(graph.find_definition_at(lookup_path, 15, 10).is_some(),
+            "Should find definition regardless of path case on Windows");
     }
 
     // ==================== CallSite Tests ====================

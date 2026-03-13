@@ -3,6 +3,20 @@
 use lsp_types::Uri;
 use std::path::{Path, PathBuf};
 
+/// Normalize a path for case-insensitive comparison on Windows.
+/// On Windows, file paths are case-insensitive but PathBuf comparison is case-sensitive,
+/// so we lowercase the entire path to ensure consistent HashMap lookups.
+/// On other platforms, returns the path unchanged.
+#[cfg(windows)]
+pub fn normalize_path(path: &Path) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().to_lowercase())
+}
+
+#[cfg(not(windows))]
+pub fn normalize_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
 /// Convert an LSP URI to a file path
 pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     let s = uri.as_str();
@@ -22,7 +36,7 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
         {
             // On Windows, skip the leading / before drive letter
             let path_str = path_str.strip_prefix('/').unwrap_or(&path_str);
-            Some(PathBuf::from(path_str.replace('/', "\\")))
+            Some(normalize_path(Path::new(&path_str.replace('/', "\\"))))
         }
         #[cfg(not(windows))]
         {
@@ -33,7 +47,10 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     }
 }
 
-/// Convert a file path to an LSP URI
+/// Convert a file path to an LSP URI.
+/// Note: On Windows, paths stored in the call graph are normalized to lowercase
+/// (via `normalize_path`), so URIs produced from graph paths will have lowercase
+/// drive letters and path segments. LSP clients on Windows handle this correctly.
 pub fn path_to_uri(path: &Path) -> Uri {
     let path_str = path.to_string_lossy();
     #[cfg(windows)]
@@ -78,7 +95,7 @@ mod tests {
         let uri: Uri = "file:///C:/Users/test/file.al".parse().unwrap();
         let path = uri_to_path(&uri);
         #[cfg(windows)]
-        assert_eq!(path, Some(PathBuf::from("C:\\Users\\test\\file.al")));
+        assert_eq!(path, Some(PathBuf::from("c:\\users\\test\\file.al")));
         #[cfg(not(windows))]
         assert_eq!(path, Some(PathBuf::from("/C:/Users/test/file.al")));
     }
@@ -88,7 +105,7 @@ mod tests {
         let uri: Uri = "file:///C:/My%20Project/file.al".parse().unwrap();
         let path = uri_to_path(&uri);
         #[cfg(windows)]
-        assert_eq!(path, Some(PathBuf::from("C:\\My Project\\file.al")));
+        assert_eq!(path, Some(PathBuf::from("c:\\my project\\file.al")));
     }
 
     #[test]
@@ -99,5 +116,34 @@ mod tests {
             let uri = path_to_uri(&path);
             assert_eq!(uri.as_str(), "file:///C:/Users/test/file.al");
         }
+    }
+
+    #[test]
+    fn test_normalize_path_case_insensitive() {
+        #[cfg(windows)]
+        {
+            let path1 = normalize_path(Path::new("C:\\Git\\Project\\AL\\File.al"));
+            let path2 = normalize_path(Path::new("C:\\Git\\Project\\al\\file.al"));
+            let path3 = normalize_path(Path::new("c:\\git\\project\\AL\\FILE.AL"));
+            assert_eq!(path1, path2);
+            assert_eq!(path2, path3);
+        }
+        #[cfg(not(windows))]
+        {
+            // On non-Windows, paths are preserved as-is
+            let path = normalize_path(Path::new("/home/user/Project/AL/File.al"));
+            assert_eq!(path, PathBuf::from("/home/user/Project/AL/File.al"));
+        }
+    }
+
+    #[test]
+    fn test_uri_to_path_case_normalized_on_windows() {
+        // Different URI casings should produce the same path on Windows
+        let uri1: Uri = "file:///U:/Git/Project/AL/Codeunit/File.al".parse().unwrap();
+        let uri2: Uri = "file:///U:/Git/Project/Al/Codeunit/File.al".parse().unwrap();
+        let path1 = uri_to_path(&uri1);
+        let path2 = uri_to_path(&uri2);
+        #[cfg(windows)]
+        assert_eq!(path1, path2);
     }
 }
