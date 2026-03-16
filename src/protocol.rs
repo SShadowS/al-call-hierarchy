@@ -1,6 +1,7 @@
 //! LSP protocol utilities for URI/path conversions
 
 use lsp_types::Uri;
+use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
 
 /// Normalize a path for case-insensitive comparison on Windows.
@@ -24,13 +25,8 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
         // Windows: file:///C:/path or Unix: file:///path
         let path_str = &s[7..]; // Skip "file://"
 
-        // URL decode common sequences
-        let path_str = path_str
-            .replace("%20", " ")
-            .replace("%28", "(")
-            .replace("%29", ")")
-            .replace("%5B", "[")
-            .replace("%5D", "]");
+        // URL decode percent-encoded sequences (e.g. %3A for ':', %20 for ' ')
+        let path_str = percent_decode_str(path_str).decode_utf8_lossy().into_owned();
 
         #[cfg(windows)]
         {
@@ -134,6 +130,30 @@ mod tests {
             let path = normalize_path(Path::new("/home/user/Project/AL/File.al"));
             assert_eq!(path, PathBuf::from("/home/user/Project/AL/File.al"));
         }
+    }
+
+    #[test]
+    fn test_uri_to_path_percent_encoded_colon() {
+        // Issue #9: VS Code encodes drive letter colon as %3A in file URIs
+        // e.g. rootUri: "file:///d%3A/Repos/Clone/..."
+        let uri: Uri = "file:///d%3A/Repos/MyProject/src/file.al".parse().unwrap();
+        let path = uri_to_path(&uri);
+        #[cfg(windows)]
+        assert_eq!(path, Some(PathBuf::from("d:\\repos\\myproject\\src\\file.al")));
+        #[cfg(not(windows))]
+        assert_eq!(path, Some(PathBuf::from("/d:/Repos/MyProject/src/file.al")));
+    }
+
+    #[test]
+    fn test_uri_to_path_all_percent_encoded() {
+        // Ensure all standard percent-encoded characters are decoded, not just a hardcoded subset
+        // %23 = #, %25 = %, %40 = @, %2B = +, %3D = =, %26 = &
+        let uri: Uri = "file:///C:/dir%23name/file%40v2.al".parse().unwrap();
+        let path = uri_to_path(&uri);
+        #[cfg(windows)]
+        assert_eq!(path, Some(PathBuf::from("c:\\dir#name\\file@v2.al")));
+        #[cfg(not(windows))]
+        assert_eq!(path, Some(PathBuf::from("/C:/dir#name/file@v2.al")));
     }
 
     #[test]
