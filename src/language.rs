@@ -20,24 +20,18 @@ pub mod queries {
     pub const DEFINITIONS: &str = r#"
 ; Procedure definitions
 (procedure
-  name: (name) @proc.name)
+  name: [(identifier) (quoted_identifier)] @proc.name)
 
 ; Trigger definitions
 (trigger_declaration
-  name: (trigger_name) @trigger.name)
-
-; Named triggers (OnInsert, OnModify, etc.)
-(named_trigger) @named_trigger.def
-
-; OnRun trigger
-(onrun_trigger) @onrun.def
+  name: [(identifier) (quoted_identifier)] @trigger.name)
 
 ; Object declarations for context - use object_name field
 (codeunit_declaration
   object_name: (_) @codeunit.name)
 
-; Preprocessor-split codeunit (files with #if directives)
-(preproc_split_codeunit_declaration
+; Preprocessor-split declaration (files with #if directives)
+(preproc_split_declaration
   object_name: (_) @codeunit.name)
 
 (table_declaration
@@ -86,29 +80,21 @@ pub mod queries {
 (call_expression
   function: (identifier) @call.simple) @call
 
-; Method calls: Object.Method()
+; Method calls: Object.Method() or Rec."Field Name"()
 (call_expression
   function: (member_expression
     object: (_) @call.object
-    property: (_) @call.method)) @call.member
-
-; Field access that might be triggers: Rec.Validate()
-(call_expression
-  function: (field_access
-    record: (_) @call.record
-    field: (_) @call.field)) @call.field_access
+    member: (_) @call.method)) @call.member
 "#;
 
-    /// Query to find EventSubscriber attributes
+    /// Query to find EventSubscriber attributes (V2: attributes are siblings of procedures)
+    /// We match attribute_item nodes and resolve the adjacent procedure in Rust code.
     pub const EVENT_SUBSCRIBERS: &str = r#"
-; EventSubscriber attribute on procedures
-(procedure
-  (attribute_item
-    (attribute_content
-      name: (identifier) @attr.name
-      (#eq? @attr.name "EventSubscriber")
-      arguments: (attribute_arguments) @attr.args))
-  name: (name) @proc.name) @subscriber
+(attribute_item
+  attribute: (attribute_content
+    name: (identifier) @attr.name
+    (#eq? @attr.name "EventSubscriber")
+    arguments: (attribute_arguments) @attr.args)) @attr.item
 "#;
 
     /// Query to find variable declarations

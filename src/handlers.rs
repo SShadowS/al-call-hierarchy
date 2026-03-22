@@ -552,14 +552,21 @@ fn extract_all_properties(
         let child = cursor.node();
         let kind = child.kind();
 
-        // Collect any node whose kind ends with "_property"
-        if kind.ends_with("_property") {
-            let prop_name = property_display_name(kind);
-            let prop_value = extract_property_value(&child, source);
-            result.properties.push(PropertyEntry {
-                name: prop_name,
-                value: prop_value,
-            });
+        // V2: all properties are `property` nodes with `name` and `value` fields
+        if kind == "property" {
+            if let Some(name_node) = child.child_by_field_name("name") {
+                let prop_name = source[name_node.byte_range()].trim().to_string();
+                let prop_value = if let Some(value_node) = child.child_by_field_name("value") {
+                    source[value_node.byte_range()].trim().to_string()
+                } else {
+                    // Fallback: extract value after '='
+                    extract_property_value(&child, source)
+                };
+                result.properties.push(PropertyEntry {
+                    name: prop_name,
+                    value: prop_value,
+                });
+            }
         }
 
         if !cursor.goto_next_sibling() {
@@ -568,25 +575,6 @@ fn extract_all_properties(
     }
 
     result
-}
-
-/// Convert a tree-sitter node kind like "calc_formula_property" to a display name like "CalcFormula"
-fn property_display_name(kind: &str) -> String {
-    // Strip the "_property" suffix
-    let base = kind.strip_suffix("_property").unwrap_or(kind);
-    // Convert snake_case to PascalCase
-    base.split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(c) => {
-                    let upper: String = c.to_uppercase().collect();
-                    upper + chars.as_str()
-                }
-            }
-        })
-        .collect()
 }
 
 /// Extract the value portion of a property node (everything after the '=')

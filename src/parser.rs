@@ -243,20 +243,6 @@ impl AlParser {
                         }
                     }
 
-                    // Named triggers (OnInsert, etc.)
-                    "named_trigger.def" | "onrun.def" => {
-                        // Extract trigger name from the node type or first child
-                        let name = extract_trigger_name(&node, source);
-                        let complexity = analysis::calculate_complexity(&node);
-                        result.definitions.push(ParsedDefinition {
-                            name,
-                            range: node_range(&node),
-                            kind: DefinitionKind::Trigger,
-                            complexity,
-                            parameter_count: 0,
-                        });
-                    }
-
                     _ => {}
                 }
             }
@@ -284,13 +270,13 @@ impl AlParser {
                     "call.simple" => {
                         method = Some(clean_name(text));
                     }
-                    "call.object" | "call.record" => {
+                    "call.object" => {
                         object = Some(clean_name(text));
                     }
-                    "call.method" | "call.field" => {
+                    "call.method" => {
                         method = Some(clean_name(text));
                     }
-                    "call" | "call.member" | "call.field_access" => {
+                    "call" | "call.member" => {
                         range = Some(node_range(&node));
                         call_node = Some(node);
                     }
@@ -351,39 +337,51 @@ impl AlParser {
         let mut matches = cursor.matches(&self.event_subscribers_query, *root, source_bytes);
 
         while let Some(m) = matches.next() {
-            let mut proc_name: Option<String> = None;
-            let mut proc_range: Option<Range> = None;
             let mut attr_args: Option<String> = None;
+            let mut attr_node: Option<Node> = None;
 
             for capture in m.captures {
                 let node = capture.node;
                 let capture_name = &self.event_subscribers_query.capture_names()[capture.index as usize];
 
                 match capture_name.as_ref() {
-                    "proc.name" => {
-                        proc_name = Some(clean_name(node_text(&node, source)));
-                    }
-                    "subscriber" => {
-                        proc_range = Some(node_range(&node));
-                    }
                     "attr.args" => {
                         attr_args = Some(node_text(&node, source).to_string());
+                    }
+                    "attr.item" => {
+                        attr_node = Some(node);
                     }
                     _ => {}
                 }
             }
 
-            if let (Some(name), Some(range), Some(args)) = (proc_name, proc_range, attr_args) {
-                // Parse the EventSubscriber attribute arguments
-                // Format: (ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnBeforePostSalesDoc', ...)
-                if let Some((obj_type, obj_name, event_name)) = parse_event_subscriber_args(&args) {
-                    result.event_subscribers.push(ParsedEventSubscriber {
-                        subscriber_name: name,
-                        range,
-                        publisher_object_type: obj_type,
-                        publisher_object: obj_name,
-                        publisher_event: event_name,
-                    });
+            if let (Some(args), Some(attr)) = (attr_args, attr_node) {
+                // V2: attribute is a sibling — find the next sibling procedure
+                let mut next = attr.next_sibling();
+                while let Some(sib) = next {
+                    if sib.kind() == "procedure" {
+                        let proc_name = sib.child_by_field_name("name")
+                            .map(|n| clean_name(node_text(&n, source)));
+                        let proc_range = node_range(&sib);
+
+                        if let Some(name) = proc_name {
+                            if let Some((obj_type, obj_name, event_name)) = parse_event_subscriber_args(&args) {
+                                result.event_subscribers.push(ParsedEventSubscriber {
+                                    subscriber_name: name,
+                                    range: proc_range,
+                                    publisher_object_type: obj_type,
+                                    publisher_object: obj_name,
+                                    publisher_event: event_name,
+                                });
+                            }
+                        }
+                        break;
+                    }
+                    // Skip other attribute_item nodes (multiple attributes before one procedure)
+                    if sib.kind() != "attribute_item" {
+                        break;
+                    }
+                    next = sib.next_sibling();
                 }
             }
         }
@@ -547,9 +545,6 @@ fn find_containing_procedure(node: &Node, source: &str) -> Option<String> {
                     return Some(clean_name(node_text(&name_node, source)));
                 }
             }
-            "named_trigger" | "onrun_trigger" => {
-                return Some(extract_trigger_name(&n, source));
-            }
             _ => {}
         }
         current = n.parent();
@@ -583,24 +578,6 @@ fn clean_name(name: &str) -> String {
         .trim_matches('"')
         .trim_matches('\'')
         .to_string()
-}
-
-/// Extract trigger name from a named_trigger or onrun_trigger node
-fn extract_trigger_name(node: &Node, source: &str) -> String {
-    // Try to get the trigger keyword from the node
-    if let Some(child) = node.child(0) {
-        let text = node_text(&child, source);
-        if text.starts_with("trigger") || text.starts_with("Trigger") {
-            // Look for the name after "trigger"
-            if let Some(name_child) = node.child_by_field_name("name") {
-                return clean_name(node_text(&name_child, source));
-            }
-        }
-        return clean_name(text);
-    }
-
-    // Fallback: use the node type
-    node.kind().to_string()
 }
 
 /// Count parameters in a procedure node

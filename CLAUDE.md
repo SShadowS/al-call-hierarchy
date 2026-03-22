@@ -33,7 +33,9 @@ cargo run -- --project /path/to/al-project --verbose
 ## Prerequisites
 
 - Rust 1.75+
-- tree-sitter-al grammar at `../tree-sitter-al` (or set `TREE_SITTER_AL_PATH`)
+- tree-sitter-al V2 grammar (included as git submodule at `tree-sitter-al/`)
+  - Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after clone
+  - Override path with `TREE_SITTER_AL_PATH` env var if needed
 
 ## Architecture
 
@@ -81,6 +83,19 @@ QualifiedName { object: Symbol, procedure: Symbol }  // Unique procedure identif
 Definition { file, range, object_type, object_name, name, kind }  // Procedure/trigger location
 CallSite { file, range, caller, callee_object, callee_method }  // Call location with context
 ```
+
+## Tree-sitter-al V2 Grammar Notes
+
+This project uses the V2 tree-sitter-al grammar. Key differences from V1:
+
+- **No wrapper nodes**: `procedure name:` and `trigger_declaration name:` fields hold `(identifier)` or `(quoted_identifier)` directly (no `(name)` or `(trigger_name)` wrapper)
+- **Parameter field renamed**: `parameter_name:` → `name:`
+- **Member expression field renamed**: `property:` → `member:`
+- **`field_access` removed**: merged into `member_expression` with `quoted_identifier` as member
+- **`named_trigger`/`onrun_trigger` removed**: unified into `trigger_declaration`
+- **Attributes are siblings**: `attribute_item` nodes are siblings of `procedure`, not children. The EVENT_SUBSCRIBERS query matches attributes separately and resolves the adjacent procedure in Rust code.
+- **Unified `property` node**: Individual `*_property` nodes replaced by a single `property` node with `name: (property_name)` and `value:` fields
+- **`preproc_split_codeunit_declaration` renamed**: now `preproc_split_declaration`
 
 ## Adding New AL Constructs
 

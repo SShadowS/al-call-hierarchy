@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-22
+
+### Changed
+- **BREAKING: Migrated to tree-sitter-al V2 grammar** — all tree-sitter queries and parsing logic updated for the rewritten grammar
+  - `procedure name:` and `trigger_declaration name:` now hold `(identifier)`/`(quoted_identifier)` directly (no `(name)`/`(trigger_name)` wrapper nodes)
+  - `member_expression` field renamed from `property:` to `member:`
+  - `parameter` field renamed from `parameter_name:` to `name:`
+  - Individual `*_property` nodes replaced by unified `property` node with `name:` and `value:` fields
+  - `preproc_split_codeunit_declaration` renamed to `preproc_split_declaration`
+- **tree-sitter-al is now a git submodule** instead of an external sibling directory — clone with `--recurse-submodules`
+- `build.rs` defaults to `tree-sitter-al` (submodule) instead of `../tree-sitter-al`
+
+### Removed
+- `field_access` query pattern — merged into `member_expression` with `quoted_identifier` as member
+- `named_trigger` / `onrun_trigger` handling — unified into `trigger_declaration`
+- `extract_trigger_name()` helper — no longer needed with V2 grammar
+- `property_display_name()` helper — replaced by reading `property_name` field directly
+
+### Fixed
+- EventSubscriber detection now correctly handles V2 attribute-as-sibling model (attributes are siblings of procedures, not children)
+
 ## [0.2.0] - 2025-02-03
 
 ### Added

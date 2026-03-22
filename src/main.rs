@@ -258,7 +258,7 @@ fn extract_object_and_procedures(
             | "enumextension_declaration"
             | "permissionset_declaration"
             | "permissionsetextension_declaration"
-            | "preproc_split_codeunit_declaration"
+            | "preproc_split_declaration"
     );
 
     if is_object_declaration {
@@ -283,7 +283,7 @@ fn extract_object_and_procedures(
     }
 
     // Detect procedures and triggers
-    if kind == "procedure" || kind == "trigger_declaration" || kind == "named_trigger" || kind == "onrun_trigger" {
+    if kind == "procedure" || kind == "trigger_declaration" {
         let proc_name = extract_procedure_name(&node, source);
         let complexity = calculate_complexity(&node);
         let line_count = (node.end_position().row - node.start_position().row + 1) as u32;
@@ -325,14 +325,6 @@ fn extract_procedure_name(node: &tree_sitter::Node, source: &str) -> String {
     // Try name field first
     if let Some(name_node) = node.child_by_field_name("name") {
         return node_text(&name_node, source).trim_matches('"').to_string();
-    }
-
-    // For named triggers, extract from first child
-    if node.kind() == "named_trigger" || node.kind() == "onrun_trigger" {
-        if let Some(child) = node.child(0) {
-            let text = node_text(&child, source);
-            return text.trim_matches('"').to_string();
-        }
     }
 
     node.kind().to_string()
