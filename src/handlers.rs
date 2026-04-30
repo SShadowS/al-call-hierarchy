@@ -18,7 +18,11 @@ use crate::indexer::Indexer;
 use crate::protocol::{path_to_uri, uri_to_path};
 
 /// Handle an LSP request
-pub fn handle_request(indexer: &Arc<RwLock<Indexer>>, req: &Request, config: &DiagnosticConfig) -> Result<Value> {
+pub fn handle_request(
+    indexer: &Arc<RwLock<Indexer>>,
+    req: &Request,
+    config: &DiagnosticConfig,
+) -> Result<Value> {
     debug!("Request: {} - {:?}", req.method, req.params);
 
     match req.method.as_str() {
@@ -67,11 +71,21 @@ pub fn handle_notification(indexer: &Arc<RwLock<Indexer>>, notif: &lsp_server::N
 
     match notif.method.as_str() {
         "textDocument/didSave" => {
-            if let Ok(params) = serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params.clone()) {
+            if let Ok(params) =
+                serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params.clone())
+            {
                 if let Some(path) = uri_to_path(&params.text_document.uri) {
-                    if path.extension().map(|e| e.eq_ignore_ascii_case("al")).unwrap_or(false) {
+                    if path
+                        .extension()
+                        .map(|e| e.eq_ignore_ascii_case("al"))
+                        .unwrap_or(false)
+                    {
                         debug!("Re-indexing saved file: {}", path.display());
-                        if let Err(e) = indexer.write().expect("Indexer lock poisoned").reindex_file(&path) {
+                        if let Err(e) = indexer
+                            .write()
+                            .expect("Indexer lock poisoned")
+                            .reindex_file(&path)
+                        {
                             error!("Failed to re-index {}: {}", path.display(), e);
                         }
                     }
@@ -192,7 +206,10 @@ fn incoming_calls(
                 name: subscriber_proc.to_string(),
                 kind: SymbolKind::EVENT,
                 tags: None,
-                detail: Some(format!("{}.{} [EventSubscriber]", subscriber_obj, subscriber_proc)),
+                detail: Some(format!(
+                    "{}.{} [EventSubscriber]",
+                    subscriber_obj, subscriber_proc
+                )),
                 uri: path_to_uri(&sub.file),
                 range: sub.range,
                 selection_range: sub.range,
@@ -374,9 +391,15 @@ fn code_lens(
 
         // Add threshold indicators for metrics
         let complexity_text = if def.complexity >= config.complexity_critical {
-            format!("complexity: {} ⚠️ (>{})", def.complexity, config.complexity_critical)
+            format!(
+                "complexity: {} ⚠️ (>{})",
+                def.complexity, config.complexity_critical
+            )
         } else if def.complexity >= config.complexity_warning {
-            format!("complexity: {} (>{})", def.complexity, config.complexity_warning)
+            format!(
+                "complexity: {} (>{})",
+                def.complexity, config.complexity_warning
+            )
         } else {
             format!("complexity: {}", def.complexity)
         };
@@ -388,9 +411,15 @@ fn code_lens(
         };
 
         let params_text = if def.parameter_count >= config.params_critical {
-            format!("params: {} ⚠️ (>{})", def.parameter_count, config.params_critical)
+            format!(
+                "params: {} ⚠️ (>{})",
+                def.parameter_count, config.params_critical
+            )
         } else if def.parameter_count >= config.params_warning {
-            format!("params: {} (>{})", def.parameter_count, config.params_warning)
+            format!(
+                "params: {} (>{})",
+                def.parameter_count, config.params_warning
+            )
         } else {
             format!("params: {}", def.parameter_count)
         };
@@ -457,8 +486,10 @@ fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesRe
     let (tree, source) = parse_file_from_uri(&params.uri)?;
     let target = params.field_name.trim().trim_matches('"').to_lowercase();
     let mut cursor = tree.root_node().walk();
-    Ok(find_node_properties(&mut cursor, &source, "field_declaration", &target, true)
-        .unwrap_or_default())
+    Ok(
+        find_node_properties(&mut cursor, &source, "field_declaration", &target, true)
+            .unwrap_or_default(),
+    )
 }
 
 /// Parse a file with tree-sitter and extract all properties for an action
@@ -466,8 +497,10 @@ fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesR
     let (tree, source) = parse_file_from_uri(&params.uri)?;
     let target = params.action_name.trim().trim_matches('"').to_lowercase();
     let mut cursor = tree.root_node().walk();
-    Ok(find_node_properties(&mut cursor, &source, "action_declaration", &target, false)
-        .unwrap_or_default())
+    Ok(
+        find_node_properties(&mut cursor, &source, "action_declaration", &target, false)
+            .unwrap_or_default(),
+    )
 }
 
 /// Parse an AL file from a URI and return the tree + source
@@ -483,9 +516,13 @@ fn parse_file_from_uri(uri_str: &str) -> Result<(tree_sitter::Tree, String)> {
 
     let lang = language::language();
     let mut parser = Parser::new();
-    parser.set_language(&lang).context("Failed to set language")?;
+    parser
+        .set_language(&lang)
+        .context("Failed to set language")?;
 
-    let tree = parser.parse(&source, None).context("Failed to parse file")?;
+    let tree = parser
+        .parse(&source, None)
+        .context("Failed to parse file")?;
 
     Ok((tree, source))
 }
@@ -513,7 +550,9 @@ fn find_node_properties(
         }
 
         if cursor.goto_first_child() {
-            if let Some(result) = find_node_properties(cursor, source, node_kind, target_name, extract_field_id) {
+            if let Some(result) =
+                find_node_properties(cursor, source, node_kind, target_name, extract_field_id)
+            {
                 return Some(result);
             }
             cursor.goto_parent();
@@ -593,7 +632,9 @@ fn extract_property_value(node: &tree_sitter::Node, source: &str) -> String {
 }
 
 /// Helper function to get file diagnostics (used by server.rs for publishing)
-pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<lsp_types::Diagnostic>)> {
+pub fn get_unused_procedure_diagnostics(
+    graph: &CallGraph,
+) -> Vec<(String, Vec<lsp_types::Diagnostic>)> {
     use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag};
     use std::collections::HashMap;
 
@@ -607,7 +648,9 @@ pub fn get_unused_procedure_diagnostics(graph: &CallGraph) -> Vec<(String, Vec<l
         let diagnostic = Diagnostic {
             range: def.range,
             severity: Some(DiagnosticSeverity::HINT),
-            code: Some(lsp_types::NumberOrString::String("unused-procedure".to_string())),
+            code: Some(lsp_types::NumberOrString::String(
+                "unused-procedure".to_string(),
+            )),
             source: Some("al-call-hierarchy".to_string()),
             message: format!("Procedure '{}.{}' is never called", obj_name, proc_name),
             related_information: None,
@@ -672,32 +715,53 @@ table 50000 "TEST Customer"
 
         // Helper to find a property by name in the result
         fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
-            result.properties.iter().find(|p| p.name == name).map(|p| p.value.clone())
+            result
+                .properties
+                .iter()
+                .find(|p| p.name == name)
+                .map(|p| p.value.clone())
         }
 
         // Test Balance field (FlowField with CalcFormula)
         let mut cursor = root.walk();
-        let result = find_node_properties(&mut cursor, source, "field_declaration", "balance", true).unwrap();
+        let result =
+            find_node_properties(&mut cursor, source, "field_declaration", "balance", true)
+                .unwrap();
         assert_eq!(result.field_id, Some(11));
         assert_eq!(prop(&result, "Caption").as_deref(), Some("'Balance'"));
         assert_eq!(prop(&result, "Editable").as_deref(), Some("false"));
         assert_eq!(prop(&result, "FieldClass").as_deref(), Some("FlowField"));
         assert!(prop(&result, "CalcFormula").is_some());
-        assert!(prop(&result, "CalcFormula").unwrap().contains("Cust. Ledger Entry"));
+        assert!(prop(&result, "CalcFormula")
+            .unwrap()
+            .contains("Cust. Ledger Entry"));
 
         // Test Payment Terms Code field (with TableRelation)
         let mut cursor = root.walk();
-        let result = find_node_properties(&mut cursor, source, "field_declaration", "payment terms code", true).unwrap();
+        let result = find_node_properties(
+            &mut cursor,
+            source,
+            "field_declaration",
+            "payment terms code",
+            true,
+        )
+        .unwrap();
         assert_eq!(result.field_id, Some(20));
         assert!(prop(&result, "TableRelation").is_some());
-        assert!(prop(&result, "TableRelation").unwrap().contains("Payment Terms"));
+        assert!(prop(&result, "TableRelation")
+            .unwrap()
+            .contains("Payment Terms"));
 
         // Test No. field (basic field)
         let mut cursor = root.walk();
-        let result = find_node_properties(&mut cursor, source, "field_declaration", "no.", true).unwrap();
+        let result =
+            find_node_properties(&mut cursor, source, "field_declaration", "no.", true).unwrap();
         assert_eq!(result.field_id, Some(1));
         assert_eq!(prop(&result, "Caption").as_deref(), Some("'No.'"));
-        assert_eq!(prop(&result, "DataClassification").as_deref(), Some("CustomerContent"));
+        assert_eq!(
+            prop(&result, "DataClassification").as_deref(),
+            Some("CustomerContent")
+        );
         assert!(prop(&result, "FieldClass").is_none());
         assert!(prop(&result, "CalcFormula").is_none());
     }
@@ -753,28 +817,595 @@ page 50001 "TEST Customer Card"
 
         // Helper to find a property by name
         fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
-            result.properties.iter().find(|p| p.name == name).map(|p| p.value.clone())
+            result
+                .properties
+                .iter()
+                .find(|p| p.name == name)
+                .map(|p| p.value.clone())
         }
 
         // Test LedgerEntries action (with RunObject)
         let mut cursor = root.walk();
-        let result = find_node_properties(&mut cursor, source, "action_declaration", "ledgerentries", false).unwrap();
-        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Ledger E&ntries'"));
+        let result = find_node_properties(
+            &mut cursor,
+            source,
+            "action_declaration",
+            "ledgerentries",
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            prop(&result, "Caption").as_deref(),
+            Some("'Ledger E&ntries'")
+        );
         assert_eq!(prop(&result, "Image").as_deref(), Some("CustomerLedger"));
         assert!(prop(&result, "RunObject").is_some());
-        assert!(prop(&result, "RunObject").unwrap().contains("Customer Ledger Entries"));
+        assert!(prop(&result, "RunObject")
+            .unwrap()
+            .contains("Customer Ledger Entries"));
         assert!(prop(&result, "RunPageLink").is_some());
         assert!(prop(&result, "RunPageView").is_some());
         assert_eq!(prop(&result, "ShortcutKey").as_deref(), Some("'Ctrl+F7'"));
         assert!(prop(&result, "ToolTip").is_some());
-        assert!(prop(&result, "ToolTip").unwrap().contains("history of transactions"));
+        assert!(prop(&result, "ToolTip")
+            .unwrap()
+            .contains("history of transactions"));
 
         // Test CheckCreditLimit action (no RunObject, has trigger)
         let mut cursor = root.walk();
-        let result = find_node_properties(&mut cursor, source, "action_declaration", "checkcreditlimit", false).unwrap();
-        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Check Credit Limit'"));
+        let result = find_node_properties(
+            &mut cursor,
+            source,
+            "action_declaration",
+            "checkcreditlimit",
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            prop(&result, "Caption").as_deref(),
+            Some("'Check Credit Limit'")
+        );
         assert_eq!(prop(&result, "Image").as_deref(), Some("Check"));
         assert!(prop(&result, "RunObject").is_none());
         assert!(prop(&result, "ToolTip").is_some());
+    }
+
+    #[test]
+    fn test_unused_procedure_diagnostics_finds_unused() {
+        use crate::graph::*;
+
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let used_proc = graph.intern("UsedProc");
+        let unused_proc = graph.intern("UnusedProc");
+        let caller = graph.intern("Caller");
+        let file = graph.get_shared_path(std::path::Path::new("test.al"));
+
+        graph.register_object(obj, ObjectType::Codeunit);
+
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 10,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 20,
+                    character: 8,
+                },
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: used_proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 25,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 35,
+                    character: 8,
+                },
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: unused_proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 40,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 50,
+                    character: 8,
+                },
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: caller,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        // Caller calls UsedProc
+        let caller_qname = QualifiedName {
+            object: obj,
+            procedure: caller,
+        };
+        graph.add_call_site(
+            caller_qname,
+            CallSite {
+                file: file.clone(),
+                range: lsp_types::Range {
+                    start: lsp_types::Position {
+                        line: 45,
+                        character: 8,
+                    },
+                    end: lsp_types::Position {
+                        line: 45,
+                        character: 20,
+                    },
+                },
+                caller,
+                callee_object: None,
+                callee_method: used_proc,
+            },
+        );
+
+        let diagnostics = get_unused_procedure_diagnostics(&graph);
+        // Should have diagnostics for the file
+        assert!(!diagnostics.is_empty());
+        // Find the file's diagnostics
+        let file_diags: Vec<_> = diagnostics
+            .iter()
+            .flat_map(|(_, diags)| diags.iter())
+            .collect();
+        // unused_proc and caller should have diagnostics (caller is unused too since nobody calls it)
+        assert!(file_diags.len() >= 1);
+        // Check that at least one diagnostic mentions "never called"
+        assert!(file_diags
+            .iter()
+            .any(|d| d.message.contains("never called")));
+    }
+
+    #[test]
+    fn test_unused_procedure_diagnostics_excludes_triggers() {
+        use crate::graph::*;
+
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let trigger = graph.intern("OnRun");
+        let file = graph.get_shared_path(std::path::Path::new("test.al"));
+
+        graph.add_definition(Definition {
+            file,
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 10,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 20,
+                    character: 8,
+                },
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: trigger,
+            kind: DefinitionKind::Trigger,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        let diagnostics = get_unused_procedure_diagnostics(&graph);
+        // Triggers should not be reported as unused
+        let all_diags: Vec<_> = diagnostics
+            .iter()
+            .flat_map(|(_, diags)| diags.iter())
+            .collect();
+        assert!(all_diags.is_empty());
+    }
+
+    #[test]
+    fn test_unused_procedure_diagnostics_empty_graph() {
+        use crate::graph::CallGraph;
+
+        let graph = CallGraph::new();
+        let diagnostics = get_unused_procedure_diagnostics(&graph);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_prepare_call_hierarchy() {
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::CallHierarchyPrepareParams;
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.al");
+        std::fs::write(
+            &file_path,
+            r#"codeunit 50100 "TestCU"
+{
+    procedure MyProcedure()
+    begin
+        Message('Hello');
+    end;
+}"#,
+        )
+        .unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+
+        // Position inside MyProcedure (line 2 = the procedure declaration line)
+        let params = CallHierarchyPrepareParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+                position: lsp_types::Position {
+                    line: 2,
+                    character: 10,
+                },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = prepare_call_hierarchy(&indexer, params).unwrap();
+        assert!(
+            result.is_some(),
+            "Should find definition at procedure position"
+        );
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "MyProcedure");
+        assert!(items[0].detail.as_ref().unwrap().contains("TestCU"));
+    }
+
+    #[test]
+    fn test_prepare_call_hierarchy_no_match() {
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::CallHierarchyPrepareParams;
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.al");
+        std::fs::write(
+            &file_path,
+            r#"codeunit 50100 "TestCU"
+{
+    procedure MyProcedure()
+    begin
+    end;
+}"#,
+        )
+        .unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+
+        // Position outside any procedure (line 0)
+        let params = CallHierarchyPrepareParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position: lsp_types::Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = prepare_call_hierarchy(&indexer, params).unwrap();
+        assert!(
+            result.is_none(),
+            "Should not find definition outside procedure"
+        );
+    }
+
+    #[test]
+    fn test_code_lens_handler() {
+        use crate::config::DiagnosticConfig;
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::CodeLensParams;
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.al");
+        std::fs::write(
+            &file_path,
+            r#"codeunit 50100 "TestCU"
+{
+    procedure SimpleProc()
+    begin
+        Message('Hello');
+    end;
+
+    procedure CalledProc()
+    begin
+    end;
+
+    procedure Caller1()
+    begin
+        CalledProc();
+    end;
+
+    procedure Caller2()
+    begin
+        CalledProc();
+    end;
+}"#,
+        )
+        .unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+        let config = DiagnosticConfig::default();
+
+        let params = CodeLensParams {
+            text_document: lsp_types::TextDocumentIdentifier { uri },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = super::code_lens(&indexer, params, &config).unwrap();
+        assert!(result.is_some());
+        let lenses = result.unwrap();
+
+        // Should have one CodeLens per procedure (4 procedures)
+        assert_eq!(
+            lenses.len(),
+            4,
+            "Should have CodeLens for each procedure. Got titles: {:?}",
+            lenses
+                .iter()
+                .map(|l| l.command.as_ref().map(|c| &c.title))
+                .collect::<Vec<_>>()
+        );
+
+        // Find CalledProc's lens - it should show "2 references"
+        let called_lens = lenses.iter().find(|l| {
+            l.command
+                .as_ref()
+                .map(|c| c.title.contains("2 references"))
+                .unwrap_or(false)
+        });
+        assert!(
+            called_lens.is_some(),
+            "CalledProc should show '2 references'. Lens titles: {:?}",
+            lenses
+                .iter()
+                .map(|l| l.command.as_ref().map(|c| &c.title))
+                .collect::<Vec<_>>()
+        );
+
+        // All lenses should have complexity and line info
+        for lens in &lenses {
+            let title = &lens.command.as_ref().unwrap().title;
+            assert!(
+                title.contains("complexity:"),
+                "Lens should show complexity: {}",
+                title
+            );
+            assert!(
+                title.contains("lines:"),
+                "Lens should show lines: {}",
+                title
+            );
+            assert!(
+                title.contains("params:"),
+                "Lens should show params: {}",
+                title
+            );
+        }
+    }
+
+    #[test]
+    fn test_code_lens_empty_file() {
+        use crate::config::DiagnosticConfig;
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::CodeLensParams;
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("empty.al");
+        std::fs::write(&file_path, "// no procedures here").unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+        let config = DiagnosticConfig::default();
+
+        let params = CodeLensParams {
+            text_document: lsp_types::TextDocumentIdentifier { uri },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = super::code_lens(&indexer, params, &config).unwrap();
+        assert!(result.is_some());
+        assert!(
+            result.unwrap().is_empty(),
+            "Empty file should have no CodeLens"
+        );
+    }
+
+    #[test]
+    fn test_incoming_calls_handler() {
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::{CallHierarchyIncomingCallsParams, CallHierarchyItem, SymbolKind};
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.al");
+        std::fs::write(
+            &file_path,
+            r#"codeunit 50100 "TestCU"
+{
+    procedure Caller1()
+    begin
+        TargetProc();
+    end;
+
+    procedure Caller2()
+    begin
+        TargetProc();
+    end;
+
+    procedure TargetProc()
+    begin
+    end;
+}"#,
+        )
+        .unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+        let params = CallHierarchyIncomingCallsParams {
+            item: CallHierarchyItem {
+                name: "TargetProc".to_string(),
+                kind: SymbolKind::FUNCTION,
+                tags: None,
+                detail: None,
+                uri,
+                range: Default::default(),
+                selection_range: Default::default(),
+                data: Some(serde_json::json!({
+                    "object": "TestCU",
+                    "procedure": "TargetProc",
+                })),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = super::incoming_calls(&indexer, params).unwrap();
+        assert!(result.is_some());
+        let calls = result.unwrap();
+        assert_eq!(calls.len(), 2, "TargetProc should have 2 callers");
+    }
+
+    #[test]
+    fn test_outgoing_calls_handler() {
+        use crate::indexer::Indexer;
+        use crate::protocol::path_to_uri;
+        use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCallsParams, SymbolKind};
+        use std::sync::{Arc, RwLock};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("caller.al");
+        std::fs::write(
+            &file_path,
+            r#"codeunit 50100 "CallerCU"
+{
+    procedure DoWork()
+    begin
+        HelperA();
+        HelperB();
+    end;
+
+    procedure HelperA()
+    begin
+    end;
+
+    procedure HelperB()
+    begin
+    end;
+}"#,
+        )
+        .unwrap();
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let indexer = Arc::new(RwLock::new(indexer));
+
+        let uri = path_to_uri(&file_path);
+        let params = CallHierarchyOutgoingCallsParams {
+            item: CallHierarchyItem {
+                name: "DoWork".to_string(),
+                kind: SymbolKind::FUNCTION,
+                tags: None,
+                detail: None,
+                uri,
+                range: Default::default(),
+                selection_range: Default::default(),
+                data: Some(serde_json::json!({
+                    "object": "CallerCU",
+                    "procedure": "DoWork",
+                })),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = super::outgoing_calls(&indexer, params).unwrap();
+        assert!(result.is_some());
+        let calls = result.unwrap();
+        assert_eq!(calls.len(), 2, "DoWork should call 2 procedures");
+    }
+
+    #[test]
+    fn test_incoming_calls_unknown_symbol() {
+        use crate::indexer::Indexer;
+        use lsp_types::{CallHierarchyIncomingCallsParams, CallHierarchyItem, SymbolKind};
+        use std::str::FromStr;
+        use std::sync::{Arc, RwLock};
+
+        let indexer = Arc::new(RwLock::new(Indexer::new()));
+
+        let params = CallHierarchyIncomingCallsParams {
+            item: CallHierarchyItem {
+                name: "NonExistent".to_string(),
+                kind: SymbolKind::FUNCTION,
+                tags: None,
+                detail: None,
+                uri: lsp_types::Uri::from_str("file:///test.al").unwrap(),
+                range: Default::default(),
+                selection_range: Default::default(),
+                data: Some(serde_json::json!({
+                    "object": "NoCU",
+                    "procedure": "NonExistent",
+                })),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = super::incoming_calls(&indexer, params).unwrap();
+        assert!(result.is_none(), "Unknown symbol should return None");
     }
 }

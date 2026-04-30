@@ -67,9 +67,7 @@ fn main() -> Result<()> {
         log::LevelFilter::Info
     };
 
-    env_logger::Builder::new()
-        .filter_level(log_level)
-        .init();
+    env_logger::Builder::new().filter_level(log_level).init();
 
     if let Some(project) = args.project {
         if args.analyze {
@@ -90,7 +88,10 @@ fn main() -> Result<()> {
 
             let graph = indexer.into_graph();
             info!("Indexed {} definitions", graph.definition_count());
-            info!("Indexed {} external definitions", graph.external_definition_count());
+            info!(
+                "Indexed {} external definitions",
+                graph.external_definition_count()
+            );
             info!("Found {} call sites", graph.call_site_count());
         }
     } else {
@@ -386,7 +387,11 @@ fn print_csv(result: &analysis::AnalysisResult) {
 }
 
 /// Print results in human-readable text format
-fn print_text(result: &analysis::AnalysisResult, project: &PathBuf, config: &config::DiagnosticConfig) {
+fn print_text(
+    result: &analysis::AnalysisResult,
+    project: &PathBuf,
+    config: &config::DiagnosticConfig,
+) {
     println!("\nCode Quality Analysis: {}\n", project.display());
     println!("═══════════════════════════════════════════════════════════════════════════════\n");
 
@@ -419,7 +424,12 @@ fn print_text(result: &analysis::AnalysisResult, project: &PathBuf, config: &con
 
         println!(
             "{:<40} {:>4} {:>6} {:>6} {:>7.1}{}",
-            name_truncated, m.complexity, m.line_count, m.parameter_count, m.quality_score, severity
+            name_truncated,
+            m.complexity,
+            m.line_count,
+            m.parameter_count,
+            m.quality_score,
+            severity
         );
     }
 
@@ -442,10 +452,25 @@ fn print_text(result: &analysis::AnalysisResult, project: &PathBuf, config: &con
 
     // Summary
     println!("\nSUMMARY:\n");
-    println!("  Total procedures:     {}", result.summary.total_procedures);
-    println!("  Average complexity:   {:.1}", result.summary.avg_complexity);
-    println!("  Average quality score: {:.1}", result.summary.avg_quality_score);
-    println!("  Critical findings:    {}", result.summary.critical_findings);
-    println!("  Warning findings:     {}", result.summary.warning_findings);
+    println!(
+        "  Total procedures:     {}",
+        result.summary.total_procedures
+    );
+    println!(
+        "  Average complexity:   {:.1}",
+        result.summary.avg_complexity
+    );
+    println!(
+        "  Average quality score: {:.1}",
+        result.summary.avg_quality_score
+    );
+    println!(
+        "  Critical findings:    {}",
+        result.summary.critical_findings
+    );
+    println!(
+        "  Warning findings:     {}",
+        result.summary.warning_findings
+    );
     println!();
 }

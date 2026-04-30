@@ -371,7 +371,11 @@ mod tests {
 
         let complexity = calculate_complexity(&proc_node);
         // Base: 1, if: +1, else: +1 = 3
-        assert_eq!(complexity, 3, "If-else procedure should have complexity 3, got {}", complexity);
+        assert_eq!(
+            complexity, 3,
+            "If-else procedure should have complexity 3, got {}",
+            complexity
+        );
     }
 
     #[test]
@@ -434,7 +438,11 @@ mod tests {
 
         let complexity = calculate_complexity(&proc_node);
         // Base: 1, for: +1, foreach: +1, repeat: +1, while: +1 = 5
-        assert_eq!(complexity, 5, "Loop procedure should have complexity 5, got {}", complexity);
+        assert_eq!(
+            complexity, 5,
+            "Loop procedure should have complexity 5, got {}",
+            complexity
+        );
     }
 
     #[test]
@@ -474,7 +482,11 @@ mod tests {
         // if a or b: +1 (if) +1 (or)
         // if a and b and c: +1 (if) +2 (two and operators)
         // Total: 1 + 2 + 2 + 3 = 8
-        assert_eq!(complexity, 8, "Logical procedure should have complexity 8, got {}", complexity);
+        assert_eq!(
+            complexity, 8,
+            "Logical procedure should have complexity 8, got {}",
+            complexity
+        );
     }
 
     #[test]
@@ -516,6 +528,217 @@ mod tests {
         };
         let config = DiagnosticConfig::default();
         let findings = generate_findings(&metrics, &config);
-        assert!(findings.iter().any(|f| f.category == "high_complexity" && f.severity == "critical"));
+        assert!(findings
+            .iter()
+            .any(|f| f.category == "high_complexity" && f.severity == "critical"));
+    }
+
+    #[test]
+    fn test_quality_score_moderate_complexity() {
+        // complexity 3 hits the else-if branch (> 2 but <= 4)
+        let score = calculate_quality_score(3, 5, 1);
+        // penalty = (3-2) * 0.8 = 0.8, so score = 9.2
+        assert!((score - 9.2).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_quality_score_moderate_length() {
+        // line_count 12 hits the else-if branch (> 10 but <= 15)
+        let score = calculate_quality_score(1, 12, 1);
+        // penalty = (12-10) * 0.3 = 0.6, so score = 9.4
+        assert!((score - 9.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_quality_score_moderate_params() {
+        // params 3 hits the else-if branch (> 2 but <= 4)
+        let score = calculate_quality_score(1, 5, 3);
+        // penalty = (3-2) * 0.5 = 0.5, so score = 9.5
+        assert!((score - 9.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_quality_score_clamped_to_zero() {
+        // Very bad metrics should clamp to 0
+        let score = calculate_quality_score(50, 200, 20);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_findings_complexity_warning() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: config.complexity_warning, // at warning threshold
+            line_count: 5,
+            parameter_count: 1,
+            quality_score: 8.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].category, "high_complexity");
+        assert_eq!(findings[0].severity, "warning");
+    }
+
+    #[test]
+    fn test_findings_length_critical() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: 1,
+            line_count: config.length_critical, // at critical threshold
+            parameter_count: 1,
+            quality_score: 5.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert!(findings
+            .iter()
+            .any(|f| f.category == "long_method" && f.severity == "critical"));
+    }
+
+    #[test]
+    fn test_findings_length_warning() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: 1,
+            line_count: config.length_warning, // at warning threshold
+            parameter_count: 1,
+            quality_score: 7.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].category, "long_method");
+        assert_eq!(findings[0].severity, "warning");
+    }
+
+    #[test]
+    fn test_findings_params_critical() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: 1,
+            line_count: 5,
+            parameter_count: config.params_critical, // at critical threshold
+            quality_score: 5.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert!(findings
+            .iter()
+            .any(|f| f.category == "too_many_parameters" && f.severity == "critical"));
+    }
+
+    #[test]
+    fn test_findings_params_warning() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: 1,
+            line_count: 5,
+            parameter_count: config.params_warning, // at warning threshold
+            quality_score: 7.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].category, "too_many_parameters");
+        assert_eq!(findings[0].severity, "warning");
+    }
+
+    #[test]
+    fn test_findings_no_issues() {
+        let config = DiagnosticConfig::default();
+        let metrics = ProcedureMetrics {
+            object_type: "Codeunit".to_string(),
+            object_name: "Test".to_string(),
+            procedure_name: "TestProc".to_string(),
+            file: "test.al".to_string(),
+            line: 10,
+            complexity: 1,
+            line_count: 5,
+            parameter_count: 1,
+            quality_score: 10.0,
+        };
+        let findings = generate_findings(&metrics, &config);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_build_summary_with_metrics() {
+        let metrics = vec![
+            ProcedureMetrics {
+                object_type: "Codeunit".to_string(),
+                object_name: "Test".to_string(),
+                procedure_name: "Proc1".to_string(),
+                file: "test.al".to_string(),
+                line: 10,
+                complexity: 4,
+                line_count: 20,
+                parameter_count: 2,
+                quality_score: 8.0,
+            },
+            ProcedureMetrics {
+                object_type: "Codeunit".to_string(),
+                object_name: "Test".to_string(),
+                procedure_name: "Proc2".to_string(),
+                file: "test.al".to_string(),
+                line: 30,
+                complexity: 6,
+                line_count: 30,
+                parameter_count: 3,
+                quality_score: 6.0,
+            },
+        ];
+        let findings = vec![
+            Finding {
+                category: "high_complexity".to_string(),
+                severity: "critical".to_string(),
+                location: "test.al:30".to_string(),
+                procedure: "Test.Proc2".to_string(),
+                description: "test".to_string(),
+            },
+            Finding {
+                category: "long_method".to_string(),
+                severity: "warning".to_string(),
+                location: "test.al:30".to_string(),
+                procedure: "Test.Proc2".to_string(),
+                description: "test".to_string(),
+            },
+        ];
+        let summary = build_summary(&metrics, &findings);
+        assert_eq!(summary.total_procedures, 2);
+        assert!((summary.avg_complexity - 5.0).abs() < 0.01);
+        assert!((summary.avg_quality_score - 7.0).abs() < 0.01);
+        assert_eq!(summary.critical_findings, 1);
+        assert_eq!(summary.warning_findings, 1);
+    }
+
+    #[test]
+    fn test_build_summary_empty() {
+        let summary = build_summary(&[], &[]);
+        assert_eq!(summary.total_procedures, 0);
+        assert_eq!(summary.avg_complexity, 0.0);
+        assert_eq!(summary.avg_quality_score, 0.0);
+        assert_eq!(summary.critical_findings, 0);
+        assert_eq!(summary.warning_findings, 0);
     }
 }

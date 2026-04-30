@@ -3,8 +3,7 @@ use std::path::PathBuf;
 fn main() {
     // Path to tree-sitter-al grammar
     let tree_sitter_al = PathBuf::from(
-        std::env::var("TREE_SITTER_AL_PATH")
-            .unwrap_or_else(|_| "tree-sitter-al".to_string()),
+        std::env::var("TREE_SITTER_AL_PATH").unwrap_or_else(|_| "tree-sitter-al".to_string()),
     );
 
     let src_dir = tree_sitter_al.join("src");

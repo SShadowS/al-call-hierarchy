@@ -116,7 +116,10 @@ fn merge_sections(base: DiagnosticsSection, overlay: DiagnosticsSection) -> Diag
     }
 }
 
-fn merge_threshold_pair(base: Option<ThresholdPair>, overlay: Option<ThresholdPair>) -> Option<ThresholdPair> {
+fn merge_threshold_pair(
+    base: Option<ThresholdPair>,
+    overlay: Option<ThresholdPair>,
+) -> Option<ThresholdPair> {
     match (base, overlay) {
         (None, None) => None,
         (Some(b), None) => Some(b),
@@ -129,7 +132,10 @@ fn merge_threshold_pair(base: Option<ThresholdPair>, overlay: Option<ThresholdPa
     }
 }
 
-fn merge_threshold_single(base: Option<ThresholdSingle>, overlay: Option<ThresholdSingle>) -> Option<ThresholdSingle> {
+fn merge_threshold_single(
+    base: Option<ThresholdSingle>,
+    overlay: Option<ThresholdSingle>,
+) -> Option<ThresholdSingle> {
     match (base, overlay) {
         (None, None) => None,
         (Some(b), None) => Some(b),
@@ -146,41 +152,64 @@ fn apply_defaults(section: DiagnosticsSection) -> DiagnosticConfig {
     let defaults = DiagnosticConfig::default();
 
     DiagnosticConfig {
-        complexity_enabled: section.complexity.as_ref()
+        complexity_enabled: section
+            .complexity
+            .as_ref()
             .and_then(|c| c.enabled)
             .unwrap_or(defaults.complexity_enabled),
-        complexity_warning: section.complexity.as_ref()
+        complexity_warning: section
+            .complexity
+            .as_ref()
             .and_then(|c| c.warning)
             .unwrap_or(defaults.complexity_warning),
-        complexity_critical: section.complexity.as_ref()
+        complexity_critical: section
+            .complexity
+            .as_ref()
             .and_then(|c| c.critical)
             .unwrap_or(defaults.complexity_critical),
-        length_enabled: section.line_count.as_ref()
+        length_enabled: section
+            .line_count
+            .as_ref()
             .and_then(|c| c.enabled)
             .unwrap_or(defaults.length_enabled),
-        length_warning: section.line_count.as_ref()
+        length_warning: section
+            .line_count
+            .as_ref()
             .and_then(|c| c.warning)
             .unwrap_or(defaults.length_warning),
-        length_critical: section.line_count.as_ref()
+        length_critical: section
+            .line_count
+            .as_ref()
             .and_then(|c| c.critical)
             .unwrap_or(defaults.length_critical),
-        params_enabled: section.parameters.as_ref()
+        params_enabled: section
+            .parameters
+            .as_ref()
             .and_then(|c| c.enabled)
             .unwrap_or(defaults.params_enabled),
-        params_warning: section.parameters.as_ref()
+        params_warning: section
+            .parameters
+            .as_ref()
             .and_then(|c| c.warning)
             .unwrap_or(defaults.params_warning),
-        params_critical: section.parameters.as_ref()
+        params_critical: section
+            .parameters
+            .as_ref()
             .and_then(|c| c.critical)
             .unwrap_or(defaults.params_critical),
-        fan_in_enabled: section.fan_in.as_ref()
+        fan_in_enabled: section
+            .fan_in
+            .as_ref()
             .and_then(|c| c.enabled)
             .unwrap_or(defaults.fan_in_enabled),
-        fan_in_warning: section.fan_in.as_ref()
+        fan_in_warning: section
+            .fan_in
+            .as_ref()
             .and_then(|c| c.warning)
             .map(|v| v as usize)
             .unwrap_or(defaults.fan_in_warning),
-        unused_procedures: section.unused_procedures
+        unused_procedures: section
+            .unused_procedures
             .unwrap_or(defaults.unused_procedures),
     }
 }
@@ -189,8 +218,7 @@ impl DiagnosticConfig {
     /// Load config by merging: defaults → global → workspace.
     pub fn load(workspace_root: &Path) -> Self {
         // Phase 1: Load both config files
-        let global = global_config_path()
-            .and_then(|p| load_file(&p));
+        let global = global_config_path().and_then(|p| load_file(&p));
         let workspace = load_file(&workspace_root.join(".al-call-hierarchy.json"));
 
         // Phase 2: Merge sections (global as base, workspace as overlay)
@@ -237,7 +265,8 @@ mod tests {
         fs::write(
             dir.path().join(".al-call-hierarchy.json"),
             r#"{ "diagnostics": { "complexity": { "warning": 8 } } }"#,
-        ).unwrap();
+        )
+        .unwrap();
         let config = DiagnosticConfig::load(dir.path());
         assert_eq!(config.complexity_warning, 8);
         assert_eq!(config.complexity_critical, 10); // default preserved
@@ -258,7 +287,8 @@ mod tests {
                     "unusedProcedures": false
                 }
             }"#,
-        ).unwrap();
+        )
+        .unwrap();
         let config = DiagnosticConfig::load(dir.path());
         assert_eq!(config.complexity_warning, 8);
         assert_eq!(config.complexity_critical, 15);
@@ -284,7 +314,8 @@ mod tests {
                     "unusedProcedures": false
                 }
             }"#,
-        ).unwrap();
+        )
+        .unwrap();
         let config = DiagnosticConfig::load(dir.path());
         assert!(!config.complexity_enabled);
         assert!(!config.params_enabled);
@@ -299,10 +330,7 @@ mod tests {
     #[test]
     fn test_load_invalid_json() {
         let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
-            "not json",
-        ).unwrap();
+        fs::write(dir.path().join(".al-call-hierarchy.json"), "not json").unwrap();
         let config = DiagnosticConfig::load(dir.path());
         assert_eq!(config.complexity_warning, 5); // falls back to default
     }
@@ -362,7 +390,9 @@ mod tests {
         // Should return Some on any system with a home directory
         assert!(path.is_some());
         let p = path.unwrap();
-        assert!(p.ends_with(".al-call-hierarchy/config.json") ||
-                p.ends_with(".al-call-hierarchy\\config.json"));
+        assert!(
+            p.ends_with(".al-call-hierarchy/config.json")
+                || p.ends_with(".al-call-hierarchy\\config.json")
+        );
     }
 }

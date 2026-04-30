@@ -34,11 +34,11 @@ pub struct ResolvedDependency {
 
 /// Parse app.json to extract dependencies
 pub fn parse_app_json(path: &Path) -> Result<Vec<AppDependency>> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    let app_json: AppJson =
-        serde_json::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
+    let app_json: AppJson = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
 
     Ok(app_json.dependencies)
 }
@@ -167,10 +167,7 @@ pub fn resolve_all(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
     let alpackages = match find_alpackages_folder(project_root) {
         Some(path) => path,
         None => {
-            warn!(
-                "No .alpackages folder found at {}",
-                project_root.display()
-            );
+            warn!("No .alpackages folder found at {}", project_root.display());
             return Ok(Vec::new());
         }
     };
@@ -263,18 +260,9 @@ mod tests {
             compare_versions("26.0.30643.32100", "26.0.30643.31340"),
             Ordering::Less
         );
-        assert_eq!(
-            compare_versions("26.0.0.0", "25.0.0.0"),
-            Ordering::Less
-        );
-        assert_eq!(
-            compare_versions("26.0.0.0", "26.0.0.0"),
-            Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("25.0.0.0", "26.0.0.0"),
-            Ordering::Greater
-        );
+        assert_eq!(compare_versions("26.0.0.0", "25.0.0.0"), Ordering::Less);
+        assert_eq!(compare_versions("26.0.0.0", "26.0.0.0"), Ordering::Equal);
+        assert_eq!(compare_versions("25.0.0.0", "26.0.0.0"), Ordering::Greater);
     }
 
     #[test]
@@ -301,6 +289,141 @@ mod tests {
         }
 
         // Should have at least the declared dependencies
-        assert!(!resolved.is_empty(), "Should resolve at least one dependency");
+        assert!(
+            !resolved.is_empty(),
+            "Should resolve at least one dependency"
+        );
+    }
+
+    #[test]
+    fn test_parse_app_json_real_project() {
+        let app_json = Path::new("U:/Git/DO.Support-wi-75148/DocumentOutput/Cloud/app.json");
+        if !app_json.exists() {
+            eprintln!("Skipping test: DO.Support-wi-75148 not available");
+            return;
+        }
+
+        let deps = parse_app_json(app_json).expect("Failed to parse app.json");
+        assert!(!deps.is_empty(), "Should have dependencies");
+        println!("Found {} dependencies", deps.len());
+        for dep in &deps {
+            println!("  {} by {} v{}", dep.name, dep.publisher, dep.version);
+        }
+    }
+
+    #[test]
+    fn test_find_alpackages_folder_exists() {
+        let project = Path::new("U:/Git/DO.Support-wi-75148/DocumentOutput/Cloud");
+        if !project.exists() {
+            eprintln!("Skipping test: project not available");
+            return;
+        }
+
+        let result = find_alpackages_folder(project);
+        assert!(result.is_some(), "Should find .alpackages folder");
+    }
+
+    #[test]
+    fn test_find_alpackages_folder_missing() {
+        let result = find_alpackages_folder(Path::new("/nonexistent/path"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_matching_app_real() {
+        let alpackages = Path::new("U:/Git/DO.Support-wi-75148/DocumentOutput/Cloud/.alpackages");
+        if !alpackages.exists() {
+            eprintln!("Skipping test: .alpackages not available");
+            return;
+        }
+
+        let dep = AppDependency {
+            name: "Continia Core".to_string(),
+            publisher: "Continia Software".to_string(),
+            version: "29.0.0.0".to_string(),
+        };
+
+        let result = find_matching_app(alpackages, &dep);
+        assert!(
+            result.is_some(),
+            "Should find matching .app for Continia Core"
+        );
+        let path = result.unwrap();
+        assert!(path
+            .to_string_lossy()
+            .contains("Continia Software_Continia Core_"));
+        println!("Found: {}", path.display());
+    }
+
+    #[test]
+    fn test_find_matching_app_not_found() {
+        let alpackages = Path::new("U:/Git/DO.Support-wi-75148/DocumentOutput/Cloud/.alpackages");
+        if !alpackages.exists() {
+            eprintln!("Skipping test: .alpackages not available");
+            return;
+        }
+
+        let dep = AppDependency {
+            name: "NonExistent App".to_string(),
+            publisher: "Nobody".to_string(),
+            version: "1.0.0.0".to_string(),
+        };
+
+        let result = find_matching_app(alpackages, &dep);
+        assert!(result.is_none(), "Should not find non-existent app");
+    }
+
+    #[test]
+    fn test_resolve_all_do_support() {
+        let project = Path::new("U:/Git/DO.Support-wi-75148/DocumentOutput/Cloud");
+        if !project.exists() {
+            eprintln!("Skipping test: DO.Support-wi-75148 not available");
+            return;
+        }
+
+        let result = resolve_all(project);
+        assert!(result.is_ok(), "Failed to resolve: {:?}", result.err());
+        let resolved = result.unwrap();
+        println!("Resolved {} dependencies", resolved.len());
+        for dep in &resolved {
+            println!(
+                "  {} v{} -> {} objects",
+                dep.package.metadata.name,
+                dep.package.metadata.version,
+                dep.package.objects.len()
+            );
+        }
+        assert!(
+            !resolved.is_empty(),
+            "Should resolve at least one dependency"
+        );
+    }
+
+    #[test]
+    fn test_resolve_all_no_app_json() {
+        // Use a temp dir with no app.json
+        let dir = tempfile::TempDir::new().unwrap();
+        let result = resolve_all(dir.path()).unwrap();
+        assert!(result.is_empty(), "No app.json should return empty");
+    }
+
+    #[test]
+    fn test_resolve_all_empty_dependencies() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("app.json"), r#"{"dependencies": []}"#).unwrap();
+        let result = resolve_all(dir.path()).unwrap();
+        assert!(result.is_empty(), "Empty dependencies should return empty");
+    }
+
+    #[test]
+    fn test_resolve_all_no_alpackages() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("app.json"),
+            r#"{"dependencies": [{"name": "Test", "publisher": "Pub", "version": "1.0.0.0"}]}"#,
+        )
+        .unwrap();
+        let result = resolve_all(dir.path()).unwrap();
+        assert!(result.is_empty(), "No .alpackages should return empty");
     }
 }

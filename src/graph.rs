@@ -389,7 +389,11 @@ impl CallGraph {
     ) -> Option<Symbol> {
         self.variable_bindings
             .get(procedure_qname)
-            .and_then(|vars| vars.iter().find(|(name, _)| *name == var_name).map(|(_, ty)| *ty))
+            .and_then(|vars| {
+                vars.iter()
+                    .find(|(name, _)| *name == var_name)
+                    .map(|(_, ty)| *ty)
+            })
     }
 
     /// Add a definition
@@ -415,10 +419,7 @@ impl CallGraph {
         self.call_sites.push(Some(call));
 
         // Track which file this call site belongs to (for removal)
-        self.file_call_sites
-            .entry(file)
-            .or_default()
-            .push(idx);
+        self.file_call_sites.entry(file).or_default().push(idx);
 
         // Add index to outgoing calls of the caller
         self.outgoing_calls
@@ -477,14 +478,20 @@ impl CallGraph {
     }
 
     /// Resolve a call by its index in call_sites
-    fn resolve_call_by_idx(&self, caller_qname: &QualifiedName, idx: CallSiteIdx) -> Option<QualifiedName> {
+    fn resolve_call_by_idx(
+        &self,
+        caller_qname: &QualifiedName,
+        idx: CallSiteIdx,
+    ) -> Option<QualifiedName> {
         let call = self.call_sites.get(idx as usize)?.as_ref()?;
         self.resolve_call(caller_qname, call)
     }
 
     /// Get a CallSite by its index
     pub fn get_call_site(&self, idx: CallSiteIdx) -> Option<&CallSite> {
-        self.call_sites.get(idx as usize).and_then(|opt| opt.as_ref())
+        self.call_sites
+            .get(idx as usize)
+            .and_then(|opt| opt.as_ref())
     }
 
     /// Get a definition by qualified name
@@ -494,7 +501,12 @@ impl CallGraph {
 
     /// Find definition at a file position
     /// Uses file_definitions index for O(1) file lookup, then O(k) where k = definitions in file
-    pub fn find_definition_at(&self, file: &Path, line: u32, character: u32) -> Option<&Definition> {
+    pub fn find_definition_at(
+        &self,
+        file: &Path,
+        line: u32,
+        character: u32,
+    ) -> Option<&Definition> {
         // Look up the SharedPath from path cache (normalized for case-insensitive matching)
         let normalized = normalize_path(file);
         let shared_path = self.path_cache.get(&normalized)?;
@@ -577,10 +589,20 @@ impl CallGraph {
         // The filter_map in get_incoming_calls/get_outgoing_calls handles this,
         // but we also remove the indices to save memory
         for calls in self.incoming_calls.values_mut() {
-            calls.retain(|&idx| self.call_sites.get(idx as usize).map(|s| s.is_some()).unwrap_or(false));
+            calls.retain(|&idx| {
+                self.call_sites
+                    .get(idx as usize)
+                    .map(|s| s.is_some())
+                    .unwrap_or(false)
+            });
         }
         for calls in self.outgoing_calls.values_mut() {
-            calls.retain(|&idx| self.call_sites.get(idx as usize).map(|s| s.is_some()).unwrap_or(false));
+            calls.retain(|&idx| {
+                self.call_sites
+                    .get(idx as usize)
+                    .map(|s| s.is_some())
+                    .unwrap_or(false)
+            });
         }
 
         // Clean up event subscriptions from this file
@@ -632,13 +654,20 @@ impl CallGraph {
     /// Get the count of incoming calls for a procedure
     pub fn get_incoming_call_count(&self, qname: &QualifiedName) -> usize {
         // Count direct calls
-        let direct_calls = self.incoming_calls
+        let direct_calls = self
+            .incoming_calls
             .get(qname)
-            .map(|indices| indices.iter().filter(|&&idx| self.get_call_site(idx).is_some()).count())
+            .map(|indices| {
+                indices
+                    .iter()
+                    .filter(|&&idx| self.get_call_site(idx).is_some())
+                    .count()
+            })
             .unwrap_or(0);
 
         // Count event subscribers (if this is a trigger/event)
-        let subscriber_count = self.event_subscriptions
+        let subscriber_count = self
+            .event_subscriptions
             .get(qname)
             .map(|subs| subs.len())
             .unwrap_or(0);
@@ -966,9 +995,15 @@ mod tests {
         let path2 = graph.get_shared_path(Path::new("C:\\Git\\Project\\al\\file.al"));
 
         #[cfg(windows)]
-        assert!(Arc::ptr_eq(&path1, &path2), "Same file with different case should deduplicate on Windows");
+        assert!(
+            Arc::ptr_eq(&path1, &path2),
+            "Same file with different case should deduplicate on Windows"
+        );
         #[cfg(not(windows))]
-        assert!(!Arc::ptr_eq(&path1, &path2), "Different case paths are distinct on non-Windows");
+        assert!(
+            !Arc::ptr_eq(&path1, &path2),
+            "Different case paths are distinct on non-Windows"
+        );
     }
 
     #[test]
@@ -993,8 +1028,10 @@ mod tests {
         // Look up with different casing (simulating URI-derived path vs WalkDir path)
         let lookup_path = Path::new("C:\\Git\\Project\\al\\codeunit\\file.al");
         #[cfg(windows)]
-        assert!(graph.find_definition_at(lookup_path, 15, 10).is_some(),
-            "Should find definition regardless of path case on Windows");
+        assert!(
+            graph.find_definition_at(lookup_path, 15, 10).is_some(),
+            "Should find definition regardless of path case on Windows"
+        );
     }
 
     // ==================== CallSite Tests ====================
@@ -1312,7 +1349,9 @@ mod tests {
 
         graph.add_variable_binding(file, proc_qname, var_name, type_name);
 
-        assert!(graph.lookup_variable_type(&proc_qname, unknown_var).is_none());
+        assert!(graph
+            .lookup_variable_type(&proc_qname, unknown_var)
+            .is_none());
     }
 
     #[test]
@@ -1675,5 +1714,547 @@ mod tests {
             procedure: callee_proc,
         };
         assert_eq!(graph.get_incoming_calls(&callee_qname).len(), 1);
+    }
+
+    // ==================== ObjectType TryFrom Tests ====================
+
+    #[test]
+    fn test_object_type_try_from_valid() {
+        assert_eq!(ObjectType::try_from("codeunit"), Ok(ObjectType::Codeunit));
+        assert_eq!(ObjectType::try_from("table"), Ok(ObjectType::Table));
+        assert_eq!(ObjectType::try_from("page"), Ok(ObjectType::Page));
+        assert_eq!(ObjectType::try_from("report"), Ok(ObjectType::Report));
+        assert_eq!(ObjectType::try_from("query"), Ok(ObjectType::Query));
+        assert_eq!(ObjectType::try_from("xmlport"), Ok(ObjectType::XmlPort));
+        assert_eq!(ObjectType::try_from("enum"), Ok(ObjectType::Enum));
+        assert_eq!(ObjectType::try_from("interface"), Ok(ObjectType::Interface));
+        assert_eq!(
+            ObjectType::try_from("controladdin"),
+            Ok(ObjectType::ControlAddIn)
+        );
+        assert_eq!(
+            ObjectType::try_from("pageextension"),
+            Ok(ObjectType::PageExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("tableextension"),
+            Ok(ObjectType::TableExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("enumextension"),
+            Ok(ObjectType::EnumExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("permissionset"),
+            Ok(ObjectType::PermissionSet)
+        );
+        assert_eq!(
+            ObjectType::try_from("permissionsetextension"),
+            Ok(ObjectType::PermissionSetExtension)
+        );
+    }
+
+    #[test]
+    fn test_object_type_try_from_case_insensitive() {
+        assert_eq!(ObjectType::try_from("Codeunit"), Ok(ObjectType::Codeunit));
+        assert_eq!(ObjectType::try_from("TABLE"), Ok(ObjectType::Table));
+    }
+
+    #[test]
+    fn test_object_type_try_from_invalid() {
+        assert_eq!(ObjectType::try_from("notaobject"), Err(()));
+    }
+
+    // ==================== ObjectType Display Tests ====================
+
+    #[test]
+    fn test_object_type_display() {
+        assert_eq!(format!("{}", ObjectType::Codeunit), "Codeunit");
+        assert_eq!(format!("{}", ObjectType::Table), "Table");
+        assert_eq!(format!("{}", ObjectType::Page), "Page");
+        assert_eq!(format!("{}", ObjectType::Report), "Report");
+        assert_eq!(format!("{}", ObjectType::Query), "Query");
+        assert_eq!(format!("{}", ObjectType::XmlPort), "XmlPort");
+        assert_eq!(format!("{}", ObjectType::Enum), "Enum");
+        assert_eq!(format!("{}", ObjectType::Interface), "Interface");
+        assert_eq!(format!("{}", ObjectType::ControlAddIn), "ControlAddIn");
+        assert_eq!(format!("{}", ObjectType::PageExtension), "PageExtension");
+        assert_eq!(format!("{}", ObjectType::TableExtension), "TableExtension");
+        assert_eq!(format!("{}", ObjectType::EnumExtension), "EnumExtension");
+        assert_eq!(format!("{}", ObjectType::PermissionSet), "PermissionSet");
+        assert_eq!(
+            format!("{}", ObjectType::PermissionSetExtension),
+            "PermissionSetExtension"
+        );
+    }
+
+    // ==================== DefinitionKind Display Tests ====================
+
+    #[test]
+    fn test_definition_kind_display() {
+        assert_eq!(format!("{}", DefinitionKind::Procedure), "Procedure");
+        assert_eq!(format!("{}", DefinitionKind::Trigger), "Trigger");
+        assert_eq!(
+            format!("{}", DefinitionKind::EventSubscriber),
+            "EventSubscriber"
+        );
+    }
+
+    // ==================== External Definition Tests ====================
+
+    #[test]
+    fn test_external_definitions() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("ExternalCodeunit");
+        let proc = graph.intern("ExternalProc");
+        let app_name = graph.intern("TestApp");
+        let app_version = graph.intern("1.0.0");
+
+        graph.register_external_object(obj, ObjectType::Codeunit);
+
+        graph.add_external_definition(ExternalDefinition {
+            source: ExternalSource {
+                app_name,
+                app_version,
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: proc,
+            kind: DefinitionKind::Procedure,
+        });
+
+        assert_eq!(graph.external_definition_count(), 1);
+
+        let qname = QualifiedName {
+            object: obj,
+            procedure: proc,
+        };
+        let ext_def = graph.get_external_definition(&qname);
+        assert!(ext_def.is_some());
+        assert_eq!(ext_def.unwrap().object_type, ObjectType::Codeunit);
+    }
+
+    #[test]
+    fn test_external_definition_not_found() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("Missing");
+        let proc = graph.intern("MissingProc");
+        let qname = QualifiedName {
+            object: obj,
+            procedure: proc,
+        };
+        assert!(graph.get_external_definition(&qname).is_none());
+        assert_eq!(graph.external_definition_count(), 0);
+    }
+
+    // ==================== Event Subscription Tests ====================
+
+    #[test]
+    fn test_event_subscription_add_and_retrieve() {
+        let mut graph = CallGraph::new();
+        let subscriber_obj = graph.intern("SubscriberCU");
+        let subscriber_proc = graph.intern("OnBeforePost");
+        let publisher_obj = graph.intern("PublisherCU");
+        let publisher_event = graph.intern("OnPostDocument");
+        let file = graph.get_shared_path(Path::new("subscriber.al"));
+
+        let subscription = EventSubscription {
+            subscriber: QualifiedName {
+                object: subscriber_obj,
+                procedure: subscriber_proc,
+            },
+            file: file.clone(),
+            range: make_range(10, 20),
+            publisher_object_type: Some(ObjectType::Codeunit),
+            publisher_object: publisher_obj,
+            publisher_event: publisher_event,
+        };
+
+        graph.add_event_subscription(subscription);
+
+        let publisher_qname = QualifiedName {
+            object: publisher_obj,
+            procedure: publisher_event,
+        };
+        let subscribers = graph.get_event_subscribers(&publisher_qname);
+        assert_eq!(subscribers.len(), 1);
+        assert_eq!(subscribers[0].subscriber.object, subscriber_obj);
+    }
+
+    #[test]
+    fn test_event_subscription_no_subscribers() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("SomeObj");
+        let proc = graph.intern("SomeEvent");
+        let qname = QualifiedName {
+            object: obj,
+            procedure: proc,
+        };
+        assert!(graph.get_event_subscribers(&qname).is_empty());
+    }
+
+    #[test]
+    fn test_remove_file_clears_event_subscriptions() {
+        let mut graph = CallGraph::new();
+        let subscriber_obj = graph.intern("SubscriberCU");
+        let subscriber_proc = graph.intern("OnBeforePost");
+        let publisher_obj = graph.intern("PublisherCU");
+        let publisher_event = graph.intern("OnPostDocument");
+        let file = graph.get_shared_path(Path::new("subscriber.al"));
+
+        graph.add_event_subscription(EventSubscription {
+            subscriber: QualifiedName {
+                object: subscriber_obj,
+                procedure: subscriber_proc,
+            },
+            file: file.clone(),
+            range: make_range(10, 20),
+            publisher_object_type: Some(ObjectType::Codeunit),
+            publisher_object: publisher_obj,
+            publisher_event: publisher_event,
+        });
+
+        let publisher_qname = QualifiedName {
+            object: publisher_obj,
+            procedure: publisher_event,
+        };
+        assert_eq!(graph.get_event_subscribers(&publisher_qname).len(), 1);
+
+        graph.remove_file(Path::new("subscriber.al"));
+        assert!(graph.get_event_subscribers(&publisher_qname).is_empty());
+    }
+
+    // ==================== Utility Method Tests ====================
+
+    #[test]
+    fn test_call_site_count() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let caller = graph.intern("Caller");
+        let callee = graph.intern("Callee");
+        let file = graph.get_shared_path(Path::new("test.al"));
+
+        graph.register_object(obj, ObjectType::Codeunit);
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: caller,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(25, 35),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: callee,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        let caller_qname = QualifiedName {
+            object: obj,
+            procedure: caller,
+        };
+        graph.add_call_site(
+            caller_qname,
+            CallSite {
+                file: file.clone(),
+                range: make_range(15, 15),
+                caller,
+                callee_object: None,
+                callee_method: callee,
+            },
+        );
+
+        assert_eq!(graph.call_site_count(), 1);
+
+        // After removing file, tombstoned call sites shouldn't count
+        graph.remove_file(Path::new("test.al"));
+        assert_eq!(graph.call_site_count(), 0);
+    }
+
+    #[test]
+    fn test_get_definitions_in_file() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let proc1 = graph.intern("Proc1");
+        let proc2 = graph.intern("Proc2");
+        let file = graph.get_shared_path(Path::new("test.al"));
+
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: proc1,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(25, 35),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: proc2,
+            kind: DefinitionKind::Trigger,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        let defs = graph.get_definitions_in_file(Path::new("test.al"));
+        assert_eq!(defs.len(), 2);
+    }
+
+    #[test]
+    fn test_get_definitions_in_file_unknown() {
+        let graph = CallGraph::new();
+        let defs = graph.get_definitions_in_file(Path::new("unknown.al"));
+        assert!(defs.is_empty());
+    }
+
+    #[test]
+    fn test_get_incoming_call_count_with_events() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let proc = graph.intern("OnPost");
+        let caller = graph.intern("Caller");
+        let sub_obj = graph.intern("SubCU");
+        let sub_proc = graph.intern("HandlePost");
+        let file = graph.get_shared_path(Path::new("test.al"));
+        let sub_file = graph.get_shared_path(Path::new("sub.al"));
+
+        graph.register_object(obj, ObjectType::Codeunit);
+
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(25, 35),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: caller,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        let proc_qname = QualifiedName {
+            object: obj,
+            procedure: proc,
+        };
+        let caller_qname = QualifiedName {
+            object: obj,
+            procedure: caller,
+        };
+
+        // Add a direct call
+        graph.add_call_site(
+            caller_qname,
+            CallSite {
+                file: file.clone(),
+                range: make_range(30, 30),
+                caller,
+                callee_object: None,
+                callee_method: proc,
+            },
+        );
+
+        // Add an event subscription
+        graph.add_event_subscription(EventSubscription {
+            subscriber: QualifiedName {
+                object: sub_obj,
+                procedure: sub_proc,
+            },
+            file: sub_file,
+            range: make_range(10, 20),
+            publisher_object_type: Some(ObjectType::Codeunit),
+            publisher_object: obj,
+            publisher_event: proc,
+        });
+
+        // Should count both direct call and event subscriber
+        assert_eq!(graph.get_incoming_call_count(&proc_qname), 2);
+    }
+
+    #[test]
+    fn test_get_unused_procedures() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let used_proc = graph.intern("UsedProc");
+        let unused_proc = graph.intern("UnusedProc");
+        let trigger = graph.intern("OnRun");
+        let caller = graph.intern("Caller");
+        let file = graph.get_shared_path(Path::new("test.al"));
+
+        graph.register_object(obj, ObjectType::Codeunit);
+
+        // Add procedures and a trigger
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: used_proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(25, 35),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: unused_proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(40, 50),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: trigger,
+            kind: DefinitionKind::Trigger,
+            complexity: 0,
+            parameter_count: 0,
+        });
+        graph.add_definition(Definition {
+            file: file.clone(),
+            range: make_range(55, 65),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: caller,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        // Caller calls UsedProc
+        let caller_qname = QualifiedName {
+            object: obj,
+            procedure: caller,
+        };
+        graph.add_call_site(
+            caller_qname,
+            CallSite {
+                file,
+                range: make_range(60, 60),
+                caller,
+                callee_object: None,
+                callee_method: used_proc,
+            },
+        );
+
+        let unused = graph.get_unused_procedures();
+        // unused_proc and caller should be unused (caller calls used_proc but nobody calls caller)
+        // trigger should NOT appear (triggers are excluded)
+        assert!(unused.iter().any(|(q, _)| q.procedure == unused_proc));
+        assert!(unused.iter().any(|(q, _)| q.procedure == caller));
+        assert!(!unused.iter().any(|(q, _)| q.procedure == trigger));
+    }
+
+    #[test]
+    fn test_iter_definitions() {
+        let mut graph = CallGraph::new();
+        let obj = graph.intern("TestCU");
+        let proc = graph.intern("Proc1");
+        let file = graph.get_shared_path(Path::new("test.al"));
+
+        graph.add_definition(Definition {
+            file,
+            range: make_range(10, 20),
+            object_type: ObjectType::Codeunit,
+            object_name: obj,
+            name: proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        assert_eq!(graph.iter_definitions().count(), 1);
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let graph = CallGraph::default();
+        assert_eq!(graph.definition_count(), 0);
+        assert_eq!(graph.call_site_count(), 0);
+        assert_eq!(graph.external_definition_count(), 0);
+    }
+
+    // ==================== External Object Resolution Tests ====================
+
+    #[test]
+    fn test_resolve_call_via_external_object() {
+        let mut graph = CallGraph::new();
+        let caller_obj = graph.intern("LocalCU");
+        let ext_obj = graph.intern("ExternalCU");
+        let caller_proc = graph.intern("CallerProc");
+        let ext_proc = graph.intern("ExtProc");
+        let app_name = graph.intern("TestApp");
+        let app_version = graph.intern("1.0.0");
+        let caller_file = graph.get_shared_path(Path::new("local.al"));
+
+        graph.register_object(caller_obj, ObjectType::Codeunit);
+        graph.register_external_object(ext_obj, ObjectType::Codeunit);
+
+        graph.add_definition(Definition {
+            file: caller_file.clone(),
+            range: make_range(10, 30),
+            object_type: ObjectType::Codeunit,
+            object_name: caller_obj,
+            name: caller_proc,
+            kind: DefinitionKind::Procedure,
+            complexity: 0,
+            parameter_count: 0,
+        });
+
+        graph.add_external_definition(ExternalDefinition {
+            source: ExternalSource {
+                app_name,
+                app_version,
+            },
+            object_type: ObjectType::Codeunit,
+            object_name: ext_obj,
+            name: ext_proc,
+            kind: DefinitionKind::Procedure,
+        });
+
+        let caller_qname = QualifiedName {
+            object: caller_obj,
+            procedure: caller_proc,
+        };
+
+        // Call to ExternalCU.ExtProc - should resolve via external object
+        graph.add_call_site(
+            caller_qname,
+            CallSite {
+                file: caller_file,
+                range: make_range(20, 20),
+                caller: caller_proc,
+                callee_object: Some(ext_obj),
+                callee_method: ext_proc,
+            },
+        );
+
+        // The outgoing calls should resolve to the external object
+        let outgoing = graph.get_outgoing_calls(&caller_qname);
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(outgoing[0].callee_object, Some(ext_obj));
     }
 }

@@ -94,13 +94,15 @@ impl AlParser {
         let lang = language::language();
 
         let mut parser = Parser::new();
-        parser.set_language(&lang).context("Failed to set language")?;
+        parser
+            .set_language(&lang)
+            .context("Failed to set language")?;
 
         let definitions_query = Query::new(&lang, language::queries::DEFINITIONS)
             .context("Failed to compile definitions query")?;
 
-        let calls_query = Query::new(&lang, language::queries::CALLS)
-            .context("Failed to compile calls query")?;
+        let calls_query =
+            Query::new(&lang, language::queries::CALLS).context("Failed to compile calls query")?;
 
         let variables_query = Query::new(&lang, language::queries::VARIABLES)
             .context("Failed to compile variables query")?;
@@ -286,7 +288,8 @@ impl AlParser {
 
             if let (Some(method), Some(range)) = (method, range) {
                 // Find the containing procedure by walking up the tree
-                let containing_procedure = call_node.and_then(|n| find_containing_procedure(&n, source));
+                let containing_procedure =
+                    call_node.and_then(|n| find_containing_procedure(&n, source));
 
                 result.calls.push(ParsedCall {
                     object,
@@ -342,7 +345,8 @@ impl AlParser {
 
             for capture in m.captures {
                 let node = capture.node;
-                let capture_name = &self.event_subscribers_query.capture_names()[capture.index as usize];
+                let capture_name =
+                    &self.event_subscribers_query.capture_names()[capture.index as usize];
 
                 match capture_name.as_ref() {
                     "attr.args" => {
@@ -360,12 +364,15 @@ impl AlParser {
                 let mut next = attr.next_sibling();
                 while let Some(sib) = next {
                     if sib.kind() == "procedure" {
-                        let proc_name = sib.child_by_field_name("name")
+                        let proc_name = sib
+                            .child_by_field_name("name")
                             .map(|n| clean_name(node_text(&n, source)));
                         let proc_range = node_range(&sib);
 
                         if let Some(name) = proc_name {
-                            if let Some((obj_type, obj_name, event_name)) = parse_event_subscriber_args(&args) {
+                            if let Some((obj_type, obj_name, event_name)) =
+                                parse_event_subscriber_args(&args)
+                            {
                                 result.event_subscribers.push(ParsedEventSubscriber {
                                     subscriber_name: name,
                                     range: proc_range,
@@ -574,10 +581,7 @@ fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
 
 /// Clean up a name (remove quotes, trim whitespace)
 fn clean_name(name: &str) -> String {
-    name.trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .to_string()
+    name.trim().trim_matches('"').trim_matches('\'').to_string()
 }
 
 /// Count parameters in a procedure node
@@ -646,7 +650,9 @@ codeunit 50000 "Test Codeunit"
 "#;
 
         let mut parser = AlParser::new().expect("Parser creation failed");
-        let result = parser.parse_file(Path::new("test.al"), source).expect("Parse failed");
+        let result = parser
+            .parse_file(Path::new("test.al"), source)
+            .expect("Parse failed");
 
         println!("Variables found: {}", result.variables.len());
         for var in &result.variables {
@@ -657,17 +663,25 @@ codeunit 50000 "Test Codeunit"
         }
 
         // We should find 4 variables
-        assert!(result.variables.len() >= 3, "Expected at least 3 variables, got {}", result.variables.len());
+        assert!(
+            result.variables.len() >= 3,
+            "Expected at least 3 variables, got {}",
+            result.variables.len()
+        );
 
         // Check we found Record types
-        let record_vars: Vec<_> = result.variables.iter()
+        let record_vars: Vec<_> = result
+            .variables
+            .iter()
             .filter(|v| v.type_kind.as_ref().map(|k| k == "Record").unwrap_or(false))
             .collect();
-        assert!(record_vars.len() >= 2, "Expected at least 2 Record variables");
+        assert!(
+            record_vars.len() >= 2,
+            "Expected at least 2 Record variables"
+        );
 
         // Check specific variables
-        let email_var = result.variables.iter()
-            .find(|v| v.name == "EMailLine");
+        let email_var = result.variables.iter().find(|v| v.name == "EMailLine");
         assert!(email_var.is_some(), "Should find EMailLine variable");
         if let Some(v) = email_var {
             assert_eq!(v.type_kind.as_deref(), Some("Record"));
@@ -690,5 +704,355 @@ codeunit 50000 "Test Codeunit"
         let (kind, name) = parse_type_specification("Integer");
         assert!(kind.is_none());
         assert_eq!(name, "Integer");
+    }
+
+    #[test]
+    fn test_parse_all_object_types() {
+        let test_cases: Vec<(&str, &str)> = vec![
+            (
+                "table",
+                r#"table 50100 "TestTable" { fields { field(1; "Name"; Text[100]) { } } }"#,
+            ),
+            ("page", r#"page 50100 "TestPage" { }"#),
+            ("report", r#"report 50100 "TestReport" { }"#),
+            ("query", r#"query 50100 "TestQuery" { }"#),
+            ("xmlport", r#"xmlport 50100 "TestXmlPort" { }"#),
+            ("enum", r#"enum 50100 "TestEnum" { }"#),
+            ("interface", r#"interface "TestInterface" { }"#),
+            ("controladdin", r#"controladdin "TestControlAddIn" { }"#),
+            (
+                "pageextension",
+                r#"pageextension 50100 "TestPageExt" extends "Customer Card" { }"#,
+            ),
+            (
+                "tableextension",
+                r#"tableextension 50100 "TestTableExt" extends "Customer" { }"#,
+            ),
+            (
+                "enumextension",
+                r#"enumextension 50100 "TestEnumExt" extends "TestEnum" { }"#,
+            ),
+            ("permissionset", r#"permissionset 50100 "TestPermSet" { }"#),
+            (
+                "permissionsetextension",
+                r#"permissionsetextension 50100 "TestPermSetExt" extends "TestPermSet" { }"#,
+            ),
+        ];
+
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        for (expected_type, source) in test_cases {
+            let result = parser
+                .parse_file(Path::new("test.al"), source)
+                .expect("Parse failed");
+            assert!(
+                result.object_type.is_some(),
+                "Object type should be detected for {} source: {}",
+                expected_type,
+                source
+            );
+            assert_eq!(
+                result
+                    .object_type
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .to_lowercase(),
+                expected_type,
+                "Wrong object type for source: {}",
+                source
+            );
+            assert!(
+                result.object_name.is_some(),
+                "Object name should be detected for {} source: {}",
+                expected_type,
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_event_subscriber() {
+        let al_code = r#"codeunit 50100 "TestSubscriber"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnBeforePostSalesDoc', '', false, false)]
+    local procedure HandleOnBeforePost(var SalesHeader: Record "Sales Header")
+    begin
+    end;
+}"#;
+
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(std::path::Path::new("test.al"), al_code)
+            .expect("Parse failed");
+
+        println!(
+            "Event subscribers found: {:?}",
+            result
+                .event_subscribers
+                .iter()
+                .map(|s| &s.subscriber_name)
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "Definitions found: {:?}",
+            result
+                .definitions
+                .iter()
+                .map(|d| &d.name)
+                .collect::<Vec<_>>()
+        );
+
+        assert!(
+            !result.event_subscribers.is_empty(),
+            "Should find event subscriber. Definitions found: {:?}",
+            result
+                .definitions
+                .iter()
+                .map(|d| &d.name)
+                .collect::<Vec<_>>()
+        );
+
+        let sub = &result.event_subscribers[0];
+        assert_eq!(sub.subscriber_name, "HandleOnBeforePost");
+        assert_eq!(sub.publisher_object_type.as_deref(), Some("Codeunit"));
+        assert_eq!(sub.publisher_event, "OnBeforePostSalesDoc");
+    }
+
+    #[test]
+    fn test_parse_variable_types() {
+        let al_code = r#"codeunit 50100 "TestVars"
+{
+    procedure VarProc()
+    var
+        CustomerRec: Record Customer;
+        SalesPost: Codeunit "Sales-Post";
+        Counter: Integer;
+    begin
+    end;
+}"#;
+
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(std::path::Path::new("test.al"), al_code)
+            .expect("Parse failed");
+
+        // Should find variables with different type kinds
+        assert!(
+            result.variables.len() >= 2,
+            "Should find at least 2 typed variables, got {}: {:?}",
+            result.variables.len(),
+            result.variables
+        );
+
+        // Check Record type variable
+        let record_vars: Vec<_> = result
+            .variables
+            .iter()
+            .filter(|v| v.type_kind.as_deref() == Some("Record"))
+            .collect();
+        assert!(
+            !record_vars.is_empty(),
+            "Should find Record variables. All vars: {:?}",
+            result.variables
+        );
+
+        // Check Codeunit type variable
+        let cu_vars: Vec<_> = result
+            .variables
+            .iter()
+            .filter(|v| v.type_kind.as_deref() == Some("Codeunit"))
+            .collect();
+        assert!(
+            !cu_vars.is_empty(),
+            "Should find Codeunit variables. All vars: {:?}",
+            result.variables
+        );
+    }
+
+    #[test]
+    fn test_parse_calls_with_containing_procedure() {
+        let al_code = r#"codeunit 50100 "TestCalls"
+{
+    procedure CallerProc()
+    begin
+        HelperProc();
+    end;
+
+    procedure HelperProc()
+    begin
+    end;
+}"#;
+
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(std::path::Path::new("test.al"), al_code)
+            .expect("Parse failed");
+
+        let helper_calls: Vec<_> = result
+            .calls
+            .iter()
+            .filter(|c| c.method == "HelperProc")
+            .collect();
+        assert!(
+            !helper_calls.is_empty(),
+            "Should find call to HelperProc. All calls: {:?}",
+            result.calls
+        );
+        assert_eq!(
+            helper_calls[0].containing_procedure.as_deref(),
+            Some("CallerProc"),
+            "Call should be inside CallerProc"
+        );
+    }
+
+    #[test]
+    fn test_parse_procedure_parameters() {
+        let al_code = r#"codeunit 50100 "TestParams"
+{
+    procedure NoParams()
+    begin
+    end;
+
+    procedure TwoParams(First: Integer; Second: Text)
+    begin
+    end;
+
+    procedure FiveParams(A: Integer; B: Text; C: Boolean; D: Decimal; E: Code[20])
+    begin
+    end;
+}"#;
+
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(std::path::Path::new("test.al"), al_code)
+            .expect("Parse failed");
+
+        assert_eq!(result.definitions.len(), 3, "Should find 3 procedures");
+
+        let no_params = result
+            .definitions
+            .iter()
+            .find(|d| d.name == "NoParams")
+            .unwrap();
+        assert_eq!(no_params.parameter_count, 0);
+
+        let two_params = result
+            .definitions
+            .iter()
+            .find(|d| d.name == "TwoParams")
+            .unwrap();
+        assert_eq!(two_params.parameter_count, 2);
+
+        let five_params = result
+            .definitions
+            .iter()
+            .find(|d| d.name == "FiveParams")
+            .unwrap();
+        assert_eq!(five_params.parameter_count, 5);
+    }
+
+    #[test]
+    fn test_parse_real_bc_codeunit() {
+        let test_path = std::path::Path::new(
+            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Posting/SalesPost.Codeunit.al",
+        );
+        if !test_path.exists() {
+            eprintln!("Skipping test: BC.History not available");
+            return;
+        }
+
+        let source = std::fs::read_to_string(test_path).expect("Failed to read file");
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(test_path, &source)
+            .expect("Failed to parse");
+
+        assert!(result.object_type.is_some(), "Should detect object type");
+        assert!(result.object_name.is_some(), "Should extract object name");
+        assert!(
+            !result.definitions.is_empty(),
+            "Real codeunit should have procedures"
+        );
+        assert!(
+            !result.calls.is_empty(),
+            "Real codeunit should have call sites"
+        );
+        assert!(
+            !result.variables.is_empty(),
+            "Real codeunit should have variables"
+        );
+
+        println!(
+            "Parsed {} definitions, {} calls, {} variables from {:?}",
+            result.definitions.len(),
+            result.calls.len(),
+            result.variables.len(),
+            test_path.file_name()
+        );
+    }
+
+    #[test]
+    fn test_parse_real_bc_table() {
+        let test_path = std::path::Path::new(
+            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Customer/Customer.Table.al",
+        );
+        if !test_path.exists() {
+            eprintln!("Skipping test: BC.History not available");
+            return;
+        }
+
+        let source = std::fs::read_to_string(test_path).expect("Failed to read file");
+        let mut parser = AlParser::new().expect("Failed to create parser");
+        let result = parser
+            .parse_file(test_path, &source)
+            .expect("Failed to parse");
+
+        assert!(result.object_type.is_some());
+        assert!(result.object_name.is_some());
+        let triggers: Vec<_> = result
+            .definitions
+            .iter()
+            .filter(|d| d.kind == DefinitionKind::Trigger)
+            .collect();
+        assert!(
+            !triggers.is_empty(),
+            "Table should have triggers. Defs: {:?}",
+            result
+                .definitions
+                .iter()
+                .map(|d| (&d.name, &d.kind))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_parse_real_bc_page_extension() {
+        let base = std::path::Path::new("U:/Git/BC.History/BaseApp/Source/Base Application");
+        if !base.exists() {
+            eprintln!("Skipping test: BC.History not available");
+            return;
+        }
+
+        let page_ext = std::fs::read_dir(base)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| e.file_name().to_string_lossy().ends_with(".PageExt.al"));
+
+        if let Some(entry) = page_ext {
+            let source = std::fs::read_to_string(entry.path()).expect("Failed to read");
+            let mut parser = AlParser::new().expect("Failed to create parser");
+            let result = parser
+                .parse_file(&entry.path(), &source)
+                .expect("Failed to parse");
+
+            assert!(result.object_type.is_some());
+            let obj_type = format!("{}", result.object_type.as_ref().unwrap());
+            assert_eq!(
+                obj_type.to_lowercase(),
+                "pageextension",
+                "Should detect PageExtension type for {:?}",
+                entry.file_name()
+            );
+        }
     }
 }

@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use log::{error, info, warn};
 use lsp_server::{Connection, Message, Notification, Response};
 use lsp_types::{
-    CodeLensOptions, Diagnostic, DiagnosticSeverity, InitializeParams,
-    InitializeResult, PublishDiagnosticsParams, ServerCapabilities,
+    CodeLensOptions, Diagnostic, DiagnosticSeverity, InitializeParams, InitializeResult,
+    PublishDiagnosticsParams, ServerCapabilities,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -198,7 +198,11 @@ fn start_file_watcher(indexer: Arc<RwLock<Indexer>>, workspace_roots: Vec<PathBu
 }
 
 /// Main message processing loop
-fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>, config: &DiagnosticConfig) -> Result<()> {
+fn main_loop(
+    connection: &Connection,
+    indexer: &Arc<RwLock<Indexer>>,
+    config: &DiagnosticConfig,
+) -> Result<()> {
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
@@ -232,7 +236,11 @@ fn main_loop(connection: &Connection, indexer: &Arc<RwLock<Indexer>>, config: &D
 }
 
 /// Publish all diagnostics (unused procedures + code quality)
-fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer>>, config: &DiagnosticConfig) {
+fn publish_all_diagnostics(
+    connection: &Connection,
+    indexer: &Arc<RwLock<Indexer>>,
+    config: &DiagnosticConfig,
+) {
     let indexer = indexer.read().expect("Indexer lock poisoned");
     let graph = indexer.graph();
 
@@ -280,7 +288,10 @@ fn publish_all_diagnostics(connection: &Connection, indexer: &Arc<RwLock<Indexer
 }
 
 /// Get code quality diagnostics from the call graph
-fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) -> Vec<(String, Vec<Diagnostic>)> {
+fn get_code_quality_diagnostics(
+    graph: &CallGraph,
+    config: &DiagnosticConfig,
+) -> Vec<(String, Vec<Diagnostic>)> {
     let mut file_diagnostics: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
     // Iterate over all definitions and check for quality issues
@@ -317,7 +328,9 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
-                code: Some(lsp_types::NumberOrString::String("high-complexity".to_string())),
+                code: Some(lsp_types::NumberOrString::String(
+                    "high-complexity".to_string(),
+                )),
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has cyclomatic complexity {} (warning threshold: {})",
@@ -358,7 +371,9 @@ fn get_code_quality_diagnostics(graph: &CallGraph, config: &DiagnosticConfig) ->
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::INFORMATION),
-                code: Some(lsp_types::NumberOrString::String("too-many-parameters".to_string())),
+                code: Some(lsp_types::NumberOrString::String(
+                    "too-many-parameters".to_string(),
+                )),
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has {} parameters (warning threshold: {})",

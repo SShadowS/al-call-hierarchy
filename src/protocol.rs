@@ -26,7 +26,9 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
         let path_str = &s[7..]; // Skip "file://"
 
         // URL decode percent-encoded sequences (e.g. %3A for ':', %20 for ' ')
-        let path_str = percent_decode_str(path_str).decode_utf8_lossy().into_owned();
+        let path_str = percent_decode_str(path_str)
+            .decode_utf8_lossy()
+            .into_owned();
 
         #[cfg(windows)]
         {
@@ -139,7 +141,10 @@ mod tests {
         let uri: Uri = "file:///d%3A/Repos/MyProject/src/file.al".parse().unwrap();
         let path = uri_to_path(&uri);
         #[cfg(windows)]
-        assert_eq!(path, Some(PathBuf::from("d:\\repos\\myproject\\src\\file.al")));
+        assert_eq!(
+            path,
+            Some(PathBuf::from("d:\\repos\\myproject\\src\\file.al"))
+        );
         #[cfg(not(windows))]
         assert_eq!(path, Some(PathBuf::from("/d:/Repos/MyProject/src/file.al")));
     }
@@ -159,8 +164,12 @@ mod tests {
     #[test]
     fn test_uri_to_path_case_normalized_on_windows() {
         // Different URI casings should produce the same path on Windows
-        let uri1: Uri = "file:///U:/Git/Project/AL/Codeunit/File.al".parse().unwrap();
-        let uri2: Uri = "file:///U:/Git/Project/Al/Codeunit/File.al".parse().unwrap();
+        let uri1: Uri = "file:///U:/Git/Project/AL/Codeunit/File.al"
+            .parse()
+            .unwrap();
+        let uri2: Uri = "file:///U:/Git/Project/Al/Codeunit/File.al"
+            .parse()
+            .unwrap();
         let path1 = uri_to_path(&uri1);
         let path2 = uri_to_path(&uri2);
         #[cfg(windows)]

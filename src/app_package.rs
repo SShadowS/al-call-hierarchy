@@ -202,7 +202,10 @@ fn parse_symbols<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Vec
     add_objects(symbols.table_extensions, ObjectType::TableExtension);
     add_objects(symbols.enum_extension_types, ObjectType::EnumExtension);
     add_objects(symbols.permission_sets, ObjectType::PermissionSet);
-    add_objects(symbols.permission_set_extensions, ObjectType::PermissionSetExtension);
+    add_objects(
+        symbols.permission_set_extensions,
+        ObjectType::PermissionSetExtension,
+    );
 
     Ok(objects)
 }
@@ -214,7 +217,9 @@ mod tests {
     #[test]
     fn test_parse_real_app_file() {
         // This test requires the actual test file to exist
-        let test_path = Path::new("u:/Git/DO/Cloud/.alpackages/Continia Software_Continia Core_26.0.0.183530.app");
+        let test_path = Path::new(
+            "u:/Git/DO/Cloud/.alpackages/Continia Software_Continia Core_26.0.0.183530.app",
+        );
         if !test_path.exists() {
             eprintln!("Skipping test: test file not found");
             return;
@@ -235,6 +240,10 @@ mod tests {
             .collect();
         assert!(!codeunits.is_empty(), "Should have codeunits");
 
-        println!("Parsed {} objects from {}", package.objects.len(), package.metadata.name);
+        println!(
+            "Parsed {} objects from {}",
+            package.objects.len(),
+            package.metadata.name
+        );
     }
 }
