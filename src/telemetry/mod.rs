@@ -6,7 +6,8 @@
 //! that compile to a single early return.
 
 // Submodules added in Tasks 0.4-0.8 of the plan:
-// #[cfg(feature = "telemetry")] mod consent;
+#[cfg(feature = "telemetry")]
+mod consent;
 #[cfg(feature = "telemetry")]
 mod hash;
 #[cfg(feature = "telemetry")]
