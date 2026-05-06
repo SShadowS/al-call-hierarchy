@@ -106,15 +106,35 @@ impl Indexer {
 
     /// Parse a single file using thread-local parser
     fn parse_file(&self, path: &Path) -> Result<ParsedFile> {
-        let source = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
+        let source = match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                #[cfg(feature = "telemetry")]
+                crate::telemetry::record_indexer_issue(
+                    crate::telemetry::IndexerIssueKind::IoError,
+                    (e.kind() as u8) as u16,
+                    None,
+                );
+                return Err(e).with_context(|| format!("Failed to read {}", path.display()));
+            }
+        };
 
         PARSER.with(|cell| {
             let mut parser_opt = cell.borrow_mut();
             if parser_opt.is_none() {
                 *parser_opt = Some(AlParser::new()?);
             }
-            parser_opt.as_mut().unwrap().parse_file(path, &source)
+            let result = parser_opt.as_mut().unwrap().parse_file(path, &source);
+            #[cfg(feature = "telemetry")]
+            {
+                if result.is_err() {
+                    crate::telemetry::record_parser_error(
+                        crate::telemetry::ParserErrorKind::ParseFailed,
+                        path,
+                    );
+                }
+            }
+            result
         })
     }
 

@@ -229,8 +229,29 @@ fn incoming_calls(
             });
         }
 
+        #[cfg(feature = "telemetry")]
+        {
+            if results.is_empty() {
+                crate::telemetry::record_handler_empty(
+                    "incomingCalls",
+                    crate::telemetry::ObjectType::Other,
+                    crate::telemetry::DefinitionKind::Procedure,
+                    &object,
+                    &procedure,
+                );
+            }
+        }
+
         Ok(Some(results))
     } else {
+        #[cfg(feature = "telemetry")]
+        crate::telemetry::record_handler_empty(
+            "incomingCalls",
+            crate::telemetry::ObjectType::Other,
+            crate::telemetry::DefinitionKind::Procedure,
+            &object,
+            &procedure,
+        );
         Ok(None)
     }
 }
@@ -350,8 +371,29 @@ fn outgoing_calls(
             });
         }
 
+        #[cfg(feature = "telemetry")]
+        {
+            if results.is_empty() {
+                crate::telemetry::record_handler_empty(
+                    "outgoingCalls",
+                    crate::telemetry::ObjectType::Other,
+                    crate::telemetry::DefinitionKind::Procedure,
+                    &object,
+                    &procedure,
+                );
+            }
+        }
+
         Ok(Some(results))
     } else {
+        #[cfg(feature = "telemetry")]
+        crate::telemetry::record_handler_empty(
+            "outgoingCalls",
+            crate::telemetry::ObjectType::Other,
+            crate::telemetry::DefinitionKind::Procedure,
+            &object,
+            &procedure,
+        );
         Ok(None)
     }
 }

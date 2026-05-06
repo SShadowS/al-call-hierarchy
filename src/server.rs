@@ -84,6 +84,31 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     let indexer = Arc::new(RwLock::new(Indexer::new()));
     let workspace_roots = index_workspaces(&indexer, &init_params);
 
+    #[cfg(feature = "telemetry")]
+    {
+        let workspace_file_count = indexer
+            .read()
+            .map(|idx| {
+                let g = idx.graph();
+                (g.definition_count() + g.call_site_count()) as u32
+            })
+            .unwrap_or(0);
+        let has_app_dependencies = workspace_roots
+            .iter()
+            .any(|root| root.join("app.json").exists());
+        // Best-effort: derive dependency_count from app.json files present.
+        let dependency_count = workspace_roots
+            .iter()
+            .filter(|root| root.join("app.json").exists())
+            .count()
+            .min(u8::MAX as usize) as u8;
+        crate::telemetry::record_session_start(
+            workspace_file_count,
+            dependency_count,
+            has_app_dependencies,
+        );
+    }
+
     // Load config from first workspace root (or use defaults)
     let config = workspace_roots
         .first()

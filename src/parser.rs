@@ -127,6 +127,17 @@ impl AlParser {
             .context("Failed to parse file")?;
 
         let root = tree.root_node();
+
+        #[cfg(feature = "telemetry")]
+        {
+            if root.has_error() {
+                crate::telemetry::record_parser_error(
+                    crate::telemetry::ParserErrorKind::TreeError,
+                    _path,
+                );
+            }
+        }
+
         let mut result = ParsedFile::default();
 
         // Extract object info and definitions

@@ -254,30 +254,177 @@ pub fn record_resolution_miss(ctx: &CallContext<'_>) {
     }
 }
 
-// Phase 2 Task 2.4 fills these in. For Phase 1 they're stubs that compile
-// but only increment counters.
 #[cfg(feature = "telemetry")]
-pub fn record_parser_error(_kind: ParserErrorKind, _file: &std::path::Path) {}
+pub fn record_parser_error(kind: ParserErrorKind, file: &std::path::Path) {
+    let Some(rt) = runtime::get() else { return };
+    let leaf = match kind {
+        ParserErrorKind::TreeError => events::LeafKind::ParserTreeError,
+        ParserErrorKind::ParseFailed => events::LeafKind::ParserParseFailed,
+        ParserErrorKind::UnknownNodeKind => events::LeafKind::ParserUnknownNodeKind,
+    };
+    rt.counters.observe(leaf);
+
+    let path_str = file.to_string_lossy();
+    let file_hash = hash::hash_short(&rt.salt, hash::DOMAIN_FILE, path_str.as_bytes());
+    let file_extension = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+    let file_size_bucket = size_bucket_for_bytes(size);
+
+    let env = EventEnvelope {
+        schema_version: events::SCHEMA_VERSION,
+        timestamp: std::time::SystemTime::now(),
+        install_id: rt.install_id.clone(),
+        al_version: env!("CARGO_PKG_VERSION"),
+        grammar_version: "v2",
+        os: events::current_os(),
+        session_id: rt.session_id,
+        workspace_id: rt.workspace_id.clone(),
+        event: EventKind::ParserError(ParserError {
+            kind,
+            node_kind_hash: None,
+            file_hash,
+            file_extension,
+            file_size_bucket,
+            error_count: 0,
+            repeat_count: 0,
+        }),
+    };
+    if let Ok(guard) = rt.pipeline.read() {
+        if let Some(p) = guard.as_ref() {
+            p.clone_sender().send(env);
+        }
+    }
+}
 
 #[cfg(feature = "telemetry")]
-pub fn record_indexer_issue(_kind: IndexerIssueKind, _detail_code: u16, _app_id: Option<&str>) {}
+fn size_bucket_for_bytes(size: u64) -> SizeBucket {
+    match size {
+        0..=1024 => SizeBucket::Sub1k,
+        1025..=10_240 => SizeBucket::Sub10k,
+        10_241..=102_400 => SizeBucket::Sub100k,
+        _ => SizeBucket::Over100k,
+    }
+}
+
+#[cfg(feature = "telemetry")]
+pub fn record_indexer_issue(kind: IndexerIssueKind, detail_code: u16, app_id: Option<&str>) {
+    let Some(rt) = runtime::get() else { return };
+    let leaf = match kind {
+        IndexerIssueKind::MissingDependency => events::LeafKind::IndexerMissingDependency,
+        IndexerIssueKind::AppParseFailed => events::LeafKind::IndexerAppParseFailed,
+        IndexerIssueKind::BrokenSymlink => events::LeafKind::IndexerBrokenSymlink,
+        IndexerIssueKind::IoError => events::LeafKind::IndexerIoError,
+    };
+    rt.counters.observe(leaf);
+
+    let app_id_hash = app_id.map(|a| hash::hash_identifier(&rt.salt, hash::DOMAIN_APP_ID, a));
+    let env = EventEnvelope {
+        schema_version: events::SCHEMA_VERSION,
+        timestamp: std::time::SystemTime::now(),
+        install_id: rt.install_id.clone(),
+        al_version: env!("CARGO_PKG_VERSION"),
+        grammar_version: "v2",
+        os: events::current_os(),
+        session_id: rt.session_id,
+        workspace_id: rt.workspace_id.clone(),
+        event: EventKind::IndexerIssue(IndexerIssue {
+            kind,
+            app_id_hash,
+            detail_code,
+        }),
+    };
+    if let Ok(guard) = rt.pipeline.read() {
+        if let Some(p) = guard.as_ref() {
+            p.clone_sender().send(env);
+        }
+    }
+}
 
 #[cfg(feature = "telemetry")]
 pub fn record_handler_empty(
-    _method: &'static str,
-    _target_object_type: ObjectType,
-    _target_kind: DefinitionKind,
-    _object_name: &str,
-    _procedure_name: &str,
+    method: &'static str,
+    target_object_type: ObjectType,
+    target_kind: DefinitionKind,
+    object_name: &str,
+    procedure_name: &str,
 ) {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SAMPLE_COUNTER: AtomicU32 = AtomicU32::new(0);
+    if SAMPLE_COUNTER.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
+        return;
+    }
+    let Some(rt) = runtime::get() else { return };
+    rt.counters.observe(events::LeafKind::HandlerEmpty);
+
+    let object_hash = hash::hash_identifier(&rt.salt, hash::DOMAIN_OBJECT, object_name);
+    let procedure_hash = hash::hash_identifier(&rt.salt, hash::DOMAIN_PROCEDURE, procedure_name);
+    let env = EventEnvelope {
+        schema_version: events::SCHEMA_VERSION,
+        timestamp: std::time::SystemTime::now(),
+        install_id: rt.install_id.clone(),
+        al_version: env!("CARGO_PKG_VERSION"),
+        grammar_version: "v2",
+        os: events::current_os(),
+        session_id: rt.session_id,
+        workspace_id: rt.workspace_id.clone(),
+        event: EventKind::HandlerEmpty(HandlerEmpty {
+            method,
+            target_object_type,
+            target_kind,
+            object_hash,
+            procedure_hash,
+            repeat_count: 0,
+        }),
+    };
+    if let Ok(guard) = rt.pipeline.read() {
+        if let Some(p) = guard.as_ref() {
+            p.clone_sender().send(env);
+        }
+    }
 }
 
 #[cfg(feature = "telemetry")]
 pub fn record_session_start(
-    _workspace_file_count: u32,
-    _dependency_count: u8,
-    _has_app_dependencies: bool,
+    workspace_file_count: u32,
+    dependency_count: u8,
+    has_app_dependencies: bool,
 ) {
+    let Some(rt) = runtime::get() else { return };
+    rt.counters.observe(events::LeafKind::SessionStart);
+
+    let al_file_count_bucket = match workspace_file_count {
+        0..=99 => SizeBucket::Sub1k,
+        100..=499 => SizeBucket::Sub10k,
+        500..=1999 => SizeBucket::Sub100k,
+        _ => SizeBucket::Over100k,
+    };
+    let env = EventEnvelope {
+        schema_version: events::SCHEMA_VERSION,
+        timestamp: std::time::SystemTime::now(),
+        install_id: rt.install_id.clone(),
+        al_version: env!("CARGO_PKG_VERSION"),
+        grammar_version: "v2",
+        os: events::current_os(),
+        session_id: rt.session_id,
+        workspace_id: rt.workspace_id.clone(),
+        event: EventKind::SessionStart(SessionStart {
+            workspace_file_count,
+            al_file_count_bucket,
+            dependency_count,
+            has_app_dependencies,
+            config_flags: ConfigFlags { bits: 0 },
+            previous_session_unclean: rt.previous_session_unclean,
+        }),
+    };
+    if let Ok(guard) = rt.pipeline.read() {
+        if let Some(p) = guard.as_ref() {
+            p.clone_sender().send(env);
+        }
+    }
 }
 
 // No-op stubs for the disabled-feature build. Note these use generic

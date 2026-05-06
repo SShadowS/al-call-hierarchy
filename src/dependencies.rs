@@ -206,6 +206,12 @@ pub fn resolve_all(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
                     }
                     Err(e) => {
                         warn!("Failed to parse {}: {}", app_path.display(), e);
+                        #[cfg(feature = "telemetry")]
+                        crate::telemetry::record_indexer_issue(
+                            crate::telemetry::IndexerIssueKind::AppParseFailed,
+                            0,
+                            None,
+                        );
                     }
                 }
             }
@@ -214,6 +220,15 @@ pub fn resolve_all(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
                     "Could not find matching .app for {} {} (publisher: {})",
                     dep.name, dep.version, dep.publisher
                 );
+                #[cfg(feature = "telemetry")]
+                {
+                    let dep_id = format!("{}:{}", dep.publisher, dep.name);
+                    crate::telemetry::record_indexer_issue(
+                        crate::telemetry::IndexerIssueKind::MissingDependency,
+                        0,
+                        Some(&dep_id),
+                    );
+                }
             }
         }
     }
