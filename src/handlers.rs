@@ -58,6 +58,10 @@ pub fn handle_request(
             let result = action_properties(params)?;
             Ok(serde_json::to_value(result)?)
         }
+        "al-call-hierarchy/telemetryStatus" => {
+            let result = crate::telemetry::status();
+            Ok(serde_json::to_value(result)?)
+        }
         _ => {
             debug!("Unhandled method: {}", req.method);
             Ok(Value::Null)

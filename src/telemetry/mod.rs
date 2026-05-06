@@ -299,3 +299,12 @@ pub fn record_handler_empty<O, K>(
 }
 #[cfg(not(feature = "telemetry"))]
 pub fn record_session_start(_a: u32, _b: u8, _c: bool) {}
+
+// status submodule must be available regardless of feature so handlers.rs can
+// always call status() without #[cfg] noise. Internal feature-gating happens
+// inside status.rs.
+pub mod status;
+
+pub fn status() -> status::TelemetryStatus {
+    status::snapshot()
+}
