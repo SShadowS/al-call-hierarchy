@@ -51,6 +51,11 @@ struct Args {
     #[arg(long)]
     no_watcher: bool,
 
+    /// Disable anonymous failure-diagnostics telemetry for this run.
+    /// (Telemetry is also off by default in dev/CI builds.)
+    #[arg(long)]
+    no_telemetry: bool,
+
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
