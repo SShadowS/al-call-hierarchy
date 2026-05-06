@@ -52,11 +52,11 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 
 # Telemetry hashing
-blake3 = "1"
+blake3 = { version = "1", optional = true }
 
 [features]
 default = ["telemetry"]
-telemetry = []
+telemetry = ["dep:blake3"]
 
 [build-dependencies]
 cc = "1"
