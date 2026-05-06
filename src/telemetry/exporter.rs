@@ -51,11 +51,17 @@ async fn run(
     let _ = config.flush_interval; // Reserved for batch-mode upgrade later.
     let _ = config.batch_size;
 
+    let http_client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
     let tracer_provider = match new_pipeline_from_connection_string(&config.connection_string) {
         Ok(p) => p
-            .with_client(reqwest::blocking::Client::new())
+            .with_client(http_client)
             .with_service_name("al-call-hierarchy")
-            .build_simple(),
+            .build_batch(opentelemetry_sdk::runtime::TokioCurrentThread),
         Err(e) => {
             log::warn!("telemetry: exporter init failed: {}; subsystem disabled", e);
             return;

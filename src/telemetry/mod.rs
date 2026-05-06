@@ -151,7 +151,18 @@ pub fn shutdown(handle: TelemetryHandle) {
     }
     runtime::close_pipeline();
     if let Some(join) = handle.join {
-        let _ = join.join();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !join.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        if join.is_finished() {
+            let _ = join.join();
+        } else {
+            log::warn!(
+                "telemetry: background thread did not finish within 3s shutdown budget; detaching"
+            );
+            // Drop the handle without joining — the OS reclaims the thread on process exit.
+        }
     }
     session_marker::record_clean_shutdown();
 }

@@ -29,9 +29,18 @@ mod spike {
     use std::time::Duration;
 
     pub fn run(connection_string: &str) {
+        let http_client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+        // The spike runs synchronously without a tokio runtime, so it stays
+        // on the SimpleSpanProcessor path. Timeouts on the HTTP client are
+        // still applied so a hung connection can't wedge the spike.
         let tracer_provider = new_pipeline_from_connection_string(connection_string)
             .expect("valid connection string")
-            .with_client(reqwest::blocking::Client::new())
+            .with_client(http_client)
             .build_simple();
 
         global::set_tracer_provider(tracer_provider.clone());
