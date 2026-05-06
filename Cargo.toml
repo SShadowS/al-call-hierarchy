@@ -51,30 +51,33 @@ anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
-# Telemetry hashing
-blake3 = { version = "1", optional = true }
-
-# Phase 0.5 telemetry spike deps (only pulled in via the `telemetry-spike` feature).
-# Cargo `[dev-dependencies]` are not visible to `[[bin]]` targets, so they live
-# here as optional and are promoted to non-optional runtime deps in Phase 1
-# Task 1.1 once the spike validates the choice.
+# Telemetry pipeline (only pulled in when the `telemetry` feature is on).
 # Versions pinned to match opentelemetry-application-insights 0.36, which
 # depends on opentelemetry/opentelemetry_sdk 0.26 (NOT 0.27 — using 0.27 here
 # pulls a second copy of the crate and breaks the trait bounds at the
-# global::set_tracer_provider call site).
+# global::set_tracer_provider call site). tracing-opentelemetry 0.27 is the
+# bridge version that targets opentelemetry 0.26.
+blake3 = { version = "1", optional = true }
 opentelemetry = { version = "0.26", optional = true }
-opentelemetry_sdk = { version = "0.26", optional = true }
+opentelemetry_sdk = { version = "0.26", features = ["rt-tokio-current-thread"], optional = true }
 opentelemetry-application-insights = { version = "0.36", features = ["reqwest-blocking-client"], optional = true }
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-opentelemetry = { version = "0.27", optional = true }
+lru = { version = "0.12", optional = true }
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false, optional = true }
 
 [features]
 default = ["telemetry"]
-telemetry = ["dep:blake3"]
-telemetry-spike = [
-    "telemetry",
+telemetry = [
+    "dep:blake3",
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-application-insights",
+    "dep:tokio",
+    "dep:tracing",
+    "dep:tracing-opentelemetry",
+    "dep:lru",
     "dep:reqwest",
 ]
 
@@ -87,7 +90,7 @@ tempfile = "3"
 [[bin]]
 name = "telemetry-spike"
 path = "tools/telemetry-spike/main.rs"
-required-features = ["telemetry-spike"]
+required-features = ["telemetry"]
 
 [profile.release]
 lto = true
