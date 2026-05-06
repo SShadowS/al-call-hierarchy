@@ -86,11 +86,16 @@ cc = "1"
 
 [dev-dependencies]
 tempfile = "3"
+criterion = "0.5"
 
 [[bin]]
 name = "telemetry-spike"
 path = "tools/telemetry-spike/main.rs"
 required-features = ["telemetry"]
+
+[[bench]]
+name = "telemetry_hot_path"
+harness = false
 
 [profile.release]
 lto = true

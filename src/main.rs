@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 mod analysis;
 mod app_package;
-mod config;
 mod dependencies;
 mod graph;
 mod handlers;
@@ -14,8 +13,13 @@ mod language;
 mod parser;
 mod protocol;
 mod server;
-mod telemetry;
 mod watcher;
+
+// `config` and `telemetry` live in `lib.rs` so benches and other library
+// consumers can use them. Re-export them under `crate::*` so the binary's
+// other modules (handlers, server, analysis) can keep referring to
+// `crate::config::*` / `crate::telemetry::*` without churn.
+pub use al_call_hierarchy::{config, telemetry};
 
 use indexer::Indexer;
 use server::run_server;
