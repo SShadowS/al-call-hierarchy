@@ -174,3 +174,128 @@ pub fn init(_inputs: TelemetryInputs) -> TelemetryHandle {
 
 #[cfg(not(feature = "telemetry"))]
 pub fn shutdown(_h: TelemetryHandle) {}
+
+#[cfg(feature = "telemetry")]
+pub use events::{
+    CallPattern, CalleeSource, CallerContext, ConfigFlags, DefinitionKind, IndexerIssueKind,
+    ObjectType, ParserErrorKind, ResolutionFailure,
+};
+
+#[cfg(feature = "telemetry")]
+use events::{
+    EventEnvelope, EventKind, HandlerEmpty, IndexerIssue, ParserError, ResolutionMiss,
+    SessionStart, SizeBucket,
+};
+
+#[cfg(feature = "telemetry")]
+pub struct CallContext<'a> {
+    pub failure: ResolutionFailure,
+    pub call_pattern: CallPattern,
+    pub callee_object_type: Option<ObjectType>,
+    pub callee_source: CalleeSource,
+    pub caller_object_type: ObjectType,
+    pub caller_context: CallerContext,
+    pub callee_object_name: Option<&'a str>,
+    pub callee_procedure_name: &'a str,
+    pub arg_count: u8,
+    pub ts_node_path: &'a str,
+}
+
+#[cfg(feature = "telemetry")]
+pub fn record_resolution_miss(ctx: &CallContext<'_>) {
+    let Some(rt) = runtime::get() else { return };
+    let leaf = match ctx.failure {
+        ResolutionFailure::ObjectNotFound => events::LeafKind::ResolutionObjectNotFound,
+        ResolutionFailure::ProcedureNotFound => events::LeafKind::ResolutionProcedureNotFound,
+        ResolutionFailure::UnresolvedUnqualified => {
+            events::LeafKind::ResolutionUnresolvedUnqualified
+        }
+        ResolutionFailure::Ambiguous => events::LeafKind::ResolutionAmbiguous,
+        ResolutionFailure::UnsupportedConstruct => events::LeafKind::ResolutionUnsupportedConstruct,
+    };
+    rt.counters.observe(leaf);
+
+    let object_hash = ctx
+        .callee_object_name
+        .map(|n| hash::hash_identifier(&rt.salt, hash::DOMAIN_OBJECT, n));
+    let procedure_hash =
+        hash::hash_identifier(&rt.salt, hash::DOMAIN_PROCEDURE, ctx.callee_procedure_name);
+
+    let env = EventEnvelope {
+        schema_version: events::SCHEMA_VERSION,
+        timestamp: std::time::SystemTime::now(),
+        install_id: rt.install_id.clone(),
+        al_version: env!("CARGO_PKG_VERSION"),
+        grammar_version: "v2",
+        os: events::current_os(),
+        session_id: rt.session_id,
+        workspace_id: rt.workspace_id.clone(),
+        event: EventKind::ResolutionMiss(ResolutionMiss {
+            failure: ctx.failure,
+            call_pattern: ctx.call_pattern,
+            callee_object_type: ctx.callee_object_type,
+            callee_source: ctx.callee_source,
+            caller_object_type: ctx.caller_object_type,
+            caller_context: ctx.caller_context,
+            object_hash,
+            procedure_hash,
+            arg_count: ctx.arg_count,
+            name_len_object: ctx.callee_object_name.map(|n| n.len() as u16),
+            name_len_procedure: ctx.callee_procedure_name.len() as u16,
+            ts_node_path: ctx.ts_node_path.into(),
+            repeat_count: 0,
+        }),
+    };
+
+    if let Ok(guard) = rt.pipeline.read() {
+        if let Some(p) = guard.as_ref() {
+            p.clone_sender().send(env);
+        }
+    }
+}
+
+// Phase 2 Task 2.4 fills these in. For Phase 1 they're stubs that compile
+// but only increment counters.
+#[cfg(feature = "telemetry")]
+pub fn record_parser_error(_kind: ParserErrorKind, _file: &std::path::Path) {}
+
+#[cfg(feature = "telemetry")]
+pub fn record_indexer_issue(_kind: IndexerIssueKind, _detail_code: u16, _app_id: Option<&str>) {}
+
+#[cfg(feature = "telemetry")]
+pub fn record_handler_empty(
+    _method: &'static str,
+    _target_object_type: ObjectType,
+    _target_kind: DefinitionKind,
+    _object_name: &str,
+    _procedure_name: &str,
+) {
+}
+
+#[cfg(feature = "telemetry")]
+pub fn record_session_start(
+    _workspace_file_count: u32,
+    _dependency_count: u8,
+    _has_app_dependencies: bool,
+) {
+}
+
+// No-op stubs for the disabled-feature build. Note these use generic
+// signatures so callers don't need cfg blocks to call them.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_resolution_miss<T>(_ctx: T) {}
+#[cfg(not(feature = "telemetry"))]
+pub fn record_parser_error<K, P: AsRef<std::path::Path>>(_kind: K, _file: P) {}
+#[cfg(not(feature = "telemetry"))]
+pub fn record_indexer_issue<K>(_kind: K, _detail_code: u16, _app_id: Option<&str>) {}
+#[cfg(not(feature = "telemetry"))]
+pub fn record_handler_empty<O, K>(
+    _method: &'static str,
+    _target: O,
+    _kind: K,
+    _object: &str,
+    _procedure: &str,
+) {
+}
+#[cfg(not(feature = "telemetry"))]
+pub fn record_session_start(_a: u32, _b: u8, _c: bool) {}
