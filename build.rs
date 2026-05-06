@@ -31,4 +31,13 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", src_dir.display());
     println!("cargo:rerun-if-env-changed=TREE_SITTER_AL_PATH");
+
+    // Bake the App Insights connection string at build time when the
+    // AL_CH_TELEMETRY_CONNECTION_STRING env var is set. Release pipelines set
+    // this; local debug builds typically do not, so the binary falls back to
+    // disabled telemetry at runtime.
+    println!("cargo:rerun-if-env-changed=AL_CH_TELEMETRY_CONNECTION_STRING");
+    if let Ok(cs) = std::env::var("AL_CH_TELEMETRY_CONNECTION_STRING") {
+        println!("cargo:rustc-env=AL_CH_TELEMETRY_CONNECTION_STRING={}", cs);
+    }
 }
