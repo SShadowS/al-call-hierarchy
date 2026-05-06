@@ -15,6 +15,10 @@ mod dedup;
 #[cfg(feature = "telemetry")]
 pub mod events;
 #[cfg(feature = "telemetry")]
+mod events_attrs;
+#[cfg(feature = "telemetry")]
+pub mod exporter;
+#[cfg(feature = "telemetry")]
 mod hash;
 #[cfg(feature = "telemetry")]
 mod install_id;
