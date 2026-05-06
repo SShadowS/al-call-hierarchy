@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-05-06
+
+### Added
+- Anonymous, opt-out failure-diagnostics telemetry (Azure App Insights).
+  - Captures resolution misses, parser errors, indexer issues, and handler outcomes.
+  - All AL identifier names hashed with a per-installation 32-byte salt that stays local.
+  - Three disable mechanisms: `DO_NOT_TRACK=1`, `--no-telemetry`, `~/.al-call-hierarchy/config.json` `telemetry.enabled=false`.
+  - Off by default in debug, test, and CI builds.
+  - LSP request `al-call-hierarchy/telemetryStatus` for runtime introspection.
+  - Schema documented in `docs/telemetry.md`.
+
 ## [0.5.0] - 2026-03-22
 
 ### Changed
