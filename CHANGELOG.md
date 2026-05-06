@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Off by default in debug, test, and CI builds.
   - LSP request `al-call-hierarchy/telemetryStatus` for runtime introspection.
   - Schema documented in `docs/telemetry.md`.
+  - Fire-and-forget export: `BatchSpanProcessor` on a dedicated tokio current-thread runtime; HTTP calls are non-blocking, individual export failures are silently dropped, and LSP request threads are never affected by network state. 10s/5s reqwest timeouts cap any single HTTP call; shutdown is bounded to a 3s budget.
 
 ## [0.5.0] - 2026-03-22
 
