@@ -13,6 +13,28 @@ Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter.
 - **Diagnostics** - Unused procedure detection and code quality warnings
 - **LSP integration** - Works with any LSP-compatible client
 
+## Telemetry
+
+`al-call-hierarchy` ships with **anonymous, opt-out failure-diagnostics telemetry** so the maintainer can find resolution gaps that real-world AL projects hit. **No raw identifiers, file paths, or source code leave your machine.** All AL identifier names are hashed with a per-installation random 32-byte salt that stays on your machine; the maintainer sees only structural fingerprints (object types, failure categories, tree-sitter shapes) plus salted hashes.
+
+**What's collected:** see [docs/telemetry.md](docs/telemetry.md). **Source code:** [src/telemetry/](src/telemetry/) — auditable in one directory.
+
+**Telemetry is OFF by default in:**
+- Debug builds (`cargo build` without `--release`)
+- Test runs (`cargo test`)
+- CI environments (CI, GITHUB_ACTIONS, GITLAB_CI, etc.)
+
+**Three ways to disable** (any wins):
+
+1. Environment variable: `AL_CH_TELEMETRY=0` or `DO_NOT_TRACK=1`
+2. CLI flag: `al-call-hierarchy --no-telemetry`
+3. Config file `~/.al-call-hierarchy/config.json`:
+   ```json
+   { "telemetry": { "enabled": false } }
+   ```
+
+To inspect what telemetry has been sent in the current session, send the LSP request `al-call-hierarchy/telemetryStatus` (also logged at startup).
+
 ## Building
 
 Prerequisites:
