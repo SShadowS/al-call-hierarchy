@@ -234,6 +234,68 @@ impl DiagnosticConfig {
     }
 }
 
+/// Telemetry section of `~/.al-call-hierarchy/config.json`. All fields optional;
+/// the telemetry subsystem applies its own defaults from the spec.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TelemetryFileConfig {
+    pub enabled: Option<bool>,
+    pub connection_string: Option<String>,
+    pub flush_interval_secs: Option<u64>,
+    pub batch_size: Option<u32>,
+    pub queue_capacity: Option<u32>,
+    pub dedup_ttl_secs: Option<u64>,
+    pub handler_empty_sample_rate: Option<u32>,
+}
+
+impl TelemetryFileConfig {
+    /// Load from a config file path. Returns an empty config if missing/invalid.
+    pub fn load_at(path: &Path) -> Self {
+        // Reuse existing parsing helper. We need a wrapper struct because
+        // `ConfigFile` only carries `diagnostics`.
+        #[derive(Deserialize, Default)]
+        struct Wrapper {
+            #[serde(default)]
+            telemetry: TelemetryFileConfig,
+        }
+
+        if !path.exists() {
+            return Self::default();
+        }
+        let contents = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return Self::default(),
+        };
+        match serde_json::from_str::<Wrapper>(&contents) {
+            Ok(w) => w.telemetry,
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// Merge global + workspace files. Workspace overlays global per-field.
+    pub fn load_merged(workspace_root: &Path) -> Self {
+        let global = global_config_path()
+            .map(|p| Self::load_at(&p))
+            .unwrap_or_default();
+        let workspace = Self::load_at(&workspace_root.join(".al-call-hierarchy.json"));
+        Self::merge(global, workspace)
+    }
+
+    fn merge(base: Self, overlay: Self) -> Self {
+        Self {
+            enabled: overlay.enabled.or(base.enabled),
+            connection_string: overlay.connection_string.or(base.connection_string),
+            flush_interval_secs: overlay.flush_interval_secs.or(base.flush_interval_secs),
+            batch_size: overlay.batch_size.or(base.batch_size),
+            queue_capacity: overlay.queue_capacity.or(base.queue_capacity),
+            dedup_ttl_secs: overlay.dedup_ttl_secs.or(base.dedup_ttl_secs),
+            handler_empty_sample_rate: overlay
+                .handler_empty_sample_rate
+                .or(base.handler_empty_sample_rate),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,5 +456,49 @@ mod tests {
             p.ends_with(".al-call-hierarchy/config.json")
                 || p.ends_with(".al-call-hierarchy\\config.json")
         );
+    }
+
+    #[test]
+    fn test_load_telemetry_section() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join(".al-call-hierarchy.json"),
+            r#"{
+                "telemetry": {
+                    "enabled": false,
+                    "connectionString": "InstrumentationKey=foo;IngestionEndpoint=https://x.azure.com/",
+                    "flushIntervalSecs": 7,
+                    "batchSize": 256,
+                    "queueCapacity": 1024,
+                    "dedupTtlSecs": 600,
+                    "handlerEmptySampleRate": 20
+                }
+            }"#,
+        )
+        .unwrap();
+        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-call-hierarchy.json"));
+        assert_eq!(tcfg.enabled, Some(false));
+        assert_eq!(
+            tcfg.connection_string.as_deref(),
+            Some("InstrumentationKey=foo;IngestionEndpoint=https://x.azure.com/")
+        );
+        assert_eq!(tcfg.flush_interval_secs, Some(7));
+        assert_eq!(tcfg.batch_size, Some(256));
+        assert_eq!(tcfg.queue_capacity, Some(1024));
+        assert_eq!(tcfg.dedup_ttl_secs, Some(600));
+        assert_eq!(tcfg.handler_empty_sample_rate, Some(20));
+    }
+
+    #[test]
+    fn test_load_telemetry_missing_section_yields_empty() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join(".al-call-hierarchy.json"),
+            r#"{ "diagnostics": {} }"#,
+        )
+        .unwrap();
+        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-call-hierarchy.json"));
+        assert!(tcfg.enabled.is_none());
+        assert!(tcfg.connection_string.is_none());
     }
 }
