@@ -9,12 +9,13 @@
 #[cfg(feature = "telemetry")]
 mod consent;
 #[cfg(feature = "telemetry")]
+pub mod events;
+#[cfg(feature = "telemetry")]
 mod hash;
 #[cfg(feature = "telemetry")]
 mod install_id;
 #[cfg(feature = "telemetry")]
 mod session_marker;
-// #[cfg(feature = "telemetry")] pub mod events;
 
 /// Opaque handle returned from `init` and passed to `shutdown`.
 /// When telemetry is disabled, this is a zero-sized type.
