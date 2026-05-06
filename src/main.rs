@@ -14,6 +14,7 @@ mod language;
 mod parser;
 mod protocol;
 mod server;
+mod telemetry;
 mod watcher;
 
 use indexer::Indexer;
