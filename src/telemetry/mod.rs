@@ -19,6 +19,8 @@ mod hash;
 #[cfg(feature = "telemetry")]
 mod install_id;
 #[cfg(feature = "telemetry")]
+pub mod pipeline;
+#[cfg(feature = "telemetry")]
 mod session_marker;
 
 /// Opaque handle returned from `init` and passed to `shutdown`.
