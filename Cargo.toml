@@ -51,6 +51,9 @@ anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Telemetry hashing
+blake3 = "1"
+
 [features]
 default = ["telemetry"]
 telemetry = []
