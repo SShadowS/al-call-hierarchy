@@ -21,8 +21,11 @@ use crate::protocol::{path_to_uri, uri_to_path};
 use crate::watcher::{AlFileWatcher, FileChange};
 
 /// Run the LSP server
-pub fn run_server(no_watcher: bool) -> Result<()> {
+pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     info!("Starting AL Call Hierarchy LSP server");
+
+    let telemetry_handle = crate::telemetry::init();
+    let _ = no_telemetry; // Phase 1 wires this through consent::Inputs.
 
     let (connection, io_threads) = Connection::stdio();
 
@@ -87,6 +90,7 @@ pub fn run_server(no_watcher: bool) -> Result<()> {
 
     io_threads.join()?;
     info!("Server shut down");
+    crate::telemetry::shutdown(telemetry_handle);
     Ok(())
 }
 

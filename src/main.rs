@@ -103,7 +103,7 @@ fn main() -> Result<()> {
     } else {
         // LSP server mode (default)
         info!("Starting AL Call Hierarchy LSP server");
-        run_server(args.no_watcher)?;
+        run_server(args.no_watcher, args.no_telemetry)?;
     }
 
     Ok(())
