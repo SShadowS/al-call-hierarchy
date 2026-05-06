@@ -9,7 +9,8 @@
 // #[cfg(feature = "telemetry")] mod consent;
 #[cfg(feature = "telemetry")]
 mod hash;
-// #[cfg(feature = "telemetry")] mod install_id;
+#[cfg(feature = "telemetry")]
+mod install_id;
 // #[cfg(feature = "telemetry")] mod session_marker;
 // #[cfg(feature = "telemetry")] pub mod events;
 
