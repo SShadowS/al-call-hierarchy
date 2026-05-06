@@ -24,14 +24,29 @@ use crate::watcher::{AlFileWatcher, FileChange};
 pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     info!("Starting AL Call Hierarchy LSP server");
 
-    let telemetry_handle = crate::telemetry::init();
-    let _ = no_telemetry; // Phase 1 wires this through consent::Inputs.
-
     let (connection, io_threads) = Connection::stdio();
 
     // Initialize
     let (id, params) = connection.initialize_start()?;
     let init_params: InitializeParams = serde_json::from_value(params)?;
+
+    let workspace_root = init_params
+        .workspace_folders
+        .as_ref()
+        .and_then(|folders| folders.first())
+        .and_then(|f| crate::protocol::uri_to_path(&f.uri));
+    let init_option_telemetry = init_params
+        .initialization_options
+        .as_ref()
+        .and_then(|v| v.get("telemetry"))
+        .and_then(|t| t.get("enabled"))
+        .and_then(|b| b.as_bool());
+    let telemetry_handle = crate::telemetry::init(crate::telemetry::TelemetryInputs {
+        cli_no_telemetry: no_telemetry,
+        init_option: init_option_telemetry,
+        workspace_root,
+        connection_string: option_env!("AL_CH_TELEMETRY_CONNECTION_STRING").map(String::from),
+    });
 
     let capabilities = ServerCapabilities {
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
