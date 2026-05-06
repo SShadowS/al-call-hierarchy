@@ -11,6 +11,8 @@ mod consent;
 #[cfg(feature = "telemetry")]
 pub mod counters;
 #[cfg(feature = "telemetry")]
+mod dedup;
+#[cfg(feature = "telemetry")]
 pub mod events;
 #[cfg(feature = "telemetry")]
 mod hash;
