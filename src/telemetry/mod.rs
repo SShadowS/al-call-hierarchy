@@ -308,3 +308,8 @@ pub mod status;
 pub fn status() -> status::TelemetryStatus {
     status::snapshot()
 }
+
+#[cfg(all(feature = "telemetry", any(test, feature = "test-runtime")))]
+pub mod testing {
+    pub use super::runtime::testing::{current_counters, install_runtime_for_test};
+}

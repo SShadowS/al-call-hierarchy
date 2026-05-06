@@ -463,13 +463,67 @@ impl CallGraph {
                 });
             }
 
-            // Fall back to using the object name as-is (may be unresolved external)
+            // Fall back to using the object name as-is (may be unresolved external).
+            // This is a resolution miss: the qualified callee object is neither a
+            // workspace object, an .app dependency, nor a typed local variable.
+            #[cfg(feature = "telemetry")]
+            {
+                use crate::telemetry::events::{
+                    CallPattern, CalleeSource, CallerContext, ObjectType as TelObjectType,
+                    ResolutionFailure,
+                };
+                use crate::telemetry::{record_resolution_miss, CallContext};
+                let object_name = self.interner.resolve(obj).unwrap_or("");
+                let procedure_name = self.interner.resolve(call.callee_method).unwrap_or("");
+                record_resolution_miss(&CallContext {
+                    failure: ResolutionFailure::ObjectNotFound,
+                    call_pattern: CallPattern::Qualified,
+                    callee_object_type: None,
+                    callee_source: CalleeSource::Unknown,
+                    caller_object_type: TelObjectType::Other,
+                    caller_context: CallerContext::Procedure,
+                    callee_object_name: Some(object_name),
+                    callee_procedure_name: procedure_name,
+                    arg_count: 0,
+                    ts_node_path: "",
+                });
+            }
             Some(QualifiedName {
                 object: obj,
                 procedure: call.callee_method,
             })
         } else {
-            // Unqualified call - resolve to same object as caller
+            // Unqualified call - resolve to same object as caller. If no local
+            // definition exists for this (caller_object, callee_method) pair, the
+            // call is unresolved (e.g. references an unknown helper or a method
+            // on an implicit context like a Page record we haven't inferred).
+            #[cfg(feature = "telemetry")]
+            {
+                let qname = QualifiedName {
+                    object: caller_qname.object,
+                    procedure: call.callee_method,
+                };
+                if !self.definitions.contains_key(&qname) {
+                    use crate::telemetry::events::{
+                        CallPattern, CalleeSource, CallerContext, ObjectType as TelObjectType,
+                        ResolutionFailure,
+                    };
+                    use crate::telemetry::{record_resolution_miss, CallContext};
+                    let procedure_name = self.interner.resolve(call.callee_method).unwrap_or("");
+                    record_resolution_miss(&CallContext {
+                        failure: ResolutionFailure::UnresolvedUnqualified,
+                        call_pattern: CallPattern::Unqualified,
+                        callee_object_type: None,
+                        callee_source: CalleeSource::Workspace,
+                        caller_object_type: TelObjectType::Other,
+                        caller_context: CallerContext::Procedure,
+                        callee_object_name: None,
+                        callee_procedure_name: procedure_name,
+                        arg_count: 0,
+                        ts_node_path: "",
+                    });
+                }
+            }
             Some(QualifiedName {
                 object: caller_qname.object,
                 procedure: call.callee_method,

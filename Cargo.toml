@@ -80,6 +80,10 @@ telemetry = [
     "dep:lru",
     "dep:reqwest",
 ]
+# Exposes a counters-only runtime installer for integration tests so they can
+# assert on `record_*` calls without spinning up the real exporter. Implies
+# `telemetry`.
+test-runtime = ["telemetry"]
 
 [build-dependencies]
 cc = "1"
