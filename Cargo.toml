@@ -51,6 +51,10 @@ anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+[features]
+default = ["telemetry"]
+telemetry = []
+
 [build-dependencies]
 cc = "1"
 
