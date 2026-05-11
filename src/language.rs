@@ -97,6 +97,32 @@ pub mod queries {
     arguments: (attribute_arguments) @attr.args)) @attr.item
 "#;
 
+    /// Query to find event-publisher attributes ([IntegrationEvent],
+    /// [BusinessEvent], [InternalEvent]). Like EVENT_SUBSCRIBERS, the
+    /// attribute is a sibling of the published procedure — resolution
+    /// happens in Rust.
+    ///
+    /// Three patterns rather than a single regex/match predicate because
+    /// tree-sitter-al's bundled predicates are limited to `#eq?`. Each
+    /// pattern uses the same capture names so the consumer can match by
+    /// `@attr.name` to learn which kind it is.
+    pub const EVENT_PUBLISHERS: &str = r#"
+(attribute_item
+  attribute: (attribute_content
+    name: (identifier) @attr.name
+    (#eq? @attr.name "IntegrationEvent"))) @attr.item
+
+(attribute_item
+  attribute: (attribute_content
+    name: (identifier) @attr.name
+    (#eq? @attr.name "BusinessEvent"))) @attr.item
+
+(attribute_item
+  attribute: (attribute_content
+    name: (identifier) @attr.name
+    (#eq? @attr.name "InternalEvent"))) @attr.item
+"#;
+
     /// Query to find variable declarations
     pub const VARIABLES: &str = r#"
 ; Capture all variable declarations - we'll extract name and type manually

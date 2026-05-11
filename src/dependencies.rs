@@ -43,13 +43,67 @@ pub fn parse_app_json(path: &Path) -> Result<Vec<AppDependency>> {
     Ok(app_json.dependencies)
 }
 
-/// Find the .alpackages folder for a project
+/// Find the .alpackages folder for a project.
 pub fn find_alpackages_folder(project_root: &Path) -> Option<PathBuf> {
     let alpackages = project_root.join(".alpackages");
     if alpackages.is_dir() {
         Some(alpackages)
     } else {
         None
+    }
+}
+
+/// Discover every `.alpackages` folder reachable from `project_root` by
+/// walking up the directory tree. The first entry is always the project's
+/// own `.alpackages` (or absent if not present). Subsequent entries are
+/// ancestor folders' `.alpackages` directories.
+///
+/// Walking stops at the first of:
+///   - filesystem root,
+///   - eight ancestors deep (safety),
+///   - a directory containing `.git` (project boundary).
+///
+/// This mirrors the Go wrapper's `DiscoverPackageCachePaths` so the
+/// dependency index that the wrapper relies on (for hover enrichment +
+/// dependencyDocumentSymbol RPC) matches what AL LSP itself sees via
+/// the augmented `packageCachePaths`. Without this, monorepos that keep
+/// shared .app files in an ancestor folder would expose those files to
+/// AL LSP but not to al-call-hierarchy, leading to inconsistent symbol
+/// data between the two indexes.
+pub fn find_all_alpackages_folders(project_root: &Path) -> Vec<PathBuf> {
+    let mut folders = Vec::new();
+
+    if let Some(own) = find_alpackages_folder(project_root) {
+        folders.push(own);
+    }
+
+    let mut current = project_root.parent();
+    let mut depth = 0;
+    while let Some(dir) = current {
+        if depth >= 8 {
+            break;
+        }
+
+        let alpkg = dir.join(".alpackages");
+        if alpkg.is_dir() && !folders.iter().any(|p| paths_equal(p, &alpkg)) {
+            folders.push(alpkg);
+        }
+
+        if dir.join(".git").exists() {
+            break;
+        }
+
+        current = dir.parent();
+        depth += 1;
+    }
+
+    folders
+}
+
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a2), Ok(b2)) => a2 == b2,
+        _ => a == b,
     }
 }
 
@@ -145,6 +199,78 @@ pub fn find_matching_app(alpackages: &Path, dep: &AppDependency) -> Option<PathB
 
     // Return the highest compatible version
     candidates.into_iter().next().map(|(path, _)| path)
+}
+
+/// Load every `.app` file present in a project's `.alpackages` folder.
+///
+/// Unlike `resolve_all`, this doesn't filter by `app.json` declarations —
+/// every package found is parsed. Lets us index transitive dependencies
+/// (e.g. Base Application) that are sitting in `.alpackages` but aren't
+/// listed in the project's direct dependency tree. Mirrors AL LSP behavior.
+pub fn load_all_apps(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
+    let folders = find_all_alpackages_folders(project_root);
+    if folders.is_empty() {
+        debug!(
+            "load_all_apps: no .alpackages folder at {} or any ancestor",
+            project_root.display()
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut out: Vec<ResolvedDependency> = Vec::new();
+    let mut seen_paths: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    for alpackages in folders {
+        let entries = match std::fs::read_dir(&alpackages) {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(
+                    "load_all_apps: read_dir({}) failed: {}",
+                    alpackages.display(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("app") {
+                continue;
+            }
+            // Dedup by canonical path so the same .app file in two scanned
+            // folders (rare but possible via symlinks) doesn't get loaded twice.
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !seen_paths.insert(canonical) {
+                continue;
+            }
+
+            match extract_app_package(&path) {
+                Ok(package) => {
+                    debug!(
+                        "load_all_apps: loaded {} v{} ({} objects) from {}",
+                        package.metadata.name,
+                        package.metadata.version,
+                        package.objects.len(),
+                        alpackages.display()
+                    );
+                    out.push(ResolvedDependency {
+                        dependency: AppDependency {
+                            name: package.metadata.name.clone(),
+                            publisher: String::new(),
+                            version: package.metadata.version.clone(),
+                        },
+                        app_path: path,
+                        package,
+                    });
+                }
+                Err(e) => {
+                    warn!("load_all_apps: failed to parse {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Resolve all dependencies for a project
@@ -440,5 +566,114 @@ mod tests {
         .unwrap();
         let result = resolve_all(dir.path()).unwrap();
         assert!(result.is_empty(), "No .alpackages should return empty");
+    }
+
+    // ---------------------------------------------------------------
+    // find_all_alpackages_folders — parallel coverage to the Go side's
+    // DiscoverPackageCachePaths tests (al-language-server-go/wrapper/
+    // project_packagecache_test.go). Keeping these in lockstep prevents
+    // the Go and Rust ancestor-walk semantics from drifting apart.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn find_all_alpackages_own_only() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".alpackages")).unwrap();
+
+        let folders = find_all_alpackages_folders(&project);
+        assert_eq!(folders.len(), 1, "expected single entry, got {:?}", folders);
+        assert!(folders[0].ends_with(".alpackages"));
+    }
+
+    #[test]
+    fn find_all_alpackages_finds_ancestor() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let parent = dir.path().join("parent");
+        let project = parent.join("Cloud");
+        std::fs::create_dir_all(parent.join(".alpackages")).unwrap();
+        std::fs::create_dir_all(project.join(".alpackages")).unwrap();
+
+        let folders = find_all_alpackages_folders(&project);
+        assert!(
+            folders.len() >= 2,
+            "expected own + ancestor, got {:?}",
+            folders
+        );
+        assert!(folders[0].ends_with(project.join(".alpackages").as_path().file_name().unwrap()));
+        assert!(
+            folders.iter().any(|f| f.starts_with(&parent)
+                && !f.starts_with(&project)),
+            "ancestor folder missing from {:?}",
+            folders
+        );
+    }
+
+    #[test]
+    fn find_all_alpackages_stops_at_git_boundary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = dir.path().join("repo");
+        let project = repo.join("Cloud");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(project.join(".alpackages")).unwrap();
+        // .alpackages ABOVE the .git boundary should NOT be picked up.
+        std::fs::create_dir_all(dir.path().join(".alpackages")).unwrap();
+
+        let folders = find_all_alpackages_folders(&project);
+        let above = dir.path().join(".alpackages");
+        for f in &folders {
+            assert!(
+                std::fs::canonicalize(f).unwrap() != std::fs::canonicalize(&above).unwrap(),
+                "walked past .git boundary: included {:?}",
+                f
+            );
+        }
+    }
+
+    #[test]
+    fn find_all_alpackages_no_dups() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let parent = dir.path().join("parent");
+        let project = parent.join("child");
+        std::fs::create_dir_all(parent.join(".alpackages")).unwrap();
+        std::fs::create_dir_all(project.join(".alpackages")).unwrap();
+
+        let folders = find_all_alpackages_folders(&project);
+        let mut canonical: Vec<_> = folders
+            .iter()
+            .map(|f| std::fs::canonicalize(f).unwrap())
+            .collect();
+        canonical.sort();
+        let len_before = canonical.len();
+        canonical.dedup();
+        assert_eq!(
+            canonical.len(),
+            len_before,
+            "duplicate path in {:?}",
+            folders
+        );
+    }
+
+    #[test]
+    fn find_all_alpackages_depth_cap() {
+        // Build a long ancestor chain with .alpackages in every level.
+        // The walk should stop at the 8-deep cap regardless.
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut current = dir.path().to_path_buf();
+        // 12 levels of ancestor .alpackages
+        for i in 0..12 {
+            current = current.join(format!("level{}", i));
+            std::fs::create_dir_all(current.join(".alpackages")).unwrap();
+        }
+        // Place project at the deepest level.
+        let project = current.clone();
+
+        let folders = find_all_alpackages_folders(&project);
+        // Own + at most 8 ancestors = 9 total.
+        assert!(
+            folders.len() <= 9,
+            "expected ≤ 9 (own + 8 ancestors), got {}",
+            folders.len()
+        );
     }
 }

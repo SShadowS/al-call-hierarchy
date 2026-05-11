@@ -25,6 +25,8 @@ pub struct ParsedFile {
     pub variables: Vec<ParsedVariable>,
     /// All event subscribers
     pub event_subscribers: Vec<ParsedEventSubscriber>,
+    /// All event publishers (procedures with [IntegrationEvent]/[BusinessEvent]/[InternalEvent])
+    pub event_publishers: Vec<ParsedEventPublisher>,
 }
 
 /// A parsed procedure/trigger definition
@@ -65,6 +67,44 @@ pub struct ParsedVariable {
     pub containing_procedure: Option<String>,
 }
 
+/// A parsed event publisher — a procedure decorated with `[IntegrationEvent]`,
+/// `[BusinessEvent]`, or `[InternalEvent]`.
+#[derive(Debug, Clone)]
+pub struct ParsedEventPublisher {
+    /// Name of the published procedure
+    pub name: String,
+    /// Range of the published procedure (the procedure node, not the attribute)
+    pub range: Range,
+    /// Range of the procedure's identifier (for selection_range)
+    pub selection_range: Range,
+    /// Which attribute decorated this procedure
+    pub kind: EventPublisherKind,
+    /// True if marked `local procedure`
+    pub is_local: bool,
+    /// Pre-formatted signature, e.g.
+    /// `procedure OnAfterPost(var Rec: Record "Sales Header"): Boolean`.
+    /// Renders the textual form of the procedure header.
+    pub signature: String,
+}
+
+/// Event publisher attribute kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventPublisherKind {
+    IntegrationEvent,
+    BusinessEvent,
+    InternalEvent,
+}
+
+impl EventPublisherKind {
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::IntegrationEvent => "[IntegrationEvent]",
+            Self::BusinessEvent => "[BusinessEvent]",
+            Self::InternalEvent => "[InternalEvent]",
+        }
+    }
+}
+
 /// A parsed event subscriber
 #[derive(Debug)]
 pub struct ParsedEventSubscriber {
@@ -87,6 +127,7 @@ pub struct AlParser {
     calls_query: Query,
     variables_query: Query,
     event_subscribers_query: Query,
+    event_publishers_query: Query,
 }
 
 impl AlParser {
@@ -110,12 +151,16 @@ impl AlParser {
         let event_subscribers_query = Query::new(&lang, language::queries::EVENT_SUBSCRIBERS)
             .context("Failed to compile event subscribers query")?;
 
+        let event_publishers_query = Query::new(&lang, language::queries::EVENT_PUBLISHERS)
+            .context("Failed to compile event publishers query")?;
+
         Ok(Self {
             parser,
             definitions_query,
             calls_query,
             variables_query,
             event_subscribers_query,
+            event_publishers_query,
         })
     }
 
@@ -151,6 +196,9 @@ impl AlParser {
 
         // Extract event subscribers
         self.extract_event_subscribers(&root, source, &mut result);
+
+        // Extract event publishers ([IntegrationEvent]/[BusinessEvent]/[InternalEvent])
+        self.extract_event_publishers(&root, source, &mut result);
 
         Ok(result)
     }
@@ -404,6 +452,202 @@ impl AlParser {
             }
         }
     }
+
+    fn extract_event_publishers(&self, root: &Node, source: &str, result: &mut ParsedFile) {
+        let mut cursor = QueryCursor::new();
+        let source_bytes = source.as_bytes();
+        let mut matches = cursor.matches(&self.event_publishers_query, *root, source_bytes);
+
+        while let Some(m) = matches.next() {
+            let mut attr_name: Option<String> = None;
+            let mut attr_node: Option<Node> = None;
+            for capture in m.captures {
+                let node = capture.node;
+                let cname = &self.event_publishers_query.capture_names()[capture.index as usize];
+                match cname.as_ref() {
+                    "attr.name" => attr_name = Some(node_text(&node, source).to_string()),
+                    "attr.item" => attr_node = Some(node),
+                    _ => {}
+                }
+            }
+            let (Some(name), Some(attr)) = (attr_name, attr_node) else {
+                continue;
+            };
+            let kind = match name.as_str() {
+                "IntegrationEvent" => EventPublisherKind::IntegrationEvent,
+                "BusinessEvent" => EventPublisherKind::BusinessEvent,
+                "InternalEvent" => EventPublisherKind::InternalEvent,
+                _ => continue,
+            };
+
+            // Walk forward siblings until we hit the procedure declaration.
+            // Other attribute_items between this one and the procedure are skipped
+            // (a procedure can carry multiple attributes — Obsolete, Scope, etc.).
+            let mut next = attr.next_sibling();
+            while let Some(sib) = next {
+                if sib.kind() == "procedure" {
+                    if let Some(pub_info) = self.parse_publisher_procedure(&sib, source, kind) {
+                        result.event_publishers.push(pub_info);
+                    }
+                    break;
+                }
+                if sib.kind() != "attribute_item" {
+                    break;
+                }
+                next = sib.next_sibling();
+            }
+        }
+    }
+
+    /// Pull the published-procedure details out of a `procedure` AST node.
+    /// Returns None when the node lacks a usable name.
+    fn parse_publisher_procedure(
+        &self,
+        proc_node: &Node,
+        source: &str,
+        kind: EventPublisherKind,
+    ) -> Option<ParsedEventPublisher> {
+        let name_node = proc_node.child_by_field_name("name")?;
+        let name = clean_name(node_text(&name_node, source));
+        let range = node_range(proc_node);
+        let selection_range = node_range(&name_node);
+        let is_local = detect_local_procedure(proc_node, source);
+        let signature = extract_procedure_signature(proc_node, source);
+
+        Some(ParsedEventPublisher {
+            name,
+            range,
+            selection_range,
+            kind,
+            is_local,
+            signature,
+        })
+    }
+}
+
+/// Find the byte offset (relative to the start of `text`) where a procedure
+/// body begins (the `begin` keyword or `var` section). Returns None when no
+/// body marker is present in this slice.
+///
+/// We require the keyword to be on its own line (preceded by whitespace
+/// followed by `begin\b` or `var\b`) so we don't confuse `var` parameter
+/// modifiers with the var section.
+fn find_body_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_quote = 0u8;
+    while i < len {
+        let b = bytes[i];
+        if in_string {
+            if b == string_quote {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' {
+            in_string = true;
+            string_quote = b;
+            i += 1;
+            continue;
+        }
+        // Look at line starts only (`\n` followed by optional whitespace).
+        if b == b'\n' {
+            let mut j = i + 1;
+            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
+                return Some(j);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
+    if at + kw.len() > bytes.len() {
+        return false;
+    }
+    if &bytes[at..at + kw.len()] != kw {
+        return false;
+    }
+    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
+    !next.is_ascii_alphanumeric() && next != b'_'
+}
+
+/// Detect whether a `procedure` node is declared as `local procedure`.
+/// tree-sitter-al includes the `local`/`internal`/`protected` modifier
+/// keyword as the first token of the procedure node itself, so we just
+/// peek at the first few non-whitespace bytes of the node text.
+fn detect_local_procedure(proc_node: &Node, source: &str) -> bool {
+    let text = node_text(proc_node, source);
+    text.trim_start().starts_with("local ")
+}
+
+/// Render the procedure header (modifiers + name + params + return) by slicing
+/// from the procedure node start up to the start of its body (var section or
+/// begin block). Falls back to a textual search for the `begin` keyword if
+/// tree-sitter-al doesn't expose a body node we recognize.
+fn extract_procedure_signature(proc_node: &Node, source: &str) -> String {
+    let proc_start = proc_node.start_byte();
+    let mut end_byte = proc_node.end_byte();
+
+    // Walk children for any node that looks like a body or `var` section.
+    // Different grammar revisions name these differently — we accept a few.
+    let mut cursor = proc_node.walk();
+    if cursor.goto_first_child() {
+        loop {
+            let kind = cursor.node().kind();
+            if matches!(
+                kind,
+                "var_section"
+                    | "compound_statement"
+                    | "block"
+                    | "statement_list"
+                    | "procedure_body"
+                    | "begin_end"
+            ) {
+                end_byte = cursor.node().start_byte().min(end_byte);
+                break;
+            }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    // Textual fallback: if we still have the whole procedure (including body),
+    // walk the bytes from proc_start onward and stop at the first standalone
+    // `begin` or `var` keyword (preceded by whitespace).
+    if end_byte == proc_node.end_byte() {
+        let text = &source[proc_start..end_byte];
+        if let Some(off) = find_body_start(text) {
+            end_byte = proc_start + off;
+        }
+    }
+
+    let raw = &source[proc_start..end_byte];
+    // Normalize whitespace: collapse runs, drop trailing whitespace.
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        if ch.is_whitespace() {
+            if !prev_space && !out.is_empty() {
+                out.push(' ');
+            }
+            prev_space = true;
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    // The procedure node already includes its modifier keywords
+    // (`local`/`internal`/`protected`), so we don't need to prepend.
+    out.trim().to_string()
 }
 
 /// Parse EventSubscriber attribute arguments
@@ -1065,5 +1309,58 @@ codeunit 50000 "Test Codeunit"
                 entry.file_name()
             );
         }
+    }
+
+    #[test]
+    fn test_event_publisher_extraction() {
+        let source = r#"
+codeunit 50100 "Sample Publisher"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterDoSomething(var Rec: Record "Customer"; xRec: Record "Customer")
+    begin
+    end;
+
+    [BusinessEvent(false)]
+    local procedure OnBusinessThing(Amount: Decimal): Boolean
+    begin
+    end;
+
+    procedure NormalProc()
+    begin
+    end;
+
+    [Obsolete('Use OnAfterDoSomethingV2', '24.0')]
+    [IntegrationEvent(false, false)]
+    procedure OnLegacyThing()
+    begin
+    end;
+}
+"#;
+        let mut parser = AlParser::new().expect("parser");
+        let result = parser.parse_file(Path::new("test.al"), source).expect("parse");
+
+        // Three event publishers (two IntegrationEvent + one BusinessEvent).
+        assert_eq!(result.event_publishers.len(), 3, "expected 3, got {:#?}", result.event_publishers);
+
+        // First publisher: IntegrationEvent OnAfterDoSomething
+        let p0 = &result.event_publishers[0];
+        assert_eq!(p0.name, "OnAfterDoSomething");
+        assert_eq!(p0.kind, EventPublisherKind::IntegrationEvent);
+        assert!(!p0.is_local);
+        assert!(p0.signature.contains("OnAfterDoSomething"));
+        assert!(p0.signature.contains("Record"));
+
+        // Second: BusinessEvent + local
+        let p1 = &result.event_publishers[1];
+        assert_eq!(p1.name, "OnBusinessThing");
+        assert_eq!(p1.kind, EventPublisherKind::BusinessEvent);
+        assert!(p1.is_local, "OnBusinessThing should be detected as local");
+        assert!(p1.signature.contains("Decimal"));
+
+        // Third: IntegrationEvent attached to a procedure with [Obsolete] above it
+        let p2 = &result.event_publishers[2];
+        assert_eq!(p2.name, "OnLegacyThing");
+        assert_eq!(p2.kind, EventPublisherKind::IntegrationEvent);
     }
 }

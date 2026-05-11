@@ -9,13 +9,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
-use crate::app_package::ParsedAppPackage;
+use crate::app_package::{ExternalMethodKind, ParsedAppPackage};
 use crate::dependencies;
 use crate::graph::{
-    CallGraph, CallSite, Definition, DefinitionKind, EventSubscription, ExternalDefinition,
-    ExternalSource, ObjectType, QualifiedName,
+    CallGraph, CallSite, Definition, DefinitionKind, DependencyMethod, DependencyMethodKind,
+    DependencyObject, EventSubscription, ExternalDefinition, ExternalSource,
+    LocalEventPublisher, LocalEventPublisherKind, ObjectType, QualifiedName,
 };
-use crate::parser::{AlParser, ParsedFile};
+use crate::parser::{AlParser, EventPublisherKind, ParsedFile};
 
 // Thread-local parser to avoid recompiling queries for every file
 thread_local! {
@@ -231,6 +232,25 @@ impl Indexer {
             );
         }
 
+        // Cache event publishers for this file (used by documentSymbol overlay).
+        let local_publishers: Vec<LocalEventPublisher> = parsed
+            .event_publishers
+            .into_iter()
+            .map(|p| LocalEventPublisher {
+                name: p.name,
+                range: p.range,
+                selection_range: p.selection_range,
+                kind: match p.kind {
+                    EventPublisherKind::IntegrationEvent => LocalEventPublisherKind::IntegrationEvent,
+                    EventPublisherKind::BusinessEvent => LocalEventPublisherKind::BusinessEvent,
+                    EventPublisherKind::InternalEvent => LocalEventPublisherKind::InternalEvent,
+                },
+                is_local: p.is_local,
+                signature: p.signature,
+            })
+            .collect();
+        graph.set_local_event_publishers(shared_path.clone(), local_publishers);
+
         // Add event subscriptions
         for sub in parsed.event_subscribers {
             let subscriber_name = graph.intern(&sub.subscriber_name);
@@ -285,15 +305,29 @@ impl Indexer {
 
     /// Index external dependencies from .app packages
     ///
-    /// Looks for app.json in the project root, resolves dependencies from
-    /// the .alpackages folder, and adds external definitions to the graph.
+    /// Loads every `.app` file present in the project's `.alpackages` folder
+    /// (mirroring the AL LSP) so transitive deps like Base Application get
+    /// indexed even when not declared in app.json. Falls back to the
+    /// declared-only resolver when there are duplicates so the
+    /// publisher/version metadata stays correct.
     pub fn index_dependencies(&self, project_root: &Path) -> Result<usize> {
+        use std::collections::HashSet;
         use std::time::Instant;
 
         let start = Instant::now();
-        let resolved = dependencies::resolve_all(project_root)?;
 
-        if resolved.is_empty() {
+        // Load every .app — this is what gives us Base Application, System
+        // Application, etc. for projects that depend on them transitively.
+        // load_all_apps returns packages in closest-first order: the project's
+        // own .alpackages comes before parent / grandparent folders.
+        let all_apps = dependencies::load_all_apps(project_root)?;
+
+        // Also pull declared deps for their authoritative publisher/version,
+        // and to surface any deps that resolve from a different alpackages
+        // folder (rare, but legal).
+        let declared = dependencies::resolve_all(project_root).unwrap_or_default();
+
+        if all_apps.is_empty() && declared.is_empty() {
             debug!("No dependencies to index");
             return Ok(0);
         }
@@ -301,18 +335,62 @@ impl Indexer {
         let mut graph = self.graph.lock().unwrap();
         let mut total_defs = 0;
 
-        for dep in resolved {
+        // Dedup by (app_name_lowercase, version) so two .app files with the
+        // same identity in different .alpackages folders don't trample each
+        // other in dependency_objects (which keys by app+type+name and is
+        // last-write-wins). Declared deps go first — their publisher/version
+        // metadata is authoritative — then all_apps is iterated closest-first
+        // so the closest copy wins for any (name, version) collision.
+        let mut seen_apps: HashSet<(String, String)> = HashSet::new();
+        let mut packages_indexed = 0usize;
+
+        for dep in declared {
+            let key = (
+                dep.package.metadata.name.to_lowercase(),
+                dep.package.metadata.version.clone(),
+            );
+            if !seen_apps.insert(key) {
+                continue;
+            }
             let count = self.add_app_to_graph(&mut graph, &dep.package);
             total_defs += count;
+            packages_indexed += 1;
             debug!(
-                "Added {} external definitions from {}",
-                count, dep.package.metadata.name
+                "Added {} external definitions from {} v{} (declared)",
+                count, dep.package.metadata.name, dep.package.metadata.version
+            );
+        }
+
+        for dep in all_apps {
+            let key = (
+                dep.package.metadata.name.to_lowercase(),
+                dep.package.metadata.version.clone(),
+            );
+            if !seen_apps.insert(key) {
+                debug!(
+                    "Skipping duplicate {} v{} from {} (closer copy already indexed)",
+                    dep.package.metadata.name,
+                    dep.package.metadata.version,
+                    dep.app_path.display()
+                );
+                continue;
+            }
+            let count = self.add_app_to_graph(&mut graph, &dep.package);
+            total_defs += count;
+            packages_indexed += 1;
+            debug!(
+                "Added {} external definitions from {} v{} (.alpackages: {})",
+                count,
+                dep.package.metadata.name,
+                dep.package.metadata.version,
+                dep.app_path.display()
             );
         }
 
         info!(
-            "Indexed {} external definitions in {:.1}ms",
+            "Indexed {} external definitions from {} packages in {:.1}ms",
             total_defs,
+            packages_indexed,
             start.elapsed().as_secs_f64() * 1000.0
         );
 
@@ -336,7 +414,9 @@ impl Indexer {
             // Register the external object type
             graph.register_external_object(object_name, obj.object_type);
 
-            // Add each method as an external definition
+            // Add each method as an external definition (used by the call graph)
+            // and aggregate into a DependencyObject for documentSymbol synthesis.
+            let mut dep_methods = Vec::with_capacity(obj.methods.len());
             for method in &obj.methods {
                 let method_name = graph.intern(&method.name);
 
@@ -345,14 +425,49 @@ impl Indexer {
                     object_type: obj.object_type,
                     object_name,
                     name: method_name,
-                    kind: DefinitionKind::Procedure,
+                    kind: external_method_to_definition_kind(method.kind),
+                });
+
+                dep_methods.push(DependencyMethod {
+                    name: method.name.clone(),
+                    kind: external_method_kind_to_dep(method.kind),
+                    signature: method.signature.clone(),
+                    is_local: method.is_local,
                 });
 
                 count += 1;
             }
+
+            graph.add_dependency_object(DependencyObject {
+                app_name: package.metadata.name.clone(),
+                app_version: package.metadata.version.clone(),
+                object_type: obj.object_type,
+                object_id: obj.id,
+                object_name: obj.name.clone(),
+                methods: dep_methods,
+            });
         }
 
         count
+    }
+}
+
+fn external_method_to_definition_kind(kind: ExternalMethodKind) -> DefinitionKind {
+    match kind {
+        ExternalMethodKind::EventSubscriber => DefinitionKind::EventSubscriber,
+        // Event publishers and regular procedures are both DefinitionKind::Procedure
+        // for the call-graph layer. The richer distinction lives in DependencyMethod.
+        _ => DefinitionKind::Procedure,
+    }
+}
+
+fn external_method_kind_to_dep(kind: ExternalMethodKind) -> DependencyMethodKind {
+    match kind {
+        ExternalMethodKind::Procedure => DependencyMethodKind::Procedure,
+        ExternalMethodKind::IntegrationEvent => DependencyMethodKind::IntegrationEvent,
+        ExternalMethodKind::BusinessEvent => DependencyMethodKind::BusinessEvent,
+        ExternalMethodKind::InternalEvent => DependencyMethodKind::InternalEvent,
+        ExternalMethodKind::EventSubscriber => DependencyMethodKind::EventSubscriber,
     }
 }
 

@@ -150,6 +150,80 @@ pub struct ExternalDefinition {
     pub kind: DefinitionKind,
 }
 
+/// Kind of a dependency-object method (publisher / subscriber / regular procedure).
+///
+/// Parallel to `crate::app_package::ExternalMethodKind` but kept here so the
+/// graph module doesn't depend on `app_package` types externally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DependencyMethodKind {
+    Procedure,
+    IntegrationEvent,
+    BusinessEvent,
+    InternalEvent,
+    EventSubscriber,
+}
+
+impl DependencyMethodKind {
+    pub fn is_publisher(&self) -> bool {
+        matches!(
+            self,
+            Self::IntegrationEvent | Self::BusinessEvent | Self::InternalEvent
+        )
+    }
+
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::Procedure => "",
+            Self::IntegrationEvent => "[IntegrationEvent]",
+            Self::BusinessEvent => "[BusinessEvent]",
+            Self::InternalEvent => "[InternalEvent]",
+            Self::EventSubscriber => "[EventSubscriber]",
+        }
+    }
+}
+
+/// A method exposed by a dependency object (suitable for documentSymbol response).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencyMethod {
+    pub name: String,
+    pub kind: DependencyMethodKind,
+    /// Pre-formatted signature, e.g. `procedure Foo(var Bar: Record "Customer"): Boolean`.
+    pub signature: String,
+    pub is_local: bool,
+}
+
+/// An object from a dependency .app package, captured with enough detail to
+/// synthesize an LSP documentSymbol response without involving the AL LSP.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencyObject {
+    pub app_name: String,
+    pub app_version: String,
+    pub object_type: ObjectType,
+    pub object_id: i64,
+    pub object_name: String,
+    pub methods: Vec<DependencyMethod>,
+}
+
+/// Lookup key for `CallGraph::dependency_objects`. Case-insensitive on
+/// `app_name` and `object_name` since AL is case-insensitive and the AL LSP's
+/// al-preview URIs use whatever casing the user typed.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DependencyKey {
+    pub app_name_lc: String,
+    pub object_type: ObjectType,
+    pub object_name_lc: String,
+}
+
+impl DependencyKey {
+    pub fn new(app_name: &str, object_type: ObjectType, object_name: &str) -> Self {
+        Self {
+            app_name_lc: app_name.to_lowercase(),
+            object_type,
+            object_name_lc: object_name.to_lowercase(),
+        }
+    }
+}
+
 /// A call site (where a procedure is called)
 #[derive(Debug, Clone)]
 pub struct CallSite {
@@ -249,6 +323,47 @@ pub struct CallGraph {
 
     /// File -> event subscriptions in that file (for incremental removal)
     file_event_subscriptions: HashMap<SharedPath, Vec<QualifiedName>>,
+
+    /// Rich per-object dependency index built from .app SymbolReference.json.
+    /// Lets the wrapper synthesize documentSymbol responses for al-preview:/
+    /// URIs without going through the AL LSP.
+    dependency_objects: HashMap<DependencyKey, DependencyObject>,
+
+    /// Per-file event publishers (procedures with [IntegrationEvent],
+    /// [BusinessEvent], or [InternalEvent]) discovered in workspace .al files.
+    /// Used to overlay event-kind tagging on AL LSP's documentSymbol response
+    /// for local files. Invalidated/repopulated by the file watcher.
+    local_event_publishers: HashMap<SharedPath, Vec<LocalEventPublisher>>,
+}
+
+/// An event publisher procedure detected in a workspace .al file.
+/// Mirrors `parser::ParsedEventPublisher` but lives in the graph so it can be
+/// queried from request handlers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalEventPublisher {
+    pub name: String,
+    pub range: Range,
+    pub selection_range: Range,
+    pub kind: LocalEventPublisherKind,
+    pub is_local: bool,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LocalEventPublisherKind {
+    IntegrationEvent,
+    BusinessEvent,
+    InternalEvent,
+}
+
+impl LocalEventPublisherKind {
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::IntegrationEvent => "[IntegrationEvent]",
+            Self::BusinessEvent => "[BusinessEvent]",
+            Self::InternalEvent => "[InternalEvent]",
+        }
+    }
 }
 
 impl CallGraph {
@@ -269,7 +384,70 @@ impl CallGraph {
             external_object_types: HashMap::new(),
             event_subscriptions: HashMap::new(),
             file_event_subscriptions: HashMap::new(),
+            dependency_objects: HashMap::new(),
+            local_event_publishers: HashMap::new(),
         }
+    }
+
+    /// Replace the event publisher list for a file (called once per parse).
+    pub fn set_local_event_publishers(
+        &mut self,
+        file: SharedPath,
+        publishers: Vec<LocalEventPublisher>,
+    ) {
+        if publishers.is_empty() {
+            self.local_event_publishers.remove(&file);
+        } else {
+            self.local_event_publishers.insert(file, publishers);
+        }
+    }
+
+    /// Return event publishers detected in a file. Empty when none.
+    pub fn get_local_event_publishers(&self, file: &Path) -> &[LocalEventPublisher] {
+        let normalized = normalize_path(file);
+        let shared_path = match self.path_cache.get(&normalized) {
+            Some(p) => p,
+            None => return &[],
+        };
+        self.local_event_publishers
+            .get(shared_path)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Insert or replace a rich dependency object (built from a .app file).
+    pub fn add_dependency_object(&mut self, obj: DependencyObject) {
+        let key = DependencyKey::new(&obj.app_name, obj.object_type, &obj.object_name);
+        self.dependency_objects.insert(key, obj);
+    }
+
+    /// Look up a dependency object by (app, type, name). Case-insensitive.
+    pub fn get_dependency_object(
+        &self,
+        app_name: &str,
+        object_type: ObjectType,
+        object_name: &str,
+    ) -> Option<&DependencyObject> {
+        let key = DependencyKey::new(app_name, object_type, object_name);
+        self.dependency_objects.get(&key)
+    }
+
+    /// Look up a dependency object by (type, name) only, scanning all apps.
+    /// Useful when the URI doesn't include the app, or when the caller has
+    /// approximate naming.
+    pub fn find_dependency_object_by_type_name(
+        &self,
+        object_type: ObjectType,
+        object_name: &str,
+    ) -> Option<&DependencyObject> {
+        let name_lc = object_name.to_lowercase();
+        self.dependency_objects
+            .values()
+            .find(|o| o.object_type == object_type && o.object_name.to_lowercase() == name_lc)
+    }
+
+    pub fn dependency_object_count(&self) -> usize {
+        self.dependency_objects.len()
     }
 
     /// Get or create a shared path reference
@@ -658,6 +836,9 @@ impl CallGraph {
                     .unwrap_or(false)
             });
         }
+
+        // Drop any cached event publishers for this file.
+        self.local_event_publishers.remove(&shared_path);
 
         // Clean up event subscriptions from this file
         if let Some(publisher_qnames) = self.file_event_subscriptions.remove(&shared_path) {
