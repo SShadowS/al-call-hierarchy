@@ -11,4 +11,9 @@
 
 pub mod config;
 pub mod engine;
+/// Tree-sitter AL language bindings. Exposed from the library so additive
+/// binaries (e.g. the R0 `aldump`) can parse without duplicating the `extern`
+/// declaration. `main.rs` keeps its own `mod language;` for the LSP binary;
+/// the duplicate compilation is benign and pre-existing in this repo.
+pub mod language;
 pub mod telemetry;

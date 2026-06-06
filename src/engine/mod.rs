@@ -5,3 +5,4 @@
 //! surface.
 
 pub mod ids;
+pub mod snapshot;
