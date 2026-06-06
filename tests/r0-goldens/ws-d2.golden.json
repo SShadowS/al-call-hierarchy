@@ -1,0 +1,80 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-d200-0000-0000-000000000002:Codeunit:64101",
+      "name": "D2 Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "377fb0f90a7fd7704067c8f976cd5436ee1dcb4a57b9cd0acf61cdcaaf7b0c4a"
+    },
+    {
+      "stableObjectId": "22222222-d200-0000-0000-000000000002:Codeunit:64102",
+      "name": "D2 Subscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "bfc4e34885feeb6a82dd67e03cca121cab27224b653eede5ab2160a91b209cd3"
+    },
+    {
+      "stableObjectId": "22222222-d200-0000-0000-000000000002:Table:64100",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "c89886eb4c10302d7de10838ebfff1b3c7651f9b409b89ecfd1301f9697a8999"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+      "name": "RaiseInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+      "normalizedSignatureHash": "299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+      "canonicalSignatureText": "raiseinloop():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#5d8a0ba361956a3c86c043fc786cca40124994cb9f5c856ea5fe2b9c01d6f316",
+      "name": "RaiseQuietInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "5d8a0ba361956a3c86c043fc786cca40124994cb9f5c856ea5fe2b9c01d6f316",
+      "normalizedSignatureHash": "5d8a0ba361956a3c86c043fc786cca40124994cb9f5c856ea5fe2b9c01d6f316",
+      "canonicalSignatureText": "raisequietinloop():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#8ec33b291b887ac8a845e99d37943b2f9667ae5d4415c1ab7b7de45ccb164df3",
+      "name": "OnQuietEvent",
+      "kind": "event-publisher",
+      "signatureFingerprint": "8ec33b291b887ac8a845e99d37943b2f9667ae5d4415c1ab7b7de45ccb164df3",
+      "normalizedSignatureHash": "8ec33b291b887ac8a845e99d37943b2f9667ae5d4415c1ab7b7de45ccb164df3",
+      "canonicalSignatureText": "onquietevent():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+      "name": "RaiseTwiceInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+      "normalizedSignatureHash": "9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+      "canonicalSignatureText": "raisetwiceinloop():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "name": "OnProcessLine",
+      "kind": "event-publisher",
+      "signatureFingerprint": "d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "normalizedSignatureHash": "d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "canonicalSignatureText": "onprocessline():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+      "name": "HandleProcessLine",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+      "normalizedSignatureHash": "4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+      "canonicalSignatureText": "handleprocessline():"
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#f8154584e1e27f484e40a75672dc34f9d2cebf5d71845a7949c25f6d646b2b7e",
+      "name": "HandleQuietEvent",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "f8154584e1e27f484e40a75672dc34f9d2cebf5d71845a7949c25f6d646b2b7e",
+      "normalizedSignatureHash": "f8154584e1e27f484e40a75672dc34f9d2cebf5d71845a7949c25f6d646b2b7e",
+      "canonicalSignatureText": "handlequietevent():"
+    }
+  ]
+}

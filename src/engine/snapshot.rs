@@ -33,12 +33,12 @@ use crate::engine::ids::{
     object_signature_fingerprint, routine_signature_fingerprint, to_stable_object_id,
     to_stable_routine_id_from_parts, ParamSpec,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tree_sitter::{Node, Parser};
 
 /// The identity subset of a single AL object declaration, in the golden's shape.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObjectIdentity {
     #[serde(rename = "stableObjectId")]
     pub stable_object_id: String,
@@ -50,7 +50,7 @@ pub struct ObjectIdentity {
 }
 
 /// The identity subset of a single routine, in the golden's shape.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoutineIdentity {
     #[serde(rename = "stableRoutineId")]
     pub stable_routine_id: String,
@@ -66,7 +66,7 @@ pub struct RoutineIdentity {
 }
 
 /// The complete identity-subset snapshot for a workspace.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IdentitySnapshot {
     pub objects: Vec<ObjectIdentity>,
     pub routines: Vec<RoutineIdentity>,
