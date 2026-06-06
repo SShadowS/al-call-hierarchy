@@ -202,13 +202,15 @@ fn classify_kind(node: Node, source: &str) -> String {
 /// needs — `type_text` (the `type_specification` named child's text, or "") and
 /// `is_var` (presence of a `var_keyword` named child).
 ///
-/// ORACLE QUIRK (intraprocedural-refs.ts:47-54): al-sem locates the parameter
-/// name by finding the FIRST `identifier` named child, and if a parameter has
-/// NO `identifier` child it is SKIPPED entirely (`continue`). A parameter whose
-/// name is a *quoted* identifier (e.g. `"Sales Header": Record "Sales Header"`)
-/// therefore has only a `quoted_identifier` name node, no `identifier`, and is
-/// dropped from the canonical signature. We reproduce that exactly so the Rust
-/// signature matches the oracle's (driven by ws-r0-canon-stress `DoWork`).
+/// ORACLE BEHAVIOR (intraprocedural-refs.ts:44-86, GAP 1 fix): al-sem locates the
+/// parameter NAME node as the FIRST named child of kind `identifier` OR
+/// `quoted_identifier`, and only SKIPS a parameter when it has NEITHER (no name
+/// node at all → a parse artifact). A parameter whose name is a *quoted*
+/// identifier (e.g. `"Sales Header": Record "Sales Header"`) is therefore KEPT,
+/// so its `type_specification` text enters the canonical signature. We don't need
+/// the name itself for the identity subset (only `type_text` + `is_var` matter),
+/// but we must mirror the skip predicate exactly so the param set matches the
+/// oracle's (driven by ws-r0-canon-stress `DoWork`'s `"Sales Header"` param).
 fn extract_parameters(node: Node, source: &str) -> Vec<ParamSpec> {
     let mut params = Vec::new();
     let Some(param_list) = named_children(node).find(|c| c.kind() == "parameter_list") else {
@@ -218,8 +220,12 @@ fn extract_parameters(node: Node, source: &str) -> Vec<ParamSpec> {
         if param.kind() != "parameter" {
             continue;
         }
-        // Mirror al-sem: a parameter with no `identifier` name child is skipped.
-        if !named_children(param).any(|c| c.kind() == "identifier") {
+        // Mirror al-sem GAP 1: skip only when there is NO name node at all
+        // (neither `identifier` nor `quoted_identifier`). Quoted-name params ARE
+        // kept so their type enters the signature.
+        let has_name = named_children(param)
+            .any(|c| c.kind() == "identifier" || c.kind() == "quoted_identifier");
+        if !has_name {
             continue;
         }
         let is_var = named_children(param).any(|c| c.kind() == "var_keyword");
@@ -387,29 +393,56 @@ fn read_al_source(path: &Path) -> std::io::Result<String> {
 }
 
 /// Read the workspace ROOT's `app.json` and return its `id` field VERBATIM (no
-/// case change). al-sem uses this as the StableObjectId prefix (appGuid).
+/// case change) when present as a non-empty string. al-sem uses this as the
+/// StableObjectId prefix (appGuid).
 ///
-/// ORACLE BEHAVIOR (providers/workspace.ts:50-73): the appGuid is read ONLY from
-/// `<root>/app.json`. al-sem does NOT search subdirectories for app.json, and on
-/// ANY failure — file missing, unparseable JSON, or a missing/non-string `id`
-/// field — it defaults the appGuid to the literal string `"unknown"` (pushing a
-/// warning diagnostic, never throwing). Multi-app fixtures that keep their
-/// app.json under subdirs (e.g. `a/app.json`, `b/app.json`) therefore resolve to
-/// `"unknown"` for every discovered object — `ws-diff-coverage-narrowed` is the
-/// canonical example. We reproduce that fallback exactly rather than erroring.
-fn read_app_guid(workspace: &Path) -> String {
+/// ORACLE BEHAVIOR (providers/workspace.ts:62-77): the appGuid is read ONLY from
+/// `<root>/app.json`, and only when `id` is a non-empty string. Missing file,
+/// unparseable JSON, or a missing/empty/non-string `id` → `None`. The fail-closed
+/// guard in `snapshot_workspace` turns a `None` here into an EMPTY snapshot.
+fn read_root_app_guid(workspace: &Path) -> Option<String> {
     let app_json_path = workspace.join("app.json");
-    let Ok(text) = std::fs::read_to_string(&app_json_path) else {
-        return "unknown".to_string();
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return "unknown".to_string();
-    };
-    value
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| "unknown".to_string())
+    let text = std::fs::read_to_string(&app_json_path).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let id = value.get("id")?.as_str()?;
+    if id.is_empty() {
+        None
+    } else {
+        Some(id.to_string())
+    }
+}
+
+/// Count `app.json` files anywhere under `workspace`, EXCLUDING dirs named
+/// `node_modules` and `.alpackages` (case-insensitive). Mirrors al-sem's
+/// `WorkspaceProvider.collect` layout check: `walk` skips `SKIP_DIR_EXACT`
+/// (`node_modules`, `.alpackages`) and counts every remaining file whose basename
+/// lowercases to `app.json`. More than one ⇒ multi-app source tree (unsound).
+fn count_app_json(workspace: &Path) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![workspace.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(ftype) = entry.file_type() else {
+                continue;
+            };
+            if ftype.is_dir() {
+                let dname_lc = entry.file_name().to_string_lossy().to_lowercase();
+                // Mirror al-sem SKIP_DIR_EXACT (node_modules / .alpackages).
+                if dname_lc == "node_modules" || dname_lc == ".alpackages" {
+                    continue;
+                }
+                stack.push(entry.path());
+            } else if ftype.is_file()
+                && entry.file_name().to_string_lossy().to_lowercase() == "app.json"
+            {
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 /// Build the identity-subset snapshot for a workspace directory.
@@ -422,7 +455,40 @@ pub fn snapshot_workspace(workspace: &Path) -> anyhow::Result<IdentitySnapshot> 
     if !workspace.is_dir() {
         anyhow::bail!("workspace is not a directory: {}", workspace.display());
     }
-    let app_guid = read_app_guid(workspace);
+
+    // --- fail-closed layout detection (identity soundness, al-sem GAP 2) -------
+    // A sound workspace is exactly ONE AL app: a readable root app.json with a
+    // non-empty string `id`, plus deps under skipped dirs. Anything else mints
+    // colliding object identities (one appGuid stamped onto files belonging to
+    // distinct apps), so al-sem's WorkspaceProvider.collect emits NO source units.
+    // We mirror that: an unsound layout yields an EMPTY identity snapshot.
+    //   (a) no readable <root>/app.json with a string `id`, OR
+    //   (b) MORE THAN ONE app.json under <root> (excl. node_modules/.alpackages).
+    let app_guid = match read_root_app_guid(workspace) {
+        Some(g) => g,
+        None => {
+            eprintln!(
+                "fail-closed: no readable root app.json with a string `id` at {} — emitting empty snapshot",
+                workspace.display()
+            );
+            return Ok(IdentitySnapshot {
+                objects: Vec::new(),
+                routines: Vec::new(),
+            });
+        }
+    };
+    let app_json_count = count_app_json(workspace);
+    if app_json_count > 1 {
+        eprintln!(
+            "fail-closed: multi-app source workspace at {} ({app_json_count} app.json files, excl. node_modules/.alpackages) — emitting empty snapshot",
+            workspace.display()
+        );
+        return Ok(IdentitySnapshot {
+            objects: Vec::new(),
+            routines: Vec::new(),
+        });
+    }
+
     let files = discover_al_files(workspace)
         .map_err(|e| anyhow::anyhow!("failed to discover .al files: {e}"))?;
 
@@ -481,23 +547,48 @@ mod tests {
         assert_eq!(strip_quotes("unbalanced\""), "unbalanced\"");
     }
 
-    /// app.json fallback: a workspace with no root `app.json` (e.g. a multi-app
-    /// fixture whose app.json files live under subdirs) resolves the appGuid to
-    /// the literal `"unknown"`, mirroring providers/workspace.ts. Never errors.
+    /// Root app.json identity: read the `id` only when it is a non-empty string;
+    /// any other state (missing file, unparseable, missing/empty/non-string `id`)
+    /// yields `None`, which the fail-closed guard turns into an empty snapshot.
+    /// Mirrors providers/workspace.ts GAP 2.
     #[test]
-    fn read_app_guid_falls_back_to_unknown_without_root_app_json() {
+    fn read_root_app_guid_requires_nonempty_string_id() {
         let tmp = std::env::temp_dir().join(format!("alch-r0-noappjson-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        assert_eq!(read_app_guid(&tmp), "unknown");
-        // Unparseable app.json → also "unknown".
+        // No root app.json → None.
+        assert_eq!(read_root_app_guid(&tmp), None);
+        // Unparseable app.json → None.
         std::fs::write(tmp.join("app.json"), "{ not json").unwrap();
-        assert_eq!(read_app_guid(&tmp), "unknown");
-        // Valid JSON but no string `id` → "unknown".
+        assert_eq!(read_root_app_guid(&tmp), None);
+        // Valid JSON but no string `id` → None.
         std::fs::write(tmp.join("app.json"), "{\"name\":\"x\"}").unwrap();
-        assert_eq!(read_app_guid(&tmp), "unknown");
-        // Valid `id` → verbatim.
+        assert_eq!(read_root_app_guid(&tmp), None);
+        // Empty `id` string → None.
+        std::fs::write(tmp.join("app.json"), "{\"id\":\"\"}").unwrap();
+        assert_eq!(read_root_app_guid(&tmp), None);
+        // Valid non-empty `id` → verbatim.
         std::fs::write(tmp.join("app.json"), "{\"id\":\"ABC-123\"}").unwrap();
-        assert_eq!(read_app_guid(&tmp), "ABC-123");
+        assert_eq!(read_root_app_guid(&tmp), Some("ABC-123".to_string()));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Layout count: `count_app_json` counts app.json anywhere under the root but
+    /// skips `node_modules` and `.alpackages` (mirrors al-sem SKIP_DIR_EXACT). A
+    /// two-app tree (`a/app.json` + `b/app.json`) counts 2 ⇒ multi-app (unsound).
+    #[test]
+    fn count_app_json_skips_node_modules_and_alpackages() {
+        let tmp = std::env::temp_dir().join(format!("alch-r0-countapp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("a")).unwrap();
+        std::fs::create_dir_all(tmp.join("b")).unwrap();
+        std::fs::create_dir_all(tmp.join(".alpackages")).unwrap();
+        std::fs::create_dir_all(tmp.join("node_modules").join("pkg")).unwrap();
+        std::fs::write(tmp.join("a").join("app.json"), "{\"id\":\"a\"}").unwrap();
+        std::fs::write(tmp.join("b").join("app.json"), "{\"id\":\"b\"}").unwrap();
+        // These two must NOT be counted (under skipped dirs).
+        std::fs::write(tmp.join(".alpackages").join("app.json"), "{}").unwrap();
+        std::fs::write(tmp.join("node_modules").join("pkg").join("app.json"), "{}").unwrap();
+        assert_eq!(count_app_json(&tmp), 2);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

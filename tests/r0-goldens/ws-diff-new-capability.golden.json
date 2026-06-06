@@ -1,34 +1,4 @@
 {
-  "objects": [
-    {
-      "stableObjectId": "unknown:Codeunit:50200",
-      "name": "Processor",
-      "kind": "Codeunit",
-      "signatureFingerprint": "0a6b80e53ec5257715a1bca8a0fdfdaf8f18b6b9a77f3a7bcdc0baa75d7b56b6"
-    },
-    {
-      "stableObjectId": "unknown:Codeunit:50200",
-      "name": "Processor",
-      "kind": "Codeunit",
-      "signatureFingerprint": "0a6b80e53ec5257715a1bca8a0fdfdaf8f18b6b9a77f3a7bcdc0baa75d7b56b6"
-    }
-  ],
-  "routines": [
-    {
-      "stableRoutineId": "unknown:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "name": "Compute",
-      "kind": "procedure",
-      "signatureFingerprint": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "normalizedSignatureHash": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "canonicalSignatureText": "compute(integer):integer"
-    },
-    {
-      "stableRoutineId": "unknown:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "name": "Compute",
-      "kind": "procedure",
-      "signatureFingerprint": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "normalizedSignatureHash": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
-      "canonicalSignatureText": "compute(integer):integer"
-    }
-  ]
+  "objects": [],
+  "routines": []
 }

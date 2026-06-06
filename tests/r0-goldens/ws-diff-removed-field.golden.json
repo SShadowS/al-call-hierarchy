@@ -1,17 +1,4 @@
 {
-  "objects": [
-    {
-      "stableObjectId": "unknown:Table:50100",
-      "name": "Customer",
-      "kind": "Table",
-      "signatureFingerprint": "e6ae9f50e04f86e3f3ab0585619dab1f878fe532fde286a47fd4710a16412822"
-    },
-    {
-      "stableObjectId": "unknown:Table:50100",
-      "name": "Customer",
-      "kind": "Table",
-      "signatureFingerprint": "e6ae9f50e04f86e3f3ab0585619dab1f878fe532fde286a47fd4710a16412822"
-    }
-  ],
+  "objects": [],
   "routines": []
 }

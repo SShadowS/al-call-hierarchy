@@ -475,21 +475,22 @@ fn refresh_goldens_from_al_sem() {
     eprintln!("refresh: NOT auto-committed — review the diff and commit deliberately.");
 }
 
-/// Copy a source-only fixture (`app.json` + `src/**/*.al`) into `dst`, skipping
-/// dependency/package dirs. Mirrors the offline-corpus contract.
+/// Copy a source-only fixture (every `app.json` + `*.al` in the tree) into `dst`,
+/// skipping dependency/package dirs. Mirrors the offline-corpus contract AND the
+/// al-sem WorkspaceProvider layout view: nested `a/app.json` + `b/app.json` of a
+/// multi-app fixture (e.g. `ws-diff-*`) are copied so the fail-closed (multi-app)
+/// branch is exercised by the offline corpus exactly as in al-sem.
 fn copy_source_fixture(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap_or_else(|e| panic!("create {}: {e}", dst.display()));
-    // app.json (verbatim).
-    let app_json = src.join("app.json");
-    if app_json.is_file() {
-        std::fs::copy(&app_json, dst.join("app.json")).expect("copy app.json");
-    }
-    // Recurse only over `src/` plus any top-level *.al.
+    // Recurse over the whole tree, copying both `*.al` and `app.json` files
+    // (root or nested), so the corpus mirrors al-sem's source tree.
     copy_al_tree(src, dst);
 }
 
-/// Recursively copy `*.al` files (and the dirs containing them) from `src` to
-/// `dst`, skipping `.alpackages` / `.git`.
+/// Recursively copy `*.al` and `app.json` files (and the dirs containing them)
+/// from `src` to `dst`, skipping `node_modules` / `.alpackages` / `.git`. Copying
+/// nested `app.json` files is required so the multi-app fail-closed branch is
+/// reproduced offline (al-sem counts app.json under the root excluding those dirs).
 fn copy_al_tree(src: &Path, dst: &Path) {
     let Ok(entries) = std::fs::read_dir(src) else {
         return;
@@ -501,15 +502,16 @@ fn copy_al_tree(src: &Path, dst: &Path) {
         let name = entry.file_name().to_string_lossy().to_string();
         if ftype.is_dir() {
             let name_lc = name.to_lowercase();
-            if name_lc == ".alpackages" || name_lc == ".git" {
+            if name_lc == "node_modules" || name_lc == ".alpackages" || name_lc == ".git" {
                 continue;
             }
             copy_al_tree(&path, &dst.join(&name));
         } else if ftype.is_file()
-            && path
+            && (path
                 .extension()
                 .map(|e| e.eq_ignore_ascii_case("al"))
                 .unwrap_or(false)
+                || name.eq_ignore_ascii_case("app.json"))
         {
             std::fs::create_dir_all(dst).expect("create dst dir");
             std::fs::copy(&path, dst.join(&name))

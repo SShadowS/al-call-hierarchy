@@ -47,12 +47,12 @@
       "canonicalSignatureText": "resolve():integer"
     },
     {
-      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#40c11a20b2d3bc9ce0fcb908ab0853ef3690095ccc2b6d60df06cf6310d9ded7",
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#344ab6a84f025777e272cab490dac9b627c4c5ed3d5be7729eeecb018576fcb2",
       "name": "DoWork",
       "kind": "procedure",
-      "signatureFingerprint": "40c11a20b2d3bc9ce0fcb908ab0853ef3690095ccc2b6d60df06cf6310d9ded7",
-      "normalizedSignatureHash": "40c11a20b2d3bc9ce0fcb908ab0853ef3690095ccc2b6d60df06cf6310d9ded7",
-      "canonicalSignatureText": "dowork(var record customer;array[10] of integer;var record \"temp buffer\" temporary;enum \"doc kind\";option open,closed;code[20];text[100]):"
+      "signatureFingerprint": "344ab6a84f025777e272cab490dac9b627c4c5ed3d5be7729eeecb018576fcb2",
+      "normalizedSignatureHash": "344ab6a84f025777e272cab490dac9b627c4c5ed3d5be7729eeecb018576fcb2",
+      "canonicalSignatureText": "dowork(var record customer;record \"sales header\";array[10] of integer;var record \"temp buffer\" temporary;enum \"doc kind\";option open,closed;code[20];text[100]):"
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#5507fb2ea6acdae3aa1b5434ced8b1a0be65bac85d37f782f575b3b26313c1f1",

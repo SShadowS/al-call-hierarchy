@@ -1,11 +1,11 @@
 {
   "description": "R0 golden identity snapshots — ground truth for the al-sem → Rust differential harness. Each <fixture>.golden.json is the identity subset projected from the real v3 snapshot (stable ids + return-type-aware signatureFingerprint + canonicalSignatureText) and the model (name/kind). See r0-identity-projection.ts for per-field provenance.",
-  "alSemGitSha": "016db675896a2ce350dcf840f82f4113889ebf40",
+  "alSemGitSha": "3ed9ca46455484603b7001e214134764a2793eb9",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "snapshotSchemaVersion": 3,
   "signatureFingerprintSemantics": "return-type-aware",
-  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=15;summarySchema=31;depCache=7;resourcePolicy=1",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=31;depCache=7;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r0",
   "fixtureCount": 157,
@@ -649,60 +649,60 @@
     {
       "fixture": "ws-diff-coverage-narrowed",
       "goldenFile": "ws-diff-coverage-narrowed.golden.json",
-      "objectCount": 2,
-      "routineCount": 2,
+      "objectCount": 0,
+      "routineCount": 0,
       "diagnostics": {
-        "total": 1,
-        "error": 0,
-        "warning": 1,
+        "total": 2,
+        "error": 2,
+        "warning": 0,
         "info": 0
       }
     },
     {
       "fixture": "ws-diff-new-capability",
       "goldenFile": "ws-diff-new-capability.golden.json",
-      "objectCount": 2,
-      "routineCount": 2,
+      "objectCount": 0,
+      "routineCount": 0,
       "diagnostics": {
-        "total": 1,
-        "error": 0,
-        "warning": 1,
+        "total": 2,
+        "error": 2,
+        "warning": 0,
         "info": 0
       }
     },
     {
       "fixture": "ws-diff-permission-expanded",
       "goldenFile": "ws-diff-permission-expanded.golden.json",
-      "objectCount": 6,
-      "routineCount": 2,
+      "objectCount": 0,
+      "routineCount": 0,
       "diagnostics": {
-        "total": 1,
-        "error": 0,
-        "warning": 1,
+        "total": 2,
+        "error": 2,
+        "warning": 0,
         "info": 0
       }
     },
     {
       "fixture": "ws-diff-removed-field",
       "goldenFile": "ws-diff-removed-field.golden.json",
-      "objectCount": 2,
+      "objectCount": 0,
       "routineCount": 0,
       "diagnostics": {
-        "total": 1,
-        "error": 0,
-        "warning": 1,
+        "total": 2,
+        "error": 2,
+        "warning": 0,
         "info": 0
       }
     },
     {
       "fixture": "ws-diff-rename",
       "goldenFile": "ws-diff-rename.golden.json",
-      "objectCount": 2,
-      "routineCount": 2,
+      "objectCount": 0,
+      "routineCount": 0,
       "diagnostics": {
-        "total": 1,
-        "error": 0,
-        "warning": 1,
+        "total": 2,
+        "error": 2,
+        "warning": 0,
         "info": 0
       }
     },
