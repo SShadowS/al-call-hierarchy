@@ -10,4 +10,5 @@
 //! crate cannot compile.
 
 pub mod config;
+pub mod engine;
 pub mod telemetry;

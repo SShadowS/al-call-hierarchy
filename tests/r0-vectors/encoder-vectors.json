@@ -1,0 +1,603 @@
+{
+  "description": "Encoder vectors for the al-sem → Rust identity differential harness. Every `expected` was produced by importing and CALLING the real al-sem encoder (never hand-computed). For each vector, the Rust port must reproduce `expected` byte-for-byte from `input` using the encoder named by `kind`. sha256OfStrings length-prefix uses JS String.length = UTF-16 code-unit count (see the emoji/non-ascii vectors) — Rust must count UTF-16 code units, not Unicode scalars or bytes.",
+  "count": 48,
+  "vectors": [
+    {
+      "kind": "encodeObjectId",
+      "note": "basic codeunit",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50100
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/Codeunit/50100"
+    },
+    {
+      "kind": "encodeObjectId",
+      "note": "UPPERCASE appGuid is kept verbatim (no normalization)",
+      "input": {
+        "appGuid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        "objectType": "Codeunit",
+        "objectNumber": 50100
+      },
+      "expected": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/Codeunit/50100"
+    },
+    {
+      "kind": "encodeObjectId",
+      "note": "extension object type + large object number",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "TableExtension",
+        "objectNumber": 70123456
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/TableExtension/70123456"
+    },
+    {
+      "kind": "encodeObjectId",
+      "note": "object number 0 edge",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Enum",
+        "objectNumber": 0
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/Enum/0"
+    },
+    {
+      "kind": "toStableObjectId",
+      "note": "/ → : separators",
+      "input": {
+        "internalObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/Codeunit/50100",
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50100
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100"
+    },
+    {
+      "kind": "toStableObjectId",
+      "note": "extension type",
+      "input": {
+        "internalObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/PageExtension/50200",
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "PageExtension",
+        "objectNumber": 50200
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:PageExtension:50200"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "no params, no return",
+      "input": {
+        "name": "DoWork",
+        "parameters": [],
+        "returnTypeText": null
+      },
+      "expected": "dowork():"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "single param + return (overload set base)",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Integer"
+      },
+      "expected": "dowork(integer):integer"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "overload: same name, different param type",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Text",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Integer"
+      },
+      "expected": "dowork(text):integer"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "overload: two params",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          },
+          {
+            "typeText": "Text",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Boolean"
+      },
+      "expected": "dowork(integer;text):boolean"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "AL case-insensitivity: type + return lowered",
+      "input": {
+        "name": "MixedCase",
+        "parameters": [
+          {
+            "typeText": "INTEGER",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "BOOLEAN"
+      },
+      "expected": "mixedcase(integer):boolean"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "quoted/spaced identifier in type — inner spaces preserved",
+      "input": {
+        "name": "PostSomething",
+        "parameters": [
+          {
+            "typeText": "Record \"Sales Line\"",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "postsomething(record \"sales line\"):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "var (by-ref) param → 'var ' prefix",
+      "input": {
+        "name": "ByRef",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": true
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "byref(var integer):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "array param type",
+      "input": {
+        "name": "ArrayParam",
+        "parameters": [
+          {
+            "typeText": "array[10] of Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "arrayparam(array[10] of integer):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "temporary Record param",
+      "input": {
+        "name": "TempRec",
+        "parameters": [
+          {
+            "typeText": "temporary Record Customer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "temprec(temporary record customer):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "Enum param",
+      "input": {
+        "name": "EnumParam",
+        "parameters": [
+          {
+            "typeText": "Enum \"Sales Document Type\"",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "enumparam(enum \"sales document type\"):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "Codeunit param",
+      "input": {
+        "name": "CuParam",
+        "parameters": [
+          {
+            "typeText": "Codeunit \"My Mgmt\"",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "cuparam(codeunit \"my mgmt\"):"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "Option param + return",
+      "input": {
+        "name": "OptParam",
+        "parameters": [
+          {
+            "typeText": "Option",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Option"
+      },
+      "expected": "optparam(option):option"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "var Variant + Integer → Decimal",
+      "input": {
+        "name": "ManyAttrsRet",
+        "parameters": [
+          {
+            "typeText": "Variant",
+            "isVar": true
+          },
+          {
+            "typeText": "Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Decimal"
+      },
+      "expected": "manyattrsret(var variant;integer):decimal"
+    },
+    {
+      "kind": "canonicalRoutineSignature",
+      "note": "surrounding whitespace trimmed on type + return",
+      "input": {
+        "name": "Trimmed",
+        "parameters": [
+          {
+            "typeText": "  Integer  ",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "  Code[20]  "
+      },
+      "expected": "trimmed(integer):code[20]"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "empty string",
+      "input": {
+        "value": ""
+      },
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "ascii",
+      "input": {
+        "value": "hello"
+      },
+      "expected": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "non-ascii (é is 2 UTF-8 bytes)",
+      "input": {
+        "value": "café"
+      },
+      "expected": "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "emoji = surrogate pair (UTF-16 .length=2 for one scalar)",
+      "input": {
+        "value": "emoji 😀 surrogate"
+      },
+      "expected": "955a6c41d978d7d42171ed30037a66f89b9c780604519594b71bf5d8c162570d"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "CRLF",
+      "input": {
+        "value": "line1\r\nline2"
+      },
+      "expected": "d14a91a6d1c6ee83bf0c774ebecbee6d8b393b395dae29eea839c354d6fba9c0"
+    },
+    {
+      "kind": "sha256Hex",
+      "note": "LF — must differ from CRLF above",
+      "input": {
+        "value": "line1\nline2"
+      },
+      "expected": "683376e290829b482c2655745caffa7a1dccfa10afaa62dac2b42dd6c68d0f83"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "empty list",
+      "input": {
+        "parts": []
+      },
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "length-prefix disambiguation A",
+      "input": {
+        "parts": [
+          "ab",
+          "c"
+        ]
+      },
+      "expected": "430fb1b4ac43316eca81fab27a1930ab8eff8fef6a1dc7903dce44bbc2790dc5"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "length-prefix disambiguation B — must differ from A",
+      "input": {
+        "parts": [
+          "a",
+          "bc"
+        ]
+      },
+      "expected": "5310a58788781ab25d5ad7c3f85035824b4eb7bdfa394e0ac2186271472b5492"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "single empty part (length 0)",
+      "input": {
+        "parts": [
+          ""
+        ]
+      },
+      "expected": "ba768b331fd86cec803be04e56ab2b3d4c0e98ef4ee4fcd4e72ad7cce61a1d1f"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "non-ascii: JS .length=4 (é is ONE UTF-16 unit) not byte length 5",
+      "input": {
+        "parts": [
+          "café"
+        ]
+      },
+      "expected": "ad3c270e3a47d034f9f3d27bc1c77c7509164049da9ea22a94146e8117648be5"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "emoji: JS .length=2 (surrogate pair) — Rust must count UTF-16 code units, not 1 scalar nor 4 bytes",
+      "input": {
+        "parts": [
+          "😀"
+        ]
+      },
+      "expected": "24faff1aa9a057446f39662a949f80749f313c976c6deb45a8e6cf41b0c80862"
+    },
+    {
+      "kind": "sha256OfStrings",
+      "note": "mixed: JS .length=4 (1+2+1)",
+      "input": {
+        "parts": [
+          "a😀b"
+        ]
+      },
+      "expected": "a6db763a600594cc4fa28850889e789f96a88003ed549d3bae097e2b63b1a037"
+    },
+    {
+      "kind": "encodeCanonicalRoutineKey",
+      "note": "procedure kind",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "DoWork",
+        "normalizedSignatureHash": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+      },
+      "expected": "72173233bd7f52e0cfdfe505111d3cdc5925ebe682588f09d1cab60c2fff785a"
+    },
+    {
+      "kind": "encodeCanonicalRoutineKey",
+      "note": "trigger kind",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Table",
+        "objectNumber": 50100,
+        "routineKind": "trigger",
+        "routineName": "OnInsert",
+        "normalizedSignatureHash": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e"
+      },
+      "expected": "53f57a154d71cca34f083e721ec8578310f87f5d33e5bcf9abb239450c766840"
+    },
+    {
+      "kind": "encodeCanonicalRoutineKey",
+      "note": "event-publisher kind (integration/business event)",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "event-publisher",
+        "routineName": "OnBeforePost",
+        "normalizedSignatureHash": "224abe8dca0bb0400dd400abf7384428b067b047293fa5c6824f4d20268cf3a5"
+      },
+      "expected": "46edc818655ecd572bc843c125222cd6c44ec7bb2229c476e4df41ab354f8b42"
+    },
+    {
+      "kind": "encodeCanonicalRoutineKey",
+      "note": "event-subscriber kind",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50101,
+        "routineKind": "event-subscriber",
+        "routineName": "HandleEvent",
+        "normalizedSignatureHash": "85452c95c283c675b0772e6136f2566b373599c590655ef597e9b4f9c7a1b4e2"
+      },
+      "expected": "1a96216e46a56eae5c07ca87fe54fac9bb22ff805d086e2420641b6a0e62fb23"
+    },
+    {
+      "kind": "encodeCanonicalRoutineKey",
+      "note": "routineName UPPERCASE → lowered (must equal keyProc expected)",
+      "input": {
+        "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "DOWORK",
+        "normalizedSignatureHash": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+      },
+      "expected": "72173233bd7f52e0cfdfe505111d3cdc5925ebe682588f09d1cab60c2fff785a"
+    },
+    {
+      "kind": "encodeRoutineId",
+      "note": "pinned modelInstanceId r0",
+      "input": {
+        "modelInstanceId": "r0",
+        "key": {
+          "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          "objectType": "Codeunit",
+          "objectNumber": 50100,
+          "routineKind": "procedure",
+          "routineName": "DoWork",
+          "normalizedSignatureHash": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+        }
+      },
+      "expected": "r0/72173233bd7f52e0cfdfe505111d3cdc5925ebe682588f09d1cab60c2fff785a"
+    },
+    {
+      "kind": "encodeRoutineId",
+      "note": "different modelInstanceId → different RoutineId prefix",
+      "input": {
+        "modelInstanceId": "deadbeefcafef00d",
+        "key": {
+          "appGuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          "objectType": "Codeunit",
+          "objectNumber": 50100,
+          "routineKind": "procedure",
+          "routineName": "DoWork",
+          "normalizedSignatureHash": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+        }
+      },
+      "expected": "deadbeefcafef00d/72173233bd7f52e0cfdfe505111d3cdc5925ebe682588f09d1cab60c2fff785a"
+    },
+    {
+      "kind": "normalizedSignatureHash",
+      "note": "sha256Hex of canonicalRoutineSignature",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Integer"
+      },
+      "expected": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240",
+      "canonicalSignatureText": "dowork(integer):integer"
+    },
+    {
+      "kind": "toStableRoutineIdFromParts",
+      "note": "`${stableObjectId}#${normalizedSignatureHash}`",
+      "input": {
+        "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100",
+        "normalizedSignatureHash": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+      },
+      "expected": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100#563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240"
+    },
+    {
+      "kind": "routineSignatureFingerprint",
+      "note": "return-typeless routine (no return clause)",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": null
+      },
+      "expected": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "canonicalSignatureText": "dowork(integer):"
+    },
+    {
+      "kind": "routineSignatureFingerprint",
+      "note": "return-typed: return-type-aware fingerprint EQUALS normalizedSignatureHash of the same inputs",
+      "input": {
+        "name": "DoWork",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Integer"
+      },
+      "expected": "563cd989dee79c749fbb7c98b0724eec3c61305a116dbb35ab6a690917f8f240",
+      "canonicalSignatureText": "dowork(integer):integer"
+    },
+    {
+      "kind": "routineSignatureFingerprint",
+      "note": "complex overload I(Integer;Code[20]):Integer — exercises the return-type-aware fix end to end",
+      "input": {
+        "name": "I",
+        "parameters": [
+          {
+            "typeText": "Integer",
+            "isVar": false
+          },
+          {
+            "typeText": "Code[20]",
+            "isVar": false
+          }
+        ],
+        "returnTypeText": "Integer"
+      },
+      "expected": "73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
+      "canonicalSignatureText": "i(integer;code[20]):integer"
+    },
+    {
+      "kind": "objectSignatureFingerprint",
+      "note": "sha256(`type|number|name`)",
+      "input": {
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "name": "My Mgmt"
+      },
+      "expected": "aeaa48150ed0f289b98816937534e9a2bd2dddf684984342b72efa2e21787a35"
+    },
+    {
+      "kind": "objectSignatureFingerprint",
+      "note": "table",
+      "input": {
+        "objectType": "Table",
+        "objectNumber": 50100,
+        "name": "Customer Ext"
+      },
+      "expected": "f8e7e5b57a75edfbb494df90248c562da513e9cfb58f54dcbdd7c46b5b191790"
+    },
+    {
+      "kind": "objectSignatureFingerprint",
+      "note": "extension type",
+      "input": {
+        "objectType": "PageExtension",
+        "objectNumber": 50200,
+        "name": "Cust Card Ext"
+      },
+      "expected": "7cd608c603ccf34579621eaa550ea34f81fb83c8d0f438f092f7f7d65eecf442"
+    }
+  ]
+}
