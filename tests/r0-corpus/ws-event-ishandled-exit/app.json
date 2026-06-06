@@ -1,0 +1,9 @@
+{
+	"id": "77777777-7777-7777-7777-777777777777",
+	"name": "WSEventIsHandledExit",
+	"publisher": "Test",
+	"version": "1.0.0.0",
+	"platform": "26.0.0.0",
+	"runtime": "13.0",
+	"dependencies": []
+}

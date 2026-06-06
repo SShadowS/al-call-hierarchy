@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116",
+      "name": "D16Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b440e9bfeb6868abc899b940edd60dc2a0ad1a96b93ea02fbce8ef3b51949a9e"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+      "name": "UseVeryOld",
+      "kind": "procedure",
+      "signatureFingerprint": "554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+      "normalizedSignatureHash": "554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+      "canonicalSignatureText": "useveryold():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+      "name": "UseOld",
+      "kind": "procedure",
+      "signatureFingerprint": "9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+      "normalizedSignatureHash": "9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+      "canonicalSignatureText": "useold():"
+    }
+  ]
+}

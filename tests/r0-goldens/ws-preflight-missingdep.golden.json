@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "pppppppp-0000-0000-0000-000000000001:Codeunit:63200",
+      "name": "PF Missing Dep Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "3039a5214f763cd8c22b1d8cdeaec4d34943d548a3bc1e3e75d5270d45951e35"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "pppppppp-0000-0000-0000-000000000001:Codeunit:63200#4d69f07275b7cc23c4dc62140cb28dfdc0a06a882dd6542162bb78f84ce2d6cb",
+      "name": "DoMoreWork",
+      "kind": "procedure",
+      "signatureFingerprint": "4d69f07275b7cc23c4dc62140cb28dfdc0a06a882dd6542162bb78f84ce2d6cb",
+      "normalizedSignatureHash": "4d69f07275b7cc23c4dc62140cb28dfdc0a06a882dd6542162bb78f84ce2d6cb",
+      "canonicalSignatureText": "domorework():"
+    },
+    {
+      "stableRoutineId": "pppppppp-0000-0000-0000-000000000001:Codeunit:63200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "normalizedSignatureHash": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "canonicalSignatureText": "dowork():"
+    }
+  ]
+}

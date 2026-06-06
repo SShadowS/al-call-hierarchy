@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000",
+      "name": "D49 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "229003ec6a3fa1bd5777ba0fb04ec8acb32ad6ba1cee68f93cc40ec0c15ecb17"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000#840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+      "name": "MessageOnly",
+      "kind": "procedure",
+      "signatureFingerprint": "840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+      "normalizedSignatureHash": "840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+      "canonicalSignatureText": "messageonly():"
+    }
+  ]
+}

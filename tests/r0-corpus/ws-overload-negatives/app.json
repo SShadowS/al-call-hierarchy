@@ -1,0 +1,8 @@
+{
+	"id": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+	"name": "ProbeNeg",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50110, "to": 50139 }]
+}

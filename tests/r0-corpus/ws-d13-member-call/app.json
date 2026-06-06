@@ -1,0 +1,14 @@
+{
+	"id": "11111111-0000-0000-0000-0000000d13mc",
+	"name": "D13 Member Call Caller",
+	"publisher": "PT",
+	"version": "1.0.0.0",
+	"dependencies": [
+		{
+			"id": "dddddddd-0000-0000-0000-0000000d13mc",
+			"name": "D13McDepInternal",
+			"publisher": "DT",
+			"version": "1.0.0.0"
+		}
+	]
+}

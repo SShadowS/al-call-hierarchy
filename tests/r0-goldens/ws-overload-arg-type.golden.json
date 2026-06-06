@@ -1,0 +1,70 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210",
+      "name": "Probe Ovl Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "230abe65feff3e663fd9f35c0a1c6e9d74442ab4ff1707e765396ff57c8271b1"
+    },
+    {
+      "stableObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211",
+      "name": "Probe Ovl Importer",
+      "kind": "Codeunit",
+      "signatureFingerprint": "763f297df05ab8e39812e46959d62f5cdc3f5d921e86b61e21c6de0d27c045a2"
+    },
+    {
+      "stableObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200",
+      "name": "Probe Ovl Setup",
+      "kind": "Table",
+      "signatureFingerprint": "d194753dc9de24d6834773a841de575c26903acce7ddc2aa5871089d9c20badf"
+    },
+    {
+      "stableObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201",
+      "name": "Probe Ovl Archive",
+      "kind": "Table",
+      "signatureFingerprint": "f8478a9d6dfae776935866c60cca2487ef99ffd0768fc6b7bba56f11ea24ca81"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe",
+      "name": "RunAmbiguous",
+      "kind": "procedure",
+      "signatureFingerprint": "2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe",
+      "normalizedSignatureHash": "2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe",
+      "canonicalSignatureText": "runambiguous(record \"probe ovl setup\"):"
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "name": "RunImport",
+      "kind": "procedure",
+      "signatureFingerprint": "47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "normalizedSignatureHash": "47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "canonicalSignatureText": "runimport(instream;record \"probe ovl setup\"):"
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#13e64af2cfa9a6c1b678a140a5e20293ae6f81b88196424df3a6a5e9402f2b1d",
+      "name": "ImportToFileArchive",
+      "kind": "procedure",
+      "signatureFingerprint": "13e64af2cfa9a6c1b678a140a5e20293ae6f81b88196424df3a6a5e9402f2b1d",
+      "normalizedSignatureHash": "13e64af2cfa9a6c1b678a140a5e20293ae6f81b88196424df3a6a5e9402f2b1d",
+      "canonicalSignatureText": "importtofilearchive(text;record \"probe ovl setup\"):"
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
+      "name": "ImportToFileArchive",
+      "kind": "procedure",
+      "signatureFingerprint": "dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
+      "normalizedSignatureHash": "dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
+      "canonicalSignatureText": "importtofilearchive(record \"probe ovl setup\"):"
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "name": "ImportToFileArchive",
+      "kind": "procedure",
+      "signatureFingerprint": "dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "normalizedSignatureHash": "dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "canonicalSignatureText": "importtofilearchive(instream;record \"probe ovl setup\"):"
+    }
+  ]
+}

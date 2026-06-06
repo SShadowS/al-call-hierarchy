@@ -1,0 +1,64 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "name": "CSR Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "003a4c235c34f0a7785a18a58fc5cd5c21613cdd80fe9ef017bc02a3ca9a24e4"
+    },
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50101",
+      "name": "CSR Broken",
+      "kind": "Codeunit",
+      "signatureFingerprint": "0886ed1d92d48f98186f8cbe38fdf3a3b2e30ecb5acdef1be8700ec8b4424998"
+    },
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50102",
+      "name": "CSR Member Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "058987b68f70abec46a7baf5a726ee556c40d430b4ffcceb1042e4ec853d5eea"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+      "name": "RunByVariable",
+      "kind": "procedure",
+      "signatureFingerprint": "708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+      "normalizedSignatureHash": "708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+      "canonicalSignatureText": "runbyvariable():"
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+      "name": "DirectTarget",
+      "kind": "procedure",
+      "signatureFingerprint": "e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+      "normalizedSignatureHash": "e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+      "canonicalSignatureText": "directtarget():"
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+      "name": "Incomplete",
+      "kind": "procedure",
+      "signatureFingerprint": "337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+      "normalizedSignatureHash": "337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+      "canonicalSignatureText": "incomplete():"
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+      "name": "CallViaVariable",
+      "kind": "procedure",
+      "signatureFingerprint": "d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+      "normalizedSignatureHash": "d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+      "canonicalSignatureText": "callviavariable():"
+    }
+  ]
+}

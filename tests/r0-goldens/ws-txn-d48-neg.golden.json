@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000",
+      "name": "D48 Sender Neg",
+      "kind": "Codeunit",
+      "signatureFingerprint": "8ae78cd4316e3d9fca58ca87716e17ed1f656538d70e58be69f77c334b5f92df"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+      "name": "SendOnce",
+      "kind": "procedure",
+      "signatureFingerprint": "87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+      "normalizedSignatureHash": "87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+      "canonicalSignatureText": "sendonce():"
+    }
+  ]
+}

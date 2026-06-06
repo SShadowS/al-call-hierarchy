@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500",
+      "name": "D19 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "67e6e25d4a9b9191488b779fd162e8308b45fd9ca4bf6639e93557c25cbf241e"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d190:Table:50500",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "470265c6c9dfe0760f933d3e7d3129553549a8ff38fb3651c4adba853863c702"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+      "name": "WithUnusedRecord",
+      "kind": "procedure",
+      "signatureFingerprint": "056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+      "normalizedSignatureHash": "056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+      "canonicalSignatureText": "withunusedrecord(record customer;record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#5570e163d0970ec95773083925fc1ccc1c611d3c6026751f4cbaaa3157a159db",
+      "name": "AllUsed",
+      "kind": "procedure",
+      "signatureFingerprint": "5570e163d0970ec95773083925fc1ccc1c611d3c6026751f4cbaaa3157a159db",
+      "normalizedSignatureHash": "5570e163d0970ec95773083925fc1ccc1c611d3c6026751f4cbaaa3157a159db",
+      "canonicalSignatureText": "allused(record customer;record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+      "name": "WithUnusedScalar",
+      "kind": "procedure",
+      "signatureFingerprint": "72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+      "normalizedSignatureHash": "72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+      "canonicalSignatureText": "withunusedscalar(record customer;integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#da46d009315f219bfee68877cf1d548839eb3b4314bdfb2958a9465a61fe84a8",
+      "name": "OnFooSubscriber",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "da46d009315f219bfee68877cf1d548839eb3b4314bdfb2958a9465a61fe84a8",
+      "normalizedSignatureHash": "da46d009315f219bfee68877cf1d548839eb3b4314bdfb2958a9465a61fe84a8",
+      "canonicalSignatureText": "onfoosubscriber(codeunit \"d19 demo\";record customer):"
+    }
+  ]
+}

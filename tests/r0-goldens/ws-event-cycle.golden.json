@@ -1,0 +1,70 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50000",
+      "name": "P1",
+      "kind": "Codeunit",
+      "signatureFingerprint": "7512c19a609da15136db5dc0d22ca73e5ba5456086d5298ac8b5a6a7ec519022"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50001",
+      "name": "P2",
+      "kind": "Codeunit",
+      "signatureFingerprint": "a44b93740c25b9e5b53c6c09f63620f84bf13b1dc0b3867625b746a96d75e2b6"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50002",
+      "name": "P3",
+      "kind": "Codeunit",
+      "signatureFingerprint": "6bd9a163f6b94832a83a910c2a415020928998de1365e035b83c2f7e4f37554b"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Table:50100",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e6ae9f50e04f86e3f3ab0585619dab1f878fe532fde286a47fd4710a16412822"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50000#aa759f91ef5cfa0ba82d4f350565c4a9b673808c8c33fcb6b03259d0aab1e1a4",
+      "name": "Fire1",
+      "kind": "procedure",
+      "signatureFingerprint": "aa759f91ef5cfa0ba82d4f350565c4a9b673808c8c33fcb6b03259d0aab1e1a4",
+      "normalizedSignatureHash": "aa759f91ef5cfa0ba82d4f350565c4a9b673808c8c33fcb6b03259d0aab1e1a4",
+      "canonicalSignatureText": "fire1(var record customer):"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50000#cf0899e37f3fc2659ad8f3f3564769313ea147d40c009f7587985b8328199c8b",
+      "name": "OnA",
+      "kind": "event-publisher",
+      "signatureFingerprint": "cf0899e37f3fc2659ad8f3f3564769313ea147d40c009f7587985b8328199c8b",
+      "normalizedSignatureHash": "cf0899e37f3fc2659ad8f3f3564769313ea147d40c009f7587985b8328199c8b",
+      "canonicalSignatureText": "ona(var record customer):"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50001#5760721b1f6966b8e167ea4335e704afb8620dda39f037e8652b26663cf7a848",
+      "name": "OnB",
+      "kind": "event-publisher",
+      "signatureFingerprint": "5760721b1f6966b8e167ea4335e704afb8620dda39f037e8652b26663cf7a848",
+      "normalizedSignatureHash": "5760721b1f6966b8e167ea4335e704afb8620dda39f037e8652b26663cf7a848",
+      "canonicalSignatureText": "onb(var record customer):"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50001#f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "name": "H1",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "normalizedSignatureHash": "f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "canonicalSignatureText": "h1(var record customer):"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "name": "H2",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "normalizedSignatureHash": "7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "canonicalSignatureText": "h2(var record customer):"
+    }
+  ]
+}

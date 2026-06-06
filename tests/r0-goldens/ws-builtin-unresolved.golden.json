@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100",
+      "name": "BU Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "eb535e484b1a3d5d9eb7957911de8367663777833ceee1fcc7fecbd9c745a0bd"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+      "normalizedSignatureHash": "7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+      "canonicalSignatureText": "run(list of [text]):"
+    }
+  ]
+}

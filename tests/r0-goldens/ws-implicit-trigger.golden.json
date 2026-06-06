@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-d1it-0000-0000-000000000001:Codeunit:72101",
+      "name": "Order Processor",
+      "kind": "Codeunit",
+      "signatureFingerprint": "4dba4a16a1955f26c2723ab7a1b575543800837ff7c354d799befa34cee4b918"
+    },
+    {
+      "stableObjectId": "11111111-d1it-0000-0000-000000000001:Table:72100",
+      "name": "Order Line",
+      "kind": "Table",
+      "signatureFingerprint": "11bb21693f88596a25236c41cc8bd90ebb0848959c85c425dd0878c23f1cda2d"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-d1it-0000-0000-000000000001:Codeunit:72101#01d066dc06f48876bdca247c96e59567835060daa1ee39603c1ee01476ab368e",
+      "name": "ProcessLines",
+      "kind": "procedure",
+      "signatureFingerprint": "01d066dc06f48876bdca247c96e59567835060daa1ee39603c1ee01476ab368e",
+      "normalizedSignatureHash": "01d066dc06f48876bdca247c96e59567835060daa1ee39603c1ee01476ab368e",
+      "canonicalSignatureText": "processlines():"
+    },
+    {
+      "stableRoutineId": "11111111-d1it-0000-0000-000000000001:Codeunit:72101#18bb7c22613767aa9b2ae443e1a65cb43e963659620eed6a343fc4657cbb662d",
+      "name": "ValidateQuantity",
+      "kind": "procedure",
+      "signatureFingerprint": "18bb7c22613767aa9b2ae443e1a65cb43e963659620eed6a343fc4657cbb662d",
+      "normalizedSignatureHash": "18bb7c22613767aa9b2ae443e1a65cb43e963659620eed6a343fc4657cbb662d",
+      "canonicalSignatureText": "validatequantity():"
+    },
+    {
+      "stableRoutineId": "11111111-d1it-0000-0000-000000000001:Table:72100#7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
+      "name": "OnValidate",
+      "kind": "trigger",
+      "signatureFingerprint": "7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
+      "normalizedSignatureHash": "7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
+      "canonicalSignatureText": "onvalidate():"
+    }
+  ]
+}

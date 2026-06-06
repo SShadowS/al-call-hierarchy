@@ -1,0 +1,68 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116",
+      "name": "D14InternalNoIvt",
+      "kind": "Codeunit",
+      "signatureFingerprint": "f5de0451753e15afb0565b848e43e0cc926ee756f905c769be0148746b563a53"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#1b9cba62ecaf9d3fa01c0d202d98da326231ef813cac1c63ef75ab927199771f",
+      "name": "LiveInternal",
+      "kind": "procedure",
+      "signatureFingerprint": "1b9cba62ecaf9d3fa01c0d202d98da326231ef813cac1c63ef75ab927199771f",
+      "normalizedSignatureHash": "1b9cba62ecaf9d3fa01c0d202d98da326231ef813cac1c63ef75ab927199771f",
+      "canonicalSignatureText": "liveinternal():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#7881d6169f1d9d60aa6c5a623109e0211ff3826a282ff176e9af3df9c41f0ac8",
+      "name": "DeadPublic",
+      "kind": "procedure",
+      "signatureFingerprint": "7881d6169f1d9d60aa6c5a623109e0211ff3826a282ff176e9af3df9c41f0ac8",
+      "normalizedSignatureHash": "7881d6169f1d9d60aa6c5a623109e0211ff3826a282ff176e9af3df9c41f0ac8",
+      "canonicalSignatureText": "deadpublic():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "name": "LiveHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "normalizedSignatureHash": "7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "canonicalSignatureText": "livehelper():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#c62476ac0ca1669db952a74712850beb5eea5acf72c7b5151e5d370c499d557d",
+      "name": "DeadLocal",
+      "kind": "procedure",
+      "signatureFingerprint": "c62476ac0ca1669db952a74712850beb5eea5acf72c7b5151e5d370c499d557d",
+      "normalizedSignatureHash": "c62476ac0ca1669db952a74712850beb5eea5acf72c7b5151e5d370c499d557d",
+      "canonicalSignatureText": "deadlocal():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#f4e95dc1a40ad0e140415094a938b69f1f0ffed4e41459bf7caddd1a3978e44b",
+      "name": "DeadInternal",
+      "kind": "procedure",
+      "signatureFingerprint": "f4e95dc1a40ad0e140415094a938b69f1f0ffed4e41459bf7caddd1a3978e44b",
+      "normalizedSignatureHash": "f4e95dc1a40ad0e140415094a938b69f1f0ffed4e41459bf7caddd1a3978e44b",
+      "canonicalSignatureText": "deadinternal():"
+    },
+    {
+      "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#fc16d01edf836c03ea90ac87d7ccf47c01c56330d4465050cc5f103d3f332ced",
+      "name": "DeadProtected",
+      "kind": "procedure",
+      "signatureFingerprint": "fc16d01edf836c03ea90ac87d7ccf47c01c56330d4465050cc5f103d3f332ced",
+      "normalizedSignatureHash": "fc16d01edf836c03ea90ac87d7ccf47c01c56330d4465050cc5f103d3f332ced",
+      "canonicalSignatureText": "deadprotected():"
+    }
+  ]
+}

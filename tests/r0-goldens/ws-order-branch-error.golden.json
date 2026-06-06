@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101",
+      "name": "BE BranchError",
+      "kind": "Codeunit",
+      "signatureFingerprint": "caa21fe0d7a081177b9a1405fe8130a686006a77a31037e8e0c3a2ac14ab73c5"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14",
+      "name": "RunBranchError",
+      "kind": "procedure",
+      "signatureFingerprint": "926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14",
+      "normalizedSignatureHash": "926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14",
+      "canonicalSignatureText": "runbrancherror(boolean):"
+    }
+  ]
+}

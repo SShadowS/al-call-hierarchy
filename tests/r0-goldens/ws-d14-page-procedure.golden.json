@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301",
+      "name": "D14 Page Helper Codeunit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "00e5390f67031c7a38ad3c3b31cab6d8a401c2fec6ec17c4ff94d4854b255375"
+    },
+    {
+      "stableObjectId": "44444444-0000-0000-0000-00000000d14e:Page:50300",
+      "name": "D14 Page With Helper",
+      "kind": "Page",
+      "signatureFingerprint": "0c889f061ece62d04e12089471413a5936891a8bc7232a1b4ea975db844445fa"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301#9096216fb31324b8abd478c602c12ccc233673702a41bdadcd922e87b09f15b4",
+      "name": "DeadCodeunitLocal",
+      "kind": "procedure",
+      "signatureFingerprint": "9096216fb31324b8abd478c602c12ccc233673702a41bdadcd922e87b09f15b4",
+      "normalizedSignatureHash": "9096216fb31324b8abd478c602c12ccc233673702a41bdadcd922e87b09f15b4",
+      "canonicalSignatureText": "deadcodeunitlocal():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Page:50300#e300132a792d18b6e5ec381db1b017333a0e64ed140f84a7ddd7054b55ee2896",
+      "name": "ComputeCaption",
+      "kind": "procedure",
+      "signatureFingerprint": "e300132a792d18b6e5ec381db1b017333a0e64ed140f84a7ddd7054b55ee2896",
+      "normalizedSignatureHash": "e300132a792d18b6e5ec381db1b017333a0e64ed140f84a7ddd7054b55ee2896",
+      "canonicalSignatureText": "computecaption():text"
+    }
+  ]
+}

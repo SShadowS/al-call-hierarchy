@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300",
+      "name": "D3MethodStmt",
+      "kind": "Codeunit",
+      "signatureFingerprint": "74c3c9ad7f582a052dee16ad8311f372cb28ff10a25e8e6631d8a8f4e8f6154b"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d03c:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#203bf3fc97cb426cf570fd515117222edb80b14a19f86247495cdf13fcb74a29",
+      "name": "ForLoopBound",
+      "kind": "procedure",
+      "signatureFingerprint": "203bf3fc97cb426cf570fd515117222edb80b14a19f86247495cdf13fcb74a29",
+      "normalizedSignatureHash": "203bf3fc97cb426cf570fd515117222edb80b14a19f86247495cdf13fcb74a29",
+      "canonicalSignatureText": "forloopbound():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#276e24476ff697a296e0f64e0130375cec64b11dac9d82dfcd1529ae48871f79",
+      "name": "RealFieldAccess",
+      "kind": "procedure",
+      "signatureFingerprint": "276e24476ff697a296e0f64e0130375cec64b11dac9d82dfcd1529ae48871f79",
+      "normalizedSignatureHash": "276e24476ff697a296e0f64e0130375cec64b11dac9d82dfcd1529ae48871f79",
+      "canonicalSignatureText": "realfieldaccess():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#3a857f5c82ad647955f05294ce9a9f9283a2575ceac6ad3fd6d02d8454787c91",
+      "name": "ParenlessMethodCalls",
+      "kind": "procedure",
+      "signatureFingerprint": "3a857f5c82ad647955f05294ce9a9f9283a2575ceac6ad3fd6d02d8454787c91",
+      "normalizedSignatureHash": "3a857f5c82ad647955f05294ce9a9f9283a2575ceac6ad3fd6d02d8454787c91",
+      "canonicalSignatureText": "parenlessmethodcalls():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#62fbe6a775868bd1f6917f526b128a86a9cb645b6feca7207bdcfddf1cf32244",
+      "name": "FindSetInIfCondition",
+      "kind": "procedure",
+      "signatureFingerprint": "62fbe6a775868bd1f6917f526b128a86a9cb645b6feca7207bdcfddf1cf32244",
+      "normalizedSignatureHash": "62fbe6a775868bd1f6917f526b128a86a9cb645b6feca7207bdcfddf1cf32244",
+      "canonicalSignatureText": "findsetinifcondition():"
+    }
+  ]
+}

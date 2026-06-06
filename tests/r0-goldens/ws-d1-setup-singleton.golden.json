@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200",
+      "name": "D1 Setup Singleton Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "52d525516d16fd592c1de70bd7c83184c77ec59371eee1d82aeb59043f06a529"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Table:50200",
+      "name": "Sales Receivables Setup",
+      "kind": "Table",
+      "signatureFingerprint": "b7274806fbf182f3fb5fa59acc7c5527a58b87afa1818f5853182cfa8960ef7b"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Table:50201",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "c4bde527a132833f7173efbc63308f9dbefd6a469be7c2d67a10208a987e5f21"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+      "name": "InLoopSetupFindSet",
+      "kind": "procedure",
+      "signatureFingerprint": "16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+      "normalizedSignatureHash": "16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+      "canonicalSignatureText": "inloopsetupfindset():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+      "name": "InLoopCustomerGet",
+      "kind": "procedure",
+      "signatureFingerprint": "25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+      "normalizedSignatureHash": "25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+      "canonicalSignatureText": "inloopcustomerget():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+      "name": "InLoopSetupGet",
+      "kind": "procedure",
+      "signatureFingerprint": "d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+      "normalizedSignatureHash": "d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+      "canonicalSignatureText": "inloopsetupget():"
+    }
+  ]
+}

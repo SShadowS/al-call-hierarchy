@@ -1,0 +1,40 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101",
+      "name": "XE Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "adcd4feebeae5be4f1a7c8ad2d998292ced1b33d597c55b1a6286aa033ff4120"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102",
+      "name": "XE Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "48fd97e05f872ea70570de64bbaca35b91194cbb2982cc34e1bd94097c7938fa"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xe0001:Table:50100",
+      "name": "XE Rec",
+      "kind": "Table",
+      "signatureFingerprint": "fff1df1a0336478be9757954d8a573cc6df95cf2d1494ccf775c8654405460ad"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "signatureFingerprint": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "normalizedSignatureHash": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "canonicalSignatureText": "dostuff():"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    }
+  ]
+}

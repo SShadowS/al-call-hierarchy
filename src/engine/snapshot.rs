@@ -201,6 +201,14 @@ fn classify_kind(node: Node, source: &str) -> String {
 /// `parameter_list`, produce a ParamSpec carrying only the bits the signature
 /// needs — `type_text` (the `type_specification` named child's text, or "") and
 /// `is_var` (presence of a `var_keyword` named child).
+///
+/// ORACLE QUIRK (intraprocedural-refs.ts:47-54): al-sem locates the parameter
+/// name by finding the FIRST `identifier` named child, and if a parameter has
+/// NO `identifier` child it is SKIPPED entirely (`continue`). A parameter whose
+/// name is a *quoted* identifier (e.g. `"Sales Header": Record "Sales Header"`)
+/// therefore has only a `quoted_identifier` name node, no `identifier`, and is
+/// dropped from the canonical signature. We reproduce that exactly so the Rust
+/// signature matches the oracle's (driven by ws-r0-canon-stress `DoWork`).
 fn extract_parameters(node: Node, source: &str) -> Vec<ParamSpec> {
     let mut params = Vec::new();
     let Some(param_list) = named_children(node).find(|c| c.kind() == "parameter_list") else {
@@ -208,6 +216,10 @@ fn extract_parameters(node: Node, source: &str) -> Vec<ParamSpec> {
     };
     for param in named_children(param_list) {
         if param.kind() != "parameter" {
+            continue;
+        }
+        // Mirror al-sem: a parameter with no `identifier` name child is skipped.
+        if !named_children(param).any(|c| c.kind() == "identifier") {
             continue;
         }
         let is_var = named_children(param).any(|c| c.kind() == "var_keyword");
@@ -374,23 +386,30 @@ fn read_al_source(path: &Path) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// Read the workspace's `app.json` and return its `id` field VERBATIM (no case
-/// change). al-sem uses this as the StableObjectId prefix (appGuid).
-fn read_app_guid(workspace: &Path) -> anyhow::Result<String> {
+/// Read the workspace ROOT's `app.json` and return its `id` field VERBATIM (no
+/// case change). al-sem uses this as the StableObjectId prefix (appGuid).
+///
+/// ORACLE BEHAVIOR (providers/workspace.ts:50-73): the appGuid is read ONLY from
+/// `<root>/app.json`. al-sem does NOT search subdirectories for app.json, and on
+/// ANY failure — file missing, unparseable JSON, or a missing/non-string `id`
+/// field — it defaults the appGuid to the literal string `"unknown"` (pushing a
+/// warning diagnostic, never throwing). Multi-app fixtures that keep their
+/// app.json under subdirs (e.g. `a/app.json`, `b/app.json`) therefore resolve to
+/// `"unknown"` for every discovered object — `ws-diff-coverage-narrowed` is the
+/// canonical example. We reproduce that fallback exactly rather than erroring.
+fn read_app_guid(workspace: &Path) -> String {
     let app_json_path = workspace.join("app.json");
-    let text = std::fs::read_to_string(&app_json_path).map_err(|e| {
-        anyhow::anyhow!(
-            "failed to read app.json at {}: {e}",
-            app_json_path.display()
-        )
-    })?;
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("failed to parse app.json: {e}"))?;
-    let id = value
+    let Ok(text) = std::fs::read_to_string(&app_json_path) else {
+        return "unknown".to_string();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return "unknown".to_string();
+    };
+    value
         .get("id")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("app.json has no string `id` field"))?;
-    Ok(id.to_string())
+        .map(str::to_string)
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Build the identity-subset snapshot for a workspace directory.
@@ -403,7 +422,7 @@ pub fn snapshot_workspace(workspace: &Path) -> anyhow::Result<IdentitySnapshot> 
     if !workspace.is_dir() {
         anyhow::bail!("workspace is not a directory: {}", workspace.display());
     }
-    let app_guid = read_app_guid(workspace)?;
+    let app_guid = read_app_guid(workspace);
     let files = discover_al_files(workspace)
         .map_err(|e| anyhow::anyhow!("failed to discover .al files: {e}"))?;
 
@@ -460,5 +479,25 @@ mod tests {
         assert_eq!(strip_quotes(""), "");
         assert_eq!(strip_quotes("\"unbalanced"), "\"unbalanced");
         assert_eq!(strip_quotes("unbalanced\""), "unbalanced\"");
+    }
+
+    /// app.json fallback: a workspace with no root `app.json` (e.g. a multi-app
+    /// fixture whose app.json files live under subdirs) resolves the appGuid to
+    /// the literal `"unknown"`, mirroring providers/workspace.ts. Never errors.
+    #[test]
+    fn read_app_guid_falls_back_to_unknown_without_root_app_json() {
+        let tmp = std::env::temp_dir().join(format!("alch-r0-noappjson-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert_eq!(read_app_guid(&tmp), "unknown");
+        // Unparseable app.json → also "unknown".
+        std::fs::write(tmp.join("app.json"), "{ not json").unwrap();
+        assert_eq!(read_app_guid(&tmp), "unknown");
+        // Valid JSON but no string `id` → "unknown".
+        std::fs::write(tmp.join("app.json"), "{\"name\":\"x\"}").unwrap();
+        assert_eq!(read_app_guid(&tmp), "unknown");
+        // Valid `id` → verbatim.
+        std::fs::write(tmp.join("app.json"), "{\"id\":\"ABC-123\"}").unwrap();
+        assert_eq!(read_app_guid(&tmp), "ABC-123");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -1,0 +1,9 @@
+{
+	"id": "88888888-8888-8888-8888-888888888888",
+	"name": "WSEventIsHandledHelper",
+	"publisher": "Test",
+	"version": "1.0.0.0",
+	"platform": "26.0.0.0",
+	"runtime": "13.0",
+	"dependencies": []
+}

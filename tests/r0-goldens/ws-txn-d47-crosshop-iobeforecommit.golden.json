@@ -1,0 +1,40 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50000",
+      "name": "D47 Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "acb20d66a18e8600341a80aceb1b03e604b1d1e32fce31b178ece840bd2da855"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001",
+      "name": "D47 Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b68ec63c21cdcee763771ba29cff8d1decb38a7a0ecb398529e8ac64ffad62e5"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Table:50100",
+      "name": "D47 Rec",
+      "kind": "Table",
+      "signatureFingerprint": "13aad8b79845edd88fa8f9efa2cb6b2ea76329c02b384cc93305211342a8e5df"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50000#302dc2332e7a9ae6fb0474a4d66e256730ee465bd1df06a0f8f46b10716cf434",
+      "name": "WriteThenRemoteCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "302dc2332e7a9ae6fb0474a4d66e256730ee465bd1df06a0f8f46b10716cf434",
+      "normalizedSignatureHash": "302dc2332e7a9ae6fb0474a4d66e256730ee465bd1df06a0f8f46b10716cf434",
+      "canonicalSignatureText": "writethenremotecommit():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
+      "name": "DoHttp",
+      "kind": "procedure",
+      "signatureFingerprint": "cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
+      "normalizedSignatureHash": "cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
+      "canonicalSignatureText": "dohttp():"
+    }
+  ]
+}

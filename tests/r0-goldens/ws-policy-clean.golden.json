@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000001-0000-0000-0000-000000000000:Codeunit:50000",
+      "name": "Cleanup",
+      "kind": "Codeunit",
+      "signatureFingerprint": "be9d4bf5827a91a12a866c84b14084d7a7d16a5209f267164195a6a6a5d2a1d2"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000001-0000-0000-0000-000000000000:Codeunit:50000#3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+      "name": "DoNothing",
+      "kind": "procedure",
+      "signatureFingerprint": "3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+      "normalizedSignatureHash": "3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+      "canonicalSignatureText": "donothing():"
+    }
+  ]
+}

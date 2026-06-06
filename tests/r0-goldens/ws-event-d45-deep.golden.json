@@ -1,0 +1,76 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000",
+      "name": "SalesMgr",
+      "kind": "Codeunit",
+      "signatureFingerprint": "f185d636386c690c17bd2fa4a7d99a62527b7c3bede683d69c1f082da694f899"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001",
+      "name": "SalesNotifier",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b5d5fd8e47ce1f8882419186e6cef7c1df1b057f62286874876c3e9591dd4f34"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002",
+      "name": "SalesAudit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "37737483c3ae8dec6454f08d40e331eb570d35f279eadea106cd5ff71a72c91d"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100",
+      "name": "Sales",
+      "kind": "Table",
+      "signatureFingerprint": "e864c4a084f5cb6307e980ef7051831152a450a271187ed650f080b752d522cd"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101",
+      "name": "AuditLog",
+      "kind": "Table",
+      "signatureFingerprint": "b8fa6d2b9cdb70e46ebee7d581cefdf4bfcbf7b750cc13541be3017110d4cc6b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+      "name": "OnAfterSales",
+      "kind": "event-publisher",
+      "signatureFingerprint": "1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+      "normalizedSignatureHash": "1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+      "canonicalSignatureText": "onaftersales(var record sales):"
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#ba363574e206d62c50a9fdfc7a3fbf2ff2522200c4b3c3ba5d7103e46a8a3674",
+      "name": "RunSales",
+      "kind": "procedure",
+      "signatureFingerprint": "ba363574e206d62c50a9fdfc7a3fbf2ff2522200c4b3c3ba5d7103e46a8a3674",
+      "normalizedSignatureHash": "ba363574e206d62c50a9fdfc7a3fbf2ff2522200c4b3c3ba5d7103e46a8a3674",
+      "canonicalSignatureText": "runsales(var record sales):"
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+      "name": "OnNotifyComplete",
+      "kind": "event-publisher",
+      "signatureFingerprint": "0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+      "normalizedSignatureHash": "0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+      "canonicalSignatureText": "onnotifycomplete(var record sales):"
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+      "name": "HNotify",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+      "normalizedSignatureHash": "c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+      "canonicalSignatureText": "hnotify(var record sales):"
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+      "name": "HAudit",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+      "normalizedSignatureHash": "1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+      "canonicalSignatureText": "haudit(var record sales):"
+    }
+  ]
+}

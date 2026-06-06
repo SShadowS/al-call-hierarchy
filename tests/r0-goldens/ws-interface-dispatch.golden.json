@@ -1,0 +1,80 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50150",
+      "name": "Processor A",
+      "kind": "Codeunit",
+      "signatureFingerprint": "09656ab8f32390bf2ef42ce57a6b8def3391d9bd06dfc2103d46068e067addb9"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50151",
+      "name": "Processor B",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ee8aed8045d5c149f1ef1d398f8975a9f5add60116cccce6f7fd62d28b514518"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50153",
+      "name": "Dispatcher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "bd9cb95bc13f1fe1f2966ad775f85aa60a1c7de23401c3e39fc642efd5a127c7"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50154",
+      "name": "EmptyCaller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "985d99cc6c85ba2d4b1672ed22a4cd0e48bf1d4f9c67764c848e27d6da95d1e6"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Enum:50152",
+      "name": "ProcKind",
+      "kind": "Enum",
+      "signatureFingerprint": "a3574cdff727468223a350113ffaff4e96aa24e47b27511c33852a0fa24e0223"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Interface:0",
+      "name": "IEmpty",
+      "kind": "Interface",
+      "signatureFingerprint": "1a5af2b8b9a6f5a007e85d3c7189670704ed1eb4ae36532ab000ee12348ae1c3"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Interface:0",
+      "name": "IProcessor",
+      "kind": "Interface",
+      "signatureFingerprint": "1a5af2b8b9a6f5a007e85d3c7189670704ed1eb4ae36532ab000ee12348ae1c3"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50150#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "signatureFingerprint": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "normalizedSignatureHash": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "canonicalSignatureText": "process():"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50151#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "signatureFingerprint": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "normalizedSignatureHash": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "canonicalSignatureText": "process():"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "name": "Dispatch",
+      "kind": "procedure",
+      "signatureFingerprint": "a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "normalizedSignatureHash": "a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "canonicalSignatureText": "dispatch():"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50154#f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21",
+      "name": "CallNothing",
+      "kind": "procedure",
+      "signatureFingerprint": "f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21",
+      "normalizedSignatureHash": "f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21",
+      "canonicalSignatureText": "callnothing():"
+    }
+  ]
+}

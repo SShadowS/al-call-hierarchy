@@ -1,0 +1,56 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700",
+      "name": "D21 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ef3f37d8f764ee57f7a33f273dfc4d184ff32fad2d1f1bec7aaac41229adba25"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d210:Table:50700",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "79734c505a11b2292d8b252447f49e5c8bcf7d786257e881148b75fa33809d8a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d210:Table:50701",
+      "name": "Ledger Entry",
+      "kind": "Table",
+      "signatureFingerprint": "903849372fb2c0d0fc5a5015828edc3395004259f8cca2e5af4cfc4e1731ac29"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#4d09051e52af2d8e6ab4ff133c2ed7e11fca0e2d8b2fd5a11b86862ab550c3fa",
+      "name": "TestFieldAfterGet",
+      "kind": "procedure",
+      "signatureFingerprint": "4d09051e52af2d8e6ab4ff133c2ed7e11fca0e2d8b2fd5a11b86862ab550c3fa",
+      "normalizedSignatureHash": "4d09051e52af2d8e6ab4ff133c2ed7e11fca0e2d8b2fd5a11b86862ab550c3fa",
+      "canonicalSignatureText": "testfieldafterget():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#ac4892dee8fab00ea0460ff08fc9b53ce4b13997a781569302d8509d37b19241",
+      "name": "WithParameter",
+      "kind": "procedure",
+      "signatureFingerprint": "ac4892dee8fab00ea0460ff08fc9b53ce4b13997a781569302d8509d37b19241",
+      "normalizedSignatureHash": "ac4892dee8fab00ea0460ff08fc9b53ce4b13997a781569302d8509d37b19241",
+      "canonicalSignatureText": "withparameter(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+      "name": "TestFieldWithoutLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+      "normalizedSignatureHash": "c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+      "canonicalSignatureText": "testfieldwithoutload():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+      "name": "CalcFieldsWithoutLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+      "normalizedSignatureHash": "d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+      "canonicalSignatureText": "calcfieldswithoutload():"
+    }
+  ]
+}

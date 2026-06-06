@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-000000000003:Page:50400",
+      "name": "Item API",
+      "kind": "Page",
+      "signatureFingerprint": "0d201f1f0acb421c2cca7b559a739894fe55c5098d55bc699a3b534503c33092"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000003:Page:50400#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "name": "ApiHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "normalizedSignatureHash": "a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "canonicalSignatureText": "apihelper():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000003:Page:50400#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+      "name": "OnOpenPage",
+      "kind": "trigger",
+      "signatureFingerprint": "d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+      "normalizedSignatureHash": "d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+      "canonicalSignatureText": "onopenpage():"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114",
+      "name": "D14EntryPoints",
+      "kind": "Codeunit",
+      "signatureFingerprint": "723e4f43e3741610f719c8a762cdc063069d30825fb152be04fa1c85b3361aac"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+      "name": "DeadHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+      "normalizedSignatureHash": "7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+      "canonicalSignatureText": "deadhelper():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "name": "LiveHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "normalizedSignatureHash": "7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+      "canonicalSignatureText": "livehelper():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    }
+  ]
+}

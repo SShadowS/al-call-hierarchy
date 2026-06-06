@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000",
+      "name": "Preset Looper",
+      "kind": "Codeunit",
+      "signatureFingerprint": "d89776a9e08024fa5f95d61bfd2d66fba76553357b8e86dd2abaab7ff47f19d7"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Codeunit:50001",
+      "name": "Preset Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "394864b804c463bdbda520b912351e40463764af2451434fe53423c6e2fd96fc"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Table:50100",
+      "name": "Preset Rec",
+      "kind": "Table",
+      "signatureFingerprint": "0b295e906acefd2d08b94e522246e82925a730584e65b31396ee0d7663b71c73"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "normalizedSignatureHash": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "canonicalSignatureText": "dowork(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000#9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "name": "CommitInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "normalizedSignatureHash": "9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "canonicalSignatureText": "commitinloop():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50001#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "name": "SendAfterModify",
+      "kind": "procedure",
+      "signatureFingerprint": "afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "normalizedSignatureHash": "afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "canonicalSignatureText": "sendaftermodify():"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101",
+      "name": "TU TransitiveCommit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "2098e5fec56e406fb29e8a01eb6e7219249a3ecfcb8db655251fede0228e319e"
+    },
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000tu0001:Table:50100",
+      "name": "TU Rec",
+      "kind": "Table",
+      "signatureFingerprint": "e64b3b357490ea4f9e2899f5576f2d6d64864d6bf78c9e48b80433ad4e4d50a0"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+      "name": "CommitWorker",
+      "kind": "procedure",
+      "signatureFingerprint": "c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+      "normalizedSignatureHash": "c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+      "canonicalSignatureText": "commitworker():"
+    },
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+      "name": "CallerWithTransitiveCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+      "normalizedSignatureHash": "e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+      "canonicalSignatureText": "callerwithtransitivecommit():"
+    }
+  ]
+}

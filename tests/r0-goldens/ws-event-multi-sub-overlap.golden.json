@@ -1,0 +1,62 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50000",
+      "name": "Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "5d848504b8e9da1ee73a7d758e8e87c0e418079bf8b47831e68681c273e0ad35"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50001",
+      "name": "Sub1",
+      "kind": "Codeunit",
+      "signatureFingerprint": "c2d3cff42074a3f1c14e90ba5e19ef07e395ee63749566c6b9488f5de0767566"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50002",
+      "name": "Sub2",
+      "kind": "Codeunit",
+      "signatureFingerprint": "a00f7a546e88a3532c2b4c08471bdc9bf18f3b7d453cd1d625b6fe00b42f2d82"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Table:50100",
+      "name": "Widget",
+      "kind": "Table",
+      "signatureFingerprint": "6c328904354ed6386f385faab605d7037ecf1aefe7bb5c18acd183a6905f2f18"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "name": "FirePost",
+      "kind": "procedure",
+      "signatureFingerprint": "e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "normalizedSignatureHash": "e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "canonicalSignatureText": "firepost(var record widget):"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "name": "OnAfterPost",
+      "kind": "event-publisher",
+      "signatureFingerprint": "fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "normalizedSignatureHash": "fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "canonicalSignatureText": "onafterpost(var record widget):"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "name": "HandleAfterPost1",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "normalizedSignatureHash": "8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "canonicalSignatureText": "handleafterpost1(var record widget):"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "name": "HandleAfterPost2",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "normalizedSignatureHash": "a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "canonicalSignatureText": "handleafterpost2(var record widget):"
+    }
+  ]
+}

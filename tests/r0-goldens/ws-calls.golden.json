@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "66666666-6666-6666-6666-666666666666:Codeunit:51000",
+      "name": "Worker CU",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ee2651536cc5417f80d2d6efc6e39a48ea30efae8069b13cf37e9413235f5771"
+    },
+    {
+      "stableObjectId": "66666666-6666-6666-6666-666666666666:Codeunit:51001",
+      "name": "Caller CU",
+      "kind": "Codeunit",
+      "signatureFingerprint": "13a261392ffe9cfab709172a563f3db53aab3dff7b4a78de34e0d2435103b58c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51000#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4",
+      "name": "RunDynamic",
+      "kind": "procedure",
+      "signatureFingerprint": "2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4",
+      "normalizedSignatureHash": "2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4",
+      "canonicalSignatureText": "rundynamic():"
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58",
+      "name": "CallMember",
+      "kind": "procedure",
+      "signatureFingerprint": "85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58",
+      "normalizedSignatureHash": "85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58",
+      "canonicalSignatureText": "callmember():"
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#9ea668d8f3ea2f69b3060163f2cbc2af9c1d900a6ffe08cad452e21f3d4bacef",
+      "name": "RunIt",
+      "kind": "procedure",
+      "signatureFingerprint": "9ea668d8f3ea2f69b3060163f2cbc2af9c1d900a6ffe08cad452e21f3d4bacef",
+      "normalizedSignatureHash": "9ea668d8f3ea2f69b3060163f2cbc2af9c1d900a6ffe08cad452e21f3d4bacef",
+      "canonicalSignatureText": "runit():"
+    }
+  ]
+}

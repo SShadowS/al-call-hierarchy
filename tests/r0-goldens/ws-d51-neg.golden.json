@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaabbbb-cccc-dddd-eeee-100000000d51:Codeunit:50201",
+      "name": "D51 NegSender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "60e9d2893b903b4ee783b0c6d3ac877768d5f1aa773e297c62581b736917911b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaabbbb-cccc-dddd-eeee-100000000d51:Codeunit:50201#2e254ac7f120ad15b09c2e5449a1513e4746dbbfba3c362dc73c040a888723e1",
+      "name": "GetThenError",
+      "kind": "procedure",
+      "signatureFingerprint": "2e254ac7f120ad15b09c2e5449a1513e4746dbbfba3c362dc73c040a888723e1",
+      "normalizedSignatureHash": "2e254ac7f120ad15b09c2e5449a1513e4746dbbfba3c362dc73c040a888723e1",
+      "canonicalSignatureText": "getthenerror():"
+    }
+  ]
+}

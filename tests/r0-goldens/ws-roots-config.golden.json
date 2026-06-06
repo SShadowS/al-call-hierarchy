@@ -1,0 +1,56 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Codeunit:50500",
+      "name": "Public Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "9aa7522635a8b336b57d62430688f38e77abeca5635836194ed14db923035d32"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Codeunit:50501",
+      "name": "Install Handler",
+      "kind": "Codeunit",
+      "signatureFingerprint": "415654030b8a23b3d9474611fc78e031bfbf7b9aaaacd97062eb7b4783676511"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Page:50502",
+      "name": "Sales Order API",
+      "kind": "Page",
+      "signatureFingerprint": "eb6056c0cb9d9f8743034afb0ae93c402523a25038cc7552c112e32414756fa1"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50500#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "normalizedSignatureHash": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "canonicalSignatureText": "dowork():"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "kind": "trigger",
+      "signatureFingerprint": "28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "normalizedSignatureHash": "28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "canonicalSignatureText": "oninstallapppercompany():"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#a294f20b2d2574bb03cb1addf01aef9cf5e250904a7c8d3b8b7c30782fa63caf",
+      "name": "DoInstallWork",
+      "kind": "procedure",
+      "signatureFingerprint": "a294f20b2d2574bb03cb1addf01aef9cf5e250904a7c8d3b8b7c30782fa63caf",
+      "normalizedSignatureHash": "a294f20b2d2574bb03cb1addf01aef9cf5e250904a7c8d3b8b7c30782fa63caf",
+      "canonicalSignatureText": "doinstallwork():"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Page:50502#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "name": "ApiHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "normalizedSignatureHash": "a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "canonicalSignatureText": "apihelper():"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140",
+      "name": "EN Target",
+      "kind": "Codeunit",
+      "signatureFingerprint": "d8cf53c1fc676f728dc5e7c1b9d47eda24a1fcddcc8f37dafe79f6cdaf10e292"
+    },
+    {
+      "stableObjectId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142",
+      "name": "EN Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "22df76101a9ff6f3aaa520dded5fa6e6ddc9539fc5a9e802da1f1fba7bdffc3d"
+    },
+    {
+      "stableObjectId": "eeeeeeee-1111-2222-3333-666666666666:Enum:50141",
+      "name": "Probe Kind",
+      "kind": "Enum",
+      "signatureFingerprint": "dda93bdb804288c0f05d4ed289093e60b4610cd369530b941895ec5d60887576"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#582551e385ff779ce1e405c16dee0816721762c1c254ebef96fc9f88917004be",
+      "name": "P",
+      "kind": "procedure",
+      "signatureFingerprint": "582551e385ff779ce1e405c16dee0816721762c1c254ebef96fc9f88917004be",
+      "normalizedSignatureHash": "582551e385ff779ce1e405c16dee0816721762c1c254ebef96fc9f88917004be",
+      "canonicalSignatureText": "p(instream):integer"
+    },
+    {
+      "stableRoutineId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994",
+      "name": "P",
+      "kind": "procedure",
+      "signatureFingerprint": "6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994",
+      "normalizedSignatureHash": "6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994",
+      "canonicalSignatureText": "p(enum \"probe kind\"):integer"
+    },
+    {
+      "stableRoutineId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    }
+  ]
+}

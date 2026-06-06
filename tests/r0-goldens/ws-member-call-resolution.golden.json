@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200",
+      "name": "MCR Helper",
+      "kind": "Codeunit",
+      "signatureFingerprint": "f6cfc302bbc50258e268298a26473d2d137c78ff9e73c0460dda706d59510463"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50201",
+      "name": "MCR Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "098abe9667287e81950711c88f152a8d75182d1a72725c5fe5521424240a9b4b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#cdf36153067507b0be60121294d4836340ca51b2bbdea12d7099dfec85ee05a8",
+      "name": "PublicEntry",
+      "kind": "procedure",
+      "signatureFingerprint": "cdf36153067507b0be60121294d4836340ca51b2bbdea12d7099dfec85ee05a8",
+      "normalizedSignatureHash": "cdf36153067507b0be60121294d4836340ca51b2bbdea12d7099dfec85ee05a8",
+      "canonicalSignatureText": "publicentry():"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
+      "name": "LocalHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
+      "normalizedSignatureHash": "dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
+      "canonicalSignatureText": "localhelper():"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    }
+  ]
+}

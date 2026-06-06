@@ -1,0 +1,14 @@
+{
+	"id": "pppppppp-0000-0000-0000-000000000001",
+	"name": "Preflight Missing Dep Primary",
+	"publisher": "PF",
+	"version": "1.0.0.0",
+	"dependencies": [
+		{
+			"id": "pppppppp-0000-0000-0000-000000000099",
+			"name": "PFMissingDep",
+			"publisher": "PF",
+			"version": "1.0.0.0"
+		}
+	]
+}

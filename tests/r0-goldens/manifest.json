@@ -1,6 +1,6 @@
 {
   "description": "R0 golden identity snapshots — ground truth for the al-sem → Rust differential harness. Each <fixture>.golden.json is the identity subset projected from the real v3 snapshot (stable ids + return-type-aware signatureFingerprint + canonicalSignatureText) and the model (name/kind). See r0-identity-projection.ts for per-field provenance.",
-  "alSemGitSha": "f0ae38cc1a80a1c72e4a1a2eb0443f522ea08ded",
+  "alSemGitSha": "016db675896a2ce350dcf840f82f4113889ebf40",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "snapshotSchemaVersion": 3,
@@ -8,7 +8,7 @@
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=15;summarySchema=31;depCache=7;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r0",
-  "fixtureCount": 156,
+  "fixtureCount": 157,
   "fixtures": [
     {
       "fixture": "ws-api-page",
@@ -1399,6 +1399,18 @@
         "total": 0,
         "error": 0,
         "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r0-canon-stress",
+      "goldenFile": "ws-r0-canon-stress.golden.json",
+      "objectCount": 6,
+      "routineCount": 16,
+      "diagnostics": {
+        "total": 1,
+        "error": 0,
+        "warning": 1,
         "info": 0
       }
     },

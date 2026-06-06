@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100",
+      "name": "OO Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "441b358fd88675c7594fd3736fe8a657da71eda061946cd6cdb09b241eb0cb18"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000aa0001:Table:50100",
+      "name": "OO Rec",
+      "kind": "Table",
+      "signatureFingerprint": "9edfe4e9e7fad29bb2c036cde943e932c4ade992722cda1806fe687e1dcf8e4e"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
+      "name": "GuardOpen",
+      "kind": "procedure",
+      "signatureFingerprint": "a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
+      "normalizedSignatureHash": "a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
+      "canonicalSignatureText": "guardopen():boolean"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
+      "normalizedSignatureHash": "af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
+      "canonicalSignatureText": "run(instream):"
+    }
+  ]
+}

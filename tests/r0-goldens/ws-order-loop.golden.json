@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000lo0001:Codeunit:50101",
+      "name": "LO LoopThenCommit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "df4c7f180fa005bee0a245b0695087b78bb3d9000bb04611fb42dddfbe8615aa"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000lo0001:Table:50100",
+      "name": "LO Rec",
+      "kind": "Table",
+      "signatureFingerprint": "256526c96594525a8c5c3ca7e605dadfaf5a7f3ebf35be4ed880ed9b70f47dec"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000lo0001:Codeunit:50101#3a212825f19ada075ee0affc78b05b7f6e92a64652962fa7848ff5ae8bfa3e3e",
+      "name": "PostLoopThenCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "3a212825f19ada075ee0affc78b05b7f6e92a64652962fa7848ff5ae8bfa3e3e",
+      "normalizedSignatureHash": "3a212825f19ada075ee0affc78b05b7f6e92a64652962fa7848ff5ae8bfa3e3e",
+      "canonicalSignatureText": "postloopthencommit():"
+    }
+  ]
+}

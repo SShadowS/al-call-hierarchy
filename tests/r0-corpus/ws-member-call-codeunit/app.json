@@ -1,0 +1,7 @@
+{
+	"id": "44444444-4444-4444-4444-444444444444",
+	"name": "WsMemberCallCodeunit",
+	"publisher": "al-sem-tests",
+	"version": "1.0.0.0",
+	"idRanges": [{ "from": 50100, "to": 50149 }]
+}

@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101",
+      "name": "D1 Multi Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e149a0e3903dbabefb57bd6516f5280d51b52463bdab8b8ad3076103d9fad317"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d01a:Table:50101",
+      "name": "MC Customer",
+      "kind": "Table",
+      "signatureFingerprint": "cfbdc7799332e879a39e29714639b2fcf5860130cc9aabae8500d29390b60f67"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "name": "CallerB",
+      "kind": "procedure",
+      "signatureFingerprint": "22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "normalizedSignatureHash": "22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "canonicalSignatureText": "callerb():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "name": "CallerC",
+      "kind": "procedure",
+      "signatureFingerprint": "77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "normalizedSignatureHash": "77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "canonicalSignatureText": "callerc():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "name": "CallerA",
+      "kind": "procedure",
+      "signatureFingerprint": "b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "normalizedSignatureHash": "b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "canonicalSignatureText": "callera():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "name": "ModifyHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "normalizedSignatureHash": "bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "canonicalSignatureText": "modifyhelper(var record \"mc customer\"):"
+    }
+  ]
+}

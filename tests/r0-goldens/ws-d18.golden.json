@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400",
+      "name": "D18 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "2556fc97919d7fada497a4780063d040f13dc58d45b05289958656d848fb2c3c"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d180:Table:50400",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "486d9142a628b469267500500dab9257cebc0247429fa6abcd70c51eb4e98df2"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#720401aef598722f4fae0da9b7f6b73840f96edb90796ea4a132139bf62150fa",
+      "name": "SetRangeBeforeLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "720401aef598722f4fae0da9b7f6b73840f96edb90796ea4a132139bf62150fa",
+      "normalizedSignatureHash": "720401aef598722f4fae0da9b7f6b73840f96edb90796ea4a132139bf62150fa",
+      "canonicalSignatureText": "setrangebeforeloop():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7783bc552d4ef85c27734f9c7478d4f57e7730fce9c7aa4f0941cece2d26f3a4",
+      "name": "VariableFilterInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "7783bc552d4ef85c27734f9c7478d4f57e7730fce9c7aa4f0941cece2d26f3a4",
+      "normalizedSignatureHash": "7783bc552d4ef85c27734f9c7478d4f57e7730fce9c7aa4f0941cece2d26f3a4",
+      "canonicalSignatureText": "variablefilterinloop():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+      "name": "ConstantSetRangeInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+      "normalizedSignatureHash": "7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+      "canonicalSignatureText": "constantsetrangeinloop():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+      "name": "ConstantSetFilterInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+      "normalizedSignatureHash": "896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+      "canonicalSignatureText": "constantsetfilterinloop():"
+    }
+  ]
+}

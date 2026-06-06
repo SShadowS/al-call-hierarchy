@@ -1,0 +1,40 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104",
+      "name": "D4RepeatedGet",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ca79ae20231f820ed40272286eb99d9dcc7496bd3844907b52e6128c7feb5a65"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d40a:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d40a:Table:37",
+      "name": "Sales Line",
+      "kind": "Table",
+      "signatureFingerprint": "a8451675cbed8ee2f46596d1dc826498a1b32b6d6e0f9318b0ae81fed014823a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#36d5b91b0eb9bf0424fd25ca6476fad7be51489d99e7aceaaa493d9e24ce84d8",
+      "name": "SafeLookup",
+      "kind": "procedure",
+      "signatureFingerprint": "36d5b91b0eb9bf0424fd25ca6476fad7be51489d99e7aceaaa493d9e24ce84d8",
+      "normalizedSignatureHash": "36d5b91b0eb9bf0424fd25ca6476fad7be51489d99e7aceaaa493d9e24ce84d8",
+      "canonicalSignatureText": "safelookup():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+      "name": "BadLookup",
+      "kind": "procedure",
+      "signatureFingerprint": "6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+      "normalizedSignatureHash": "6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+      "canonicalSignatureText": "badlookup():"
+    }
+  ]
+}

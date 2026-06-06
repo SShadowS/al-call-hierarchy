@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000",
+      "name": "D47 Clean Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "a4c1944ed193405527a11a51720c8697fcaa34cad3925bec3dc8240e750dbe7c"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50001",
+      "name": "D47 Clean Subscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b1aec8da01ec4512b53aecdf0abb7c4dbc8c8819347473ddfeda71ffa67b8cad"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000#d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "name": "OnAfterNotify",
+      "kind": "event-publisher",
+      "signatureFingerprint": "d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "normalizedSignatureHash": "d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "canonicalSignatureText": "onafternotify():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000#ddb3cc33d543406ad9c70d28832e85d0002fe626b3308593180e5eb70b92b775",
+      "name": "NotifyOnly",
+      "kind": "procedure",
+      "signatureFingerprint": "ddb3cc33d543406ad9c70d28832e85d0002fe626b3308593180e5eb70b92b775",
+      "normalizedSignatureHash": "ddb3cc33d543406ad9c70d28832e85d0002fe626b3308593180e5eb70b92b775",
+      "canonicalSignatureText": "notifyonly():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50001#8d7dd2d296ce1acbf5f1df52cdfdb49f32dd6aad54cc639c7031aef6f95d21df",
+      "name": "HandleAfterNotify",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "8d7dd2d296ce1acbf5f1df52cdfdb49f32dd6aad54cc639c7031aef6f95d21df",
+      "normalizedSignatureHash": "8d7dd2d296ce1acbf5f1df52cdfdb49f32dd6aad54cc639c7031aef6f95d21df",
+      "canonicalSignatureText": "handleafternotify():"
+    }
+  ]
+}

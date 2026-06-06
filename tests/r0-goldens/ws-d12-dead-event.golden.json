@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112",
+      "name": "D12DeadEvent",
+      "kind": "Codeunit",
+      "signatureFingerprint": "1d0e0fa49e3b6c6e9e73418e0b0841036285cfb26bf476145394bade822cd388"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "signatureFingerprint": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "normalizedSignatureHash": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "canonicalSignatureText": "dostuff():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+      "name": "OnAfterDoStuff",
+      "kind": "event-publisher",
+      "signatureFingerprint": "fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+      "normalizedSignatureHash": "fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+      "canonicalSignatureText": "onafterdostuff(integer):"
+    }
+  ]
+}

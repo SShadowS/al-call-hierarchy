@@ -1,0 +1,96 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110",
+      "name": "Neg Target",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e3dc5b48192db7847be16d632bdd86a2c701be25aa50af79eb74963597b37ef0"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111",
+      "name": "Neg Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "59885d754f9687a5723c6d1406522de01fd4ce02f74d4c588398d1e45ab5d057"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Interface:0",
+      "name": "Neg ILog",
+      "kind": "Interface",
+      "signatureFingerprint": "2764157ab6e2aaa34f9955e0d19103a67834c0d44e1cd22e6724c07d9b3b9cee"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#2e7a6b3689c7b5499d4667bd0e8cf9caa81a330ed50eb74c8918efd09d499b6c",
+      "name": "O",
+      "kind": "procedure",
+      "signatureFingerprint": "2e7a6b3689c7b5499d4667bd0e8cf9caa81a330ed50eb74c8918efd09d499b6c",
+      "normalizedSignatureHash": "2e7a6b3689c7b5499d4667bd0e8cf9caa81a330ed50eb74c8918efd09d499b6c",
+      "canonicalSignatureText": "o(interface \"neg ilog\"):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#5de0c5f88abf606733a002f5155c9c9b8f68ec404a94f047178082b3ef3a5546",
+      "name": "O",
+      "kind": "procedure",
+      "signatureFingerprint": "5de0c5f88abf606733a002f5155c9c9b8f68ec404a94f047178082b3ef3a5546",
+      "normalizedSignatureHash": "5de0c5f88abf606733a002f5155c9c9b8f68ec404a94f047178082b3ef3a5546",
+      "canonicalSignatureText": "o(text):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
+      "name": "I",
+      "kind": "procedure",
+      "signatureFingerprint": "73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
+      "normalizedSignatureHash": "73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
+      "canonicalSignatureText": "i(integer;code[20]):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#bab82de24afaf3c6d5b31957b674f5b46ad354578e8d9a79afbd5909351f62b4",
+      "name": "I",
+      "kind": "procedure",
+      "signatureFingerprint": "bab82de24afaf3c6d5b31957b674f5b46ad354578e8d9a79afbd5909351f62b4",
+      "normalizedSignatureHash": "bab82de24afaf3c6d5b31957b674f5b46ad354578e8d9a79afbd5909351f62b4",
+      "canonicalSignatureText": "i(integer;text):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#da7119f1e7b20180d5c943d57e4e41260cf7f7b5fb50939fda2626b5d258df4e",
+      "name": "V",
+      "kind": "procedure",
+      "signatureFingerprint": "da7119f1e7b20180d5c943d57e4e41260cf7f7b5fb50939fda2626b5d258df4e",
+      "normalizedSignatureHash": "da7119f1e7b20180d5c943d57e4e41260cf7f7b5fb50939fda2626b5d258df4e",
+      "canonicalSignatureText": "v(integer):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#dd22ee04a1fb3c72c65b872d68bd59da5645e9fec9ccc27d89f9b2795a7bc9d6",
+      "name": "V",
+      "kind": "procedure",
+      "signatureFingerprint": "dd22ee04a1fb3c72c65b872d68bd59da5645e9fec9ccc27d89f9b2795a7bc9d6",
+      "normalizedSignatureHash": "dd22ee04a1fb3c72c65b872d68bd59da5645e9fec9ccc27d89f9b2795a7bc9d6",
+      "canonicalSignatureText": "v(variant):integer"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#11251ee12bbfee8cb850f20c2b73929cbfe603618bcdf548256f3dd96f1b65e9",
+      "name": "CallObject",
+      "kind": "procedure",
+      "signatureFingerprint": "11251ee12bbfee8cb850f20c2b73929cbfe603618bcdf548256f3dd96f1b65e9",
+      "normalizedSignatureHash": "11251ee12bbfee8cb850f20c2b73929cbfe603618bcdf548256f3dd96f1b65e9",
+      "canonicalSignatureText": "callobject(codeunit \"neg target\"):"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#17740f7dcb2d880967c04f896ebdf6a8ed180c4ae2e1335fe80d2895348da0c0",
+      "name": "CallVariant",
+      "kind": "procedure",
+      "signatureFingerprint": "17740f7dcb2d880967c04f896ebdf6a8ed180c4ae2e1335fe80d2895348da0c0",
+      "normalizedSignatureHash": "17740f7dcb2d880967c04f896ebdf6a8ed180c4ae2e1335fe80d2895348da0c0",
+      "canonicalSignatureText": "callvariant(instream):"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#e32bf3968403e18c91e66dfba278fd2967d5b2ebfa4fab4f053f6911ec197f45",
+      "name": "CallIndistinct",
+      "kind": "procedure",
+      "signatureFingerprint": "e32bf3968403e18c91e66dfba278fd2967d5b2ebfa4fab4f053f6911ec197f45",
+      "normalizedSignatureHash": "e32bf3968403e18c91e66dfba278fd2967d5b2ebfa4fab4f053f6911ec197f45",
+      "canonicalSignatureText": "callindistinct(integer;text):"
+    }
+  ]
+}

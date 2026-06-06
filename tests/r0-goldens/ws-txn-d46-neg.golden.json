@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001",
+      "name": "Normal Handler",
+      "kind": "Codeunit",
+      "signatureFingerprint": "8bcbd750f3bd0d6e493ca9081d573ffe30ed8942bde5a3989f7eb5670fbe69f1"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+      "name": "My Setup",
+      "kind": "Table",
+      "signatureFingerprint": "dd8f7082d83872bba3898e47ed1b8080f151786bc2a19bd62d827b7ccb5e0e28"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "name": "DoSetup",
+      "kind": "procedure",
+      "signatureFingerprint": "3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "normalizedSignatureHash": "3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "canonicalSignatureText": "dosetup():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "name": "RunSetup",
+      "kind": "procedure",
+      "signatureFingerprint": "b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "normalizedSignatureHash": "b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "canonicalSignatureText": "runsetup():"
+    }
+  ]
+}

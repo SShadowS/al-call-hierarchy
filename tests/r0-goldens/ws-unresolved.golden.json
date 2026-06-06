@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "eeeeeeee-0000-0000-0000-0000000000e1:Codeunit:63101",
+      "name": "Unresolved Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "f025db74d461da1095f32b5d0d727f2da650777e041f340e16d7327d740a81df"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "eeeeeeee-0000-0000-0000-0000000000e1:Codeunit:63101#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "normalizedSignatureHash": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "canonicalSignatureText": "dowork():"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50100",
+      "name": "Probe Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "c684a658f4cb84d3a5449aabaf7799a2aefed9dca3145bf18abbb1803b51d4d0"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50101",
+      "name": "Probe Insert File Archive",
+      "kind": "Codeunit",
+      "signatureFingerprint": "0aaa983fbd16d73eaf83b5475e5db9d7dd359f2f2ed511141b6ad26fd51692a2"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50103",
+      "name": "Probe Unknown Receiver",
+      "kind": "Codeunit",
+      "signatureFingerprint": "7bee66da83d79da0e966e146f4f8c4c4919353bc210b7ade026a42201bfa7a75"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50104",
+      "name": "Probe Global Receivers",
+      "kind": "Codeunit",
+      "signatureFingerprint": "08fb378a0bf646ca6db547764b45b2e5aeadab4eec500e8d4da4443d74dd459e"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Table:50102",
+      "name": "Probe File Archive",
+      "kind": "Table",
+      "signatureFingerprint": "53d15a2c0868dad95fa124cbd598e890cd0bb05fa7df34d629cd9b1f3bfd11c0"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50100#cb01deefa01c77b7b956a4b280cfec1b430a6b3948de68e9348999e3b4867125",
+      "name": "RunImport",
+      "kind": "procedure",
+      "signatureFingerprint": "cb01deefa01c77b7b956a4b280cfec1b430a6b3948de68e9348999e3b4867125",
+      "normalizedSignatureHash": "cb01deefa01c77b7b956a4b280cfec1b430a6b3948de68e9348999e3b4867125",
+      "canonicalSignatureText": "runimport(instream;code[20]):"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50101#a409707d31efb836493088d2e29cbb71f098f017068b06ed0050ddea85f49f92",
+      "name": "Insert",
+      "kind": "procedure",
+      "signatureFingerprint": "a409707d31efb836493088d2e29cbb71f098f017068b06ed0050ddea85f49f92",
+      "normalizedSignatureHash": "a409707d31efb836493088d2e29cbb71f098f017068b06ed0050ddea85f49f92",
+      "canonicalSignatureText": "insert(instream;code[20]):"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50103#75abfc7f25a5229f6ce569c1f0dd904b76add65be0fe6628d59c51ed167cd844",
+      "name": "CallOnUnknown",
+      "kind": "procedure",
+      "signatureFingerprint": "75abfc7f25a5229f6ce569c1f0dd904b76add65be0fe6628d59c51ed167cd844",
+      "normalizedSignatureHash": "75abfc7f25a5229f6ce569c1f0dd904b76add65be0fe6628d59c51ed167cd844",
+      "canonicalSignatureText": "callonunknown():"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
+      "name": "InsertViaGlobalRecord",
+      "kind": "procedure",
+      "signatureFingerprint": "0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
+      "normalizedSignatureHash": "0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
+      "canonicalSignatureText": "insertviaglobalrecord():"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
+      "name": "CallViaGlobalCodeunit",
+      "kind": "procedure",
+      "signatureFingerprint": "351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
+      "normalizedSignatureHash": "351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
+      "canonicalSignatureText": "callviaglobalcodeunit(instream;code[20]):"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Table:50102#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "signatureFingerprint": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "normalizedSignatureHash": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "canonicalSignatureText": "oninsert():"
+    }
+  ]
+}

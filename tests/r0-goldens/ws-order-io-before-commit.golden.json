@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101",
+      "name": "OI IoBeforeCommit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "a33b0047a744db951a0fffe7f4154d51ffd5ce7045d854bf9d693643988c6f99"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100",
+      "name": "OI Rec",
+      "kind": "Table",
+      "signatureFingerprint": "7c757b93f93253e928da0735d253cafbef460e2c706960a64c26ad2024b64525"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "name": "SendThenPost",
+      "kind": "procedure",
+      "signatureFingerprint": "d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "normalizedSignatureHash": "d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "canonicalSignatureText": "sendthenpost():"
+    }
+  ]
+}

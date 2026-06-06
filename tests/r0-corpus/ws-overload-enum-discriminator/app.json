@@ -1,0 +1,8 @@
+{
+	"id": "eeeeeeee-1111-2222-3333-666666666666",
+	"name": "ProbeEnum",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50140, "to": 50149 }]
+}

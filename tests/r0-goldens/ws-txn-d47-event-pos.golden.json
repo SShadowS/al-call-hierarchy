@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000",
+      "name": "D47 Evt Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "15288697e6145031f636f7d8b691f2426e057992b6ac15e414b7aa9379387a12"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001",
+      "name": "D47 Evt Subscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "d4af9f0d3cc24f6bcc272a1c567a31b5fd861ba8778f8cdb90708d5f9daf439a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4720:Table:50100",
+      "name": "D47 Evt Rec",
+      "kind": "Table",
+      "signatureFingerprint": "88615894252d8521360e2ae2a5186721dd43e1498e0d0d8b489254605c3e6d7f"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "name": "ProcessAndNotify",
+      "kind": "procedure",
+      "signatureFingerprint": "1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "normalizedSignatureHash": "1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "canonicalSignatureText": "processandnotify():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+      "name": "OnAfterProcess",
+      "kind": "event-publisher",
+      "signatureFingerprint": "d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+      "normalizedSignatureHash": "d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+      "canonicalSignatureText": "onafterprocess():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+      "name": "HandleAfterProcess",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+      "normalizedSignatureHash": "286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+      "canonicalSignatureText": "handleafterprocess():"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001",
+      "name": "IS Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "586cde03c5bfe03f2f52291307b89c39dff0daa98888d1120de57ba927aa56d0"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100",
+      "name": "IS Rec",
+      "kind": "Table",
+      "signatureFingerprint": "92a5c8c58a585679ff0049e6bc7b2b524641be36422cdfcfcf5ad9e0b7ee7ba5"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#cf05afce05393ac27b085edce25b3d151eac2ae64579536be0fee05affd52863",
+      "name": "UnsuppressedD3",
+      "kind": "procedure",
+      "signatureFingerprint": "cf05afce05393ac27b085edce25b3d151eac2ae64579536be0fee05affd52863",
+      "normalizedSignatureHash": "cf05afce05393ac27b085edce25b3d151eac2ae64579536be0fee05affd52863",
+      "canonicalSignatureText": "unsuppressedd3():"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf",
+      "name": "WrongDirectiveIo",
+      "kind": "procedure",
+      "signatureFingerprint": "fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf",
+      "normalizedSignatureHash": "fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf",
+      "canonicalSignatureText": "wrongdirectiveio():"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f",
+      "name": "SuppressedIo",
+      "kind": "procedure",
+      "signatureFingerprint": "ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f",
+      "normalizedSignatureHash": "ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f",
+      "canonicalSignatureText": "suppressedio():"
+    }
+  ]
+}

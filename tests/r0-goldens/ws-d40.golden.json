@@ -1,0 +1,98 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410",
+      "name": "D40 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "981a648d6a5916e8323713c6bfa3f5236baae6a99f1922ada5a185aabee1c8fe"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc440:TableExtension:50411",
+      "name": "D40 Cust Ext",
+      "kind": "TableExtension",
+      "signatureFingerprint": "b61c0da276fba2872a3c323738e0227db44a34c0955ed51083358c1581653e5e"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+      "name": "DoesNotLoadThenForwardsToReader",
+      "kind": "procedure",
+      "signatureFingerprint": "2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+      "normalizedSignatureHash": "2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+      "canonicalSignatureText": "doesnotloadthenforwardstoreader():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+      "name": "MutatingHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+      "normalizedSignatureHash": "2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+      "canonicalSignatureText": "mutatinghelper(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#47b609f9c4d4e8a53dd827cb18024683ca5b3925ea5b99842fb1a8eef3132d04",
+      "name": "ForwardsToSelfLoader",
+      "kind": "procedure",
+      "signatureFingerprint": "47b609f9c4d4e8a53dd827cb18024683ca5b3925ea5b99842fb1a8eef3132d04",
+      "normalizedSignatureHash": "47b609f9c4d4e8a53dd827cb18024683ca5b3925ea5b99842fb1a8eef3132d04",
+      "canonicalSignatureText": "forwardstoselfloader():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+      "name": "ReadingHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+      "normalizedSignatureHash": "4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+      "canonicalSignatureText": "readinghelper(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#545a6114186c4acdbc2e5c958de4d92f4f25e8af8cca9982187d93c3a01caeef",
+      "name": "TempForward",
+      "kind": "procedure",
+      "signatureFingerprint": "545a6114186c4acdbc2e5c958de4d92f4f25e8af8cca9982187d93c3a01caeef",
+      "normalizedSignatureHash": "545a6114186c4acdbc2e5c958de4d92f4f25e8af8cca9982187d93c3a01caeef",
+      "canonicalSignatureText": "tempforward():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#6738c0b561d3132c9c85cff30267e82beebeddc7d13d503ad2aecac8cee171fd",
+      "name": "LoadsBeforeForwarding",
+      "kind": "procedure",
+      "signatureFingerprint": "6738c0b561d3132c9c85cff30267e82beebeddc7d13d503ad2aecac8cee171fd",
+      "normalizedSignatureHash": "6738c0b561d3132c9c85cff30267e82beebeddc7d13d503ad2aecac8cee171fd",
+      "canonicalSignatureText": "loadsbeforeforwarding():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#84e76c958f1fd32a9c074fb901f8a340fc8e5e30f6841e7bdcca9d38787f89a8",
+      "name": "SelfLoadingHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "84e76c958f1fd32a9c074fb901f8a340fc8e5e30f6841e7bdcca9d38787f89a8",
+      "normalizedSignatureHash": "84e76c958f1fd32a9c074fb901f8a340fc8e5e30f6841e7bdcca9d38787f89a8",
+      "canonicalSignatureText": "selfloadinghelper(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+      "name": "DoesNotLoadThenForwardsToMutator",
+      "kind": "procedure",
+      "signatureFingerprint": "efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+      "normalizedSignatureHash": "efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+      "canonicalSignatureText": "doesnotloadthenforwardstomutator():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:TableExtension:50411#41aa37e5d85bb65592c32bb70095a37f9b8bad7d26bc61acafe5340bf50bd73e",
+      "name": "OnAfterInsert",
+      "kind": "trigger",
+      "signatureFingerprint": "41aa37e5d85bb65592c32bb70095a37f9b8bad7d26bc61acafe5340bf50bd73e",
+      "normalizedSignatureHash": "41aa37e5d85bb65592c32bb70095a37f9b8bad7d26bc61acafe5340bf50bd73e",
+      "canonicalSignatureText": "onafterinsert():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:TableExtension:50411#6bd302e9c3fb7fd8e26d5de9f456184b0512cd30d4fe37e26acc862905234da8",
+      "name": "TouchHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "6bd302e9c3fb7fd8e26d5de9f456184b0512cd30d4fe37e26acc862905234da8",
+      "normalizedSignatureHash": "6bd302e9c3fb7fd8e26d5de9f456184b0512cd30d4fe37e26acc862905234da8",
+      "canonicalSignatureText": "touchhelper(var record customer):"
+    }
+  ]
+}

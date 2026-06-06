@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101",
+      "name": "Compose Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "4ecb61742b5bdcf3a2b4c629c7f28e4953998c81d7a6e3b8760977c568cc3f74"
+    },
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "12475decbf6ba87565c3fd0e1256bdfee4a0b1a83f5d7ccce4482474b8eb5a80"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+      "name": "RunAll",
+      "kind": "procedure",
+      "signatureFingerprint": "24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+      "normalizedSignatureHash": "24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+      "canonicalSignatureText": "runall():"
+    },
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+      "name": "DoDbWork",
+      "kind": "procedure",
+      "signatureFingerprint": "e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+      "normalizedSignatureHash": "e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+      "canonicalSignatureText": "dodbwork():"
+    }
+  ]
+}

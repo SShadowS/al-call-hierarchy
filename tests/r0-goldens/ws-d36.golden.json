@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200",
+      "name": "D36 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "24391b0557a285e6fc4d869dd476c1b01e8559c50ebffb4b631d83a46d2b6b41"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d360:Table:51200",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "005776a4e50e49c6741930d9175eb9ba81128d8f0abf8411b147062c16b8c66f"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+      "name": "SetLoadFieldsAfterGet",
+      "kind": "procedure",
+      "signatureFingerprint": "03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+      "normalizedSignatureHash": "03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+      "canonicalSignatureText": "setloadfieldsafterget():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#22adc8e4e943caff091839daf19c8a9fa5556becc9ccc1e01b331dc9660ce141",
+      "name": "SetLoadFieldsBeforeGet",
+      "kind": "procedure",
+      "signatureFingerprint": "22adc8e4e943caff091839daf19c8a9fa5556becc9ccc1e01b331dc9660ce141",
+      "normalizedSignatureHash": "22adc8e4e943caff091839daf19c8a9fa5556becc9ccc1e01b331dc9660ce141",
+      "canonicalSignatureText": "setloadfieldsbeforeget():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#24d7fafd64e851e791d6f81f4c896b0771ccc88d0e7c52df90e1e1100c44321e",
+      "name": "SetLoadFieldsBetweenLoads",
+      "kind": "procedure",
+      "signatureFingerprint": "24d7fafd64e851e791d6f81f4c896b0771ccc88d0e7c52df90e1e1100c44321e",
+      "normalizedSignatureHash": "24d7fafd64e851e791d6f81f4c896b0771ccc88d0e7c52df90e1e1100c44321e",
+      "canonicalSignatureText": "setloadfieldsbetweenloads():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#5ee36758eef871f2033de0b0e258a919f0157e7f37a1d89ef57a7a32409f3738",
+      "name": "NoPriorLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "5ee36758eef871f2033de0b0e258a919f0157e7f37a1d89ef57a7a32409f3738",
+      "normalizedSignatureHash": "5ee36758eef871f2033de0b0e258a919f0157e7f37a1d89ef57a7a32409f3738",
+      "canonicalSignatureText": "nopriorload():"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+	"id": "11111111-0000-0000-0000-000000abc210",
+	"name": "With Receiver Test",
+	"publisher": "PT",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50100, "to": 50149 }],
+	"dependencies": []
+}

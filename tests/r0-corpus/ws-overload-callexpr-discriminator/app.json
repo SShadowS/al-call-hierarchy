@@ -1,0 +1,8 @@
+{
+	"id": "cccccccc-1111-2222-3333-444444444444",
+	"name": "ProbeCE",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50120, "to": 50139 }]
+}

@@ -1,0 +1,82 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "33333333-d300-0000-0000-000000000003:Codeunit:65101",
+      "name": "D3 Reports",
+      "kind": "Codeunit",
+      "signatureFingerprint": "bc8f10e0094c4a4e6ac370dd2dba5a18200d02973158284f412cd8a38a4ee1d4"
+    },
+    {
+      "stableObjectId": "33333333-d300-0000-0000-000000000003:Table:65100",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "f85adc59e9e52dbbf1e4dbec1ba9968f6a6554f99da615097e313eb2a891baed"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#0c5f61df0bc5479fadaf6a77b7ecab923755f6761a3fda10f89545b7f3130976",
+      "name": "CompleteLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "0c5f61df0bc5479fadaf6a77b7ecab923755f6761a3fda10f89545b7f3130976",
+      "normalizedSignatureHash": "0c5f61df0bc5479fadaf6a77b7ecab923755f6761a3fda10f89545b7f3130976",
+      "canonicalSignatureText": "completeload():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+      "name": "PartialThenCallee",
+      "kind": "procedure",
+      "signatureFingerprint": "277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+      "normalizedSignatureHash": "277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+      "canonicalSignatureText": "partialthencallee():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#4338388dfabbb40e3de671ef9044f5897db62ecb9267137593f6821bb217301f",
+      "name": "ResetThenFind",
+      "kind": "procedure",
+      "signatureFingerprint": "4338388dfabbb40e3de671ef9044f5897db62ecb9267137593f6821bb217301f",
+      "normalizedSignatureHash": "4338388dfabbb40e3de671ef9044f5897db62ecb9267137593f6821bb217301f",
+      "canonicalSignatureText": "resetthenfind():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+      "name": "IncompleteLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+      "normalizedSignatureHash": "5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+      "canonicalSignatureText": "incompleteload():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#959fe42253fa710b6fd2a04997a6931057940b666e550c5399e1959763843a84",
+      "name": "ResetBail",
+      "kind": "procedure",
+      "signatureFingerprint": "959fe42253fa710b6fd2a04997a6931057940b666e550c5399e1959763843a84",
+      "normalizedSignatureHash": "959fe42253fa710b6fd2a04997a6931057940b666e550c5399e1959763843a84",
+      "canonicalSignatureText": "resetbail():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255",
+      "name": "EnrichCustomer",
+      "kind": "procedure",
+      "signatureFingerprint": "ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255",
+      "normalizedSignatureHash": "ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255",
+      "canonicalSignatureText": "enrichcustomer(var record customer):"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#b6368d251f983bfb1d86588a2a88e5c2d87dc6b225822693d62c73a279aa79cc",
+      "name": "AddAfterReset",
+      "kind": "procedure",
+      "signatureFingerprint": "b6368d251f983bfb1d86588a2a88e5c2d87dc6b225822693d62c73a279aa79cc",
+      "normalizedSignatureHash": "b6368d251f983bfb1d86588a2a88e5c2d87dc6b225822693d62c73a279aa79cc",
+      "canonicalSignatureText": "addafterreset():"
+    },
+    {
+      "stableRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+      "name": "MissingLoad",
+      "kind": "procedure",
+      "signatureFingerprint": "c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+      "normalizedSignatureHash": "c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+      "canonicalSignatureText": "missingload():"
+    }
+  ]
+}

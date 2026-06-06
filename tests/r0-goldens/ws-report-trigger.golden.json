@@ -1,0 +1,36 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-000000000005:Report:50600",
+      "name": "Sample Report",
+      "kind": "Report",
+      "signatureFingerprint": "d862246b459aa7ffd3d78c861c304d61461a578c5f8427249069b8ef6752e802"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#2275281dfa00e2f2aba921ef7a4d876fafbdc55229d489dc645292b6bbfcef44",
+      "name": "ReportHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "2275281dfa00e2f2aba921ef7a4d876fafbdc55229d489dc645292b6bbfcef44",
+      "normalizedSignatureHash": "2275281dfa00e2f2aba921ef7a4d876fafbdc55229d489dc645292b6bbfcef44",
+      "canonicalSignatureText": "reporthelper():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#36c47ab4ec8ab1248f2cdaaf9f4dc9e2b88e3186dce77f71a43c6dd05cc2ae27",
+      "name": "OnPreReport",
+      "kind": "trigger",
+      "signatureFingerprint": "36c47ab4ec8ab1248f2cdaaf9f4dc9e2b88e3186dce77f71a43c6dd05cc2ae27",
+      "normalizedSignatureHash": "36c47ab4ec8ab1248f2cdaaf9f4dc9e2b88e3186dce77f71a43c6dd05cc2ae27",
+      "canonicalSignatureText": "onprereport():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#b9b3c0bba2dccb925237d5fcafbb6e689103eee7e21c10db7440836cc6d80847",
+      "name": "OnPostReport",
+      "kind": "trigger",
+      "signatureFingerprint": "b9b3c0bba2dccb925237d5fcafbb6e689103eee7e21c10db7440836cc6d80847",
+      "normalizedSignatureHash": "b9b3c0bba2dccb925237d5fcafbb6e689103eee7e21c10db7440836cc6d80847",
+      "canonicalSignatureText": "onpostreport():"
+    }
+  ]
+}

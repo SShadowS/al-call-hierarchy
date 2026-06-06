@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000000a01:Codeunit:50200",
+      "name": "MultiObjectCaller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e2dfca624872dd06052a14f51a965ef48a9342017ae33f817c84a27c64faf945"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000000a01:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000000a01:Codeunit:50200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "normalizedSignatureHash": "a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "canonicalSignatureText": "dowork():"
+    }
+  ]
+}

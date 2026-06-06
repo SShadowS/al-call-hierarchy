@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000",
+      "name": "D47 Isolated Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "77aa5c6032615d24ba05510fdfa18cd5dc5a54f02d8b4e48a2868f2010252810"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001",
+      "name": "D47 Isolated Subscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "28f678f9fb7e0d1237ff72428fc1485e3110f85042353572fd115e7438921db7"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Table:50100",
+      "name": "D47 Isolated Rec",
+      "kind": "Table",
+      "signatureFingerprint": "08e5c8915d94e285b775edf73e48ed27b896a0785216d75e45400c90cf6048f4"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "name": "ProcessAndNotify",
+      "kind": "procedure",
+      "signatureFingerprint": "1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "normalizedSignatureHash": "1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "canonicalSignatureText": "processandnotify():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
+      "name": "OnAfterProcessIsolated",
+      "kind": "event-publisher",
+      "signatureFingerprint": "61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
+      "normalizedSignatureHash": "61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
+      "canonicalSignatureText": "onafterprocessisolated():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001#3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
+      "name": "HandleAfterProcessIsolated",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
+      "normalizedSignatureHash": "3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
+      "canonicalSignatureText": "handleafterprocessisolated():"
+    }
+  ]
+}

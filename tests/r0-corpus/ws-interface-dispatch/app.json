@@ -1,0 +1,7 @@
+{
+	"id": "22222222-2222-2222-2222-222222222222",
+	"name": "WsInterfaceDispatch",
+	"publisher": "al-sem-tests",
+	"version": "1.0.0.0",
+	"idRanges": [{ "from": 50150, "to": 50199 }]
+}

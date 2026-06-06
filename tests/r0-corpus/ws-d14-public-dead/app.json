@@ -1,0 +1,14 @@
+{
+	"id": "11111111-0000-0000-0000-00000000d14b",
+	"name": "D14 Public Dead",
+	"publisher": "PT",
+	"version": "1.0.0.0",
+	"dependencies": [],
+	"internalsVisibleTo": [
+		{
+			"id": "22222222-0000-0000-0000-00000000d14c",
+			"name": "D14 Consumer",
+			"publisher": "PT"
+		}
+	]
+}

@@ -1,0 +1,52 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390",
+      "name": "D39 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b11772403ff718e3ea821643a1f4e1919f9dcb372635253eee8d6642b781bb21"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390#19b2a700e36745a749bf18750e08ce9d528a2299fe6295411f72a8d3ce9701ae",
+      "name": "CallerPersistsAfter",
+      "kind": "procedure",
+      "signatureFingerprint": "19b2a700e36745a749bf18750e08ce9d528a2299fe6295411f72a8d3ce9701ae",
+      "normalizedSignatureHash": "19b2a700e36745a749bf18750e08ce9d528a2299fe6295411f72a8d3ce9701ae",
+      "canonicalSignatureText": "callerpersistsafter():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390#338223a36f4f71f00d1687727b90f514c8bb77519ed5e9043f80c366ea58baf1",
+      "name": "CallerDoesNotPersist",
+      "kind": "procedure",
+      "signatureFingerprint": "338223a36f4f71f00d1687727b90f514c8bb77519ed5e9043f80c366ea58baf1",
+      "normalizedSignatureHash": "338223a36f4f71f00d1687727b90f514c8bb77519ed5e9043f80c366ea58baf1",
+      "canonicalSignatureText": "callerdoesnotpersist():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390#7dcf2891ccbcbb8facca6bc943652fc28aa688762327407a4ffc2b08bcffbcdc",
+      "name": "ValidatesAndPersists",
+      "kind": "procedure",
+      "signatureFingerprint": "7dcf2891ccbcbb8facca6bc943652fc28aa688762327407a4ffc2b08bcffbcdc",
+      "normalizedSignatureHash": "7dcf2891ccbcbb8facca6bc943652fc28aa688762327407a4ffc2b08bcffbcdc",
+      "canonicalSignatureText": "validatesandpersists(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390#eb2fce1263fff124a7e96797ea868bb24cad6138eb3e3a980d86fe5cd4bb1777",
+      "name": "ValidatesAndExits",
+      "kind": "procedure",
+      "signatureFingerprint": "eb2fce1263fff124a7e96797ea868bb24cad6138eb3e3a980d86fe5cd4bb1777",
+      "normalizedSignatureHash": "eb2fce1263fff124a7e96797ea868bb24cad6138eb3e3a980d86fe5cd4bb1777",
+      "canonicalSignatureText": "validatesandexits(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc390:Codeunit:50390#f39f4972f1fc7bc9550469d22a987c26c3766c8e9e7037ca940e7def8f006503",
+      "name": "HelperPersists",
+      "kind": "procedure",
+      "signatureFingerprint": "f39f4972f1fc7bc9550469d22a987c26c3766c8e9e7037ca940e7def8f006503",
+      "normalizedSignatureHash": "f39f4972f1fc7bc9550469d22a987c26c3766c8e9e7037ca940e7def8f006503",
+      "canonicalSignatureText": "helperpersists():"
+    }
+  ]
+}

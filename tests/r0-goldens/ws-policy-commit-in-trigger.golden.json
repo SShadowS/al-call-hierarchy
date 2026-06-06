@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000003-0000-0000-0000-000000000000:Table:50100",
+      "name": "Item",
+      "kind": "Table",
+      "signatureFingerprint": "302266b56df717f85cc0f64bc38943addac5241c7ac744cea164c6acf4845767"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000003-0000-0000-0000-000000000000:Table:50100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "signatureFingerprint": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "normalizedSignatureHash": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "canonicalSignatureText": "oninsert():"
+    }
+  ]
+}

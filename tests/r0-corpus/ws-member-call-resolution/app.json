@@ -1,0 +1,7 @@
+{
+	"id": "55555555-0000-0000-0000-0000000d14mc",
+	"name": "MemberCallResolution",
+	"publisher": "al-sem-tests",
+	"version": "1.0.0.0",
+	"idRanges": [{ "from": 50200, "to": 50249 }]
+}

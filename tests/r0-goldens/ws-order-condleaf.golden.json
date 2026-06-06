@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "eeeeeeee-0000-0000-0000-000000cl0001:Codeunit:50101",
+      "name": "CL CondLeaf",
+      "kind": "Codeunit",
+      "signatureFingerprint": "abbcfff1317c57e31562e2fe07659d08da7445d6113d6ea383eeb976f2e15585"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "eeeeeeee-0000-0000-0000-000000cl0001:Codeunit:50101#d0d9c8d7082954115c9f33bc9866ed861d6ca5935cdbed7d3131b790c09d8328",
+      "name": "RunCondLeaf",
+      "kind": "procedure",
+      "signatureFingerprint": "d0d9c8d7082954115c9f33bc9866ed861d6ca5935cdbed7d3131b790c09d8328",
+      "normalizedSignatureHash": "d0d9c8d7082954115c9f33bc9866ed861d6ca5935cdbed7d3131b790c09d8328",
+      "canonicalSignatureText": "runcondleaf():"
+    }
+  ]
+}

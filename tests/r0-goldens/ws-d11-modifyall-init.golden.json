@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116",
+      "name": "D11Patterns",
+      "kind": "Codeunit",
+      "signatureFingerprint": "561818b8d8a965789e0fb24e46ff4f15a445eb2b2dd36dbf3b293c113d1a6a69"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11b:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#30bcc525bb539b81f14504e19fbbe7041d043e3396622cfc67d739758febdb70",
+      "name": "SetBasedBulk",
+      "kind": "procedure",
+      "signatureFingerprint": "30bcc525bb539b81f14504e19fbbe7041d043e3396622cfc67d739758febdb70",
+      "normalizedSignatureHash": "30bcc525bb539b81f14504e19fbbe7041d043e3396622cfc67d739758febdb70",
+      "canonicalSignatureText": "setbasedbulk():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#736faf1af08ea8dc98dfd8fcf11c33b0729492a1788d019dab2d17beb861c82f",
+      "name": "RealBug",
+      "kind": "procedure",
+      "signatureFingerprint": "736faf1af08ea8dc98dfd8fcf11c33b0729492a1788d019dab2d17beb861c82f",
+      "normalizedSignatureHash": "736faf1af08ea8dc98dfd8fcf11c33b0729492a1788d019dab2d17beb861c82f",
+      "canonicalSignatureText": "realbug():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#f0e297a0373556cc47988105bb46918582da6d9ff909c4f27b02684b5cf5809c",
+      "name": "InitInsertPattern",
+      "kind": "procedure",
+      "signatureFingerprint": "f0e297a0373556cc47988105bb46918582da6d9ff909c4f27b02684b5cf5809c",
+      "normalizedSignatureHash": "f0e297a0373556cc47988105bb46918582da6d9ff909c4f27b02684b5cf5809c",
+      "canonicalSignatureText": "initinsertpattern():"
+    }
+  ]
+}

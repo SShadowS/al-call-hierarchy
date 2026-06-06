@@ -1,0 +1,62 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000",
+      "name": "InvMgr",
+      "kind": "Codeunit",
+      "signatureFingerprint": "0bb2d16f06f5475ed2f76341a2c2c34e86f1a87177db4e8b35c15c0228244beb"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001",
+      "name": "InvWriter",
+      "kind": "Codeunit",
+      "signatureFingerprint": "81392f1d0079fa095ecbc77fcfab30756a04ec7e3b159e0cb2f0f07c3d1d9a3c"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002",
+      "name": "InvReader",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ae750149c1f2124ab512f35b0e239479c0851753d3bb157fea8d11a1cd194f9c"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100",
+      "name": "Inventory",
+      "kind": "Table",
+      "signatureFingerprint": "1948aa4c9dd43fb0b25817904cebdfae6fb7a541d8c4881bf2e9a589414b6427"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "name": "Adjust",
+      "kind": "procedure",
+      "signatureFingerprint": "6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "normalizedSignatureHash": "6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "canonicalSignatureText": "adjust(var record inventory):"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "name": "OnAfterAdjust",
+      "kind": "event-publisher",
+      "signatureFingerprint": "ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "normalizedSignatureHash": "ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "canonicalSignatureText": "onafteradjust(var record inventory):"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "name": "HW",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "normalizedSignatureHash": "db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "canonicalSignatureText": "hw(var record inventory):"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "name": "HR",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "normalizedSignatureHash": "cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "canonicalSignatureText": "hr(var record inventory):"
+    }
+  ]
+}

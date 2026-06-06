@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130",
+      "name": "FD Target",
+      "kind": "Codeunit",
+      "signatureFingerprint": "611d196ea5e439888cf73e5c112b1f1735d323a983c64c6b45aafac7c0112cbd"
+    },
+    {
+      "stableObjectId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50132",
+      "name": "FD Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "a86b7095481d573ba74862426d911f991a2ba922587822ac0e151fd8d8d6f8e5"
+    },
+    {
+      "stableObjectId": "dddddddd-1111-2222-3333-555555555555:Table:50131",
+      "name": "FD Rec",
+      "kind": "Table",
+      "signatureFingerprint": "387c6e0e4fe2281c9cf02400be5b5e179a2d2e94f91c3bd690f2b4fb0a4429a1"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+      "name": "P",
+      "kind": "procedure",
+      "signatureFingerprint": "d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+      "normalizedSignatureHash": "d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+      "canonicalSignatureText": "p(integer):integer"
+    },
+    {
+      "stableRoutineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+      "name": "P",
+      "kind": "procedure",
+      "signatureFingerprint": "d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+      "normalizedSignatureHash": "d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+      "canonicalSignatureText": "p(text):integer"
+    },
+    {
+      "stableRoutineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50132#d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2",
+      "normalizedSignatureHash": "d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2",
+      "canonicalSignatureText": "run(var record \"fd rec\"):"
+    }
+  ]
+}

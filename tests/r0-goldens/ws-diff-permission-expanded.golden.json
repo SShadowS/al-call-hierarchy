@@ -1,0 +1,58 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "unknown:Codeunit:50300",
+      "name": "Item Manager",
+      "kind": "Codeunit",
+      "signatureFingerprint": "6105ce4a7a5830edfae215e1c4779e36c19654fa536dd0312cd96afbe271bcbf"
+    },
+    {
+      "stableObjectId": "unknown:Codeunit:50300",
+      "name": "Item Manager",
+      "kind": "Codeunit",
+      "signatureFingerprint": "6105ce4a7a5830edfae215e1c4779e36c19654fa536dd0312cd96afbe271bcbf"
+    },
+    {
+      "stableObjectId": "unknown:PermissionSet:50100",
+      "name": "Item Permissions",
+      "kind": "PermissionSet",
+      "signatureFingerprint": "42847415609e7550e6e0367ac3540afbfe389117a815f9232e385c7b0023cbd4"
+    },
+    {
+      "stableObjectId": "unknown:PermissionSet:50100",
+      "name": "Item Permissions",
+      "kind": "PermissionSet",
+      "signatureFingerprint": "42847415609e7550e6e0367ac3540afbfe389117a815f9232e385c7b0023cbd4"
+    },
+    {
+      "stableObjectId": "unknown:Table:50300",
+      "name": "Item",
+      "kind": "Table",
+      "signatureFingerprint": "b1be938fa984d2c659a19b12322598d3b083ffe015eb169893c811f3e6e4fe9a"
+    },
+    {
+      "stableObjectId": "unknown:Table:50300",
+      "name": "Item",
+      "kind": "Table",
+      "signatureFingerprint": "b1be938fa984d2c659a19b12322598d3b083ffe015eb169893c811f3e6e4fe9a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "unknown:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "name": "UpdateItem",
+      "kind": "procedure",
+      "signatureFingerprint": "bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "normalizedSignatureHash": "bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "canonicalSignatureText": "updateitem(code[20]):"
+    },
+    {
+      "stableRoutineId": "unknown:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "name": "UpdateItem",
+      "kind": "procedure",
+      "signatureFingerprint": "bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "normalizedSignatureHash": "bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "canonicalSignatureText": "updateitem(code[20]):"
+    }
+  ]
+}

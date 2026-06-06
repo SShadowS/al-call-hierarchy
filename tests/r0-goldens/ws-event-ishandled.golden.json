@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-1111-1111-1111-111111111111:Codeunit:50000",
+      "name": "PostingMgr",
+      "kind": "Codeunit",
+      "signatureFingerprint": "79fd8a6218a79532c7ad164f61c4e66d7beee7b05c3523aad013b6e932973c6a"
+    },
+    {
+      "stableObjectId": "11111111-1111-1111-1111-111111111111:Codeunit:50001",
+      "name": "PostingHandler",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e71fce9200269276b90e379cdb5f194f31caaaf2067492d1a0583a729d7a3a1e"
+    },
+    {
+      "stableObjectId": "11111111-1111-1111-1111-111111111111:Table:50000",
+      "name": "PostingEntry",
+      "kind": "Table",
+      "signatureFingerprint": "8a3ccc425ff09318b54c1c31eeb1f1adf0c1d9eca92d593af7885fea4cfa03c5"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-1111-1111-1111-111111111111:Codeunit:50000#52d4f6e9f0d8415f293b8e403f633ad1730b40db6a00641cc763ead4b55d5249",
+      "name": "DoPost",
+      "kind": "procedure",
+      "signatureFingerprint": "52d4f6e9f0d8415f293b8e403f633ad1730b40db6a00641cc763ead4b55d5249",
+      "normalizedSignatureHash": "52d4f6e9f0d8415f293b8e403f633ad1730b40db6a00641cc763ead4b55d5249",
+      "canonicalSignatureText": "dopost(var record postingentry):"
+    },
+    {
+      "stableRoutineId": "11111111-1111-1111-1111-111111111111:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "name": "OnBeforePost",
+      "kind": "event-publisher",
+      "signatureFingerprint": "79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "normalizedSignatureHash": "79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "canonicalSignatureText": "onbeforepost(var record postingentry;var boolean):"
+    },
+    {
+      "stableRoutineId": "11111111-1111-1111-1111-111111111111:Codeunit:50001#c3bb782f1040543444021f9a71fa49e45f785ab17e8164a15d51e6d62581007f",
+      "name": "OnBeforePostHandler",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "c3bb782f1040543444021f9a71fa49e45f785ab17e8164a15d51e6d62581007f",
+      "normalizedSignatureHash": "c3bb782f1040543444021f9a71fa49e45f785ab17e8164a15d51e6d62581007f",
+      "canonicalSignatureText": "onbeforeposthandler(var record postingentry;var boolean):"
+    }
+  ]
+}

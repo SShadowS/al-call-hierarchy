@@ -1,0 +1,7 @@
+{
+	"id": "aaaaaaaa-0000-0000-0000-000000cex001",
+	"name": "Order Conditional Exit Before Commit",
+	"publisher": "CEX",
+	"version": "1.0.0.0",
+	"dependencies": []
+}

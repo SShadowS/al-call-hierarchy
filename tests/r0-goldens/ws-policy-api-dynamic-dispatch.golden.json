@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000005-0000-0000-0000-000000000000:Page:50102",
+      "name": "Dispatcher API",
+      "kind": "Page",
+      "signatureFingerprint": "548708fcbde0035e3a9e43a2abcf820a1e47db99c0c13499b83bcd143b2975f3"
+    },
+    {
+      "stableObjectId": "10000005-0000-0000-0000-000000000000:Table:50102",
+      "name": "Dispatch Setup",
+      "kind": "Table",
+      "signatureFingerprint": "758ec5ff7fcbce5f0345920f181f1f0d7999e8f338189017abaf10920fe3a3dd"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "signatureFingerprint": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "normalizedSignatureHash": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "canonicalSignatureText": "onaction():"
+    }
+  ]
+}

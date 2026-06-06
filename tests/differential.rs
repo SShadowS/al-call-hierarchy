@@ -11,9 +11,11 @@
 //! `AL_SEM_DIR` env var) regenerates + copies the goldens/fixtures from al-sem.
 //! It never runs in the normal loop.
 //!
-//! SCOPE (Task 5): gated to ws-d2 only via the in-repo corpus. The gating logic,
-//! allowlist semantics, and live-refresh path are all real; Task 7 widens the
-//! corpus by committing more fixtures + goldens.
+//! SCOPE: the in-repo corpus is the FULL source-only `ws-*` set al-sem dumps
+//! (157 fixtures as of R0 Task 7, including the `ws-r0-canon-stress` identity
+//! stress fixture). The gating logic, allowlist semantics, and live-refresh path
+//! are all real; the harness iterates every `tests/r0-goldens/*.golden.json` and
+//! requires each to match with `KNOWN_DIVERGENCES.json` == `[]`.
 //!
 //! ## Comparison rules
 //!
@@ -43,7 +45,7 @@
 //!   (a) any divergence is NOT covered by an entry (undocumented divergence), OR
 //!   (b) any allowlist entry is UNUSED this run (no matching divergence).
 //! Matching is EXACT on the `(fixture, path)` pair — not prefix/glob (over-broad
-//! = fail). For R0/ws-d2 the allowlist is empty and the corpus fully matches.
+//! = fail). At R0 exit the allowlist is empty and the full corpus matches.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -425,9 +427,9 @@ fn refresh_goldens_from_al_sem() {
     std::fs::create_dir_all(&dst_goldens).expect("create tests/r0-goldens");
     std::fs::create_dir_all(&dst_corpus).expect("create tests/r0-corpus");
 
-    // (b) Copy each generated golden + its source-only fixture. For Task 5 this
-    //     copies whatever goldens al-sem produced (full corpus is fine — Task 7
-    //     widens which are *required* to match; copying extras here is harmless).
+    // (b) Copy each generated golden + its source-only fixture. This copies the
+    //     FULL source-only corpus al-sem produced; every copied golden is then
+    //     REQUIRED to match in the default offline differential (R0 exit gate).
     let mut copied = 0usize;
     for entry in std::fs::read_dir(&src_goldens).expect("read al-sem r0-goldens") {
         let entry = entry.expect("entry");

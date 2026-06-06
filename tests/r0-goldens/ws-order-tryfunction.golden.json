@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "ffffffff-0000-0000-0000-000000tf0001:Codeunit:50101",
+      "name": "TF TryFunction",
+      "kind": "Codeunit",
+      "signatureFingerprint": "4c4f0753dd6dab92394a30d852b8402e28ab8369e8bbf2aa6514d11b0b319f75"
+    },
+    {
+      "stableObjectId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100",
+      "name": "TF Rec",
+      "kind": "Table",
+      "signatureFingerprint": "c58091e088995ea916aeadcf05e6c30c6f1d9cd566cac75c0f4980e17602609b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "ffffffff-0000-0000-0000-000000tf0001:Codeunit:50101#f9a5dfcf0917d1e622d68f636bbf365aa236fb666ad293adafff775a30cf3ee2",
+      "name": "TryInsertAndCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "f9a5dfcf0917d1e622d68f636bbf365aa236fb666ad293adafff775a30cf3ee2",
+      "normalizedSignatureHash": "f9a5dfcf0917d1e622d68f636bbf365aa236fb666ad293adafff775a30cf3ee2",
+      "canonicalSignatureText": "tryinsertandcommit():"
+    }
+  ]
+}

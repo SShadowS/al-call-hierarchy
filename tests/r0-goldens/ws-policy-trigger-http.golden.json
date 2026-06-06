@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000006-0000-0000-0000-000000000000:Table:50103",
+      "name": "Outbound Event",
+      "kind": "Table",
+      "signatureFingerprint": "1fa6a2757aa52661dcdc75452788e2e53b0aafa2a51a9a352605aa2516f038dc"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000006-0000-0000-0000-000000000000:Table:50103#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "signatureFingerprint": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "normalizedSignatureHash": "440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "canonicalSignatureText": "oninsert():"
+    }
+  ]
+}

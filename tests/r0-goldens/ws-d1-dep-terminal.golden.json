@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000001112:Codeunit:50101",
+      "name": "D1Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "81c316cf49bc4373debe52beeed100e269e0ffc8ccb58ef4d363c6146587714c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000001112:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "signatureFingerprint": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "normalizedSignatureHash": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "canonicalSignatureText": "dostuff():"
+    }
+  ]
+}

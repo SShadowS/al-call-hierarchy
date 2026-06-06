@@ -1,0 +1,40 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50101",
+      "name": "XT Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "5306154fa7c57675537fd8ca811bd4fbff61a5ed713025fb1d98c54109e358f7"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50102",
+      "name": "XT Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "773dc8f0d085e94acdddcf41cb01d5bd4473b5d62c762f5f3cf2f163064e9f7f"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100",
+      "name": "XT Rec",
+      "kind": "Table",
+      "signatureFingerprint": "34bdd1354048f4e70f3cdbdfd65c1fc1e256640ddb385a1ea5529b400e4fa81a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50101#b2b3bf9c2ed79490ce442d67e21816cb122cfa60ea09b017a8cdfa72dfd4e740",
+      "name": "TryCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "b2b3bf9c2ed79490ce442d67e21816cb122cfa60ea09b017a8cdfa72dfd4e740",
+      "normalizedSignatureHash": "b2b3bf9c2ed79490ce442d67e21816cb122cfa60ea09b017a8cdfa72dfd4e740",
+      "canonicalSignatureText": "trycommit():"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    }
+  ]
+}

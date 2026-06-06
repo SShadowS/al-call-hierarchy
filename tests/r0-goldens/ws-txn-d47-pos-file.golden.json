@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4706:Codeunit:50000",
+      "name": "D47 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4706:Table:50100",
+      "name": "D47 Rec",
+      "kind": "Table",
+      "signatureFingerprint": "13aad8b79845edd88fa8f9efa2cb6b2ea76329c02b384cc93305211342a8e5df"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4706:Codeunit:50000#8eddb8fcb017e354df7f111bc5a03539c310344f795db1755a2e0bf490ecd9f5",
+      "name": "ExportAfterModify",
+      "kind": "procedure",
+      "signatureFingerprint": "8eddb8fcb017e354df7f111bc5a03539c310344f795db1755a2e0bf490ecd9f5",
+      "normalizedSignatureHash": "8eddb8fcb017e354df7f111bc5a03539c310344f795db1755a2e0bf490ecd9f5",
+      "canonicalSignatureText": "exportaftermodify():"
+    }
+  ]
+}

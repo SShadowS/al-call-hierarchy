@@ -1,0 +1,40 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50101",
+      "name": "XW Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "6e3b9b77737bdc2bf6a824fc0115b1a7bc9807e071a585e645aa7385f3f99045"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50102",
+      "name": "XW Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ed90606b9874b6721f973201c73c3e34dae481fe7fcbfd0022cf1c37d23a6eb4"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Table:50100",
+      "name": "XW Rec",
+      "kind": "Table",
+      "signatureFingerprint": "fa8d0aff923f0cd23270b7d9a838b7e0ed287eb63a60b70e8671348efb520698"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+      "name": "DoCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+      "normalizedSignatureHash": "6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+      "canonicalSignatureText": "docommit():"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    }
+  ]
+}

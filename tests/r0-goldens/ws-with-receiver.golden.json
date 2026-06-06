@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc210:Codeunit:50108",
+      "name": "With Receiver",
+      "kind": "Codeunit",
+      "signatureFingerprint": "55cbc6b2dd5210dd5ac79580a364fff9a008e360076cbe9376249f69f4253b46"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc210:Table:50100",
+      "name": "Probe Rec",
+      "kind": "Table",
+      "signatureFingerprint": "704888f7d7f723b9b500a0da74d4de2c976624eb66ef6d5d542b7c7f227c3a7c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc210:Codeunit:50108#ac1e52074481f48b63d44cfb2bbd0e46c6bed856e9f8d97b1b0c2edb9839d536",
+      "name": "DoWith",
+      "kind": "procedure",
+      "signatureFingerprint": "ac1e52074481f48b63d44cfb2bbd0e46c6bed856e9f8d97b1b0c2edb9839d536",
+      "normalizedSignatureHash": "ac1e52074481f48b63d44cfb2bbd0e46c6bed856e9f8d97b1b0c2edb9839d536",
+      "canonicalSignatureText": "dowith():"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000",
+      "name": "D47 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4705:Table:50100",
+      "name": "D47 Rec",
+      "kind": "Table",
+      "signatureFingerprint": "13aad8b79845edd88fa8f9efa2cb6b2ea76329c02b384cc93305211342a8e5df"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+      "name": "SendAfterTempInsert",
+      "kind": "procedure",
+      "signatureFingerprint": "cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+      "normalizedSignatureHash": "cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+      "canonicalSignatureText": "sendaftertempinsert():"
+    }
+  ]
+}

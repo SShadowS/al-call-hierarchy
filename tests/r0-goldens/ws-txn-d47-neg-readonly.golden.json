@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000",
+      "name": "D47 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+      "name": "JustFetch",
+      "kind": "procedure",
+      "signatureFingerprint": "6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+      "normalizedSignatureHash": "6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+      "canonicalSignatureText": "justfetch():"
+    }
+  ]
+}

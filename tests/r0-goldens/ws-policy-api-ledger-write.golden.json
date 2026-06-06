@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000009-0000-0000-0000-000000000000:Page:50106",
+      "name": "Sales API",
+      "kind": "Page",
+      "signatureFingerprint": "0b4fe4614423b7aab505ce3fc24abf9a93aedc17706ca24bfa3abd9688dcc3e6"
+    },
+    {
+      "stableObjectId": "10000009-0000-0000-0000-000000000000:Table:50106",
+      "name": "Sales Ledger Entry",
+      "kind": "Table",
+      "signatureFingerprint": "8a1f2d1f7b5c62baf84f0c97adb6f3efbc643d9713e454c1e113d0885a6381b9"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "signatureFingerprint": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "normalizedSignatureHash": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "canonicalSignatureText": "onaction():"
+    }
+  ]
+}

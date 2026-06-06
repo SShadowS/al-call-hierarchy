@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50901",
+      "name": "Processor",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ef15734aa53867e407761a675e96270ca70ce845eba6c0cd598e41f86d52ba5e"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Table:50900",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "73c42933d2a099b73a24d6d0fbd091e785e5eee2f2c45eecd552b3591fe8cb1b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "signatureFingerprint": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "normalizedSignatureHash": "dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "canonicalSignatureText": "process():"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+      "name": "Helper",
+      "kind": "procedure",
+      "signatureFingerprint": "f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+      "normalizedSignatureHash": "f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+      "canonicalSignatureText": "helper():"
+    }
+  ]
+}

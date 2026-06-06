@@ -1,0 +1,14 @@
+{
+	"id": "11111111-0000-0000-0000-00000000d170",
+	"name": "D17 Drift",
+	"publisher": "PT",
+	"version": "1.0.0.0",
+	"dependencies": [
+		{
+			"id": "dddddddd-0000-0000-0000-0000000000d17",
+			"name": "D17DepNewer",
+			"publisher": "DT",
+			"version": "1.0.0.0"
+		}
+	]
+}

@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000007-0000-0000-0000-000000000000:Codeunit:50104",
+      "name": "Install Mgr",
+      "kind": "Codeunit",
+      "signatureFingerprint": "aa54ef238d0dd31e70f561fa00ebad37f342a172f6f67d1035a694a9cc690fa7"
+    },
+    {
+      "stableObjectId": "10000007-0000-0000-0000-000000000000:Table:50104",
+      "name": "Test Customer",
+      "kind": "Table",
+      "signatureFingerprint": "640677071b11b0e7ab7030bba257f863f9fb0d1e0aaf6bea699592d731ea5cc3"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000007-0000-0000-0000-000000000000:Codeunit:50104#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "kind": "trigger",
+      "signatureFingerprint": "28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "normalizedSignatureHash": "28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "canonicalSignatureText": "oninstallapppercompany():"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50200",
+      "name": "PR Summary Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "760f6e138daa80df85264e1b54d04150fb2cafe2a0d3d499ac986d2f554a1041"
+    },
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50201",
+      "name": "PR Summary Looper",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e36faf01fd901529b4f1b40c8f66fc20ea43f3dfd9ebe4b23d75ca8f70452cbd"
+    },
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50202",
+      "name": "PR Summary IoLooper",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e6940edbf8374d216f1ca60e715bb0c19bba3ab889cbceba3ab590e8f36f851f"
+    },
+    {
+      "stableObjectId": "22222222-0000-0000-0000-000000pr0001:Table:50200",
+      "name": "PR Summary Rec",
+      "kind": "Table",
+      "signatureFingerprint": "4dde9c0baccb5b3b71a667658692a963cc9efb9a46c9523403ad3db705dc745c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50200#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "name": "SendAfterModify",
+      "kind": "procedure",
+      "signatureFingerprint": "afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "normalizedSignatureHash": "afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "canonicalSignatureText": "sendaftermodify():"
+    },
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50201#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "name": "DoWork",
+      "kind": "procedure",
+      "signatureFingerprint": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "normalizedSignatureHash": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "canonicalSignatureText": "dowork(integer):"
+    },
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50201#9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "name": "CommitInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "normalizedSignatureHash": "9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "canonicalSignatureText": "commitinloop():"
+    },
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50202#e873c69003694178cf7e0206071a110ef0bc7328fdac4e7d93fe4f52653ac1e2",
+      "name": "SendInLoop",
+      "kind": "procedure",
+      "signatureFingerprint": "e873c69003694178cf7e0206071a110ef0bc7328fdac4e7d93fe4f52653ac1e2",
+      "normalizedSignatureHash": "e873c69003694178cf7e0206071a110ef0bc7328fdac4e7d93fe4f52653ac1e2",
+      "canonicalSignatureText": "sendinloop():"
+    }
+  ]
+}

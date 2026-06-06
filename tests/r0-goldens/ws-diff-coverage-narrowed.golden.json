@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "unknown:Codeunit:50400",
+      "name": "Runner",
+      "kind": "Codeunit",
+      "signatureFingerprint": "48f10e94258bca6f16a6bbdb2336a6b23449491dd01be58e4b6516c18441fadf"
+    },
+    {
+      "stableObjectId": "unknown:Codeunit:50400",
+      "name": "Runner",
+      "kind": "Codeunit",
+      "signatureFingerprint": "48f10e94258bca6f16a6bbdb2336a6b23449491dd01be58e4b6516c18441fadf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "unknown:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    },
+    {
+      "stableRoutineId": "unknown:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "normalizedSignatureHash": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "canonicalSignatureText": "run():"
+    }
+  ]
+}

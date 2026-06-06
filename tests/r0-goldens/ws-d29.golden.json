@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300",
+      "name": "D29 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "9a658c960e2871b719af3f3fc0e0ea48ed4525697b54c66fca2eb6d410a6d780"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "b08ac30ee177159c010762bde0695a2c0d2d5a639ffb2f3b42109ec62630c846"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+      "name": "OnAfterModifyMutates",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+      "normalizedSignatureHash": "2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+      "canonicalSignatureText": "onaftermodifymutates(var record customer;var record customer;boolean):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+      "name": "OnBeforeDeleteMutates",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+      "normalizedSignatureHash": "611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+      "canonicalSignatureText": "onbeforedeletemutates(var record customer;boolean):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d",
+      "name": "OnAfterModifyReadOnly",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d",
+      "normalizedSignatureHash": "82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d",
+      "canonicalSignatureText": "onaftermodifyreadonly(var record customer;var record customer;boolean):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231",
+      "name": "OnAfterPostMutates",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231",
+      "normalizedSignatureHash": "f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231",
+      "canonicalSignatureText": "onafterpostmutates(var record customer):"
+    }
+  ]
+}

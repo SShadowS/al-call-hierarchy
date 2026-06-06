@@ -1,0 +1,7 @@
+{
+	"id": "ffffffff-0000-0000-0000-000000tf0001",
+	"name": "Order TryFunction",
+	"publisher": "TF",
+	"version": "1.0.0.0",
+	"dependencies": []
+}

@@ -1,0 +1,70 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000",
+      "name": "D48 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "53bd11cbb0fdf3464c9bd5092b2d6fa6f28f6b6fcecdbf7eda7f4626e43f1d59"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001",
+      "name": "D48 Loop Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "9c623e72b77f84c9f248c7153330e57149cb795c477e222da0cc9128851ea793"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d480:Codeunit:50002",
+      "name": "D48 Non Loop Caller",
+      "kind": "Codeunit",
+      "signatureFingerprint": "4eb44320aa393f57a3d3f41449152753741311d59b2a765f6c44d3ac5d418635"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003",
+      "name": "D48 File Loop",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e231f54081faa522b3c066d5544f86f45c97cfdb36db69421b0dc68f1957cab3"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "name": "SendOne",
+      "kind": "procedure",
+      "signatureFingerprint": "575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "normalizedSignatureHash": "575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "canonicalSignatureText": "sendone():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+      "name": "ProcessAll",
+      "kind": "procedure",
+      "signatureFingerprint": "341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+      "normalizedSignatureHash": "341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+      "canonicalSignatureText": "processall():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "name": "SendOne",
+      "kind": "procedure",
+      "signatureFingerprint": "575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "normalizedSignatureHash": "575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+      "canonicalSignatureText": "sendone():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50002#197d34c68565ddcb1cc7fa6474f1b19b163362119fb2dcd8b8eaff37d3af2ce9",
+      "name": "DoSendOnce",
+      "kind": "procedure",
+      "signatureFingerprint": "197d34c68565ddcb1cc7fa6474f1b19b163362119fb2dcd8b8eaff37d3af2ce9",
+      "normalizedSignatureHash": "197d34c68565ddcb1cc7fa6474f1b19b163362119fb2dcd8b8eaff37d3af2ce9",
+      "canonicalSignatureText": "dosendonce():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+      "name": "ExportAll",
+      "kind": "procedure",
+      "signatureFingerprint": "c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+      "normalizedSignatureHash": "c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+      "canonicalSignatureText": "exportall():"
+    }
+  ]
+}

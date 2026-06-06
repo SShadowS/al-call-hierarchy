@@ -1,0 +1,4 @@
+interface IEmpty
+{
+    procedure Nothing();
+}

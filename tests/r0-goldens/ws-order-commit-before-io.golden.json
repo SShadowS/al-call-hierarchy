@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101",
+      "name": "OC Poster",
+      "kind": "Codeunit",
+      "signatureFingerprint": "0f3c9c22d95d54eea174bc88b7e1967b60a0c9457f6e33f30a7366478ebe281a"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100",
+      "name": "OC Rec",
+      "kind": "Table",
+      "signatureFingerprint": "cc8d80fa5a57c9c71ec421527fe0cb081772103f93466cca38fa2820537961a5"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "name": "PostAndCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "normalizedSignatureHash": "3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "canonicalSignatureText": "postandcommit():"
+    }
+  ]
+}

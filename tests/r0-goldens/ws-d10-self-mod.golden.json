@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110",
+      "name": "D10SelfMod",
+      "kind": "Codeunit",
+      "signatureFingerprint": "767805ea137a7be7da6510652965e324341027c4036bfc4adfd1cb5b4b7bddae"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8",
+      "name": "SafeModify",
+      "kind": "procedure",
+      "signatureFingerprint": "1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8",
+      "normalizedSignatureHash": "1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8",
+      "canonicalSignatureText": "safemodify():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+      "name": "BadModify",
+      "kind": "procedure",
+      "signatureFingerprint": "b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+      "normalizedSignatureHash": "b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+      "canonicalSignatureText": "badmodify():"
+    }
+  ]
+}

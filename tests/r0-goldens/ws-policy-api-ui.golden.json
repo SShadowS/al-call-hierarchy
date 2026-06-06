@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000004-0000-0000-0000-000000000000:Page:50101",
+      "name": "Test Customer API",
+      "kind": "Page",
+      "signatureFingerprint": "335e8258ff5e2c75535feb4015a28b091121fadaa1a183e4ff6a4d15cc1d6469"
+    },
+    {
+      "stableObjectId": "10000004-0000-0000-0000-000000000000:Table:50101",
+      "name": "Test Customer",
+      "kind": "Table",
+      "signatureFingerprint": "689b0dc9a396b84254614ec020f3590c19b17485af9da95bb4a14b912070e134"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "signatureFingerprint": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "normalizedSignatureHash": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "canonicalSignatureText": "onaction():"
+    }
+  ]
+}

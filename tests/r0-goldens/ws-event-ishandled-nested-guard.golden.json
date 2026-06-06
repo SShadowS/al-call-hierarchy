@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000",
+      "name": "PostingMgr",
+      "kind": "Codeunit",
+      "signatureFingerprint": "79fd8a6218a79532c7ad164f61c4e66d7beee7b05c3523aad013b6e932973c6a"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001",
+      "name": "PostingHandler",
+      "kind": "Codeunit",
+      "signatureFingerprint": "e71fce9200269276b90e379cdb5f194f31caaaf2067492d1a0583a729d7a3a1e"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100",
+      "name": "PostingEntry",
+      "kind": "Table",
+      "signatureFingerprint": "33bc7127c2f9b5d7d0abf6acb78b27979aba4d9021f8efe5e1cbfa5c56f1f24a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "name": "OnBeforePost",
+      "kind": "event-publisher",
+      "signatureFingerprint": "79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "normalizedSignatureHash": "79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "canonicalSignatureText": "onbeforepost(var record postingentry;var boolean):"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+      "name": "DoPost",
+      "kind": "procedure",
+      "signatureFingerprint": "96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+      "normalizedSignatureHash": "96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+      "canonicalSignatureText": "dopost(var record postingentry;boolean):"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "name": "H",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "normalizedSignatureHash": "7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "canonicalSignatureText": "h(var record postingentry;var boolean):"
+    }
+  ]
+}

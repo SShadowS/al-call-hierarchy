@@ -1,0 +1,82 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+      "name": "D38 Publisher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "963e21e27e253aa0d12f8d71ea782eecda20f538f8979ab6072a4af94f5fe328"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401",
+      "name": "D38 Subscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "762f3c6477264a8e6693b2917ffb30268b6f7c3936dda48a8dc55aabffe760fb"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "signatureFingerprint": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "normalizedSignatureHash": "43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "canonicalSignatureText": "dostuff():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "name": "OnAfterDoStuffRemoved",
+      "kind": "event-publisher",
+      "signatureFingerprint": "7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "normalizedSignatureHash": "7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "canonicalSignatureText": "onafterdostuffremoved(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "name": "OnAfterDoStuffPending",
+      "kind": "event-publisher",
+      "signatureFingerprint": "db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "normalizedSignatureHash": "db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "canonicalSignatureText": "onafterdostuffpending(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "name": "OnAfterFresh",
+      "kind": "event-publisher",
+      "signatureFingerprint": "ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "normalizedSignatureHash": "ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "canonicalSignatureText": "onafterfresh(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+      "name": "HandleRemoved",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+      "normalizedSignatureHash": "0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+      "canonicalSignatureText": "handleremoved(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "name": "HandleUnknown",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "normalizedSignatureHash": "59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "canonicalSignatureText": "handleunknown():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
+      "name": "HandleFresh",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
+      "normalizedSignatureHash": "82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
+      "canonicalSignatureText": "handlefresh(integer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+      "name": "HandlePending",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+      "normalizedSignatureHash": "b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+      "canonicalSignatureText": "handlepending(integer):"
+    }
+  ]
+}

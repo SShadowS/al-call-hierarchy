@@ -1,0 +1,60 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108",
+      "name": "D8PostingChain",
+      "kind": "Codeunit",
+      "signatureFingerprint": "d1810e454c264179e6cb15c0cd072d6b28cf2c8ee8d10a805d1c3bd554c3b290"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109",
+      "name": "D8BadSubscriber",
+      "kind": "Codeunit",
+      "signatureFingerprint": "7c459857ae24bdd1c46b084db4f9eb76d39888840a1dd04617547a9af2e35b74"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:36",
+      "name": "Sales Header",
+      "kind": "Table",
+      "signatureFingerprint": "e16a803ee36e10d3ea8847ba0a3b59c660927c8c981ea1a0e78392ee9610df7c"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:37",
+      "name": "Sales Line",
+      "kind": "Table",
+      "signatureFingerprint": "a8451675cbed8ee2f46596d1dc826498a1b32b6d6e0f9318b0ae81fed014823a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:50100",
+      "name": "Audit Entry",
+      "kind": "Table",
+      "signatureFingerprint": "ef590913013b0a4ebb9e79498ce89164b275d43463d843f44703f42d47b0f258"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "name": "PostSalesDoc",
+      "kind": "procedure",
+      "signatureFingerprint": "2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "normalizedSignatureHash": "2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "canonicalSignatureText": "postsalesdoc():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "name": "OnAfterPostSalesDoc",
+      "kind": "event-publisher",
+      "signatureFingerprint": "eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "normalizedSignatureHash": "eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "canonicalSignatureText": "onafterpostsalesdoc(record \"sales header\"):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "name": "HandlePosted",
+      "kind": "event-subscriber",
+      "signatureFingerprint": "715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "normalizedSignatureHash": "715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "canonicalSignatureText": "handleposted(record \"sales header\"):"
+    }
+  ]
+}

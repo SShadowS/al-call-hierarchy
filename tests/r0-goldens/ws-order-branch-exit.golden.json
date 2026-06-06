@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101",
+      "name": "BE BranchExit",
+      "kind": "Codeunit",
+      "signatureFingerprint": "533f84c3c2a0868323f19b0b66a12d02e2519df994582750ac079424b4097898"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#b84da27a98a1e6ae28a8a326250eab8dcd5b3363e3d98ff9c54673cad6818ce5",
+      "name": "RunBranchExit",
+      "kind": "procedure",
+      "signatureFingerprint": "b84da27a98a1e6ae28a8a326250eab8dcd5b3363e3d98ff9c54673cad6818ce5",
+      "normalizedSignatureHash": "b84da27a98a1e6ae28a8a326250eab8dcd5b3363e3d98ff9c54673cad6818ce5",
+      "canonicalSignatureText": "runbranchexit(boolean):"
+    }
+  ]
+}

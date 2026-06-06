@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "unknown:Codeunit:50100",
+      "name": "Sales-Post",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b4d95d55dac3586e795c04b2c38e4b727e4ee97596a67907752a9321e7723356"
+    },
+    {
+      "stableObjectId": "unknown:Codeunit:50200",
+      "name": "SalesPosting",
+      "kind": "Codeunit",
+      "signatureFingerprint": "bdc0c51cd641daab95b5afdf087e06af235f92303262693a035656454c88b55c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "unknown:Codeunit:50100#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "name": "Post",
+      "kind": "procedure",
+      "signatureFingerprint": "69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "normalizedSignatureHash": "69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "canonicalSignatureText": "post():"
+    },
+    {
+      "stableRoutineId": "unknown:Codeunit:50200#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "name": "Post",
+      "kind": "procedure",
+      "signatureFingerprint": "69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "normalizedSignatureHash": "69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+      "canonicalSignatureText": "post():"
+    }
+  ]
+}

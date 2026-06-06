@@ -1,0 +1,52 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420",
+      "name": "D41 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "387cb8acfd734e469079068300c1e9e3af6a72dc6da1fc7803061540f6ff8f6c"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#0b835052dda12f5eca44832c8a99946d3dc11927c7545aae49abb04c03173a31",
+      "name": "FilterThenCallNoPostUse",
+      "kind": "procedure",
+      "signatureFingerprint": "0b835052dda12f5eca44832c8a99946d3dc11927c7545aae49abb04c03173a31",
+      "normalizedSignatureHash": "0b835052dda12f5eca44832c8a99946d3dc11927c7545aae49abb04c03173a31",
+      "canonicalSignatureText": "filterthencallnopostuse():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#1726521fed1c9b5151bc6042c44fb74c605ac856ed32f3e151e8dcf241294153",
+      "name": "ResettingHelper",
+      "kind": "procedure",
+      "signatureFingerprint": "1726521fed1c9b5151bc6042c44fb74c605ac856ed32f3e151e8dcf241294153",
+      "normalizedSignatureHash": "1726521fed1c9b5151bc6042c44fb74c605ac856ed32f3e151e8dcf241294153",
+      "canonicalSignatureText": "resettinghelper(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+      "name": "FilterThenCallResetThenFind",
+      "kind": "procedure",
+      "signatureFingerprint": "2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+      "normalizedSignatureHash": "2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+      "canonicalSignatureText": "filterthencallresetthenfind():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#416a69ac42ec428dd535e2b030ab6d508d755f76938f13e31eb4d2133d38cba6",
+      "name": "CallResetThenFindNoPriorFilter",
+      "kind": "procedure",
+      "signatureFingerprint": "416a69ac42ec428dd535e2b030ab6d508d755f76938f13e31eb4d2133d38cba6",
+      "normalizedSignatureHash": "416a69ac42ec428dd535e2b030ab6d508d755f76938f13e31eb4d2133d38cba6",
+      "canonicalSignatureText": "callresetthenfindnopriorfilter():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#69bcfd1945a6c4fa538e6c14e852a055ad9c71ce868491fcbd54e1c7f3c9cfa3",
+      "name": "FilterThenCallResetThenReFilterThenFind",
+      "kind": "procedure",
+      "signatureFingerprint": "69bcfd1945a6c4fa538e6c14e852a055ad9c71ce868491fcbd54e1c7f3c9cfa3",
+      "normalizedSignatureHash": "69bcfd1945a6c4fa538e6c14e852a055ad9c71ce868491fcbd54e1c7f3c9cfa3",
+      "canonicalSignatureText": "filterthencallresetthenrefilterthenfind():"
+    }
+  ]
+}

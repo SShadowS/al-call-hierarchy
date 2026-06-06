@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000",
+      "name": "D47 Advisory Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "06d97445bac8d36838493d0de54eddd4259fd21c250ca8ca5f70c9300615bf12"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+      "name": "PostThenCommit",
+      "kind": "procedure",
+      "signatureFingerprint": "38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+      "normalizedSignatureHash": "38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+      "canonicalSignatureText": "postthencommit():"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111",
+      "name": "D11NoGet",
+      "kind": "Codeunit",
+      "signatureFingerprint": "c00c1223418ef4f2f385161b5fe7e14c9edd7b714cabae62f44ededdf2ddeeed"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "e761517471ef52326a0fecc833abab78c0a16d8498761e91728cfa14f6c55ddf"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+      "name": "BadNoGet",
+      "kind": "procedure",
+      "signatureFingerprint": "881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+      "normalizedSignatureHash": "881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+      "canonicalSignatureText": "badnoget():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945",
+      "name": "FromParam",
+      "kind": "procedure",
+      "signatureFingerprint": "c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945",
+      "normalizedSignatureHash": "c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945",
+      "canonicalSignatureText": "fromparam(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6",
+      "name": "SafeGet",
+      "kind": "procedure",
+      "signatureFingerprint": "dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6",
+      "normalizedSignatureHash": "dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6",
+      "canonicalSignatureText": "safeget():"
+    }
+  ]
+}

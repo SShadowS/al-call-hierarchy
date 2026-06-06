@@ -1,0 +1,9 @@
+{
+	"id": "10000007-0000-0000-0000-000000000000",
+	"name": "WSPolicyInstallWrite",
+	"publisher": "Test",
+	"version": "1.0.0.0",
+	"platform": "26.0.0.0",
+	"runtime": "13.0",
+	"dependencies": []
+}

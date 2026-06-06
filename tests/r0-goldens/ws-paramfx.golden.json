@@ -1,0 +1,42 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101",
+      "name": "Line Enricher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "541b75582141adc0f84e905b24ef2cb2735ca1fd486c7be344f4c497bb3dc22c"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-0000000000b2:Table:60100",
+      "name": "Sales Line",
+      "kind": "Table",
+      "signatureFingerprint": "69fc80e9b1a7d517a8b225582fd060eb3802a71942132ab62bae79dd416651cc"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#3ebe9ba4f4136ce3468dcd2d2e56a6ece24f875e327feba3e6b7d04982d3c4df",
+      "name": "AdjustLine",
+      "kind": "procedure",
+      "signatureFingerprint": "3ebe9ba4f4136ce3468dcd2d2e56a6ece24f875e327feba3e6b7d04982d3c4df",
+      "normalizedSignatureHash": "3ebe9ba4f4136ce3468dcd2d2e56a6ece24f875e327feba3e6b7d04982d3c4df",
+      "canonicalSignatureText": "adjustline(var record \"sales line\"):"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#4f889b3e38f3c9db922a145b91eeacfc5b95254e1ddc8f6eb65a29e7647814bf",
+      "name": "EnrichLine",
+      "kind": "procedure",
+      "signatureFingerprint": "4f889b3e38f3c9db922a145b91eeacfc5b95254e1ddc8f6eb65a29e7647814bf",
+      "normalizedSignatureHash": "4f889b3e38f3c9db922a145b91eeacfc5b95254e1ddc8f6eb65a29e7647814bf",
+      "canonicalSignatureText": "enrichline(var record \"sales line\"):"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#f0bc39e194dc7d20f8b89f70003c8340feffca10f075f4614f162e48e5c93813",
+      "name": "NoRecordParam",
+      "kind": "procedure",
+      "signatureFingerprint": "f0bc39e194dc7d20f8b89f70003c8340feffca10f075f4614f162e48e5c93813",
+      "normalizedSignatureHash": "f0bc39e194dc7d20f8b89f70003c8340feffca10f075f4614f162e48e5c93813",
+      "canonicalSignatureText": "norecordparam(integer):"
+    }
+  ]
+}

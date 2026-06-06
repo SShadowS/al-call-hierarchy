@@ -1,0 +1,34 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101",
+      "name": "Cycle CU",
+      "kind": "Codeunit",
+      "signatureFingerprint": "1089192cfe8d8b2b59e158444c8d405b22b25a5d6b6ada6c0c8b6ddcbdc9a576"
+    },
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "0b87190445501a728ecce5a5365785a0a78c41fc2d45ad03c7fa9b5d664c14bc"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "name": "Ping",
+      "kind": "procedure",
+      "signatureFingerprint": "3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "normalizedSignatureHash": "3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "canonicalSignatureText": "ping():"
+    },
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "name": "Pong",
+      "kind": "procedure",
+      "signatureFingerprint": "f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "normalizedSignatureHash": "f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "canonicalSignatureText": "pong():"
+    }
+  ]
+}

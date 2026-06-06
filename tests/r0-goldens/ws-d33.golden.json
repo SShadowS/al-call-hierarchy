@@ -1,0 +1,66 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900",
+      "name": "D33 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "9ed0484f09b390ec5779d0924be36dfa557ee15be8bd43a346f121b7801ba637"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d330:Table:50900",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "73c42933d2a099b73a24d6d0fbd091e785e5eee2f2c45eecd552b3591fe8cb1b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+      "name": "NukeAllCustomers",
+      "kind": "procedure",
+      "signatureFingerprint": "40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+      "normalizedSignatureHash": "40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+      "canonicalSignatureText": "nukeallcustomers():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#79e2b83d4ddf9cdb57992152518ee6f08c550df4321e10153e300f9f200eb887",
+      "name": "NarrowedDelete",
+      "kind": "procedure",
+      "signatureFingerprint": "79e2b83d4ddf9cdb57992152518ee6f08c550df4321e10153e300f9f200eb887",
+      "normalizedSignatureHash": "79e2b83d4ddf9cdb57992152518ee6f08c550df4321e10153e300f9f200eb887",
+      "canonicalSignatureText": "narroweddelete():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#b8b78e01a3c4aaa77c68f72ad1e2db6dc38611b7189de4c1ffeda9b18a910797",
+      "name": "TrulyTemporary",
+      "kind": "procedure",
+      "signatureFingerprint": "b8b78e01a3c4aaa77c68f72ad1e2db6dc38611b7189de4c1ffeda9b18a910797",
+      "normalizedSignatureHash": "b8b78e01a3c4aaa77c68f72ad1e2db6dc38611b7189de4c1ffeda9b18a910797",
+      "canonicalSignatureText": "trulytemporary():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+      "name": "ModifyAllCustomers",
+      "kind": "procedure",
+      "signatureFingerprint": "d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+      "normalizedSignatureHash": "d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+      "canonicalSignatureText": "modifyallcustomers():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7",
+      "name": "WithVarParam",
+      "kind": "procedure",
+      "signatureFingerprint": "f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7",
+      "normalizedSignatureHash": "f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7",
+      "canonicalSignatureText": "withvarparam(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+      "name": "FilterThenResetThenDelete",
+      "kind": "procedure",
+      "signatureFingerprint": "f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+      "normalizedSignatureHash": "f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+      "canonicalSignatureText": "filterthenresetthendelete():"
+    }
+  ]
+}

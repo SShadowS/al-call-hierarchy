@@ -1,0 +1,44 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "77777777-7777-7777-7777-777777777777:Codeunit:52000",
+      "name": "Hub CU",
+      "kind": "Codeunit",
+      "signatureFingerprint": "8eeb995f5fba9598550eab5ddf3e82c0de035c5e0c806be43b0889682037a2e1"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#5cb610a4a24b3fef5b5cb1aed99d3b7c936948c476f23b72ade176c5d8ad85b6",
+      "name": "StepA",
+      "kind": "procedure",
+      "signatureFingerprint": "5cb610a4a24b3fef5b5cb1aed99d3b7c936948c476f23b72ade176c5d8ad85b6",
+      "normalizedSignatureHash": "5cb610a4a24b3fef5b5cb1aed99d3b7c936948c476f23b72ade176c5d8ad85b6",
+      "canonicalSignatureText": "stepa():"
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#6132c6824114439cac503cdaae9f59d0c613667a94a2e11719b032d167299438",
+      "name": "StepB",
+      "kind": "procedure",
+      "signatureFingerprint": "6132c6824114439cac503cdaae9f59d0c613667a94a2e11719b032d167299438",
+      "normalizedSignatureHash": "6132c6824114439cac503cdaae9f59d0c613667a94a2e11719b032d167299438",
+      "canonicalSignatureText": "stepb():"
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#643606ee9719728aa596be54724e439aa372040daeec39afb07a7cca719bc8f9",
+      "name": "ManyUnknowns",
+      "kind": "procedure",
+      "signatureFingerprint": "643606ee9719728aa596be54724e439aa372040daeec39afb07a7cca719bc8f9",
+      "normalizedSignatureHash": "643606ee9719728aa596be54724e439aa372040daeec39afb07a7cca719bc8f9",
+      "canonicalSignatureText": "manyunknowns():"
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#a9ee3b3b926421bac18302aeef914f206e27fd00e9f8f029c1830308b1e6bc1b",
+      "name": "FanOut",
+      "kind": "procedure",
+      "signatureFingerprint": "a9ee3b3b926421bac18302aeef914f206e27fd00e9f8f029c1830308b1e6bc1b",
+      "normalizedSignatureHash": "a9ee3b3b926421bac18302aeef914f206e27fd00e9f8f029c1830308b1e6bc1b",
+      "canonicalSignatureText": "fanout():"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+	"id": "aaaaaaaa-2222-3333-4444-555555555555",
+	"name": "ProbeBU",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50100, "to": 50109 }]
+}

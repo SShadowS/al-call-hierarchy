@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101",
+      "name": "D51 Sender",
+      "kind": "Codeunit",
+      "signatureFingerprint": "609092d7618bedb270680f542275e5b5f17b6013148b2dd41797372ac93a7ceb"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "name": "PostThenError",
+      "kind": "procedure",
+      "signatureFingerprint": "f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "normalizedSignatureHash": "f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "canonicalSignatureText": "postthenerror():"
+    }
+  ]
+}

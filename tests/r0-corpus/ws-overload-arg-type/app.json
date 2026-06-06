@@ -1,0 +1,8 @@
+{
+	"id": "cccccccc-dddd-eeee-ffff-111111111111",
+	"name": "ProbeOvl",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50200, "to": 50249 }]
+}

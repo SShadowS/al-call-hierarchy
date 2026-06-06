@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-000000000002:Codeunit:50301",
+      "name": "Upgrade Handler",
+      "kind": "Codeunit",
+      "signatureFingerprint": "32789769059751e3ed8523d4826192563f358a5c821907f0658d5ccba09e7d91"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "name": "OnUpgradePerCompany",
+      "kind": "trigger",
+      "signatureFingerprint": "4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "normalizedSignatureHash": "4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "canonicalSignatureText": "onupgradepercompany():"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "name": "DoUpgradeWork",
+      "kind": "procedure",
+      "signatureFingerprint": "8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "normalizedSignatureHash": "8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "canonicalSignatureText": "doupgradework():"
+    }
+  ]
+}

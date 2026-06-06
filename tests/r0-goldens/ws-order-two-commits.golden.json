@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-000000tc0001:Codeunit:50101",
+      "name": "TC TwoCommits",
+      "kind": "Codeunit",
+      "signatureFingerprint": "138cf6e057aaf785dbe24ed558de74d3f601262e89bdfdaadc9c06d3734cd88d"
+    },
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-000000tc0001:Table:50100",
+      "name": "TC Rec",
+      "kind": "Table",
+      "signatureFingerprint": "322ad41ea998da0d4f2fc3886c5a685158f4b9251825cbe39ab5164dfcee60ae"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-000000tc0001:Codeunit:50101#b98534c8e119670e003c70125148eef540e4601c29918592575459a053af66a5",
+      "name": "PostTwice",
+      "kind": "procedure",
+      "signatureFingerprint": "b98534c8e119670e003c70125148eef540e4601c29918592575459a053af66a5",
+      "normalizedSignatureHash": "b98534c8e119670e003c70125148eef540e4601c29918592575459a053af66a5",
+      "canonicalSignatureText": "posttwice():"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50300",
+      "name": "Import Mgt",
+      "kind": "Codeunit",
+      "signatureFingerprint": "7c89297deb29c0b25f47ce98d5f87b5f981dad07cba114071e5bffeb1241f6fe"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50301",
+      "name": "File Archive",
+      "kind": "Codeunit",
+      "signatureFingerprint": "b2f37803299aab1595c90a18e51742aeff17619a5a81ee25d665a9f6960f9bbe"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50302",
+      "name": "Import Validator",
+      "kind": "Codeunit",
+      "signatureFingerprint": "ac08a1637a17318c857c3a8bb0d03fd54b4599ad258bee9b6de9c7447ed391c8"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50303",
+      "name": "Import Dispatcher",
+      "kind": "Codeunit",
+      "signatureFingerprint": "c0786fa0208baea2b18bc4166be99fc4b8efb7627a87214915928ef7b7200f63"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Interface:0",
+      "name": "IImportProcessor",
+      "kind": "Interface",
+      "signatureFingerprint": "0eb7973e058c3a5892f98f9a79bae68c12b869fdd21b491eb80c1b241c43ee77"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50300#ae08ddf0a19d7883b0ae954d7882cf70b1452587f074917ad87b6dddb58a19cc",
+      "name": "ImportStream",
+      "kind": "procedure",
+      "signatureFingerprint": "ae08ddf0a19d7883b0ae954d7882cf70b1452587f074917ad87b6dddb58a19cc",
+      "normalizedSignatureHash": "ae08ddf0a19d7883b0ae954d7882cf70b1452587f074917ad87b6dddb58a19cc",
+      "canonicalSignatureText": "importstream():"
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50301#713d2cf2f656457832ef4c4aa857778f3cacca25be8ebfc15b1830fb7413915f",
+      "name": "InsertFile",
+      "kind": "procedure",
+      "signatureFingerprint": "713d2cf2f656457832ef4c4aa857778f3cacca25be8ebfc15b1830fb7413915f",
+      "normalizedSignatureHash": "713d2cf2f656457832ef4c4aa857778f3cacca25be8ebfc15b1830fb7413915f",
+      "canonicalSignatureText": "insertfile():"
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50301#ce09ce00dcbd4d567e2a8f6261a80829cf123ae434882d04c74dd10aee6f48fd",
+      "name": "ValidateAndError",
+      "kind": "procedure",
+      "signatureFingerprint": "ce09ce00dcbd4d567e2a8f6261a80829cf123ae434882d04c74dd10aee6f48fd",
+      "normalizedSignatureHash": "ce09ce00dcbd4d567e2a8f6261a80829cf123ae434882d04c74dd10aee6f48fd",
+      "canonicalSignatureText": "validateanderror(boolean):"
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50302#fcc6afdd5f784713b573d4b055bc74da221d9d3f120046d2c43ef2e5c2f7bfe3",
+      "name": "ValidateImport",
+      "kind": "procedure",
+      "signatureFingerprint": "fcc6afdd5f784713b573d4b055bc74da221d9d3f120046d2c43ef2e5c2f7bfe3",
+      "normalizedSignatureHash": "fcc6afdd5f784713b573d4b055bc74da221d9d3f120046d2c43ef2e5c2f7bfe3",
+      "canonicalSignatureText": "validateimport(boolean):"
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50303#73ff2dc495e3730b431ce1443d56bfcbd9664d87ba2cbed30c9587a66f17ad72",
+      "name": "DispatchImport",
+      "kind": "procedure",
+      "signatureFingerprint": "73ff2dc495e3730b431ce1443d56bfcbd9664d87ba2cbed30c9587a66f17ad72",
+      "normalizedSignatureHash": "73ff2dc495e3730b431ce1443d56bfcbd9664d87ba2cbed30c9587a66f17ad72",
+      "canonicalSignatureText": "dispatchimport():"
+    }
+  ]
+}

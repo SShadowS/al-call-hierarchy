@@ -1,0 +1,26 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100",
+      "name": "D3TempCheck",
+      "kind": "Codeunit",
+      "signatureFingerprint": "dc4f122cbb3228e105b39113947cb2efbfcf06d27c660fcdddc896af2719b017"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000033d3:Table:50200",
+      "name": "Customer",
+      "kind": "Table",
+      "signatureFingerprint": "b96e79683a06494f365df912cd2f46e263a5e019b043c1a861d76ad1d5fb5349"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+      "name": "Foo",
+      "kind": "procedure",
+      "signatureFingerprint": "30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+      "normalizedSignatureHash": "30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+      "canonicalSignatureText": "foo():"
+    }
+  ]
+}

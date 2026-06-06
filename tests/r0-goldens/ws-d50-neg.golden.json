@@ -1,0 +1,60 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50210",
+      "name": "D50 Neg PostingManager",
+      "kind": "Codeunit",
+      "signatureFingerprint": "5f4e739d22f4eeb79526f0503b154b60e5711a219647c830f0b620187086667d"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50211",
+      "name": "D50N Worker",
+      "kind": "Codeunit",
+      "signatureFingerprint": "fb8efdbc1e330e80d3593ae9385299f204dd262ca7147fa139ac5e82d8a5a61a"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50210",
+      "name": "D50N Header",
+      "kind": "Table",
+      "signatureFingerprint": "27e4b43040d636e22a81482afff9310a03be952b1801d3477f8e7a008739afea"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50211",
+      "name": "D50N Line",
+      "kind": "Table",
+      "signatureFingerprint": "681e1902adc8b62e93c64bed9341c46d16e635b328fc23cae03ad25d860b6be1"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50212",
+      "name": "D50N Entry",
+      "kind": "Table",
+      "signatureFingerprint": "b91562fef06914d4537e0e2c3bc52efcb9cdb34b48dfde770aed67062139e09b"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50210#9f8a0fc26e8224d3e621cefff0df179ba73b118ea75268f02fa066bf4ba2653e",
+      "name": "RunWorkerUnchecked",
+      "kind": "procedure",
+      "signatureFingerprint": "9f8a0fc26e8224d3e621cefff0df179ba73b118ea75268f02fa066bf4ba2653e",
+      "normalizedSignatureHash": "9f8a0fc26e8224d3e621cefff0df179ba73b118ea75268f02fa066bf4ba2653e",
+      "canonicalSignatureText": "runworkerunchecked():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50210#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "name": "PostDocument",
+      "kind": "procedure",
+      "signatureFingerprint": "a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "normalizedSignatureHash": "a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "canonicalSignatureText": "postdocument():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50211#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "normalizedSignatureHash": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "canonicalSignatureText": "onrun():"
+    }
+  ]
+}

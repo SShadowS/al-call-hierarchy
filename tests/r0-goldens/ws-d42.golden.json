@@ -1,0 +1,60 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430",
+      "name": "D42 Demo",
+      "kind": "Codeunit",
+      "signatureFingerprint": "977abdb73fe242da00674c048d94d2165ccce92a9673db5a56a329d4bf1a1a1a"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5",
+      "name": "FullThenForward",
+      "kind": "procedure",
+      "signatureFingerprint": "22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5",
+      "normalizedSignatureHash": "22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5",
+      "canonicalSignatureText": "fullthenforward():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847",
+      "name": "NarrowedThenForwardToSelfLoader",
+      "kind": "procedure",
+      "signatureFingerprint": "5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847",
+      "normalizedSignatureHash": "5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847",
+      "canonicalSignatureText": "narrowedthenforwardtoselfloader():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+      "name": "ReadsAddress",
+      "kind": "procedure",
+      "signatureFingerprint": "63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+      "normalizedSignatureHash": "63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+      "canonicalSignatureText": "readsaddress(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4",
+      "name": "SelfLoadsAddress",
+      "kind": "procedure",
+      "signatureFingerprint": "78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4",
+      "normalizedSignatureHash": "78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4",
+      "canonicalSignatureText": "selfloadsaddress(var record customer):"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639",
+      "name": "NarrowCoversCalleeRequirement",
+      "kind": "procedure",
+      "signatureFingerprint": "a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639",
+      "normalizedSignatureHash": "a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639",
+      "canonicalSignatureText": "narrowcoverscalleerequirement():"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+      "name": "NarrowedThenForwardToReader",
+      "kind": "procedure",
+      "signatureFingerprint": "ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+      "normalizedSignatureHash": "ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+      "canonicalSignatureText": "narrowedthenforwardtoreader():"
+    }
+  ]
+}
