@@ -19,6 +19,7 @@ and `docs/`.
 | **R1d** | L2 direct capability facts (the 13 `extractCapabilities` family extractors run on PRE-RESOLVE routines: `op`/`resourceKind`/`confidence`/`provenance`=direct/`via`=self/`resourceArgSource`/`extra`/witness ids; STRIPPED of L3 `resourceId` + nested `table-field.tableId`; `op:"publish"` excluded — L4-injected) + extraction `status`/`reasons` + unreachable-filtered index diagnostics | **SHIPPED** — 152/152 fixtures WITH capability facts compared, 0 divergences, native L2-direct capability oracle green |
 | **R1 (= R1a+R1b+R1c+R1d)** | Full L2 per-routine feature parity at the `indexWorkspace` (pre-resolve) boundary | **COMPLETE** — all four sub-gates SHIPPED; 152/152 corpus differential green across the entire L2 surface + a native L2-direct oracle per sub-gate |
 | **R2a** | L3 record-type resolution (source-only): resolved `recordVariable.tableId` / `recordOperation.tableId` (declared vars → ops → implicit `Rec`/`xRec` in Table/Page/Extension triggers) + merged TableExtension fields, captured POST-RESOLVE / PRE-SUMMARY in StableTableId form | **SHIPPED** — 153/153 fixtures with resolved tableIds + merged extension fields compared, 0 divergences, the anti-degenerate coverage matrix healthy (rv=228, op=281, implicitRec=76, extFields=9), native L3-direct record-type oracle green |
+| **R2b** | L3 call graph (source-only): every call-site resolved to `CallEdge[]` (`from`/`to?`/`callsiteId`/`operationId`/`dispatchKind`/`resolution`/`candidates?`/`externalTypeRef?`/`receiverType?` + GROUP-level `dispatchMeta`) — overload disambiguation, MULTI-edge interface dispatch, object-run, opaque/external-target — plus the `upgradeBindings` argument-binding upgrade + implicit-trigger edges, captured POST-RESOLVE / PRE-SUMMARY in stable-id form | **SHIPPED** — 155/155 fixtures with grouped multiset-compared CallEdges + group dispatchMeta + upgraded argumentBindings, 0 divergences, the expanded anti-degenerate coverage matrix healthy + manifest-oracle-equal (direct=123, member=26, objRun=4, ifaceMultiEdge=2, ifaceEdges=6, dynamic=3, builtin=18, implicit=6, unresolved=33, ambiguous=4, memberNotFound=1, opaque=5, external=4, upBind=54, ambBind=1), native L3-direct call-graph oracle green |
 
 ---
 
@@ -611,33 +612,144 @@ engines are wrong (flagged loudly in the oracle).
 
 ---
 
-## R2b (L3 call graph) — STUB
+## R2b parity status (SHIPPED — L3 call graph, source-only) — R2's SECOND sub-gate
 
-R2b is the next sub-gate after R2a: the **call graph** — `resolveCalls` binding
-each L2 call-site to its resolved target routine(s) across the workspace. It
-**reuses the R2a workspace symbol table** verbatim (the symbol table keys routines
-by `${objectId}::${name.toLowerCase()}` and pre-sorts overload lists by id — locked
-in R2a precisely so R2b's overload resolution rests on a stable key + sort), and
-DEPENDS on R2a's resolved `tableId` (overload disambiguation /
-`inferRecordFieldType` needs the receiver's resolved table). Scope:
+R2b is the SECOND sub-gate of R2: the **call graph** — `resolveCalls` binding each
+L2 call-site to its resolved target routine(s) across the workspace. It **reuses the
+R2a workspace symbol table** verbatim (routines keyed by
+`${objectId}::${name.toLowerCase()}`, overload lists pre-sorted by id — locked in
+R2a precisely so R2b's overload resolution rests on a stable key + sort) and DEPENDS
+on R2a's resolved `tableId` (arg-type overload disambiguation reads the receiver's
+resolved record-var / field table). The Rust port lives in
+`src/engine/l3/call_resolver.rs` (`resolve_calls` / `resolve_call_site` /
+`resolve_by_name_and_arity` / `resolve_interface_dispatch` / `upgrade_bindings`) +
+the scalar primitives (`al_type` / `type_ref` / `type_rel` / `static_arg`) ported and
+vector-tested FIRST, with the golden-shaped projection in
+`src/engine/l3/call_graph_projection.rs`.
 
-- **Overload disambiguation.** Pick the target overload from the call-site's
-  argument types — keyed off R2a's resolved record-var / field types (strict
-  prereq).
-- **Dispatch kinds.** Member / interface / object-run (`Codeunit.Run`) dispatch;
-  per-callsite `dispatchKind` + `resolution`. **Interface dispatch is MULTI-edge**
-  — one call-site fans out to EVERY implementer (don't collapse by `callsiteId`).
-- **The resolved binding fields R1/R2a keep forbidden.** `upgradeBindings`
-  (`argumentBindings` upgraded by the resolver), `callsiteResolutions`,
-  `calleeParameterIsVar` / `bindingResolution` / `sourceTableId`.
-- **Port the scalar type machinery as exact tested units FIRST.** The
-  `type-relation` / `normalizeAlType` regexes (scalar type normalization +
-  assignability) must be ported as standalone, vector-tested units BEFORE the call
-  graph consumes them — the same discipline that carried R1's encoders.
-- Pin opaque-vs-external dispatch with the declared-dep-no-`.app` fixture.
+**Capture point = POST-RESOLVE / PRE-SUMMARY (READ the resolved model).** al-sem's
+dump runs `indexWorkspace → resolveModel` ONCE and READS `model.callGraph` + the
+in-place-upgraded `argumentBindings` — it NEVER re-runs `resolveCalls` /
+`upgradeBindings` (`upgradeBindings` is non-idempotent: a second pass detects a
+"double-upgrade" and emits a diagnostic + skips). The Rust emitter mirrors this:
+`assemble_and_resolve_workspace → project_call_graph` builds the symbol table and runs
+`resolve_calls` exactly once over a freshly-constructed per-callsite binding state, so
+the read-resolved capture is reproduced (no re-entrant upgrade).
 
-R2b extends, never replaces, the R1/R2a goldens — the validated L2 surface + the
-resolved record-type identity are the inputs the call-graph resolver binds.
+**Comparison surface (R2b).** Per callsite, the `CallEdge[]` GROUP — a callsite has
+0..N edges; interface dispatch is MULTI-edge — `from` / `to?` / `operationId` /
+`dispatchKind` / `resolution` / `candidates?` / `externalTypeRef?` / `receiverType?`,
+all ids in STABLE form. `dispatchMeta` (`interfaceName` / `totalImpls` /
+`unresolvedImpls` / `enumImplementers` — **NO `openWorld`**, which does not exist in
+shipped source) is projected at the **GROUP level**: the resolver attaches it to one
+edge only (an internal-RoutineId sort artifact), so group-level projection makes the
+multi-edge comparison order-robust. Interface RESOLVED impl edges carry
+`resolution: "maybe"` (NOT "resolved") — the coverage matrix counts "interface
+multi-edge" independently of `resolution == "resolved"`. Plus the UPGRADED
+`argumentBindings` per callsite (`parameterIndex` / `calleeParameterIsVar` /
+`bindingResolution`, all bindings whose callsite has ≥1 binding — `non-record-arg`
+included). Implicit-trigger edges (Rec op → table trigger) appear in their own groups.
+
+**The differ groups `callsiteId → Vec<CallEdge>` and compares each group as a SORTED
+MULTISET** (`tests/differential.rs::diff_l3cg`) — never `Map<callsiteId, CallEdge>`,
+so a multi-edge interface callsite is compared edge-for-edge. The within-group edge
+sort + the 5 other sort points (candidates / unresolvedImpls / enumImplementers /
+groups / bindings) use ONE byte-order comparator on the projected stable strings,
+identical to al-sem's `cmpStable` + `edgeSortKey`. The ws-d2 smoke is **byte-identical**
+to the golden. **DROPPED (plan Rev 2 #5):** `callsiteResolutions` — not certified
+L3-clean. **FORBIDDEN (hard-fail):** `typedEdges` / `summary` / `coverage` /
+`eventGraph` / `callsiteResolutions` / `openWorld` / `capabilityFactsDirect` /
+`rootClassifications` — scanned on BOTH sides; structurally absent from the serde
+types regardless.
+
+The full source-only corpus differential
+(`differential_l3_call_graph_match_goldens`, committed default `full`) covers all
+**155** `tests/r2b-goldens/*.l3cg.golden.json` at **0 divergences**,
+`KNOWN_DIVERGENCES.json` empty — and the R2b Task 3 resolver needed NO change to reach
+full-corpus green (the resolution was already correct against the vectors).
+
+**Anti-degenerate COVERAGE MATRIX (expanded `[REV2]`).** The differential counts +
+ENFORCES nonzero per axis (full set only): resolvedDirect=123, resolvedMember=26,
+objectRunResolved=4, interfaceMultiEdge=2, interfaceEdges=6, dynamicUnknown=3,
+builtin=18, implicitTrigger=6, unresolvedUnknown=33, ambiguous=4, memberNotFound=1,
+opaque=5, externalTarget=4, upgradedResolvedBindings=54, ambiguousBindings=1. Rust
+coverage is asserted EQUAL to the golden coverage per run, and a dedicated oracle
+(`l3cg_coverage_matrix_matches_manifest_oracle`) asserts the full-corpus Rust totals
+EQUAL the al-sem manifest's published `coverageMatrix`.
+
+**The `primaryDependencies`-empty dump-path nuance (member-opaque).** In the bare
+`assemble→resolve→project` dump path `has_unfetched_declared_dependency` is ALWAYS
+false (no `.app` deps fetched; `primary_dependencies` empty), so the member-call
+"opaque" branch is structurally UNREACHABLE — every missing member object resolves to
+`external-target` (this is why `ws-r2b-opaque`'s golden, generated by the same dump
+path, shows `external-target`, exactly as its fixture comment warns). The `opaque`
+axis is therefore populated SOLELY by OBJECT-RUN misses (a missing object-run target
+is ALWAYS opaque), which the corpus DOES exercise (5 edges) — so `opaque` is still
+enforced nonzero, and `external-target` is enforced as the plan requires. Binding a
+member miss to `opaque` requires `.app` ingestion → **R2.5**.
+
+**R2b's native soundness oracle is L3-DIRECT** (`tests/l3cg_oracles.rs`) — 8
+ground-truth-free STRUCTURAL invariants over the resolved/projected graph, NOT a
+golden diff: interface dispatch emits one edge PER resolved impl and the projection
+NEVER collapses by callsiteId (a callsite carries >1 edge, all "maybe", group
+dispatchMeta present); a resolved edge's `to` resolves to a real workspace routine;
+an ambiguous overload → "ambiguous" with ≥2 byte-order-sorted candidates;
+wrong-arity member → "member-not-found"; object-run resolves to `OnRun`; the
+external-target (member miss, no dep) vs object-run-opaque distinction holds;
+`upgrade_bindings` runs EXACTLY once (no double-upgrade diagnostic, while the binding
+IS upgraded — so "no diagnostic" is non-vacuous); the within-group edge sort is
+deterministic / byte-order stable. Because the differential is BYTE-PARITY, a failure
+here the differential misses would mean BOTH engines are wrong.
+
+### Covered vs deferred (R2b — honest)
+
+- **Covered (source-only intra-workspace call resolution):** bare/direct calls,
+  member dispatch (receiver-typed), the 3-tier overload resolution (name → arity →
+  arg-type disambiguation off R2a's resolved tables), MULTI-edge interface dispatch +
+  group dispatchMeta, object-run (`Codeunit.Run` / page-run / report-run → `OnRun` or
+  first routine), the instance `<codeunitVar>.Run([Rec])` special-case, dynamic
+  object-run, builtins, implicit-trigger edges, unresolved/member-not-found/ambiguous,
+  `external-target` (member miss, fetched-complete), object-run `opaque`, and the
+  one-time `upgradeBindings` argument-binding upgrade.
+- **Deferred to R2.5 / later gates:**
+  - **CROSS-APP opaque / cross-app call targets** — a member/object-run target in a
+    `.app` symbol package (so `has_unfetched_declared_dependency` is TRUE and member
+    misses become `opaque`). The R2b corpus + oracle are source-only (no `.app`
+    ingestion) → **R2.5** (`.app` projection).
+  - **EVENT graph** (publisher↔subscriber edges, `parseSubscriberAttribute`,
+    `parseIsolated`, open-world synthetic event ids) → **R2c**.
+  - **`callsiteResolutions`** — dropped from R2b (not certified L3-clean; may pull
+    L4/typedEdges/compose state). Audit + add in a later phase if proven clean.
+  - **REACHABILITY-crosscheck + inter-never-overclaim** soundness oracles — these need
+    the COMBINED graph (call + event + implicit) and a reachability walk that R2b does
+    not compute (R2b stops at the resolved call edges). They land where reachability is
+    computed (the L4 / combined-graph gate), NOT here.
+  - The L4 `typedEdges` / `RoutineSummary` / coverage(R2d) facts.
+
+---
+
+## R2c (L3 event graph) — STUB
+
+R2c is the next sub-gate after R2b: the **event graph** — `buildEventGraph` binding
+each `[EventSubscriber]` to its publisher(s), reusing the R2a workspace symbol table
+verbatim. Scope:
+
+- **`parseSubscriberAttribute`** — decode the string-encoded `[EventSubscriber(...)]`
+  attribute args (`"ObjectType::Codeunit"`, `Codeunit::"Name"`, `"'EventName'"` —
+  qualified_enum_value / database_reference / string_literal). A malformed/unparseable
+  arg yields NO subscriber edge (the edge silently never forms — mirror exactly; see
+  the al-sem app-builder gotcha).
+- **`parseIsolated`** — the positional attribute logic (which positional arg carries
+  the isolated flag); port exactly.
+- **Open-world synthetic event ids** — when the publisher object/event is absent from
+  source, synthesize a stable event id so the subscriber edge still forms (open-world:
+  an unknown co-subscriber may exist). Note (MEMORY): a publisher-write ≺ subscriber-IO
+  ordering can never be refutation-grade in open-world — binding-kind proves
+  target-runs, not no-co-subscriber-commits.
+
+R2c extends, never replaces, the R1/R2a/R2b goldens — the validated L2 surface + the
+resolved record-type identity + the resolved call graph are the inputs the event
+resolver binds.
 
 ---
 
@@ -648,12 +760,13 @@ resolved record-type identity are the inputs the call-graph resolver binds.
 | L0 (identity) | R0 | **DONE** — 157/157 source-only corpus, allowlist empty |
 | L2 (index) | R1 (R1a+R1b+R1c+R1d) | **DONE** — 152/152, full per-routine feature surface |
 | L3 (resolve) | **R2a** (record-types, source-only) | **DONE** — 153/153 + coverage matrix + native oracle |
-| L3 (resolve) | R2b (call graph), R2c (event graph), R2d (coverage/gaps) | remaining |
+| L3 (resolve) | **R2b** (call graph, source-only) | **DONE** — 155/155 + expanded coverage matrix + manifest oracle + native L3-direct oracle |
+| L3 (resolve) | R2c (event graph), R2d (coverage/gaps) | remaining |
 | L3 (resolve) | R2.5 (`.app` ingestion + cross-app resolution) | remaining |
 | L4 (summaries) | R3 | not started |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
-With R2a shipped, **R0 + R1 + R2a are done**. R2b / R2c / R2d + R2.5 (`.app` /
+With R2b shipped, **R0 + R1 + R2a + R2b are done**. R2c / R2d + R2.5 (`.app` /
 cross-app) remain for the L3 resolve layer; then R3 (L4 summaries), R4 (L5
 detectors), and the product surface.

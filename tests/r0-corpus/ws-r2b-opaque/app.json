@@ -1,0 +1,15 @@
+{
+	"id": "2b000000-0000-0000-0000-00000000aaaa",
+	"name": "WsR2bOpaque",
+	"publisher": "al-sem-tests",
+	"version": "1.0.0.0",
+	"idRanges": [{ "from": 50300, "to": 50349 }],
+	"dependencies": [
+		{
+			"id": "2b000000-0000-0000-0000-00000000dddd",
+			"name": "UnfetchedDep",
+			"publisher": "al-sem-tests",
+			"version": "1.0.0.0"
+		}
+	]
+}

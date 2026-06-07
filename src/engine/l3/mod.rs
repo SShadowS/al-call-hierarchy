@@ -13,6 +13,7 @@
 
 pub mod al_builtins;
 pub mod al_type;
+pub mod call_graph_projection;
 pub mod call_resolver;
 pub mod extension_fields;
 pub mod implicit_edges;

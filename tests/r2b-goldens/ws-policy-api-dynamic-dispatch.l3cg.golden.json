@@ -1,0 +1,27 @@
+{
+  "groups": [
+    {
+      "callsiteId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0",
+      "edges": [
+        {
+          "from": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+          "operationId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/op1",
+          "dispatchKind": "dynamic",
+          "resolution": "unknown"
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "callsiteId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0",
+      "bindings": [
+        {
+          "parameterIndex": 0,
+          "calleeParameterIsVar": false,
+          "bindingResolution": "non-record-arg"
+        }
+      ]
+    }
+  ]
+}

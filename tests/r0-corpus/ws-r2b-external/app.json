@@ -1,0 +1,7 @@
+{
+	"id": "2b000000-0000-0000-0000-00000000bbbb",
+	"name": "WsR2bExternal",
+	"publisher": "al-sem-tests",
+	"version": "1.0.0.0",
+	"idRanges": [{ "from": 50350, "to": 50399 }]
+}

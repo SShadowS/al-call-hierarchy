@@ -29,23 +29,29 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: aldump [--l2 | --l3-record-types] <workspace>");
+    eprintln!("usage: aldump [--l2 | --l3-record-types | --l3-call-graph] <workspace>");
     ExitCode::FAILURE
 }
 
 fn main() -> ExitCode {
     let mut l2 = false;
     let mut l3_record_types = false;
+    let mut l3_call_graph = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
-        // `--l2` / `--l3-record-types` flags (anywhere); else the single positional.
+        // `--l2` / `--l3-record-types` / `--l3-call-graph` flags (anywhere); else
+        // the single positional.
         if arg == "--l2" {
             l2 = true;
             continue;
         }
         if arg == "--l3-record-types" {
             l3_record_types = true;
+            continue;
+        }
+        if arg == "--l3-call-graph" {
+            l3_call_graph = true;
             continue;
         }
         if workspace_arg.is_some() {
@@ -55,8 +61,15 @@ fn main() -> ExitCode {
         workspace_arg = Some(arg);
     }
 
-    if l2 && l3_record_types {
-        eprintln!("aldump: error: --l2 and --l3-record-types are mutually exclusive");
+    if [l2, l3_record_types, l3_call_graph]
+        .iter()
+        .filter(|f| **f)
+        .count()
+        > 1
+    {
+        eprintln!(
+            "aldump: error: --l2 / --l3-record-types / --l3-call-graph are mutually exclusive"
+        );
         return usage();
     }
 
@@ -64,6 +77,36 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if l3_call_graph {
+        // L3 call-graph projection (R2b): the resolved call graph (grouped
+        // callsiteId → CallEdge[], multi-edge interface dispatch preserved,
+        // group-level dispatchMeta) + the upgraded argumentBindings, all in stable
+        // id form. Fail-closed → empty `{groups, bindings}` (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => resolved.project_call_graph(),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection {
+                    groups: vec![],
+                    bindings: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize L3 call-graph projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if l3_record_types {
         // L3 record-type projection (R2a): resolved record-var/op StableTableIds
