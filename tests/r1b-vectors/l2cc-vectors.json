@@ -1,0 +1,468 @@
+{
+  "description": "R1b control-context vectors. Each vector's per-site `controlContext` was produced by the REAL al-sem L2 walker (indexWorkspace, pre-resolve → computeControlContexts inside indexRoutines, INCLUDING the error-call source-range post-pass). controlContext is ABSENT (key omitted, never null) when al-sem left it undefined. `isHandledEligibility` is a DEBUG side field reproducing routine-indexer.ts:302-318 verbatim (by-var Boolean params ∪ Boolean non-param vars whose lc name == a whole callsite argumentText). Hand-authored lattice invariants were asserted against the live sites before emit. Rust loads this committed file and asserts parity.",
+  "modelInstanceId": "r0",
+  "familyCount": 7,
+  "vectorCount": 13,
+  "vectors": [
+    {
+      "family": "a-lattice-maxctx",
+      "name": "a_loop_inside_if",
+      "description": "a record-op directly in the `if` body is conditional; the SAME op inside a loop nested in the if is loop-body (max(conditional, loop-body) = loop-body). Top-level op stays top-level.",
+      "source": "codeunit 50100 A\n{\n    procedure MaxCtx(var Cust: Record Customer; flag: Boolean)\n    var\n        i: Integer;\n    begin\n        Cust.FindSet();\n        if flag then begin\n            Cust.Modify();\n            for i := 1 to 10 do\n                Cust.Delete();\n        end;\n    end;\n}",
+      "routineName": "MaxCtx",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 8,
+          "controlContext": "top-level"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 12,
+          "controlContext": "conditional"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 10,
+          "startColumn": 16,
+          "controlContext": "loop-body"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "top-level FindSet op is top-level",
+        "Modify directly in if-body is conditional",
+        "Delete inside loop-in-if is loop-body (lattice max), NOT conditional"
+      ]
+    },
+    {
+      "family": "b-branch-classification",
+      "name": "b_if_case_bodies_conditional",
+      "description": "if-then body, else body, and case-branch bodies are all ≥ conditional; the if/case condition leaves (here a record-op in the if-test) execute at AMBIENT (top-level).",
+      "source": "codeunit 50100 B\n{\n    procedure Branches(var Cust: Record Customer; i: Integer)\n    begin\n        if Cust.IsEmpty() then\n            Cust.Init()\n        else\n            Cust.Modify();\n        case i of\n            1:\n                Cust.Insert();\n            else\n                Cust.Delete();\n        end;\n    end;\n}",
+      "routineName": "Branches",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 11,
+          "controlContext": "top-level"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "conditional"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 12,
+          "controlContext": "conditional"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 10,
+          "startColumn": 16,
+          "controlContext": "conditional"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 12,
+          "startColumn": 16,
+          "controlContext": "conditional"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "if-condition record-op (IsEmpty) executes at top-level (ambient)",
+        "then-body Init is conditional",
+        "else-body Modify is conditional",
+        "case-branch Insert is conditional",
+        "case-else Delete is conditional"
+      ]
+    },
+    {
+      "family": "c-error-path",
+      "name": "c_single_arm_error_guard",
+      "description": "single-arm `if Bad then Error()` (no else) is a precondition check: the Error() callsite/op is error-path; the CONTINUATION after it is UNCHANGED (top-level), not narrowed.",
+      "source": "codeunit 50100 C\n{\n    procedure Guard(var Cust: Record Customer; bad: Boolean)\n    begin\n        if bad then\n            Error('boom');\n        Cust.Modify();\n    end;\n}",
+      "routineName": "Guard",
+      "sites": [
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "error-path"
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "error-path"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 8,
+          "controlContext": "top-level"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "Error() callsite is error-path",
+        "error-call op inherits error-path (post-pass)",
+        "continuation Modify after single-arm error guard stays top-level",
+        "'bad' is NOT IsHandled-eligible (not a callsite arg, not by-var bool param)"
+      ]
+    },
+    {
+      "family": "d-unreachable",
+      "name": "d_bare_error_unreachable",
+      "description": "a bare top-level `Error()` makes every following same-block site unreachable.",
+      "source": "codeunit 50100 D1\n{\n    procedure BareError(var Cust: Record Customer)\n    begin\n        Error('always');\n        Cust.Modify();\n        Commit();\n    end;\n}",
+      "routineName": "BareError",
+      "sites": [
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 4,
+          "startColumn": 8,
+          "controlContext": "top-level"
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 4,
+          "startColumn": 8,
+          "controlContext": "top-level"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 8,
+          "controlContext": "unreachable"
+        },
+        {
+          "category": "operation",
+          "label": "commit",
+          "startLine": 6,
+          "startColumn": 8,
+          "controlContext": "unreachable"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "Modify after bare Error is unreachable",
+        "Commit after bare Error is unreachable"
+      ]
+    },
+    {
+      "family": "d-unreachable",
+      "name": "d_both_arms_terminate_continuation_unreachable",
+      "description": "an `if` whose BOTH arms terminate (then exit, else exit) → the continuation after it is unreachable.",
+      "source": "codeunit 50100 D2\n{\n    procedure BothExit(var Cust: Record Customer; flag: Boolean)\n    begin\n        if flag then\n            exit\n        else\n            exit;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "BothExit",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 8,
+          "controlContext": "unreachable"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "continuation Modify after both-arms-exit if is unreachable"
+      ]
+    },
+    {
+      "family": "d-unreachable",
+      "name": "d_case_terminating_arm_conditional_not_unreachable",
+      "description": "a `case` with a terminating arm narrows the continuation to conditional (AL case is not statically exhaustive) — NEVER unreachable.",
+      "source": "codeunit 50100 D3\n{\n    procedure CaseTerm(var Cust: Record Customer; i: Integer)\n    begin\n        case i of\n            1:\n                exit;\n            2:\n                Cust.Insert();\n        end;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "CaseTerm",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 16,
+          "controlContext": "conditional"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 10,
+          "startColumn": 8,
+          "controlContext": "conditional"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "continuation Modify after case-with-terminating-arm is conditional, NOT unreachable"
+      ]
+    },
+    {
+      "family": "e-ishandled",
+      "name": "e_positive_byvar_param_continuation_guarded",
+      "description": "by-var Boolean parameter `IsHandled`; `if IsHandled then exit` guards the CONTINUATION → continuation upgraded conditional → is-handled-guarded.",
+      "source": "codeunit 50100 E1\n{\n    procedure PosGuard(var IsHandled: Boolean; var Cust: Record Customer)\n    begin\n        if IsHandled then\n            exit;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "PosGuard",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 8,
+          "controlContext": "is-handled-guarded"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [
+          "ishandled"
+        ],
+        "publishedBoolVars": [],
+        "all": [
+          "ishandled"
+        ]
+      },
+      "invariants": [
+        "'ishandled' is IsHandled-eligible (by-var Boolean parameter)",
+        "continuation Modify after `if IsHandled then exit` is is-handled-guarded"
+      ]
+    },
+    {
+      "family": "e-ishandled",
+      "name": "e_negative_not_x_body_guarded",
+      "description": "`if not IsHandled then <body>` (negative polarity) guards the THEN-BODY → body upgraded conditional → is-handled-guarded.",
+      "source": "codeunit 50100 E2\n{\n    procedure NegGuard(var IsHandled: Boolean; var Cust: Record Customer)\n    begin\n        if not IsHandled then\n            Cust.Modify();\n    end;\n}",
+      "routineName": "NegGuard",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "is-handled-guarded"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [
+          "ishandled"
+        ],
+        "publishedBoolVars": [],
+        "all": [
+          "ishandled"
+        ]
+      },
+      "invariants": [
+        "'ishandled' is IsHandled-eligible (by-var Boolean parameter)",
+        "then-body Modify under `if not IsHandled` is is-handled-guarded"
+      ]
+    },
+    {
+      "family": "e-ishandled",
+      "name": "e_negative_x_eq_false_body_guarded",
+      "description": "`if IsHandled = false then <body>` (negative polarity via `= false`) guards the THEN-BODY → body is-handled-guarded.",
+      "source": "codeunit 50100 E3\n{\n    procedure FalseGuard(var IsHandled: Boolean; var Cust: Record Customer)\n    begin\n        if IsHandled = false then\n            Cust.Modify();\n    end;\n}",
+      "routineName": "FalseGuard",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "is-handled-guarded"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [
+          "ishandled"
+        ],
+        "publishedBoolVars": [],
+        "all": [
+          "ishandled"
+        ]
+      },
+      "invariants": [
+        "then-body Modify under `if IsHandled = false` is is-handled-guarded"
+      ]
+    },
+    {
+      "family": "e-ishandled",
+      "name": "e_published_boolvar_via_callsite_arg",
+      "description": "a Boolean LOCAL var (`Handled`) passed as a WHOLE callsite argument (OnBefore(..., Handled)) becomes IsHandled-eligible; `if Handled then exit` guards the continuation.",
+      "source": "codeunit 50100 E4\n{\n    procedure PubGuard(var Cust: Record Customer)\n    var\n        Handled: Boolean;\n    begin\n        OnBefore(Handled);\n        if Handled then\n            exit;\n        Cust.Modify();\n    end;\n\n    procedure OnBefore(var h: Boolean)\n    begin\n    end;\n}",
+      "routineName": "PubGuard",
+      "sites": [
+        {
+          "category": "callsite",
+          "label": "OnBefore",
+          "startLine": 6,
+          "startColumn": 8,
+          "controlContext": "top-level"
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 9,
+          "startColumn": 8,
+          "controlContext": "is-handled-guarded"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [
+          "handled"
+        ],
+        "all": [
+          "handled"
+        ]
+      },
+      "invariants": [
+        "'handled' is published-bool eligible (whole callsite arg, Boolean local)",
+        "continuation Modify after `if Handled then exit` is is-handled-guarded"
+      ]
+    },
+    {
+      "family": "e-ishandled",
+      "name": "e_negative_ineligible_stays_conditional",
+      "description": "`if not flag then <body>` where `flag` is a by-VALUE (not var) Boolean parameter → NOT IsHandled-eligible → body stays plain conditional (no elevation).",
+      "source": "codeunit 50100 E5\n{\n    procedure NegIneligible(flag: Boolean; var Cust: Record Customer)\n    begin\n        if not flag then\n            Cust.Modify();\n    end;\n}",
+      "routineName": "NegIneligible",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "conditional"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "by-value Boolean param 'flag' is NOT IsHandled-eligible",
+        "then-body Modify stays conditional (no IsHandled elevation)"
+      ]
+    },
+    {
+      "family": "f-tryfunction",
+      "name": "f_tryfunction_all_absent",
+      "description": "a `[TryFunction]` routine → the walker returns empty maps → NO site carries controlContext (the field is ABSENT, never null).",
+      "source": "codeunit 50100 F\n{\n    [TryFunction]\n    procedure TryIt(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        if Cust.IsEmpty() then\n            Cust.Modify();\n        Commit();\n    end;\n}",
+      "routineName": "TryIt",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 8
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 11
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 12
+        },
+        {
+          "category": "operation",
+          "label": "commit",
+          "startLine": 8,
+          "startColumn": 8
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "there ARE sites (non-vacuous)",
+        "NO site carries controlContext (all absent)"
+      ]
+    },
+    {
+      "family": "g-error-call-postpass",
+      "name": "g_error_call_inherits_conditional",
+      "description": "`if cond then Error()` inside a multi-arm-ish context: the error-call OPERATION (not registered in byOperation) inherits its PAIRED callsite's controlContext via the source-range post-pass. Here the Error() inside a loop body inherits loop-body.",
+      "source": "codeunit 50100 G\n{\n    procedure ErrInLoop(var Cust: Record Customer; i: Integer)\n    begin\n        while i < 10 do\n            Error('in loop');\n    end;\n}",
+      "routineName": "ErrInLoop",
+      "sites": [
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "loop-body"
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 5,
+          "startColumn": 12,
+          "controlContext": "loop-body"
+        }
+      ],
+      "isHandledEligibility": {
+        "byVarBoolParams": [],
+        "publishedBoolVars": [],
+        "all": []
+      },
+      "invariants": [
+        "Error() callsite in loop body is loop-body",
+        "error-call op inherits loop-body from the paired callsite (post-pass)",
+        "error-call op + Error callsite share the same controlContext (pairing)"
+      ]
+    }
+  ]
+}

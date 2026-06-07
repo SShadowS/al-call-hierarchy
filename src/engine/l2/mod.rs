@@ -13,6 +13,8 @@
 pub mod body_walk;
 pub mod cfn;
 pub mod classify;
+pub mod control_context;
+pub mod control_flow;
 pub mod features;
 pub mod l2_workspace;
 pub mod node_util;
