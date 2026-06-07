@@ -1,0 +1,3500 @@
+{
+  "description": "R1a L2 feature vectors. Each vector's expectedFeatures was computed by the REAL al-sem L2 (indexWorkspace, pre-resolve → projectFeatures). Hand-authored invariants were asserted against the live projection before emit. Rust loads this committed file and asserts parity.",
+  "modelInstanceId": "r0",
+  "familyCount": 14,
+  "vectorCount": 14,
+  "vectors": [
+    {
+      "family": "a-two-phase-numbering",
+      "name": "a_mixed_kind_body",
+      "description": "record-ops + commit get op0..opN-1 in visit order; callsites get op{N+i} post-visit; mixed OperationSiteKind",
+      "source": "codeunit 50100 A\n{\n    procedure Mixed(var Cust: Record Customer)\n    var\n        Client: HttpClient;\n    begin\n        Cust.FindSet();\n        Commit();\n        Client.Get('http://x', Cust);\n        SomeCall(Cust.Get());\n        if Codeunit.Run(Codeunit::A) then;\n        Error('boom');\n    end;\n\n    procedure SomeCall(b: Boolean): Boolean\n    begin\n    end;\n}",
+      "routineName": "Mixed",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op1",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 17,
+              "endLine": 9,
+              "endColumn": 27,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op3",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op2",
+            "op": "Get",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 17,
+              "endLine": 9,
+              "endColumn": 27,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs0",
+            "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op4",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'http://x'",
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'http://x'",
+                "value": "http://x"
+              },
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 8,
+                  "startColumn": 19,
+                  "endLine": 8,
+                  "endColumn": 29,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 8,
+                  "startColumn": 31,
+                  "endLine": 8,
+                  "endColumn": 35,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/rv/cust",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs1",
+            "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op5",
+            "calleeText": "SomeCall",
+            "callee": {
+              "kind": "bare",
+              "name": "SomeCall"
+            },
+            "argumentTexts": [
+              "Cust.Get()"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "call_expression",
+                "text": "Cust.Get()"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 9,
+                  "startColumn": 17,
+                  "endLine": 9,
+                  "endColumn": 27,
+                  "syntaxKind": "call_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs2",
+            "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op6",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "A",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::A"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::A",
+                "value": "A",
+                "qualifier": "Codeunit",
+                "member": "A"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 10,
+                  "startColumn": 24,
+                  "endLine": 10,
+                  "endColumn": 35,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 11,
+              "endLine": 10,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": true,
+            "objectRunReturnUsed": true
+          },
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs3",
+            "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op7",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'boom'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'boom'",
+                "value": "boom"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 11,
+                  "startColumn": 14,
+                  "endLine": 11,
+                  "endColumn": 20,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "a",
+          "client",
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "run",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 42,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 20,
+              "endLine": 10,
+              "endColumn": 23,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "a",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 42,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 34,
+              "endLine": 10,
+              "endColumn": 35,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs1",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/op2"
+                }
+              ]
+            },
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs2"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "error",
+              "callsiteId": "r0/8124af6fec921ab824b6917a242ca98a198025389842d103a20b93e579349232/cs3"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "record-op + commit + error-call OperationSites all carry op{n} ids",
+        "callsite operationIds are numbered AFTER all record/commit/error op ids",
+        "a commit OperationSite exists",
+        "an error-call OperationSite exists"
+      ]
+    },
+    {
+      "family": "b-expression-info",
+      "name": "b_expression_info_kinds",
+      "description": "unary -1, parenthesized ('s'), enum member, string concat, quoted field name, literal vs identifier",
+      "source": "codeunit 50100 B\n{\n    procedure Exprs(var Cust: Record Customer)\n    var\n        x: Integer;\n    begin\n        Cust.SetRange(\"No.\", 'A');\n        Cust.SetFilter(Amount, '%1', -1);\n        Cust.SetRange(Type, Cust.Type::Person);\n        Helper(x, ('s'), 'a' + 'b');\n    end;\n\n    procedure Helper(a: Integer; b: Text; c: Text)\n    begin\n    end;\n}",
+      "routineName": "Exprs",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 40,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 46,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op0",
+            "op": "SetRange",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/rv/cust",
+            "fieldArguments": [
+              "\"No.\"",
+              "'A'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"No.\"",
+                "value": "No."
+              },
+              {
+                "kind": "string_literal",
+                "text": "'A'",
+                "value": "A"
+              }
+            ]
+          },
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op1",
+            "op": "SetFilter",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 40,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/rv/cust",
+            "fieldArguments": [
+              "Amount",
+              "'%1'",
+              "-1"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Amount",
+                "value": "Amount"
+              },
+              {
+                "kind": "string_literal",
+                "text": "'%1'",
+                "value": "%1"
+              },
+              {
+                "kind": "unary_expression",
+                "text": "-1",
+                "value": "-1"
+              }
+            ]
+          },
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op2",
+            "op": "SetRange",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 46,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/rv/cust",
+            "fieldArguments": [
+              "Type",
+              "Cust.Type::Person"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Type",
+                "value": "Type"
+              },
+              {
+                "kind": "qualified_enum_value",
+                "text": "Cust.Type::Person",
+                "value": "Person",
+                "qualifier": "Cust.Type",
+                "member": "Person"
+              }
+            ]
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/cs0",
+            "operationId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op3",
+            "calleeText": "Helper",
+            "callee": {
+              "kind": "bare",
+              "name": "Helper"
+            },
+            "argumentTexts": [
+              "x",
+              "('s')",
+              "'a' + 'b'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "x",
+                "value": "x"
+              },
+              {
+                "kind": "parenthesized_expression",
+                "text": "('s')"
+              },
+              {
+                "kind": "other",
+                "text": "'a' + 'b'"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 9,
+                  "startColumn": 15,
+                  "endLine": 9,
+                  "endColumn": 16,
+                  "syntaxKind": "identifier"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 9,
+                  "startColumn": 18,
+                  "endLine": 9,
+                  "endColumn": 23,
+                  "syntaxKind": "parenthesized_expression"
+                }
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 9,
+                  "startColumn": 25,
+                  "endLine": 9,
+                  "endColumn": 34,
+                  "syntaxKind": "additive_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "amount",
+          "cust",
+          "type",
+          "x"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "x",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/op2"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/ce006ffae7f9fa4408b7bd7a5917d7a807296a02fda01e8a7c44e0867d52a04c/cs0"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "SetRange quoted field name yields quoted_identifier kind",
+        "unary -1 arg classifies as unary_expression with value set",
+        "enum member arg classifies as qualified_enum_value",
+        "parenthesized arg classifies as parenthesized_expression",
+        "identifier arg classifies as identifier"
+      ]
+    },
+    {
+      "family": "c-binding-source-kinds",
+      "name": "c_binding_source_kinds",
+      "description": "parameter / local / global / implicit-rec / expression / unknown source kinds",
+      "source": "codeunit 50100 C\n{\n    var\n        GlobalCust: Record Customer;\n\n    procedure Bind(ParamCust: Record Customer)\n    var\n        LocalCust: Record Customer;\n    begin\n        Sink(ParamCust);\n        Sink(LocalCust);\n        Sink(GlobalCust);\n        Sink(Whatever);\n        Sink('literal');\n    end;\n\n    procedure Sink(var c: Record Customer)\n    begin\n    end;\n}",
+      "routineName": "Bind",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs0",
+            "operationId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/op0",
+            "calleeText": "Sink",
+            "callee": {
+              "kind": "bare",
+              "name": "Sink"
+            },
+            "argumentTexts": [
+              "ParamCust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "ParamCust",
+                "value": "ParamCust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 9,
+                  "startColumn": 13,
+                  "endLine": 9,
+                  "endColumn": 22,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "paramcust",
+                "sourceRecordVariableId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/rv/paramcust",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs1",
+            "operationId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/op1",
+            "calleeText": "Sink",
+            "callee": {
+              "kind": "bare",
+              "name": "Sink"
+            },
+            "argumentTexts": [
+              "LocalCust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "LocalCust",
+                "value": "LocalCust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 10,
+                  "startColumn": 13,
+                  "endLine": 10,
+                  "endColumn": 22,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "localcust",
+                "sourceRecordVariableId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/rv/localcust",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs2",
+            "operationId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/op2",
+            "calleeText": "Sink",
+            "callee": {
+              "kind": "bare",
+              "name": "Sink"
+            },
+            "argumentTexts": [
+              "GlobalCust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "GlobalCust",
+                "value": "GlobalCust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 11,
+                  "startColumn": 13,
+                  "endLine": 11,
+                  "endColumn": 23,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs3",
+            "operationId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/op3",
+            "calleeText": "Sink",
+            "callee": {
+              "kind": "bare",
+              "name": "Sink"
+            },
+            "argumentTexts": [
+              "Whatever"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Whatever",
+                "value": "Whatever"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 12,
+                  "startColumn": 13,
+                  "endLine": 12,
+                  "endColumn": 21,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs4",
+            "operationId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/op4",
+            "calleeText": "Sink",
+            "callee": {
+              "kind": "bare",
+              "name": "Sink"
+            },
+            "argumentTexts": [
+              "'literal'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'literal'",
+                "value": "literal"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 13,
+                  "startColumn": 13,
+                  "endLine": 13,
+                  "endColumn": 22,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/rv/paramcust",
+            "name": "ParamCust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/rv/localcust",
+            "name": "LocalCust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "globalcust",
+          "localcust",
+          "paramcust",
+          "whatever"
+        ],
+        "variables": [
+          {
+            "name": "paramcust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "localcust",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "globalcust",
+            "declaredType": "Record Customer",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 36,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs2"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs3"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/011b1020072ef32999ef2ba60f154076adfbd823666fbc833984c8f16691885b/cs4"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "parameter-sourced arg binds sourceKind=parameter",
+        "local record-var arg binds sourceKind=local",
+        "unknown identifier binds sourceKind=unknown with no name",
+        "literal arg binds sourceKind=expression",
+        "NO binding carries calleeParameterIsVar/bindingResolution/sourceTableId"
+      ]
+    },
+    {
+      "family": "d-result-use",
+      "name": "d_result_use_contexts",
+      "description": "bare Codeunit.Run (discarded) vs if Codeunit.Run (consumed); resultConsumed floor vs objectRunReturnUsed strict",
+      "source": "codeunit 50100 D\n{\n    procedure Runs()\n    var\n        ok: Boolean;\n    begin\n        Codeunit.Run(Codeunit::D);\n        if Codeunit.Run(Codeunit::D) then;\n        ok := Codeunit.Run(Codeunit::D);\n    end;\n}",
+      "routineName": "Runs",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs0",
+            "operationId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D",
+                "value": "D",
+                "qualifier": "Codeunit",
+                "member": "D"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 6,
+                  "startColumn": 21,
+                  "endLine": 6,
+                  "endColumn": 32,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          },
+          {
+            "id": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs1",
+            "operationId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/op1",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D",
+                "value": "D",
+                "qualifier": "Codeunit",
+                "member": "D"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 7,
+                  "startColumn": 24,
+                  "endLine": 7,
+                  "endColumn": 35,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": true,
+            "objectRunReturnUsed": true
+          },
+          {
+            "id": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs2",
+            "operationId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/op2",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D",
+                "value": "D",
+                "qualifier": "Codeunit",
+                "member": "D"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 8,
+                  "startColumn": 27,
+                  "endLine": 8,
+                  "endColumn": 38,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 14,
+              "endLine": 8,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": true,
+            "objectRunReturnUsed": true
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "d",
+          "ok"
+        ],
+        "variables": [
+          {
+            "name": "ok",
+            "declaredType": "Boolean",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 20,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "ok",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 39,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "run",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 42,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 20,
+              "endLine": 7,
+              "endColumn": 23,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "d",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 42,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 34,
+              "endLine": 7,
+              "endColumn": 35,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs0"
+            },
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs1"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "other",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/f38d3a0910ae8fb1f93b342c0bc0e63fa909494aa682d7d105ee66871f2cf84f/cs2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "bare object-run: resultConsumed=false",
+        "bare object-run: objectRunReturnUsed=false",
+        "if-condition object-run: resultConsumed=true",
+        "assignment-RHS object-run: objectRunReturnUsed=true"
+      ]
+    },
+    {
+      "family": "e-under-asserterror",
+      "name": "e_under_asserterror",
+      "description": "callsite + error-call under asserterror carry underAsserterror; calls outside do not",
+      "source": "codeunit 50100 E\n{\n    procedure AE(var Cust: Record Customer)\n    begin\n        asserterror Error('caught');\n        Cust.FindSet();\n    end;\n}",
+      "routineName": "AE",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 20,
+              "endLine": 4,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            },
+            "underAsserterror": true
+          },
+          {
+            "id": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/op1",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/cs0",
+            "operationId": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/op2",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'caught'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'caught'",
+                "value": "caught"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 4,
+                  "startColumn": 26,
+                  "endLine": 4,
+                  "endColumn": 34,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 20,
+              "endLine": 4,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            },
+            "underAsserterror": true
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "error",
+                      "callsiteId": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/cs0"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/981b33ef4771b7acc877443f6ec32c826f30b38a5948e91764b7231cfd1dc4c1/op1"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "Error callsite under asserterror is flagged",
+        "error-call OperationSite under asserterror is flagged",
+        "record-op outside asserterror is NOT flagged"
+      ]
+    },
+    {
+      "family": "f-variable-initializer",
+      "name": "f_variable_initializer_shadowing",
+      "description": "initializer one-hop ValueSource; global vs local shadowing (local wins in features.variables)",
+      "source": "codeunit 50100 F\n{\n    var\n        Shadowed: Integer;\n\n    procedure Vars()\n    var\n        Shadowed: Text;\n        n: Integer;\n    begin\n        n := 5;\n    end;\n}",
+      "routineName": "Vars",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "n"
+        ],
+        "variables": [
+          {
+            "name": "shadowed",
+            "declaredType": "Text",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 23,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "n",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "literal",
+              "value": "5"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "n",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 14,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "5"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "local 'shadowed' (Text) shadows the global (Integer) — first match wins",
+        "variables carry scope + declaredType, NOT tableId"
+      ]
+    },
+    {
+      "family": "g-unreachable",
+      "name": "g_unreachable_after_exit",
+      "description": "exit / bare Error / CurrReport.Quit make the next sibling unreachable",
+      "source": "codeunit 50100 G\n{\n    procedure Unreach(var Cust: Record Customer)\n    begin\n        exit;\n        Cust.FindSet();\n    end;\n}",
+      "routineName": "Unreach",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [
+          {
+            "id": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/u0",
+            "exitKind": "exit",
+            "exitAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 12,
+              "syntaxKind": "exit_statement"
+            },
+            "unreachableAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/c14378df9261beef064bb6a8cd1b2dd40b7a0f52d76f7d12b56c5e4ba0b3fee9/op0"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "one unreachableStatement with exitKind=exit"
+      ]
+    },
+    {
+      "family": "h-field-vs-op-vs-call",
+      "name": "h_field_vs_op_vs_call",
+      "description": "Cust.Amount (field access) vs Cust.FindSet (record op) vs Helper.Send (member call)",
+      "source": "codeunit 50100 H\n{\n    procedure Classify(var Cust: Record Customer)\n    var\n        Client: HttpClient;\n        x: Integer;\n    begin\n        x := Cust.Amount;\n        Cust.FindSet();\n        Client.Clear();\n    end;\n}",
+      "routineName": "Classify",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/cs0",
+            "operationId": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/op1",
+            "calleeText": "Client.Clear",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Clear"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Cust",
+            "fieldName": "Amount",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 13,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "cust",
+          "x"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "x",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "x",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/op0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/e309dff7a17ffacaad5f24ff8fb9a7adb74f2edb1fdb83ed1e2eefc5d1d0e750/cs0"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "Cust.Amount is a fieldAccess",
+        "Cust.FindSet is a record-op (not a callsite)",
+        "Client.Clear (HttpClient) is a callsite, not a record-op"
+      ]
+    },
+    {
+      "family": "i-nested-same-anchor",
+      "name": "i_nested_call_op_tie",
+      "description": "Helper(Cust.Get()) and Helper(C).FindSet() — nested call/op keyed by node.id, distinct ids",
+      "source": "codeunit 50100 I\n{\n    procedure Nested(var Cust: Record Customer; var C: Record Customer)\n    begin\n        Helper(Cust.Get());\n        Helper2(C).FindSet();\n    end;\n\n    procedure Helper(b: Boolean): Boolean begin end;\n\n    procedure Helper2(var c: Record Customer): Record Customer begin end;\n}",
+      "routineName": "Nested",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 15,
+              "endLine": 4,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op0",
+            "op": "Get",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 15,
+              "endLine": 4,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs0",
+            "operationId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op1",
+            "calleeText": "Helper",
+            "callee": {
+              "kind": "bare",
+              "name": "Helper"
+            },
+            "argumentTexts": [
+              "Cust.Get()"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "call_expression",
+                "text": "Cust.Get()"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 4,
+                  "startColumn": 15,
+                  "endLine": 4,
+                  "endColumn": 25,
+                  "syntaxKind": "call_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs1",
+            "operationId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op2",
+            "calleeText": "Helper2(C).FindSet",
+            "callee": {
+              "kind": "member",
+              "receiver": "Helper2(C)",
+              "method": "FindSet"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs2",
+            "operationId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op3",
+            "calleeText": "Helper2",
+            "callee": {
+              "kind": "bare",
+              "name": "Helper2"
+            },
+            "argumentTexts": [
+              "C"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "C",
+                "value": "C"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 5,
+                  "startColumn": 16,
+                  "endLine": 5,
+                  "endColumn": 17,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "c",
+                "sourceRecordVariableId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/rv/c",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 1
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 1
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 1
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "c",
+          "cust",
+          "helper2"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs0",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/op0"
+                }
+              ]
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs1",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/b73cfb7c5886d5c8d6f471f9b61cbd6d786df4a653bc10426d719ba2d8ba44d0/cs2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "Cust.Get() inner op is registered as a distinct record-op",
+        "Helper(...) is a callsite",
+        "chained Helper2(C).FindSet — FindSet on a call-expr receiver is a member CALLSITE, not a record-op",
+        "inner Helper2(C) receiver call is registered as its own bare callsite"
+      ]
+    },
+    {
+      "family": "j-utf16-column",
+      "name": "j_utf16_column",
+      "description": "a non-ASCII char before a token shifts the UTF-16 column by 1 code unit (not byte count)",
+      "source": "codeunit 50100 J\n{\n    procedure Col(var Cust: Record Customer)\n    begin\n        Message('é'); Cust.FindSet();\n    end;\n}",
+      "routineName": "Col",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 23,
+              "endLine": 4,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 23,
+              "endLine": 4,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/cs0",
+            "operationId": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/op1",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'é'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'é'",
+                "value": "é"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/vec.al",
+                  "startLine": 4,
+                  "startColumn": 16,
+                  "endLine": 4,
+                  "endColumn": 20,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/cs0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e932686564ca118784e1b520241c2f353414108499d2a493de504fa8fcc0b38c/op0"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "FindSet record-op startColumn reflects UTF-16 (single unit for é)"
+      ]
+    },
+    {
+      "family": "k-raw-text-edges",
+      "name": "k_raw_text_edges",
+      "description": "doubled '' inside a string literal; non-ASCII quoted identifier field name",
+      "source": "codeunit 50100 K\n{\n    procedure Raw(var Cust: Record Customer)\n    begin\n        Cust.SetFilter(\"Naïve Field\", 'it''s');\n    end;\n}",
+      "routineName": "Raw",
+      "expectedFeatures": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/089f8d967a56ca2c494d7ee8b226abe859ed85306515f09d1a2e898dd3c37176/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 47,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/089f8d967a56ca2c494d7ee8b226abe859ed85306515f09d1a2e898dd3c37176/op0",
+            "op": "SetFilter",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 47,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/089f8d967a56ca2c494d7ee8b226abe859ed85306515f09d1a2e898dd3c37176/rv/cust",
+            "fieldArguments": [
+              "\"Naïve Field\"",
+              "'it''s'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"Naïve Field\"",
+                "value": "Naïve Field"
+              },
+              {
+                "kind": "string_literal",
+                "text": "'it''s'",
+                "value": "it''s"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/089f8d967a56ca2c494d7ee8b226abe859ed85306515f09d1a2e898dd3c37176/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/089f8d967a56ca2c494d7ee8b226abe859ed85306515f09d1a2e898dd3c37176/op0"
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "doubled-quote string literal text is source-faithful",
+        "non-ASCII quoted identifier field name preserved"
+      ]
+    },
+    {
+      "family": "l-repeat-cfn-placement",
+      "name": "l_repeat_condleaf_placement",
+      "description": "repeat ... until Cust.Next()=0 — the until-condition op is harvested into the repeat node's conditionLeaves (structural CFN shape only; NOT derived execution order)",
+      "source": "codeunit 50100 L\n{\n    procedure Rep(var Cust: Record Customer)\n    begin\n        if Cust.FindSet() then\n            repeat\n                Cust.Modify();\n            until Cust.Next() = 0;\n    end;\n}",
+      "routineName": "Rep",
+      "expectedFeatures": {
+        "loops": [
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/loop0",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 33,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 11,
+              "endLine": 4,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op1",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 16,
+              "endLine": 6,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op2",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 18,
+              "endLine": 7,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 11,
+              "endLine": 4,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op1",
+            "op": "Modify",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [
+              "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 16,
+              "endLine": 6,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/rv/cust"
+          },
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op2",
+            "op": "Next",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [
+              "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 18,
+              "endLine": 7,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "findset",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 34,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 16,
+              "endLine": 4,
+              "endColumn": 23,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "next",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 33,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 23,
+              "endLine": 7,
+              "endColumn": 27,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "repeat",
+                      "conditionLeaves": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op2"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/eff9ee982afb5d8c6233a4f6850b85176bf03b84576ff435bf5bb73010ff85ad/op1"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "a repeat CFN node exists with a Next() op leaf in conditionLeaves"
+      ]
+    },
+    {
+      "family": "m-loop-nesting",
+      "name": "m_loop_nesting_depth",
+      "description": "nested loops → nestingDepth=2; inner record-op carries both loop ids in loopStack",
+      "source": "codeunit 50100 M\n{\n    procedure Nest(var Cust: Record Customer)\n    var\n        i: Integer;\n        j: Integer;\n    begin\n        for i := 1 to 10 do\n            for j := 1 to 10 do\n                Cust.Modify();\n    end;\n}",
+      "routineName": "Nest",
+      "expectedFeatures": {
+        "loops": [
+          {
+            "id": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 30,
+              "syntaxKind": "for_statement"
+            }
+          },
+          {
+            "id": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop1",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 8,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 30,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop0",
+              "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 16,
+              "endLine": 9,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/op0",
+            "op": "Modify",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [
+              "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop0",
+              "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 16,
+              "endLine": 9,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 2,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust",
+          "i",
+          "j"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "j",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "for",
+                      "children": [
+                        {
+                          "kind": "block",
+                          "children": [
+                            {
+                              "kind": "op",
+                              "operationId": "r0/4d9ceb2ddbb5e2fca848e55a9c4381958fbdb457e4ef28e382be282339c01ce1/op0"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "nestingDepth = 2",
+        "inner Modify op carries TWO loop ids"
+      ]
+    },
+    {
+      "family": "n-cfn-skeleton",
+      "name": "n_cfn_skeleton_all_kinds",
+      "description": "if(+else)/case/while/for/repeat produce the expected CFN node kinds + child/else structure",
+      "source": "codeunit 50100 N\n{\n    procedure Skel(var Cust: Record Customer)\n    var\n        i: Integer;\n    begin\n        if Cust.IsEmpty() then\n            Cust.Init()\n        else\n            Cust.Modify();\n        case i of\n            1:\n                Cust.Insert();\n            else\n                Cust.Delete();\n        end;\n        while i < 10 do\n            i := i + 1;\n        for i := 1 to 5 do\n            Cust.FindFirst();\n        repeat\n            Cust.Next();\n        until i = 0;\n    end;\n}",
+      "routineName": "Skel",
+      "expectedFeatures": {
+        "loops": [
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop0",
+            "type": "while",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 23,
+              "syntaxKind": "while_statement"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop1",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 29,
+              "syntaxKind": "for_statement"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop2",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 19,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 11,
+              "endLine": 6,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op3",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 12,
+              "startColumn": 16,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op4",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 14,
+              "startColumn": 16,
+              "endLine": 14,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op5",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 19,
+              "startColumn": 12,
+              "endLine": 19,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op6",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop2"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 21,
+              "startColumn": 12,
+              "endLine": 21,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op0",
+            "op": "IsEmpty",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 11,
+              "endLine": 6,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op1",
+            "op": "Init",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op2",
+            "op": "Modify",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op3",
+            "op": "Insert",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 12,
+              "startColumn": 16,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op4",
+            "op": "Delete",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 14,
+              "startColumn": 16,
+              "endLine": 14,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op5",
+            "op": "FindFirst",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [
+              "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 19,
+              "startColumn": 12,
+              "endLine": 19,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op6",
+            "op": "Next",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [
+              "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/loop2"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 21,
+              "startColumn": 12,
+              "endLine": 21,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "i",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 17,
+              "startColumn": 12,
+              "endLine": 17,
+              "endColumn": 22,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "isempty",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 26,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 6,
+              "startColumn": 16,
+              "endLine": 6,
+              "endColumn": 23,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "i",
+            "conditionKind": "case",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 11,
+              "syntaxKind": "case_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 10,
+              "startColumn": 13,
+              "endLine": 10,
+              "endColumn": 14,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "i",
+            "conditionKind": "while",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 23,
+              "syntaxKind": "while_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 16,
+              "startColumn": 14,
+              "endLine": 16,
+              "endColumn": 15,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "i",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 19,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/vec.al",
+              "startLine": 22,
+              "startColumn": 14,
+              "endLine": 22,
+              "endColumn": 15,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op1"
+                    }
+                  ]
+                }
+              ],
+              "elseChildren": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op2"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "case",
+              "children": [
+                {
+                  "kind": "case-branch",
+                  "children": [
+                    {
+                      "kind": "block",
+                      "children": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op3"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "case-branch",
+                  "children": [
+                    {
+                      "kind": "block",
+                      "children": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op4"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "while",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "other"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op5"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "repeat",
+              "children": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/39c148af80fc7d551f1d039a2a9464cae205e09c30b4ba55e8db13f15f4bf845/op6"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "invariants": [
+        "top-level block holds if/case/while/for/repeat children in order",
+        "if node has elseChildren populated",
+        "case node has case-branch children"
+      ]
+    }
+  ]
+}
