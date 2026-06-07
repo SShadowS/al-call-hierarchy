@@ -1,0 +1,875 @@
+{
+  "description": "R1c operation-order vectors. Each vector's per-site `order` (OperationOrder {orderId,frameId,onSuccessPath,dominatesSuccessReturn}) + the routine's `scopeFrames` (ScopeFrame[]) were produced by the REAL al-sem L2 walker (indexWorkspace, pre-resolve → computeOperationOrder inside indexRoutines, INCLUDING the error-call source-range order post-pass). `order` is ABSENT (key omitted, never null) when al-sem left it undefined; `scopeFrames` is empty for TryFunction/no-body routines and a single root `block` frame for a present-but-empty body. orderIds may have GAPS (exit/error leaves consume an id) + ALIASES (a leaf with both ids, and the error-call post-pass copy). Branch frames carry branchAlwaysTerminates + branchMayFallThrough even when false; branchTerminatesBy only when always-terminating. Hand-authored invariants were asserted against the live order before emit. Rust loads this committed file and asserts parity.",
+  "modelInstanceId": "r0",
+  "familyCount": 7,
+  "vectorCount": 16,
+  "vectors": [
+    {
+      "family": "a-orderid-preorder",
+      "name": "a_arg_position_call_before_enclosing_op",
+      "description": "a call in ARGUMENT position (a conditionLeaf of the enclosing record-op) gets a LOWER orderId than the record-op that encloses it: `Cust.SetRange(\"No.\", Helper())` → Helper() orderId 0 (arg leaf), the SetRange record-op orderId 1. The arg call is in expression position → dominatesSuccessReturn=false; the root record-op → true.",
+      "source": "codeunit 50100 A1\n{\n    procedure A(var Cust: Record Customer)\n    begin\n        Cust.SetRange(\"No.\", Helper());\n    end;\n\n    procedure Helper(): Code[20]\n    begin\n        exit('x');\n    end;\n}",
+      "routineName": "A",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 1,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "callsite",
+          "label": "Helper",
+          "startLine": 4,
+          "startColumn": 29,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "invariants": [
+        "arg-position Helper() call has orderId 0 (before its enclosing op)",
+        "enclosing SetRange record-op has orderId 1 (after the arg call)",
+        "arg-position call NEVER dominates success return (expression position)",
+        "root record-op dominates success return (first root statement)"
+      ]
+    },
+    {
+      "family": "a-orderid-preorder",
+      "name": "a_exit_leaf_consumes_orderid_gap",
+      "description": "`nextOrderId++` increments per LEAF including the (unprojected) exit leaf. FindSet orderId 0, the `exit` leaf consumes orderId 1 (not emitted), the continuation Modify gets orderId 2 → the EMITTED ids are [0, 2] with a GAP at 1. Do NOT renumber.",
+      "source": "codeunit 50100 A2\n{\n    procedure Gap(var Cust: Record Customer; flag: Boolean)\n    begin\n        Cust.FindSet();\n        if flag then\n            exit;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "Gap",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 8,
+          "order": {
+            "orderId": 2,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "FindSet has orderId 0",
+        "continuation Modify has orderId 2 (the exit leaf consumed orderId 1 → GAP)",
+        "emitted orderIds have a GAP (no leaf carries orderId 1)"
+      ]
+    },
+    {
+      "family": "b-frame-nesting",
+      "name": "b_if_then_before_if_else_explicit",
+      "description": "explicit if/else: the if-condition leaf walks in the PARENT (root) frame; an if-then frame is pushed BEFORE the if-else frame (deterministic frameId). then-arm fallthrough → branchAlwaysTerminates=false + branchMayFallThrough=true (no branchTerminatesBy); same for else.",
+      "source": "codeunit 50100 B1\n{\n    procedure Branches(var Cust: Record Customer)\n    begin\n        if Cust.IsEmpty() then\n            Cust.Init()\n        else\n            Cust.Modify();\n    end;\n}",
+      "routineName": "Branches",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 11,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "order": {
+            "orderId": 1,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 12,
+          "order": {
+            "orderId": 2,
+            "frameId": 2,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        },
+        {
+          "frameId": 2,
+          "parentFrameId": 0,
+          "kind": "if-else",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        }
+      ],
+      "invariants": [
+        "root frame 0 is a block with parentFrameId -1",
+        "frame 1 is if-then (pushed before if-else)",
+        "frame 2 is if-else (pushed after if-then)",
+        "if-condition record-op (IsEmpty) is in the PARENT root frame 0",
+        "then-body Init is in the if-then frame 1",
+        "else-body Modify is in the if-else frame 2",
+        "fallthrough then-frame: branchAlwaysTerminates=false + branchMayFallThrough=true (no branchTerminatesBy)"
+      ]
+    },
+    {
+      "family": "b-frame-nesting",
+      "name": "b_no_if_else_frame_implicit_else",
+      "description": "a single-arm `if` (no explicit else) pushes ONLY an if-then frame — there is NO if-else frame for the implicit else. Only frames 0 (root) and 1 (if-then) exist.",
+      "source": "codeunit 50100 B2\n{\n    procedure Implicit(var Cust: Record Customer; flag: Boolean)\n    begin\n        if flag then\n            Cust.Modify();\n    end;\n}",
+      "routineName": "Implicit",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "order": {
+            "orderId": 0,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        }
+      ],
+      "invariants": [
+        "exactly two frames: root + if-then",
+        "no if-else frame exists (implicit else)",
+        "frame 1 is the if-then"
+      ]
+    },
+    {
+      "family": "b-frame-nesting",
+      "name": "b_case_branches_then_loop_frame_order",
+      "description": "case branches push case-branch frames in node order (frame 1 = arm `1:` fallthrough, frame 2 = arm `2:` exit-terminating). A following `while` pushes its loop frame (frame 3) AFTER the case frames, AND after its own condition leaves (which walk in the root frame).",
+      "source": "codeunit 50100 B3\n{\n    procedure CaseLoop(var Cust: Record Customer; i: Integer)\n    begin\n        case i of\n            1:\n                Cust.Insert();\n            2:\n                exit;\n        end;\n        while i < 10 do\n            Cust.Modify();\n    end;\n}",
+      "routineName": "CaseLoop",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 16,
+          "order": {
+            "orderId": 0,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 11,
+          "startColumn": 12,
+          "order": {
+            "orderId": 2,
+            "frameId": 3,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "case-branch",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        },
+        {
+          "frameId": 2,
+          "parentFrameId": 0,
+          "kind": "case-branch",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        },
+        {
+          "frameId": 3,
+          "parentFrameId": 0,
+          "kind": "loop"
+        }
+      ],
+      "invariants": [
+        "frame 1 is case-branch (arm 1, fallthrough)",
+        "frame 2 is case-branch (arm 2, exit-terminating)",
+        "frame 3 is the loop (pushed after the case-branch frames)",
+        "loop frame omits all branch fields (not a branch)",
+        "loop-body Modify is in the loop frame 3"
+      ]
+    },
+    {
+      "family": "b-frame-nesting",
+      "name": "b_repeat_no_extra_frame",
+      "description": "a `repeat..until` loop pushes ONE loop frame; the synthetic block that wraps the body does NOT push its own frame (it reuses the loop frame via walkBlock). Only frames 0 (root) + 1 (loop) exist. The body record-op lives in the loop frame.",
+      "source": "codeunit 50100 B4\n{\n    procedure RepeatLoop(var Cust: Record Customer)\n    begin\n        repeat\n            Cust.Modify();\n        until Cust.Next() = 0;\n    end;\n}",
+      "routineName": "RepeatLoop",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "order": {
+            "orderId": 1,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 14,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "loop"
+        }
+      ],
+      "invariants": [
+        "exactly two frames: root + loop (no synthetic block frame)",
+        "frame 1 is the loop",
+        "repeat body Modify lives in the loop frame 1",
+        "no block frame other than the root exists"
+      ]
+    },
+    {
+      "family": "c-onsuccesspath",
+      "name": "c_exit_arm_op_on_success_path",
+      "description": "an op in an EXIT-terminating then-arm IS on the success path (`onSuccessPath=true`) — exit is a normal return, so ops before the exit DO execute on a success path. The exit-arm frame is branchAlwaysTerminates=true + branchTerminatesBy=exit.",
+      "source": "codeunit 50100 C1\n{\n    procedure ExitArm(var Cust: Record Customer; flag: Boolean)\n    begin\n        if flag then begin\n            Cust.Modify();\n            exit;\n        end;\n    end;\n}",
+      "routineName": "ExitArm",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "order": {
+            "orderId": 0,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "op in exit-terminating arm is ON the success path (exit = normal return)",
+        "the if-then frame is exit-terminating (alwaysTerminates + by=exit + no fallthrough)"
+      ]
+    },
+    {
+      "family": "c-onsuccesspath",
+      "name": "c_error_arm_op_not_on_success_path",
+      "description": "an op in an ERROR-terminating then-arm is NOT on the success path (`onSuccessPath=false`) — every path through it terminates via Error(). The error-arm frame is branchTerminatesBy=error. The continuation after the single-arm error guard stays on the success path (true) AND dominates (the guard is not a normal-return).",
+      "source": "codeunit 50100 C2\n{\n    procedure ErrArm(var Cust: Record Customer; bad: Boolean)\n    begin\n        if bad then begin\n            Cust.Modify();\n            Error('boom');\n        end;\n        Cust.Insert();\n    end;\n}",
+      "routineName": "ErrArm",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 12,
+          "order": {
+            "orderId": 0,
+            "frameId": 1,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 6,
+          "startColumn": 12,
+          "order": {
+            "orderId": 1,
+            "frameId": 1,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 6,
+          "startColumn": 12,
+          "order": {
+            "orderId": 1,
+            "frameId": 1,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 8,
+          "order": {
+            "orderId": 2,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "error",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "op (Modify) in error-terminating arm is NOT on the success path",
+        "the if-then frame is error-terminating (by=error)",
+        "continuation Insert after error-only guard IS on the success path",
+        "continuation Insert dominates (single-arm error guard is NOT a normal-return)"
+      ]
+    },
+    {
+      "family": "c-onsuccesspath",
+      "name": "c_both_arms_terminate_continuation_unreachable",
+      "description": "an `if` whose BOTH arms exit → the continuation after it is UNREACHABLE → `onSuccessPath=false`. Both arm frames are branchAlwaysTerminates=true + branchTerminatesBy=exit. The continuation op lands in the root frame but is unreachable.",
+      "source": "codeunit 50100 C3\n{\n    procedure BothExit(var Cust: Record Customer; flag: Boolean)\n    begin\n        if flag then\n            exit\n        else\n            exit;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "BothExit",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 8,
+          "order": {
+            "orderId": 2,
+            "frameId": 0,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        },
+        {
+          "frameId": 2,
+          "parentFrameId": 0,
+          "kind": "if-else",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "continuation Modify after both-arms-exit is NOT on the success path (unreachable)",
+        "continuation Modify does NOT dominate (unreachable)",
+        "both if-arm frames are exit-terminating"
+      ]
+    },
+    {
+      "family": "c-onsuccesspath",
+      "name": "c_bare_top_level_error_follows_ambient",
+      "description": "a BARE top-level `Error()` leaf follows the AMBIENT onSuccessPath — at top-level that is `true` (it does NOT get forced to false). Its dominatesSuccessReturn is false (Error never dominates a normal return). The error-call op inherits the callsite's order via the post-pass.",
+      "source": "codeunit 50100 C4\n{\n    procedure BareErr(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        Error('always');\n    end;\n}",
+      "routineName": "BareErr",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 5,
+          "startColumn": 8,
+          "order": {
+            "orderId": 1,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 5,
+          "startColumn": 8,
+          "order": {
+            "orderId": 1,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "invariants": [
+        "bare top-level Error callsite follows ambient onSuccessPath = true",
+        "bare Error never dominates a normal return (dominatesSuccessReturn=false)",
+        "error-call op shares the Error callsite's order (post-pass alias)"
+      ]
+    },
+    {
+      "family": "d-dominates",
+      "name": "d_before_vs_after_conditional_exit",
+      "description": "a root-block op BEFORE any conditional exit dominates the success return (true); a root-block op AFTER `if Cond then exit` does NOT (the conditional exit is a normal-return-possible-before-here). The exit leaf consumes an orderId → GAP. The if-then exit frame is branchTerminatesBy=exit.",
+      "source": "codeunit 50100 D1\n{\n    procedure DomGuard(var Cust: Record Customer; flag: Boolean)\n    begin\n        Cust.FindSet();\n        if flag then\n            exit;\n        Cust.Modify();\n    end;\n}",
+      "routineName": "DomGuard",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 8,
+          "order": {
+            "orderId": 2,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "exit",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "root op BEFORE conditional exit dominates (true)",
+        "root op AFTER `if flag then exit` does NOT dominate (false)",
+        "the if-then frame is exit-terminating"
+      ]
+    },
+    {
+      "family": "d-dominates",
+      "name": "d_nested_and_leaf_never_dominate",
+      "description": "ops in a branch arm, a loop body, or a case branch NEVER dominate (they are conditional); bare `exit`/`error` leaves never dominate (the exit IS the return, not an op before it). Only the root-block FindSet dominates.",
+      "source": "codeunit 50100 D2\n{\n    procedure NestedDom(var Cust: Record Customer; i: Integer; flag: Boolean)\n    begin\n        Cust.FindSet();\n        if flag then\n            Cust.Modify();\n        while i < 10 do\n            Cust.Delete();\n        case i of\n            1:\n                Cust.Insert();\n        end;\n    end;\n}",
+      "routineName": "NestedDom",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 12,
+          "order": {
+            "orderId": 1,
+            "frameId": 1,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 8,
+          "startColumn": 12,
+          "order": {
+            "orderId": 2,
+            "frameId": 2,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 11,
+          "startColumn": 16,
+          "order": {
+            "orderId": 3,
+            "frameId": 3,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        },
+        {
+          "frameId": 2,
+          "parentFrameId": 0,
+          "kind": "loop"
+        },
+        {
+          "frameId": 3,
+          "parentFrameId": 0,
+          "kind": "case-branch",
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true
+        }
+      ],
+      "invariants": [
+        "root FindSet dominates (true)",
+        "branch-arm Modify does NOT dominate",
+        "loop-body Delete does NOT dominate",
+        "case-branch Insert does NOT dominate"
+      ]
+    },
+    {
+      "family": "d-dominates",
+      "name": "d_other_wrapper_rhs_call_is_condition_leaf",
+      "description": "an assignment `n := Compute()` at the root is an `other` CFN node whose RHS call is a CONDITION LEAF (expression position): the call gets dominatesSuccessReturn=false (conditionLeaves never dominate), onSuccessPath follows ambient. This pins the REAL al-sem value; the `other`-wrapper dominance-PROPAGATION rule (no reset to false) is a structural port requirement covered by the differential.",
+      "source": "codeunit 50100 D3\n{\n    procedure OtherDom(var Cust: Record Customer)\n    var\n        n: Integer;\n    begin\n        n := Compute();\n    end;\n\n    procedure Compute(): Integer\n    begin\n        exit(1);\n    end;\n}",
+      "routineName": "OtherDom",
+      "sites": [
+        {
+          "category": "callsite",
+          "label": "Compute",
+          "startLine": 6,
+          "startColumn": 13,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "invariants": [
+        "the RHS call (Compute, a conditionLeaf of the `other` node) does NOT dominate",
+        "the RHS call follows ambient onSuccessPath (true at root)",
+        "the RHS call is in the root frame 0"
+      ]
+    },
+    {
+      "family": "e-tryfunction",
+      "name": "e_tryfunction_no_order_no_frames",
+      "description": "a `[TryFunction]` routine → computeOperationOrder returns empty maps + empty frames → NO site carries `order` (field ABSENT, never null) AND the routine has NO scopeFrames.",
+      "source": "codeunit 50100 E\n{\n    [TryFunction]\n    procedure TryIt(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        if Cust.IsEmpty() then\n            Cust.Modify();\n        Commit();\n    end;\n}",
+      "routineName": "TryIt",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 8
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 6,
+          "startColumn": 11
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 7,
+          "startColumn": 12
+        },
+        {
+          "category": "operation",
+          "label": "commit",
+          "startLine": 8,
+          "startColumn": 8
+        }
+      ],
+      "scopeFrames": [],
+      "invariants": [
+        "there ARE sites (non-vacuous)",
+        "NO site carries order (all absent)",
+        "the routine has NO scopeFrames"
+      ]
+    },
+    {
+      "family": "f-empty-body",
+      "name": "f_empty_body_root_frame_exists",
+      "description": "a present-but-empty body → ZERO ops/callsites but the root `block` frame (parentFrameId -1) STILL exists. scopeFrames is NOT omitted just because there are no operations.",
+      "source": "codeunit 50100 F\n{\n    procedure Empty()\n    begin\n    end;\n}",
+      "routineName": "Empty",
+      "sites": [],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "invariants": [
+        "no sites",
+        "exactly one root block frame exists (parentFrameId -1)",
+        "the root frame omits all branch fields"
+      ]
+    },
+    {
+      "family": "g-error-call-postpass",
+      "name": "g_error_call_copies_callsite_order",
+      "description": "`if Cond then Error()` inside a guard: the error-call OPERATION (not registered in byOperation) inherits its PAIRED Error callsite's FULL order verbatim via the source-range post-pass — same orderId, frameId, onSuccessPath, dominatesSuccessReturn. The error-arm frame is branchTerminatesBy=error; the callsite/op are onSuccessPath=false.",
+      "source": "codeunit 50100 G\n{\n    procedure ErrGuard(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        if Cust.IsEmpty() then\n            Error('empty');\n    end;\n}",
+      "routineName": "ErrGuard",
+      "sites": [
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 4,
+          "startColumn": 8,
+          "order": {
+            "orderId": 0,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": true
+          }
+        },
+        {
+          "category": "operation",
+          "label": "record-op",
+          "startLine": 5,
+          "startColumn": 11,
+          "order": {
+            "orderId": 1,
+            "frameId": 0,
+            "onSuccessPath": true,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "callsite",
+          "label": "Error",
+          "startLine": 6,
+          "startColumn": 12,
+          "order": {
+            "orderId": 2,
+            "frameId": 1,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        },
+        {
+          "category": "operation",
+          "label": "error-call",
+          "startLine": 6,
+          "startColumn": 12,
+          "order": {
+            "orderId": 2,
+            "frameId": 1,
+            "onSuccessPath": false,
+            "dominatesSuccessReturn": false
+          }
+        }
+      ],
+      "scopeFrames": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        },
+        {
+          "frameId": 1,
+          "parentFrameId": 0,
+          "kind": "if-then",
+          "branchAlwaysTerminates": true,
+          "branchTerminatesBy": "error",
+          "branchMayFallThrough": false
+        }
+      ],
+      "invariants": [
+        "Error callsite is on a non-root error-arm frame, onSuccessPath=false",
+        "error-call op copies the Error callsite's FULL order verbatim (post-pass alias)",
+        "root FindSet dominates (before the conditional error guard)"
+      ]
+    }
+  ]
+}

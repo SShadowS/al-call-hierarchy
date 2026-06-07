@@ -18,6 +18,7 @@ pub mod control_flow;
 pub mod features;
 pub mod l2_workspace;
 pub mod node_util;
+pub mod operation_order;
 pub mod record_op;
 pub mod scope;
 
