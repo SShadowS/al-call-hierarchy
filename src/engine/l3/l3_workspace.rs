@@ -107,6 +107,16 @@ pub struct L3Variable {
     pub declared_type: String,
 }
 
+/// A routine parameter (the L3-relevant subset of al-sem's `ParameterSymbol`) —
+/// drives arity matching, `calleeParameterIsVar` upgrades, and overload arg-type
+/// disambiguation (`typeText`).
+#[derive(Debug, Clone)]
+pub struct L3Parameter {
+    pub name: String,
+    pub type_text: String,
+    pub is_var: bool,
+}
+
 /// A workspace routine (the L3-relevant subset).
 #[derive(Debug, Clone)]
 pub struct L3Routine {
@@ -123,6 +133,14 @@ pub struct L3Routine {
     pub record_variables: Vec<L3RecordVariable>,
     pub record_operations: Vec<L3RecordOperation>,
     pub variables: Vec<L3Variable>,
+    /// Declared parameters (in order) — drives arity + var-ness + arg-type
+    /// disambiguation. Empty for trigger routines with no parameter list.
+    pub parameters: Vec<L3Parameter>,
+    /// Declared return type text (`type_specification` text), if any — used by
+    /// `inferCallExprReturnType` for overload arg-type disambiguation.
+    pub return_type: Option<String>,
+    /// The routine's call sites (L2 body-walk output), the resolver input.
+    pub call_sites: Vec<crate::engine::l2::features::PCallSite>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -497,6 +515,21 @@ fn project_file(
                 })
                 .collect();
 
+            // Re-extract the routine's own parameters + return type for the call
+            // resolver (project_routine_features discards them after id hashing).
+            // Reuse the SAME extractors the routine-id/signature-hash path uses so
+            // arity/var-ness/type-text cannot drift.
+            let parameters = crate::engine::l2::scope::extract_parameters(routine, source)
+                .into_iter()
+                .map(|p| L3Parameter {
+                    name: p.name,
+                    type_text: p.type_text,
+                    is_var: p.is_var,
+                })
+                .collect();
+            let return_type = crate::engine::l2::get_return_type_text(routine, source);
+            let call_sites = features.call_sites.clone();
+
             // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
             // The hash reuses the same param/kind/return extraction as the internal
             // routine id (`routine_normalized_signature_hash`), so they cannot drift.
@@ -513,6 +546,9 @@ fn project_file(
                 record_variables,
                 record_operations,
                 variables,
+                parameters,
+                return_type,
+                call_sites,
             });
         }
     }

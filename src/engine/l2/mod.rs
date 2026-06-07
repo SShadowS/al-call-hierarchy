@@ -48,7 +48,7 @@ pub(crate) fn find_code_block(node: Node) -> Option<Node> {
 }
 
 /// Read the return-type text — first direct `type_specification` named child.
-fn get_return_type_text(node: Node, source: &str) -> Option<String> {
+pub fn get_return_type_text(node: Node, source: &str) -> Option<String> {
     named_children(node)
         .into_iter()
         .find(|c| c.kind() == "type_specification")
