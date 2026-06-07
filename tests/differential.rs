@@ -448,12 +448,12 @@ fn differential_identity_subset_matches_goldens() {
 // ## Scope gate (Task 4 vs Task 5)
 //
 // `R1A_L2_SET` selects which fixtures this test ASSERTS on:
-//   - unset / "small" (the committed default): ws-d2 + ws-r0-canon-stress only.
-//     This is the proven-green Task-4 set.
-//   - "full": every `tests/r1a-goldens/*.l2.golden.json`. Used for the
-//     full-corpus dry-run; widening the committed default to "full" is Task 5.
+//   - unset / "full" (the committed default, since R1a Task 5 / exit gate):
+//     every `tests/r1a-goldens/*.l2.golden.json` — the full 152-fixture corpus.
+//   - "small": ws-d2 + ws-r0-canon-stress only (the proven-green Task-4 subset),
+//     kept for fast localized iteration during development.
 // Either way the harness, forbidden-field scan, and gating are identical — only
-// the fixture set differs.
+// the fixture set differs. The committed default asserts FULL-corpus L2 parity.
 
 /// Keys that must NEVER appear on either side of the L2 comparison (later-gate /
 /// L3-resolved). Mirrors `al2dump_smoke::FORBIDDEN_KEYS` + the projection's
@@ -645,12 +645,13 @@ fn differential_l2_features_match_goldens() {
         r1a_goldens_dir().display()
     );
 
-    // Scope gate: which fixtures this test ASSERTS on.
-    let set = std::env::var("R1A_L2_SET").unwrap_or_else(|_| "small".to_string());
+    // Scope gate: which fixtures this test ASSERTS on. Committed default is the
+    // FULL 152-fixture corpus (R1a exit gate); `small` is the dev subset.
+    let set = std::env::var("R1A_L2_SET").unwrap_or_else(|_| "full".to_string());
     let small_set = ["ws-d2", "ws-r0-canon-stress"];
     let goldens: Vec<(String, PathBuf)> = match set.as_str() {
-        "full" => all_goldens,
-        "small" | "" => all_goldens
+        "full" | "" => all_goldens,
+        "small" => all_goldens
             .into_iter()
             .filter(|(f, _)| small_set.contains(&f.as_str()))
             .collect(),
