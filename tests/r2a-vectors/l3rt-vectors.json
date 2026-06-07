@@ -1,0 +1,445 @@
+{
+  "description": "R2a L3 record-type vectors. Each vector's expected was computed by the REAL al-sem L3 (indexWorkspace pre-resolve → resolveModel post-resolve/pre-summary → projectL3RecordTypes). Hand-authored invariants were asserted against the live projection before emit. Rust loads this committed file and asserts parity. Covers declared/quoted/temporary/unresolved vars, op-from-var, implicit Rec in Table/Page/TableExtension/PageExtension, never-override-explicit-local-Rec, merged extension fields, and a FIRST-wins duplicate-extension-field COLLISION.",
+  "modelInstanceId": "r0",
+  "appGuid": "2a000000-0000-0000-0000-0000000002aa",
+  "familyCount": 12,
+  "vectorCount": 12,
+  "vectors": [
+    {
+      "family": "a-declared-var",
+      "name": "a_declared_record_customer",
+      "description": "`var c: Record Customer` resolves c.tableId to Customer's StableTableId",
+      "files": [
+        [
+          "a",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ncodeunit 50100 A\n{\n    procedure P()\n    var\n        c: Record Customer;\n    begin\n        c.FindSet();\n    end;\n}"
+        ]
+      ],
+      "routineName": "P",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50100#db200ad52a7b02ec8573e7adf9744faa4f6d76a0e2de0af505143c4af89db512",
+        "name": "P",
+        "objectType": "Codeunit",
+        "recordVariables": [
+          {
+            "name": "c",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op0",
+            "op": "FindSet",
+            "recordVariableName": "c",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "c resolves to Customer (50000)"
+      ]
+    },
+    {
+      "family": "b-quoted-var",
+      "name": "b_quoted_sales_line",
+      "description": "`var s: Record \"Sales Line\"` resolves via stripped quotes to Sales Line",
+      "files": [
+        [
+          "b",
+          "table 50001 \"Sales Line\"\n{\n    fields\n    {\n        field(1; \"Document No.\"; Code[20]) { }\n        field(2; \"Line No.\"; Integer) { }\n    }\n    keys { key(PK; \"Document No.\", \"Line No.\") { } }\n}\n\ncodeunit 50100 B\n{\n    procedure P()\n    var\n        s: Record \"Sales Line\";\n    begin\n        s.FindFirst();\n    end;\n}"
+        ]
+      ],
+      "routineName": "P",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50100#db200ad52a7b02ec8573e7adf9744faa4f6d76a0e2de0af505143c4af89db512",
+        "name": "P",
+        "objectType": "Codeunit",
+        "recordVariables": [
+          {
+            "name": "s",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50001"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op0",
+            "op": "FindFirst",
+            "recordVariableName": "s",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50001"
+          }
+        ]
+      },
+      "invariants": [
+        "s resolves to \"Sales Line\" (50001)"
+      ]
+    },
+    {
+      "family": "c-temporary",
+      "name": "c_temporary_record",
+      "description": "`Record Customer temporary` strips the modifier and resolves the table",
+      "files": [
+        [
+          "c",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ncodeunit 50100 C\n{\n    procedure P()\n    var\n        t: Record Customer temporary;\n    begin\n        t.Insert();\n    end;\n}"
+        ]
+      ],
+      "routineName": "P",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50100#db200ad52a7b02ec8573e7adf9744faa4f6d76a0e2de0af505143c4af89db512",
+        "name": "P",
+        "objectType": "Codeunit",
+        "recordVariables": [
+          {
+            "name": "t",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op0",
+            "op": "Insert",
+            "recordVariableName": "t",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "temporary var t still resolves to Customer (50000)"
+      ]
+    },
+    {
+      "family": "d-unresolved",
+      "name": "d_unresolved_absent",
+      "description": "a record var naming a table not in the workspace has tableId OMITTED",
+      "files": [
+        [
+          "d",
+          "codeunit 50100 D\n{\n    procedure P()\n    var\n        x: Record \"No Such Table\";\n    begin\n        x.Get();\n    end;\n}"
+        ]
+      ],
+      "routineName": "P",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50100#db200ad52a7b02ec8573e7adf9744faa4f6d76a0e2de0af505143c4af89db512",
+        "name": "P",
+        "objectType": "Codeunit",
+        "recordVariables": [
+          {
+            "name": "x"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op0",
+            "op": "Get",
+            "recordVariableName": "x"
+          }
+        ]
+      },
+      "invariants": [
+        "unresolved var x has NO tableId key",
+        "unresolved op x.Get has NO tableId key"
+      ]
+    },
+    {
+      "family": "e-op-from-var",
+      "name": "e_op_tableid_from_var",
+      "description": "a record op's tableId is derived from its declared record variable",
+      "files": [
+        [
+          "e",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ncodeunit 50100 E\n{\n    procedure P()\n    var\n        c: Record Customer;\n    begin\n        c.FindSet();\n        c.Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "P",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50100#db200ad52a7b02ec8573e7adf9744faa4f6d76a0e2de0af505143c4af89db512",
+        "name": "P",
+        "objectType": "Codeunit",
+        "recordVariables": [
+          {
+            "name": "c",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op0",
+            "op": "FindSet",
+            "recordVariableName": "c",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "operationId": "r0/37a43beafa9116562a0580871e3e8e02ed432065cf01304b177f11f152c52b42/op1",
+            "op": "Modify",
+            "recordVariableName": "c",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "c.FindSet op resolves to Customer (50000)",
+        "c.Modify op resolves to Customer (50000)"
+      ]
+    },
+    {
+      "family": "f-implicit-rec-table",
+      "name": "f_implicit_rec_table_trigger",
+      "description": "bare `Modify;` / `Rec.Modify` in a Table trigger resolves Rec to the owning table",
+      "files": [
+        [
+          "f",
+          "table 50000 Customer\n{\n    fields { field(1; \"No.\"; Code[20]) { } }\n    keys { key(PK; \"No.\") { } }\n\n    trigger OnInsert()\n    begin\n        Rec.Modify();\n        Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "OnInsert",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+        "name": "OnInsert",
+        "objectType": "Table",
+        "recordVariables": [],
+        "recordOperations": [
+          {
+            "operationId": "r0/8d80aa0dee611de018ba6737dbeed8dcd1e010583132a391ab4cc5a818c97981/op0",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "operationId": "r0/8d80aa0dee611de018ba6737dbeed8dcd1e010583132a391ab4cc5a818c97981/op1",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "implicit Rec op resolves to the owning table (50000)",
+        "the matrix implicit-Rec definition holds (rec/xrec + tableId set)"
+      ]
+    },
+    {
+      "family": "g-implicit-rec-page",
+      "name": "g_implicit_rec_page_sourcetable",
+      "description": "implicit Rec in a Page trigger resolves to the declared SourceTable",
+      "files": [
+        [
+          "g",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\npage 50100 \"Cust Card\"\n{\n    PageType = Card;\n    SourceTable = Customer;\n\n    trigger OnOpenPage()\n    begin\n        Rec.Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "OnOpenPage",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Page:50100#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+        "name": "OnOpenPage",
+        "objectType": "Page",
+        "recordVariables": [],
+        "recordOperations": [
+          {
+            "operationId": "r0/5a1e29c7cc4f5c2bc2470312b4fe1b4a514cec206aa3a45020d4b6fc57f7cc60/op0",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "page implicit Rec resolves to SourceTable Customer (50000)"
+      ]
+    },
+    {
+      "family": "h-implicit-rec-tableext",
+      "name": "h_implicit_rec_tableextension_extends",
+      "description": "implicit Rec in a TableExtension trigger resolves via the `extends` target to the BASE table",
+      "files": [
+        [
+          "h",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ntableextension 50100 \"Cust Ext\" extends Customer\n{\n    trigger OnBeforeModify()\n    begin\n        Rec.Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "OnBeforeModify",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50100#dc0b298612568cc481c70b34b5f694da490765a87f0501fa8e8566143467f916",
+        "name": "OnBeforeModify",
+        "objectType": "TableExtension",
+        "recordVariables": [],
+        "recordOperations": [
+          {
+            "operationId": "r0/50c07ed30fdbf243f13e256502b196fdaa6a9ee6841c44d41ccb81d020506f40/op0",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "tableextension implicit Rec resolves to extended base Customer (50000)"
+      ]
+    },
+    {
+      "family": "i-implicit-rec-pageext",
+      "name": "i_implicit_rec_pageextension_chain",
+      "description": "implicit Rec in a PageExtension resolves: extends → base page → its SourceTable → table",
+      "files": [
+        [
+          "i",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\npage 50100 \"Cust Card\"\n{\n    PageType = Card;\n    SourceTable = Customer;\n}\n\npageextension 50101 \"Cust Card Ext\" extends \"Cust Card\"\n{\n    trigger OnAfterGetRecord()\n    begin\n        Rec.Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "OnAfterGetRecord",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:PageExtension:50101#c61793b51db155d5f30630cf4f4640931c2f93380ff5b0863cc412c4e4a39303",
+        "name": "OnAfterGetRecord",
+        "objectType": "PageExtension",
+        "recordVariables": [],
+        "recordOperations": [
+          {
+            "operationId": "r0/bf7738c097937a2326b9e3905ed9157f7590a41117b2deabcfe3be4aad6f5f4d/op0",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ]
+      },
+      "invariants": [
+        "pageextension implicit Rec resolves via base page SourceTable → Customer (50000)"
+      ]
+    },
+    {
+      "family": "j-never-override-local-rec",
+      "name": "j_never_override_explicit_local_rec",
+      "description": "a real local var named `Rec` typed as another table is NOT overridden by implicit Table-Rec resolution",
+      "files": [
+        [
+          "j",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\ntable 50001 \"Sales Line\"\n{\n    fields\n    {\n        field(1; \"Document No.\"; Code[20]) { }\n        field(2; \"Line No.\"; Integer) { }\n    }\n    keys { key(PK; \"Document No.\", \"Line No.\") { } }\n}\n\ntable 50002 Other\n{\n    fields { field(1; \"No.\"; Code[20]) { } }\n    keys { key(PK; \"No.\") { } }\n\n    procedure DoIt()\n    var\n        Rec: Record \"Sales Line\";\n    begin\n        Rec.Modify();\n    end;\n}"
+        ]
+      ],
+      "routineName": "DoIt",
+      "expectedRoutine": {
+        "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Table:50002#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2",
+        "name": "DoIt",
+        "objectType": "Table",
+        "recordVariables": [
+          {
+            "name": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50001"
+          }
+        ],
+        "recordOperations": [
+          {
+            "operationId": "r0/de8039bf864b4bbc4cdb79770796fcd64229478083b56f371da63c38e4c496e3/op0",
+            "op": "Modify",
+            "recordVariableName": "rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50001"
+          }
+        ]
+      },
+      "invariants": [
+        "explicit local Rec (Sales Line) wins over the owning table (Other 50002)",
+        "the local Rec var itself resolves to Sales Line (50001)"
+      ]
+    },
+    {
+      "family": "k-merged-extension-fields",
+      "name": "k_merged_extension_fields",
+      "description": "a TableExtension extending an IN-WORKSPACE base table merges its fields onto the base table",
+      "files": [
+        [
+          "k",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ntableextension 50100 \"Cust Ext\" extends Customer\n{\n    fields\n    {\n        field(50000; \"Loyalty Points\"; Integer) { }\n        field(50001; \"Tier\"; Text[20]) { }\n    }\n}"
+        ]
+      ],
+      "tableName": "Customer",
+      "expectedTable": {
+        "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000",
+        "name": "Customer",
+        "fields": [
+          {
+            "fieldNumber": 1,
+            "name": "No.",
+            "dataType": "Code[20]",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "fieldNumber": 2,
+            "name": "Name",
+            "dataType": "Text[100]",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "fieldNumber": 50000,
+            "name": "Loyalty Points",
+            "dataType": "Integer",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50100"
+          },
+          {
+            "fieldNumber": 50001,
+            "name": "Tier",
+            "dataType": "Text[20]",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50100"
+          }
+        ]
+      },
+      "invariants": [
+        "base table has its 2 native + 2 merged extension fields",
+        "merged field 50000 carries TableExtension provenance (declaringObjectId)",
+        "native field 1 keeps the base Table provenance"
+      ]
+    },
+    {
+      "family": "l-collision-first-wins",
+      "name": "l_collision_duplicate_extfield_number",
+      "description": "two TableExtensions adding the SAME field number to one base table → mergeExtensionFields is FIRST-wins (the second is dropped)",
+      "files": [
+        [
+          "l",
+          "table 50000 Customer\n{\n    fields\n    {\n        field(1; \"No.\"; Code[20]) { }\n        field(2; Name; Text[100]) { }\n    }\n    keys { key(PK; \"No.\") { } }\n}\n\ntableextension 50100 \"Ext A\" extends Customer\n{\n    fields { field(50000; \"From A\"; Integer) { } }\n}\n\ntableextension 50101 \"Ext B\" extends Customer\n{\n    fields\n    {\n        field(50000; \"From B Collides\"; Integer) { }\n        field(50001; \"From B New\"; Integer) { }\n    }\n}"
+        ]
+      ],
+      "tableName": "Customer",
+      "expectedTable": {
+        "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000",
+        "name": "Customer",
+        "fields": [
+          {
+            "fieldNumber": 1,
+            "name": "No.",
+            "dataType": "Code[20]",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "fieldNumber": 2,
+            "name": "Name",
+            "dataType": "Text[100]",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          },
+          {
+            "fieldNumber": 50000,
+            "name": "From A",
+            "dataType": "Integer",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50100"
+          },
+          {
+            "fieldNumber": 50001,
+            "name": "From B New",
+            "dataType": "Integer",
+            "fieldClass": "Normal",
+            "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50101"
+          }
+        ]
+      },
+      "invariants": [
+        "field 50000 is FIRST-wins from Ext A (ingested first), Ext B's collision dropped",
+        "field 50001 (non-colliding, from Ext B) DOES merge",
+        "base table has exactly 2 native + 2 merged (50000 once, 50001) = 4 fields"
+      ]
+    }
+  ]
+}

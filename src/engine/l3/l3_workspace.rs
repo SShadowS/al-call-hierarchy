@@ -1,0 +1,702 @@
+//! L3 workspace assembly — the WORKSPACE-level model the L3 resolver needs.
+//!
+//! Where L2 (`l2_workspace::project_workspace`) processed per-file/per-object and
+//! emitted a flat allowlisted projection, L3 needs ALL objects + tables +
+//! routines across the whole workspace assembled together, in al-sem's EXACT
+//! deterministic ingestion order: POSIX-path-sorted files → per-file document
+//! order (the same order R0/R1 discovery produces). This order is LOAD-BEARING —
+//! the symbol table's name/number collision resolution is LAST-wins, the
+//! lexical-scope fallback is LAST-wins, and `merge_extension_fields` is FIRST-wins,
+//! all keyed off this iteration order.
+//!
+//! This module also drives resolution: `build_symbol_table → resolve_record_types
+//! → merge_extension_fields` (al-sem's first three resolve sub-steps; calls /
+//! events / coverage are LATER gates and OUT of R2a). Record vars / ops get their
+//! resolved internal `tableId`, projected to a StableTableId by the test/dump.
+//!
+//! Object / routine features reuse the L2 body walk verbatim
+//! (`project_routine_features`) so record vars / ops / variables match L2
+//! byte-for-byte; L3 only adds the table/field index + the cross-file resolution.
+
+use super::extension_fields::merge_extension_fields;
+use super::record_types::resolve_routine_record_types;
+use super::symbol_table::SymbolTable;
+use crate::engine::ids::{encode_object_id, to_stable_object_id};
+use crate::engine::l2::node_util::{named_children, node_text, strip_quotes, Utf16Cols};
+use crate::engine::l2::scope;
+use crate::engine::l2::{extract_object_number, project_routine_features, IdentityCtx};
+use tree_sitter::{Node, Parser};
+
+// ---------------------------------------------------------------------------
+// L3 model types — workspace-level, in-memory (NOT the serde projection shape).
+// ---------------------------------------------------------------------------
+
+/// A workspace object (the L3-relevant subset of al-sem's `ObjectDecl`).
+#[derive(Debug, Clone)]
+pub struct L3Object {
+    /// Internal object id: `${appGuid}/${objectType}/${objectNumber}`.
+    pub id: String,
+    pub app_guid: String,
+    pub object_type: String,
+    pub object_number: i64,
+    pub name: String,
+    /// Page / PageExtension `SourceTable` (unquoted), else None.
+    pub source_table_name: Option<String>,
+    /// TableExtension / PageExtension `extends` target (unquoted), else None.
+    pub extends_target_name: Option<String>,
+    /// Implemented interfaces (Codeunit / Enum / Interface): `Some([])` known-none,
+    /// `Some([...])` listed, `None` unknown. Other object types: `None`.
+    pub implements_interfaces: Option<Vec<String>>,
+}
+
+/// A workspace field (the L3-relevant subset of al-sem's `Field`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3Field {
+    pub id: String,
+    pub physical_table_id: String,
+    pub declaring_object_id: String,
+    pub declaring_app_id: String,
+    pub field_number: i64,
+    pub name: String,
+    pub field_class: String,
+    pub data_type: String,
+    pub is_blob_like: bool,
+}
+
+/// A workspace table (the L3-relevant subset of al-sem's `Table`). Both `Table`
+/// and `TableExtension` declarations produce one of these (matching al-sem's
+/// `index.tables`).
+#[derive(Debug, Clone)]
+pub struct L3Table {
+    /// Internal table id: `${appGuid}/table/${tableNumber}`.
+    pub id: String,
+    pub app_guid: String,
+    pub table_number: i64,
+    pub name: String,
+    pub fields: Vec<L3Field>,
+}
+
+/// A record variable with its (post-resolve) resolved internal table id.
+#[derive(Debug, Clone)]
+pub struct L3RecordVariable {
+    pub id: String,
+    pub name: String,
+    /// Declared table name (unquoted), or None for a non-record / unparsed type.
+    pub table_name: Option<String>,
+    /// Resolved internal TableId, set by `resolve_record_types`. None = unresolved.
+    pub table_id: Option<String>,
+}
+
+/// A record operation with its (post-resolve) resolved internal table id.
+#[derive(Debug, Clone)]
+pub struct L3RecordOperation {
+    pub id: String,
+    pub op: String,
+    pub record_variable_name: String,
+    pub record_variable_id: Option<String>,
+    pub table_id: Option<String>,
+}
+
+/// A lexical variable (params → locals → globals) carrying its declared type, for
+/// the record-op lexical-scope fallback.
+#[derive(Debug, Clone)]
+pub struct L3Variable {
+    pub name: String,
+    pub declared_type: String,
+}
+
+/// A workspace routine (the L3-relevant subset).
+#[derive(Debug, Clone)]
+pub struct L3Routine {
+    /// Internal routine id: `${modelInstanceId}/${canonicalRoutineKeyHash}`.
+    pub id: String,
+    /// Owning object's internal id.
+    pub object_id: String,
+    pub name: String,
+    pub record_variables: Vec<L3RecordVariable>,
+    pub record_operations: Vec<L3RecordOperation>,
+    pub variables: Vec<L3Variable>,
+}
+
+/// The assembled workspace L3 model (pre-resolve until `resolve` runs).
+#[derive(Debug, Clone)]
+pub struct L3Workspace {
+    pub objects: Vec<L3Object>,
+    pub tables: Vec<L3Table>,
+    pub routines: Vec<L3Routine>,
+}
+
+// ---------------------------------------------------------------------------
+// Object metadata extraction (object-indexer.ts parity).
+// ---------------------------------------------------------------------------
+
+/// `extractObjectName` — first quoted_identifier (stripped) or identifier, else "".
+fn extract_object_name(decl: Node, source: &str) -> String {
+    for child in named_children(decl) {
+        match child.kind() {
+            "quoted_identifier" => return strip_quotes(node_text(child, source)).to_string(),
+            "identifier" => return node_text(child, source).to_string(),
+            _ => {}
+        }
+    }
+    String::new()
+}
+
+/// `readObjectProperty` — first DIRECT `property` child whose `name` field matches
+/// (case-insensitive); returns the raw `value` field text. Never descends.
+fn read_object_property(decl: Node, property_name: &str, source: &str) -> Option<String> {
+    let want = property_name.to_lowercase();
+    for child in named_children(decl) {
+        if child.kind() != "property" {
+            continue;
+        }
+        let Some(name_node) = child.child_by_field_name("name") else {
+            continue;
+        };
+        if node_text(name_node, source).to_lowercase() != want {
+            continue;
+        }
+        return child
+            .child_by_field_name("value")
+            .map(|v| node_text(v, source).to_string());
+    }
+    None
+}
+
+/// `extractExtendsTargetName` — first identifier / quoted_identifier (stripped)
+/// after the `extends_keyword` child.
+fn extract_extends_target_name(decl: Node, source: &str) -> Option<String> {
+    let mut saw_extends = false;
+    for child in named_children(decl) {
+        if child.kind() == "extends_keyword" {
+            saw_extends = true;
+            continue;
+        }
+        if !saw_extends {
+            continue;
+        }
+        match child.kind() {
+            "quoted_identifier" => return Some(strip_quotes(node_text(child, source)).to_string()),
+            "identifier" => return Some(node_text(child, source).to_string()),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `extractImplementsInterfaces` — names after the `implements` keyword (unquoted),
+/// in document order. Returns `Some([])` when the object type can carry the clause
+/// but none are present. Mirrors object-indexer.ts (Codeunit / Enum / Interface).
+fn extract_implements_interfaces(decl: Node, source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut saw_implements = false;
+    for child in named_children(decl) {
+        let kind = child.kind();
+        if kind == "implements_keyword" {
+            saw_implements = true;
+            continue;
+        }
+        if !saw_implements {
+            // Some grammars wrap the list in an `implements_clause` node — descend.
+            if kind == "implements_clause" {
+                for sub in named_children(child) {
+                    match sub.kind() {
+                        "quoted_identifier" => {
+                            out.push(strip_quotes(node_text(sub, source)).to_string())
+                        }
+                        "identifier" => out.push(node_text(sub, source).to_string()),
+                        _ => {}
+                    }
+                }
+            }
+            continue;
+        }
+        match kind {
+            "quoted_identifier" => out.push(strip_quotes(node_text(child, source)).to_string()),
+            "identifier" => out.push(node_text(child, source).to_string()),
+            // Stop at the body brace / first non-name child.
+            "object_body" | "code_block" => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Table / field extraction (object-indexer.ts `indexTable` / `classifyField`).
+// ---------------------------------------------------------------------------
+
+const BLOB_LIKE: &[&str] = &["blob", "media", "mediaset"];
+
+/// `classifyField` — (dataType, fieldClass, isBlobLike).
+fn classify_field(field_node: Node, source: &str) -> (String, String, bool) {
+    let mut data_type = String::new();
+    for child in named_children(field_node) {
+        if child.kind() == "type_specification" {
+            data_type = node_text(child, source).to_string();
+            break;
+        }
+    }
+    let mut field_class = "Normal".to_string();
+    for child in named_children(field_node) {
+        if child.kind() != "property" {
+            continue;
+        }
+        let Some(name_node) = child.child_by_field_name("name") else {
+            continue;
+        };
+        if node_text(name_node, source).to_lowercase() != "fieldclass" {
+            continue;
+        }
+        let value = child
+            .child_by_field_name("value")
+            .map(|v| node_text(v, source).to_lowercase())
+            .unwrap_or_default();
+        if value.contains("flowfield") {
+            field_class = "FlowField".to_string();
+        } else if value.contains("flowfilter") {
+            field_class = "FlowFilter".to_string();
+        }
+    }
+    let is_blob_like = BLOB_LIKE.contains(&data_type.to_lowercase().as_str());
+    (data_type, field_class, is_blob_like)
+}
+
+/// `indexTable` — build an `L3Table` (fields only; keys are OUT for R2a) from a
+/// table / tableextension declaration.
+fn index_table(
+    decl: Node,
+    object_id: &str,
+    app_guid: &str,
+    table_number: i64,
+    table_name: &str,
+    source: &str,
+) -> L3Table {
+    let table_id = format!("{app_guid}/table/{table_number}");
+    let mut fields = Vec::new();
+
+    // Collect `field_declaration` nodes anywhere under the declaration (prune at
+    // match — don't recurse into a field's own children). Document order.
+    let mut field_nodes: Vec<Node> = Vec::new();
+    let mut stack = vec![decl];
+    let mut buffer: Vec<Node> = Vec::new();
+    while let Some(node) = stack.pop() {
+        if node.kind() == "field_declaration" {
+            buffer.push(node);
+            continue;
+        }
+        // Push children reversed so the (reversed) collection reads document order.
+        let children = named_children(node);
+        for child in children.into_iter().rev() {
+            stack.push(child);
+        }
+    }
+    // `stack.pop()` + reverse-push yields document order already; collect.
+    field_nodes.extend(buffer);
+
+    for field_node in &field_nodes {
+        let mut field_number = 0i64;
+        let mut field_name = String::new();
+        let mut name_found = false;
+        for child in named_children(*field_node) {
+            if field_number == 0 && child.kind() == "integer" {
+                field_number = node_text(child, source).trim().parse::<i64>().unwrap_or(0);
+                continue;
+            }
+            if !name_found && field_number != 0 {
+                match child.kind() {
+                    "quoted_identifier" => {
+                        field_name = strip_quotes(node_text(child, source)).to_string();
+                        name_found = true;
+                    }
+                    "identifier" => {
+                        field_name = node_text(child, source).to_string();
+                        name_found = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let (data_type, field_class, is_blob_like) = classify_field(*field_node, source);
+        fields.push(L3Field {
+            id: format!("{table_id}/{field_number}"),
+            physical_table_id: table_id.clone(),
+            declaring_object_id: object_id.to_string(),
+            declaring_app_id: app_guid.to_string(),
+            field_number,
+            name: field_name,
+            field_class,
+            data_type,
+            is_blob_like,
+        });
+    }
+
+    L3Table {
+        id: table_id,
+        app_guid: app_guid.to_string(),
+        table_number,
+        name: table_name.to_string(),
+        fields,
+    }
+}
+
+/// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
+fn collect_routine_nodes(decl: Node) -> Vec<Node> {
+    let mut out = Vec::new();
+    let mut stack = vec![decl];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
+            out.push(node);
+            continue;
+        }
+        for child in named_children(node).into_iter().rev() {
+            stack.push(child);
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Per-file assembly.
+// ---------------------------------------------------------------------------
+
+const MODEL_INSTANCE_ID_DEFAULT: &str = "r0";
+
+#[allow(clippy::too_many_arguments)]
+fn project_file(
+    root: Node,
+    source: &str,
+    app_guid: &str,
+    model_instance_id: &str,
+    source_unit_id: &str,
+    cols: &Utf16Cols,
+    workspace: &mut L3Workspace,
+) {
+    for decl in named_children(root) {
+        let Some(object_type) = scope::object_type_for(decl.kind()) else {
+            continue;
+        };
+        let object_number = extract_object_number(decl, source);
+        let name = extract_object_name(decl, source);
+        let object_id = encode_object_id(app_guid, object_type, object_number);
+
+        // Object metadata (object-indexer.ts parity).
+        let source_table_name = if object_type == "Page" || object_type == "PageExtension" {
+            read_object_property(decl, "SourceTable", source).map(|s| strip_quotes(&s).to_string())
+        } else {
+            None
+        };
+        let extends_target_name =
+            if object_type == "TableExtension" || object_type == "PageExtension" {
+                extract_extends_target_name(decl, source)
+            } else {
+                None
+            };
+        let implements_interfaces =
+            if object_type == "Codeunit" || object_type == "Enum" || object_type == "Interface" {
+                Some(extract_implements_interfaces(decl, source))
+            } else {
+                None
+            };
+
+        workspace.objects.push(L3Object {
+            id: object_id.clone(),
+            app_guid: app_guid.to_string(),
+            object_type: object_type.to_string(),
+            object_number,
+            name: name.clone(),
+            source_table_name: source_table_name.clone(),
+            extends_target_name,
+            implements_interfaces,
+        });
+
+        if object_type == "Table" || object_type == "TableExtension" {
+            workspace.tables.push(index_table(
+                decl,
+                &object_id,
+                app_guid,
+                object_number,
+                &name,
+                source,
+            ));
+        }
+
+        // Object globals + per-routine features (reuse the L2 body walk verbatim).
+        let object_globals = scope::extract_object_globals(decl, source_unit_id, source);
+        let routine_nodes = collect_routine_nodes(decl);
+        let mut object_procedure_names = std::collections::HashSet::new();
+        for n in &routine_nodes {
+            if let Some(nm) = n.child_by_field_name("name") {
+                object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
+            }
+        }
+        let id_ctx = IdentityCtx {
+            app_guid,
+            model_instance_id,
+            source_unit_id,
+        };
+
+        for routine in routine_nodes {
+            let Some(nm) = routine.child_by_field_name("name") else {
+                continue;
+            };
+            let rname = strip_quotes(node_text(nm, source)).to_string();
+            if rname.is_empty() {
+                continue;
+            }
+
+            let Some((routine_id, features)) = project_routine_features(
+                decl,
+                routine,
+                object_type,
+                object_number,
+                source_table_name.as_deref(),
+                &object_procedure_names,
+                &object_globals,
+                &id_ctx,
+                source,
+                cols,
+            ) else {
+                continue;
+            };
+
+            let record_variables = features
+                .record_variables
+                .iter()
+                .map(|rv| L3RecordVariable {
+                    id: rv.id.clone(),
+                    name: rv.name.clone(),
+                    table_name: rv.table_name.clone(),
+                    table_id: None,
+                })
+                .collect();
+            let record_operations = features
+                .record_operations
+                .iter()
+                .map(|op| L3RecordOperation {
+                    id: op.id.clone(),
+                    op: op.op.clone(),
+                    record_variable_name: op.record_variable_name.clone(),
+                    record_variable_id: op.record_variable_id.clone(),
+                    table_id: None,
+                })
+                .collect();
+            let variables = features
+                .variables
+                .iter()
+                .map(|v| L3Variable {
+                    name: v.name.clone(),
+                    declared_type: v.declared_type.clone(),
+                })
+                .collect();
+
+            workspace.routines.push(L3Routine {
+                id: routine_id,
+                object_id: object_id.clone(),
+                name: rname,
+                record_variables,
+                record_operations,
+                variables,
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public assembly + resolution entry points.
+// ---------------------------------------------------------------------------
+
+/// Assemble the workspace L3 model from inline `(name, source)` files, in al-sem's
+/// deterministic ingestion order (files sorted by name → per-file document order),
+/// then run `resolve_record_types` + `merge_extension_fields`.
+///
+/// This is the offline entry point the vector test drives. Disk-backed workspaces
+/// (the differential / dump in Task 3) sort discovered `.al` files by their
+/// workspace-relative POSIX path — the same total order this reproduces.
+pub fn assemble_and_resolve(
+    files: &[(String, String)],
+    app_guid: &str,
+    model_instance_id: &str,
+) -> L3Resolved {
+    // Deterministic ingestion order: sort files by name (the `ws:<name>` unit id
+    // total order), then walk each file's objects in document order.
+    let mut sorted: Vec<&(String, String)> = files.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut parser = Parser::new();
+    parser
+        .set_language(&crate::language::language())
+        .expect("set tree-sitter language");
+
+    let mut workspace = L3Workspace {
+        objects: Vec::new(),
+        tables: Vec::new(),
+        routines: Vec::new(),
+    };
+
+    for (fname, source) in sorted {
+        let Some(tree) = parser.parse(source, None) else {
+            continue;
+        };
+        let source_unit_id = format!("ws:{fname}");
+        let cols = Utf16Cols::new(source);
+        project_file(
+            tree.root_node(),
+            source,
+            app_guid,
+            model_instance_id,
+            &source_unit_id,
+            &cols,
+            &mut workspace,
+        );
+    }
+
+    resolve(&mut workspace);
+    L3Resolved { workspace }
+}
+
+/// Convenience: assemble + resolve with the default model-instance id (`r0`).
+pub fn assemble_and_resolve_default(files: &[(String, String)], app_guid: &str) -> L3Resolved {
+    assemble_and_resolve(files, app_guid, MODEL_INSTANCE_ID_DEFAULT)
+}
+
+/// Run the three L3 resolve sub-steps over an assembled workspace IN ORDER:
+/// `build_symbol_table → resolve_record_types → merge_extension_fields`.
+/// `tableId` is set by record-types and never re-touched by the merge.
+pub fn resolve(workspace: &mut L3Workspace) {
+    let symbols = SymbolTable::build(&workspace.objects, &workspace.tables, &workspace.routines);
+
+    // objectId → object, so a routine maps back to its owning object.
+    use std::collections::HashMap;
+    let object_by_id: HashMap<String, L3Object> = workspace
+        .objects
+        .iter()
+        .map(|o| (o.id.clone(), o.clone()))
+        .collect();
+
+    for routine in &mut workspace.routines {
+        let object = object_by_id.get(&routine.object_id);
+        resolve_routine_record_types(routine, object, &symbols);
+    }
+
+    merge_extension_fields(workspace);
+}
+
+// ---------------------------------------------------------------------------
+// Resolved-projection accessors (StableTableId form) — the test/dump surface.
+// ---------------------------------------------------------------------------
+
+/// Project an internal TableId (`${appGuid}/table/${n}`) to its StableTableId
+/// (`${appGuid}:Table:${n}`). Mirrors al-sem `toStableTableId`.
+pub fn to_stable_table_id(internal: &str) -> String {
+    let parts: Vec<&str> = internal.split('/').collect();
+    if parts.len() == 3 && parts[1] == "table" {
+        format!("{}:Table:{}", parts[0], parts[2])
+    } else {
+        // Defensive: never panic in the engine. Return as-is (will fail compare).
+        internal.to_string()
+    }
+}
+
+/// A resolved workspace, exposing the StableTableId-projected lookups the parity
+/// surface compares.
+pub struct L3Resolved {
+    pub workspace: L3Workspace,
+}
+
+/// A merged field projected for comparison (StableObjectId declaring provenance).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectedField {
+    pub field_number: i64,
+    pub name: String,
+    pub data_type: String,
+    pub field_class: String,
+    pub declaring_object_id: String,
+}
+
+/// A routine view exposing resolved record var / op StableTableIds by name.
+pub struct RoutineView<'a> {
+    routine: &'a L3Routine,
+}
+
+impl L3Resolved {
+    /// Find a routine by name (first match in assembled order).
+    pub fn routine_by_name(&self, name: &str) -> Option<RoutineView<'_>> {
+        self.workspace
+            .routines
+            .iter()
+            .find(|r| r.name == name)
+            .map(|routine| RoutineView { routine })
+    }
+
+    /// Find a table by name (case-insensitive, LAST-wins — matching the symbol
+    /// table the resolution queried).
+    pub fn table_by_name(&self, name: &str) -> Option<TableView<'_>> {
+        let want = name.to_lowercase();
+        let mut found = None;
+        for t in &self.workspace.tables {
+            if t.name.to_lowercase() == want {
+                found = Some(t); // LAST-wins
+            }
+        }
+        found.map(|table| TableView { table })
+    }
+}
+
+impl RoutineView<'_> {
+    /// Resolved StableTableId for the named record variable, or None if unresolved
+    /// / absent.
+    pub fn record_var_table_id(&self, name: &str) -> Option<String> {
+        let want = name.to_lowercase();
+        self.routine
+            .record_variables
+            .iter()
+            .find(|v| v.name.to_lowercase() == want)
+            .and_then(|v| v.table_id.as_deref().map(to_stable_table_id))
+    }
+
+    pub fn record_var_count(&self) -> usize {
+        self.routine.record_variables.len()
+    }
+
+    /// All record ops in walk order as `(op, recordVariableName, Option<StableTableId>)`.
+    pub fn record_ops(&self) -> Vec<(String, String, Option<String>)> {
+        self.routine
+            .record_operations
+            .iter()
+            .map(|op| {
+                (
+                    op.op.clone(),
+                    op.record_variable_name.clone(),
+                    op.table_id.as_deref().map(to_stable_table_id),
+                )
+            })
+            .collect()
+    }
+}
+
+/// A table view exposing the merged fields (StableObjectId provenance).
+pub struct TableView<'a> {
+    table: &'a L3Table,
+}
+
+impl TableView<'_> {
+    pub fn stable_table_id(&self) -> String {
+        to_stable_table_id(&self.table.id)
+    }
+
+    /// Merged fields in stored order, declaringObjectId projected to StableObjectId.
+    pub fn merged_fields(&self) -> Vec<ProjectedField> {
+        self.table
+            .fields
+            .iter()
+            .map(|f| ProjectedField {
+                field_number: f.field_number,
+                name: f.name.clone(),
+                data_type: f.data_type.clone(),
+                field_class: f.field_class.clone(),
+                declaring_object_id: to_stable_object_id(&f.declaring_object_id),
+            })
+            .collect()
+    }
+}
