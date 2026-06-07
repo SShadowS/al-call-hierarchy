@@ -6,7 +6,7 @@
 //!
 //! FORBIDDEN fields are STRUCTURALLY ABSENT — they are not declared here, so a
 //! stray field can never serialize:
-//!   - controlContext (R1b), order/OperationOrder (R1c), scopeFrames (R1c)
+//!   - order/OperationOrder (R1c), scopeFrames (R1c)
 //!   - CapabilityFact (R1d)
 //!   - tableId on RecordVariable/RecordOperation/VariableSymbol (L3 Phase-2)
 //!   - resourceId (L3 Phase-2)
@@ -151,6 +151,11 @@ pub struct PCallSite {
     pub object_run_return_used: Option<bool>,
     #[serde(rename = "underAsserterror", skip_serializing_if = "Option::is_none")]
     pub under_asserterror: Option<bool>,
+    /// R1b control-context lattice value (kebab-case string). ABSENT when the
+    /// site has no entry (TryFunction / no body / unknown) — matching al-sem's
+    /// "assign only when defined" convention.
+    #[serde(rename = "controlContext", skip_serializing_if = "Option::is_none")]
+    pub control_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -163,6 +168,10 @@ pub struct POperationSite {
     pub source_anchor: PAnchor,
     #[serde(rename = "underAsserterror", skip_serializing_if = "Option::is_none")]
     pub under_asserterror: Option<bool>,
+    /// R1b control-context lattice value (kebab-case string). ABSENT when the
+    /// site has no entry (TryFunction / no body / unknown).
+    #[serde(rename = "controlContext", skip_serializing_if = "Option::is_none")]
+    pub control_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

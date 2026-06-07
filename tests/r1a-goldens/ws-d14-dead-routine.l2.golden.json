@@ -97,7 +97,8 @@
               "endLine": 4,
               "endColumn": 14,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

@@ -165,7 +165,8 @@
               "endLine": 6,
               "endColumn": 14,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

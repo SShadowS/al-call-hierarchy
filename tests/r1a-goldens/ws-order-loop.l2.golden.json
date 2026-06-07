@@ -49,7 +49,8 @@
               "endLine": 9,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op1",
@@ -64,7 +65,8 @@
               "endLine": 10,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op2",
@@ -77,7 +79,8 @@
               "endLine": 12,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

@@ -123,7 +123,8 @@
               "endLine": 14,
               "endColumn": 30,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -355,7 +356,8 @@
               "endLine": 6,
               "endColumn": 48,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/cs1",
@@ -376,7 +378,8 @@
               "endLine": 6,
               "endColumn": 35,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -476,7 +479,8 @@
               "endLine": 11,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op1",
@@ -489,7 +493,8 @@
               "endLine": 12,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op2",
@@ -502,7 +507,8 @@
               "endLine": 13,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -750,7 +756,8 @@
               "endLine": 24,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [],

@@ -52,7 +52,8 @@
               "endLine": 15,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op1",
@@ -67,7 +68,8 @@
               "endLine": 17,
               "endColumn": 50,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op2",
@@ -82,7 +84,8 @@
               "endLine": 18,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [
@@ -349,7 +352,8 @@
               "endLine": 5,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op1",
@@ -364,7 +368,8 @@
               "endLine": 7,
               "endColumn": 27,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op2",
@@ -379,7 +384,8 @@
               "endLine": 8,
               "endColumn": 27,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op3",
@@ -394,7 +400,8 @@
               "endLine": 9,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [

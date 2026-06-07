@@ -67,7 +67,8 @@
               "syntaxKind": "call_expression"
             },
             "resultConsumed": false,
-            "objectRunReturnUsed": false
+            "objectRunReturnUsed": false,
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -152,7 +153,8 @@
               "syntaxKind": "call_expression"
             },
             "resultConsumed": false,
-            "objectRunReturnUsed": false
+            "objectRunReturnUsed": false,
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

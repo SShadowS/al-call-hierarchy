@@ -47,7 +47,8 @@
               "endLine": 16,
               "endColumn": 23,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op1",
@@ -62,7 +63,8 @@
               "endLine": 18,
               "endColumn": 39,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op2",
@@ -77,7 +79,8 @@
               "endLine": 19,
               "endColumn": 19,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op3",
@@ -92,7 +95,8 @@
               "endLine": 20,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [
@@ -384,7 +388,8 @@
               "endLine": 5,
               "endColumn": 39,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op1",
@@ -397,7 +402,8 @@
               "endLine": 6,
               "endColumn": 23,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op2",
@@ -412,7 +418,8 @@
               "endLine": 9,
               "endColumn": 21,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op3",
@@ -427,7 +434,8 @@
               "endLine": 10,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [

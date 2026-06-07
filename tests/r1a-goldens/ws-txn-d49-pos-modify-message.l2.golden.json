@@ -34,7 +34,8 @@
               "endLine": 11,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/b701ace1eeb7abf23eebe53459cca92d7a5c682255d6ffb6f8a547a2321ab233/op1",
@@ -47,7 +48,8 @@
               "endLine": 13,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -141,7 +143,8 @@
               "endLine": 14,
               "endColumn": 23,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [

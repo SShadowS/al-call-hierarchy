@@ -29,7 +29,8 @@
               "endLine": 30,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -102,7 +103,8 @@
               "endLine": 31,
               "endColumn": 30,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -179,7 +181,8 @@
               "endLine": 19,
               "endColumn": 43,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/e6d6c2b142558b42d430ae866e8c6843b68e0d32bdc183dd036c89219840a2ee/op1",
@@ -192,7 +195,8 @@
               "endLine": 20,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -300,7 +304,8 @@
               "endLine": 21,
               "endColumn": 34,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -412,7 +417,8 @@
               "endLine": 46,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [
@@ -501,7 +507,8 @@
               "endLine": 51,
               "endColumn": 35,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/4032d182944bd7fbb902ebb020c8009aea2c02d85675d0eacbd65393e028c55e/op1",
@@ -514,7 +521,8 @@
               "endLine": 52,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -609,7 +617,8 @@
               "endLine": 53,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [
@@ -707,7 +716,8 @@
               "endLine": 39,
               "endColumn": 52,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/0200416bdd9289be3aa66d9a2c51961d5b87116e907a090d4e506180d7beac03/op1",
@@ -720,7 +730,8 @@
               "endLine": 40,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -834,7 +845,8 @@
               "endLine": 41,
               "endColumn": 30,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -917,7 +929,8 @@
               "endLine": 8,
               "endColumn": 43,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/07fa2222ef019839c126028159b2171af12ba0a92df638c172d6ff665dcfb423/op1",
@@ -930,7 +943,8 @@
               "endLine": 9,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -1038,7 +1052,8 @@
               "endLine": 10,
               "endColumn": 30,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

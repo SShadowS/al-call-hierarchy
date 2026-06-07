@@ -83,7 +83,8 @@
               "endLine": 2,
               "endColumn": 56,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -390,7 +391,8 @@
               "endLine": 3,
               "endColumn": 59,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],
@@ -549,7 +551,8 @@
               "endLine": 7,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

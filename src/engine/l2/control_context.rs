@@ -52,6 +52,20 @@ impl ControlContext {
             ControlContext::Unreachable => 5,
         }
     }
+
+    /// The kebab-case lattice string used by al-sem's `controlContext` field
+    /// (`control-context.ts` `ControlContext` union values). This is the exact
+    /// serialization the L2 goldens carry.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ControlContext::TopLevel => "top-level",
+            ControlContext::Conditional => "conditional",
+            ControlContext::LoopBody => "loop-body",
+            ControlContext::IsHandledGuarded => "is-handled-guarded",
+            ControlContext::ErrorPath => "error-path",
+            ControlContext::Unreachable => "unreachable",
+        }
+    }
 }
 
 /// Return the more-restrictive (higher-rank) of two contexts.
@@ -462,7 +476,7 @@ pub fn compute_control_contexts(
 /// Derive the IsHandled-eligible boolean local/global var names (lowercased) per
 /// `routine-indexer.ts:302-318`: a Boolean var (scope != "parameter") whose
 /// lowercased name EQUALS some whole, trimmed callsite argument text.
-fn derive_is_handled_vars(features: &PFeatures) -> Vec<String> {
+pub fn derive_is_handled_vars(features: &PFeatures) -> Vec<String> {
     let mut call_arg_name_set: Vec<String> = Vec::new();
     for cs in &features.call_sites {
         for arg in &cs.argument_texts {
@@ -485,6 +499,70 @@ fn derive_is_handled_vars(features: &PFeatures) -> Vec<String> {
         }
     }
     out
+}
+
+/// Apply L2 control-context to a routine's already-built `PFeatures`, IN PLACE.
+///
+/// This is the emitter-facing entry point (`l2_workspace.rs` → `aldump --l2`):
+///   1. derive `isHandledVars` from the features (callsite arg texts × boolean vars),
+///   2. run [`compute_control_contexts`] over the CFN skeleton + metadata,
+///   3. apply the `error-call` source-range post-pass (`routine-indexer.ts:337-350`)
+///      so `error-call` ops inherit their paired callsite's context,
+///   4. write `control_context` (kebab-case string) onto every callsite/op that has
+///      an entry; sites with NO entry keep `None` → the field is ABSENT in JSON.
+///
+/// `attr_names_lc` are the lowercased `attributesParsed` names (for TryFunction);
+/// `parameters` feeds by-var Boolean guard eligibility.
+pub fn apply_control_contexts(
+    features: &mut PFeatures,
+    attr_names_lc: &[String],
+    parameters: &[ParameterSymbol],
+) {
+    let is_handled_vars = derive_is_handled_vars(features);
+    let maps = compute_control_contexts(
+        features.statement_tree.as_ref(),
+        attr_names_lc,
+        parameters,
+        &is_handled_vars,
+    );
+
+    // error-call post-pass: error-call ops are NOT in by_operation (their CFN leaf
+    // carries the paired callsite id). For each error-call op lacking a context,
+    // inherit the context of the callsite whose source anchor (startLine/startColumn)
+    // matches the op's.
+    let mut by_operation = maps.by_operation;
+    let call_anchors: Vec<(u32, u32, String)> = features
+        .call_sites
+        .iter()
+        .map(|cs| {
+            (
+                cs.source_anchor.start_line,
+                cs.source_anchor.start_column,
+                cs.id.clone(),
+            )
+        })
+        .collect();
+    for op in &features.operation_sites {
+        if op.kind == "error-call" && !by_operation.contains_key(&op.id) {
+            let r = &op.source_anchor;
+            if let Some((_, _, cs_id)) = call_anchors
+                .iter()
+                .find(|(l, c, _)| *l == r.start_line && *c == r.start_column)
+            {
+                if let Some(ctx) = maps.by_callsite.get(cs_id).copied() {
+                    by_operation.insert(op.id.clone(), ctx);
+                }
+            }
+        }
+    }
+
+    // Populate the projection field (absent when no entry).
+    for cs in &mut features.call_sites {
+        cs.control_context = maps.by_callsite.get(&cs.id).map(|c| c.as_str().to_string());
+    }
+    for op in &mut features.operation_sites {
+        op.control_context = by_operation.get(&op.id).map(|c| c.as_str().to_string());
+    }
 }
 
 // ============================================================================

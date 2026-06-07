@@ -34,7 +34,8 @@
               "endLine": 5,
               "endColumn": 19,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

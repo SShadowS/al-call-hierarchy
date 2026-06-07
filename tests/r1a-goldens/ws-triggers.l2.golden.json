@@ -34,7 +34,8 @@
               "endLine": 13,
               "endColumn": 34,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -140,7 +141,8 @@
               "endLine": 6,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -235,7 +237,8 @@
               "endLine": 20,
               "endColumn": 27,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

@@ -20,7 +20,8 @@
 //!     `inherentCommitBehavior`: `src/index/object-indexer.ts` (`indexObjects`,
 //!     `readObjectProperty`).
 //!
-//! FORBIDDEN fields (controlContext / order / scopeFrames / capability /
+//! R1b: `controlContext` IS now emitted on each op/callsite (absent when the CFN
+//! walker assigned none). FORBIDDEN fields (order / scopeFrames / capability /
 //! resourceId / tableId / calleeParameterIsVar / bindingResolution /
 //! sourceTableId) are STRUCTURALLY ABSENT from the serde projection types
 //! (`features.rs`), so they can never appear in this output.
@@ -521,7 +522,7 @@ fn project_file(
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            let features: PFeatures = match project_routine_features(
+            let mut features: PFeatures = match project_routine_features(
                 decl,
                 routine,
                 object_type,
@@ -536,6 +537,22 @@ fn project_file(
                 Some((_, f)) => f,
                 None => continue,
             };
+
+            // R1b: control-context lattice over the CFN skeleton (+ metadata).
+            // Populates `controlContext` on each op/callsite (absent when none),
+            // including the error-call source-range post-pass. `attributesParsed`
+            // names drive the TryFunction guard; `parameters` the by-var Boolean
+            // IsHandled eligibility.
+            let attr_names_lc: Vec<String> = attributes_parsed
+                .iter()
+                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                .map(|n| n.to_lowercase())
+                .collect();
+            crate::engine::l2::control_context::apply_control_contexts(
+                &mut features,
+                &attr_names_lc,
+                &parameters,
+            );
 
             routines.push(PRoutine {
                 stable_routine_id,

@@ -47,7 +47,8 @@
               "endLine": 44,
               "endColumn": 56,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/ca91ed8fc3a67e3119cae2688a197f6c3bcbce08e736619f6934ae45cbfdb53e/op1",
@@ -62,7 +63,8 @@
               "endLine": 46,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [
@@ -243,7 +245,8 @@
               "endLine": 33,
               "endColumn": 47,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/c42fdfc6b57d9349301d87cb477bfb912d2f380e1de6d42066f01fd4347264d5/op1",
@@ -258,7 +261,8 @@
               "endLine": 34,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [
@@ -365,7 +369,8 @@
               "endLine": 33,
               "endColumn": 46,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "fieldAccesses": [],
@@ -488,7 +493,8 @@
               "endLine": 9,
               "endColumn": 60,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/706356409397d1acc1987e2b910355a990d501459260928d02db28256844e018/op1",
@@ -503,7 +509,8 @@
               "endLine": 10,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [
@@ -686,7 +693,8 @@
               "endLine": 21,
               "endColumn": 52,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           },
           {
             "id": "r0/ad310edda4beee8e626198f34002db16d9ebf3c5b72df6be0b50a9fb5513455b/op1",
@@ -701,7 +709,8 @@
               "endLine": 22,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [

@@ -96,7 +96,8 @@
               "endLine": 7,
               "endColumn": 36,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/b6db62fb17843b0cfa06fce6838a4bb1d634c4716f56433d531d86da651808aa/cs1",
@@ -146,7 +147,8 @@
               "endLine": 9,
               "endColumn": 27,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "is-handled-guarded"
           }
         ],
         "fieldAccesses": [],
@@ -384,7 +386,8 @@
               "endLine": 14,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

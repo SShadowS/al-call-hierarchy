@@ -29,7 +29,8 @@
               "endLine": 8,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [],
@@ -93,7 +94,8 @@
               "endLine": 7,
               "endColumn": 60,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

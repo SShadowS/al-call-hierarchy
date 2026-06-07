@@ -54,7 +54,8 @@
               "endLine": 30,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [
@@ -193,7 +194,8 @@
               "endLine": 20,
               "endColumn": 33,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [
@@ -340,7 +342,8 @@
               "endLine": 10,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "recordOperations": [

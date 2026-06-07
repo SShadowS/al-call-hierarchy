@@ -40,7 +40,8 @@
               "endLine": 10,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/cs1",
@@ -62,7 +63,8 @@
               "endLine": 11,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "fieldAccesses": [],

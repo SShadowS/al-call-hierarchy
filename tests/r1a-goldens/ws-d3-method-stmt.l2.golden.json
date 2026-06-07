@@ -60,7 +60,8 @@
               "endLine": 45,
               "endColumn": 54,
               "syntaxKind": "member_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "fieldAccesses": [],
@@ -172,7 +173,8 @@
               "endLine": 21,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -336,7 +338,8 @@
               "endLine": 9,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/op1",
@@ -351,7 +354,8 @@
               "endLine": 12,
               "endColumn": 33,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [
@@ -421,7 +425,8 @@
               "endLine": 11,
               "endColumn": 37,
               "syntaxKind": "member_expression"
-            }
+            },
+            "controlContext": "loop-body"
           }
         ],
         "fieldAccesses": [],
@@ -562,7 +567,8 @@
               "endLine": 33,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

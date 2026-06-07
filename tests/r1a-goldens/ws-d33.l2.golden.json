@@ -34,7 +34,8 @@
               "endLine": 7,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -129,7 +130,8 @@
               "endLine": 23,
               "endColumn": 41,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/84a0532fcdc0fcea1d1d32f3ac8935e5461d074b0f7e497abf2ca2834262f178/op1",
@@ -142,7 +144,8 @@
               "endLine": 24,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -276,7 +279,8 @@
               "endLine": 51,
               "endColumn": 32,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -371,7 +375,8 @@
               "endLine": 15,
               "endColumn": 37,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -467,7 +472,8 @@
               "endLine": 40,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -564,7 +570,8 @@
               "endLine": 32,
               "endColumn": 41,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/153d6c07d2d8e54f40a61af69a79dd9ab6b898bfd57be75edd9c6dadf19b9f5e/op1",
@@ -577,7 +584,8 @@
               "endLine": 33,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/153d6c07d2d8e54f40a61af69a79dd9ab6b898bfd57be75edd9c6dadf19b9f5e/op2",
@@ -590,7 +598,8 @@
               "endLine": 34,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [

@@ -329,6 +329,7 @@ fn push_record_op(
         loop_stack: snapshot_loop_stack,
         source_anchor: anchor,
         under_asserterror: None,
+        control_context: None,
     });
 }
 
@@ -441,6 +442,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
             result_consumed,
             object_run_return_used,
             under_asserterror: under,
+            control_context: None,
         });
         recurse_into_args(ctx, node);
         chained_receiver_descent(ctx, node, func_node);
@@ -457,6 +459,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                 loop_stack: ctx.loop_stack.clone(),
                 source_anchor: ctx.anchor(node),
                 under_asserterror: None,
+                control_context: None,
             });
         } else {
             let method_lc = method_text.to_lowercase();
@@ -509,6 +512,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         result_consumed: None,
                         object_run_return_used: None,
                         under_asserterror: under,
+                        control_context: None,
                     });
                 }
             } else {
@@ -536,6 +540,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                     result_consumed: None,
                     object_run_return_used: None,
                     under_asserterror: under,
+                    control_context: None,
                 });
                 // Error() additional error-call OperationSite.
                 if method_text.to_lowercase() == "error" {
@@ -548,6 +553,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         loop_stack: ctx.loop_stack.clone(),
                         source_anchor: ctx.anchor(node),
                         under_asserterror: if under_ae { Some(true) } else { None },
+                        control_context: None,
                     });
                 }
             }
@@ -676,6 +682,7 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         result_consumed: None,
                         object_run_return_used: None,
                         under_asserterror: None,
+                        control_context: None,
                     });
                 }
             }
@@ -798,6 +805,7 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                     result_consumed: None,
                     object_run_return_used: None,
                     under_asserterror: None,
+                    control_context: None,
                 });
                 if pushed_loop {
                     ctx.loop_stack.pop();

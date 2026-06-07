@@ -34,7 +34,8 @@
               "endLine": 13,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           },
           {
             "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op1",
@@ -47,7 +48,8 @@
               "endLine": 14,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "conditional"
           }
         ],
         "recordOperations": [
@@ -200,7 +202,8 @@
               "endLine": 24,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op1",
@@ -213,7 +216,8 @@
               "endLine": 25,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -312,7 +316,8 @@
               "endLine": 36,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "error-path"
           },
           {
             "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1",
@@ -325,7 +330,8 @@
               "endLine": 37,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           },
           {
             "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op2",
@@ -338,7 +344,8 @@
               "endLine": 38,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "top-level"
           }
         ],
         "recordOperations": [
@@ -403,7 +410,8 @@
               "endLine": 36,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            }
+            },
+            "controlContext": "error-path"
           }
         ],
         "fieldAccesses": [],

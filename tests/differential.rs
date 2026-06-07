@@ -423,8 +423,10 @@ fn differential_identity_subset_matches_goldens() {
 //     callSites / loops / fieldAccesses / statementTree.children /
 //     conditionLeaves / recordVariables / variables / …) are compared
 //     POSITIONALLY, in order, because their order is semantically meaningful.
-//   - MUST FAIL if EITHER side carries a forbidden field anywhere
-//     (`controlContext` / `order` / `scopeFrames` / capability / `resourceId` /
+//   - R1b: `controlContext` is now part of the projection — emitted by the Rust
+//     side, present in the goldens, and compared structurally (positional/by-id).
+//     It is NO LONGER forbidden. MUST FAIL if EITHER side carries a STILL-forbidden
+//     field anywhere (`order` / `scopeFrames` / capability / `resourceId` /
 //     `tableId` / `calleeParameterIsVar` / `bindingResolution` / `sourceTableId`)
 //     — a recursive key scan on both parsed values, belt-and-suspenders even
 //     though the serde types omit them.
@@ -459,7 +461,7 @@ fn differential_identity_subset_matches_goldens() {
 /// L3-resolved). Mirrors `al2dump_smoke::FORBIDDEN_KEYS` + the projection's
 /// `r1a-l2-projection.ts` FORBIDDEN_KEYS.
 const L2_FORBIDDEN_KEYS: &[&str] = &[
-    "controlContext",
+    // R1b: controlContext is now REQUIRED (compared, not forbidden) — removed.
     "order",
     "scopeFrames",
     "capability",
