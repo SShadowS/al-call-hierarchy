@@ -330,6 +330,7 @@ fn push_record_op(
         source_anchor: anchor,
         under_asserterror: None,
         control_context: None,
+        order: None,
     });
 }
 
@@ -443,6 +444,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
             object_run_return_used,
             under_asserterror: under,
             control_context: None,
+            order: None,
         });
         recurse_into_args(ctx, node);
         chained_receiver_descent(ctx, node, func_node);
@@ -460,6 +462,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                 source_anchor: ctx.anchor(node),
                 under_asserterror: None,
                 control_context: None,
+                order: None,
             });
         } else {
             let method_lc = method_text.to_lowercase();
@@ -513,6 +516,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         object_run_return_used: None,
                         under_asserterror: under,
                         control_context: None,
+                        order: None,
                     });
                 }
             } else {
@@ -541,6 +545,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                     object_run_return_used: None,
                     under_asserterror: under,
                     control_context: None,
+                    order: None,
                 });
                 // Error() additional error-call OperationSite.
                 if method_text.to_lowercase() == "error" {
@@ -554,6 +559,7 @@ fn handle_call_expression(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         source_anchor: ctx.anchor(node),
                         under_asserterror: if under_ae { Some(true) } else { None },
                         control_context: None,
+                        order: None,
                     });
                 }
             }
@@ -683,6 +689,7 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                         object_run_return_used: None,
                         under_asserterror: None,
                         control_context: None,
+                        order: None,
                     });
                 }
             }
@@ -806,6 +813,7 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
                     object_run_return_used: None,
                     under_asserterror: None,
                     control_context: None,
+                    order: None,
                 });
                 if pushed_loop {
                     ctx.loop_stack.pop();

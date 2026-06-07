@@ -80,7 +80,13 @@
               "endColumn": 30,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           }
         ],
         "fieldAccesses": [],
@@ -163,7 +169,14 @@
               "callsiteId": "r0/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049/cs0"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     }
   ]

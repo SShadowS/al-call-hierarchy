@@ -35,7 +35,13 @@
               "endColumn": 20,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op1",
@@ -49,7 +55,13 @@
               "endColumn": 18,
               "syntaxKind": "identifier"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 1,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -153,7 +165,14 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     }
   ]

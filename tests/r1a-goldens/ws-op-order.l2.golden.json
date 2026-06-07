@@ -41,7 +41,14 @@
               "kind": "exit"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -68,7 +75,13 @@
               "endColumn": 18,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           },
           {
             "id": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op1",
@@ -82,7 +95,13 @@
               "endColumn": 28,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 2,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op2",
@@ -96,7 +115,13 @@
               "endColumn": 24,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 4,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -179,7 +204,13 @@
               "endColumn": 22,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 1,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "fieldAccesses": [],
@@ -290,7 +321,22 @@
               "operationId": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op2"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "if-then",
+            "branchAlwaysTerminates": true,
+            "branchTerminatesBy": "exit",
+            "branchMayFallThrough": false
+          }
+        ]
       }
     }
   ]

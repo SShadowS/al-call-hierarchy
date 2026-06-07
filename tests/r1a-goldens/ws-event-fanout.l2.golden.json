@@ -104,7 +104,13 @@
               "endColumn": 55,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           }
         ],
         "fieldAccesses": [],
@@ -154,7 +160,14 @@
               "callsiteId": "r0/8cfbb820fbb8071f8fee221ea5db9a1ed90568ca86954dd4c58ed17122759438/cs0"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     },
     {
@@ -229,7 +242,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     },
     {
@@ -328,7 +348,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -428,7 +455,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -528,7 +562,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -628,7 +669,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -728,7 +776,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     },
@@ -828,7 +883,14 @@
         "statementTree": {
           "kind": "block",
           "children": []
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       },
       "accessModifier": "local"
     }

@@ -68,7 +68,13 @@
             },
             "resultConsumed": false,
             "objectRunReturnUsed": false,
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           }
         ],
         "fieldAccesses": [],
@@ -90,7 +96,14 @@
               "callsiteId": "r0/3c026965a6942f8251f5251194bd13554cb77123ae1d8c514fbc48d4abb7f7d9/cs0"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     }
   ]

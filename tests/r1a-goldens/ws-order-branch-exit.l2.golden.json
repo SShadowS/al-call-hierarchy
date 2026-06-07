@@ -30,7 +30,13 @@
               "endColumn": 16,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 2,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [],
@@ -95,7 +101,13 @@
               "endColumn": 62,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "fieldAccesses": [],
@@ -205,7 +217,22 @@
               "operationId": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/op0"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "if-then",
+            "branchAlwaysTerminates": true,
+            "branchTerminatesBy": "exit",
+            "branchMayFallThrough": false
+          }
+        ]
       }
     }
   ]

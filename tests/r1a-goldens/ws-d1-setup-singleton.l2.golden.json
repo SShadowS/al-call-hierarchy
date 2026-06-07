@@ -55,7 +55,13 @@
               "endColumn": 32,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -154,7 +160,19 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "loop"
+          }
+        ]
       }
     },
     {
@@ -195,7 +213,13 @@
               "endColumn": 33,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -302,7 +326,19 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "loop"
+          }
+        ]
       }
     },
     {
@@ -343,7 +379,13 @@
               "endColumn": 28,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -442,7 +484,19 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "loop"
+          }
+        ]
       }
     }
   ]

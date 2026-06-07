@@ -35,7 +35,13 @@
               "endColumn": 18,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           },
           {
             "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op1",
@@ -49,7 +55,13 @@
               "endColumn": 24,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 1,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           },
           {
             "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op2",
@@ -63,7 +75,13 @@
               "endColumn": 16,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 2,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           }
         ],
         "recordOperations": [
@@ -160,7 +178,14 @@
               "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op2"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
       }
     }
   ]

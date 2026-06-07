@@ -20,10 +20,11 @@
 //!     `inherentCommitBehavior`: `src/index/object-indexer.ts` (`indexObjects`,
 //!     `readObjectProperty`).
 //!
-//! R1b: `controlContext` IS now emitted on each op/callsite (absent when the CFN
-//! walker assigned none). FORBIDDEN fields (order / scopeFrames / capability /
+//! R1b/R1c: `controlContext` + `order` + `scopeFrames` ARE now emitted (absent
+//! when the CFN walker assigned none; scopeFrames present-with-root when a body
+//! tree exists, omitted for TryFunction / no body). FORBIDDEN fields (capability /
 //! resourceId / tableId / calleeParameterIsVar / bindingResolution /
-//! sourceTableId) are STRUCTURALLY ABSENT from the serde projection types
+//! sourceTableId) remain STRUCTURALLY ABSENT from the serde projection types
 //! (`features.rs`), so they can never appear in this output.
 //!
 //! Output discipline: ONLY JSON goes to stdout (the binary prints it); all
@@ -552,6 +553,15 @@ fn project_file(
                 &mut features,
                 &attr_names_lc,
                 &parameters,
+            );
+
+            // R1c: operation-order index over the CFN skeleton (+ TryFunction
+            // guard). Populates `order` on each op/callsite (absent when the walk
+            // produced none) — including the error-call source-range post-pass over
+            // the op/callsite records — and the routine's `scopeFrames`.
+            crate::engine::l2::operation_order::apply_operation_order(
+                &mut features,
+                &attr_names_lc,
             );
 
             routines.push(PRoutine {

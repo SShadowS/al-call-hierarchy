@@ -30,7 +30,13 @@
               "endColumn": 28,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "error-path"
+            "controlContext": "error-path",
+            "order": {
+              "orderId": 1,
+              "frameId": 1,
+              "onSuccessPath": false,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/ded0fcfa853aaf467119810e05ca4c4164bb31a23ab89365d1a741645fae17b9/op1",
@@ -44,7 +50,13 @@
               "endColumn": 16,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 2,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": true
+            }
           }
         ],
         "recordOperations": [],
@@ -109,7 +121,13 @@
               "endColumn": 62,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "error-path"
+            "controlContext": "error-path",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": false,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/ded0fcfa853aaf467119810e05ca4c4164bb31a23ab89365d1a741645fae17b9/cs1",
@@ -152,7 +170,13 @@
               "endColumn": 28,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "error-path"
+            "controlContext": "error-path",
+            "order": {
+              "orderId": 1,
+              "frameId": 1,
+              "onSuccessPath": false,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "fieldAccesses": [],
@@ -263,7 +287,22 @@
               "operationId": "r0/ded0fcfa853aaf467119810e05ca4c4164bb31a23ab89365d1a741645fae17b9/op1"
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "if-then",
+            "branchAlwaysTerminates": true,
+            "branchTerminatesBy": "error",
+            "branchMayFallThrough": false
+          }
+        ]
       }
     }
   ]

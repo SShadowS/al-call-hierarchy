@@ -83,7 +83,13 @@
             },
             "resultConsumed": false,
             "objectRunReturnUsed": false,
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 0,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "fieldAccesses": [],
@@ -131,7 +137,19 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "loop"
+          }
+        ]
       }
     }
   ]

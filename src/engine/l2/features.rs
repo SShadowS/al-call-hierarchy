@@ -4,9 +4,11 @@
 //! These types are the parity surface against the committed
 //! `<fixture>.l2.golden.json` files and the `l2-vectors.json` family vectors.
 //!
+//! R1c: `order` (OperationOrder) on each op/callsite + `scopeFrames` on the
+//! routine features ARE now declared + emitted (no longer forbidden).
+//!
 //! FORBIDDEN fields are STRUCTURALLY ABSENT — they are not declared here, so a
 //! stray field can never serialize:
-//!   - order/OperationOrder (R1c), scopeFrames (R1c)
 //!   - CapabilityFact (R1d)
 //!   - tableId on RecordVariable/RecordOperation/VariableSymbol (L3 Phase-2)
 //!   - resourceId (L3 Phase-2)
@@ -21,6 +23,7 @@
 //! emitting a key when the value is defined — so the JSON shape matches the
 //! golden's "optional keys absent" convention exactly.
 
+use super::operation_order::{OperationOrder, ScopeFrame};
 use serde::{Deserialize, Serialize};
 
 /// A projected source anchor. Columns are tree-sitter byte columns (which match
@@ -156,6 +159,11 @@ pub struct PCallSite {
     /// "assign only when defined" convention.
     #[serde(rename = "controlContext", skip_serializing_if = "Option::is_none")]
     pub control_context: Option<String>,
+    /// R1c operation-order index entry. ABSENT when the walk produced no entry
+    /// (symbol-only / no-body / TryFunction) — matching al-sem's
+    /// "assign only when defined" convention.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<OperationOrder>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -172,6 +180,11 @@ pub struct POperationSite {
     /// site has no entry (TryFunction / no body / unknown).
     #[serde(rename = "controlContext", skip_serializing_if = "Option::is_none")]
     pub control_context: Option<String>,
+    /// R1c operation-order index entry. ABSENT when the walk produced no entry.
+    /// For `error-call` ops, populated by the emitter's source-range post-pass
+    /// (it inherits the paired callsite's order verbatim).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<OperationOrder>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -332,6 +345,12 @@ pub struct PFeatures {
     pub condition_references: Vec<PConditionReference>,
     #[serde(rename = "statementTree", skip_serializing_if = "Option::is_none")]
     pub statement_tree: Option<PCFNNode>,
+    /// R1c scope-frame table. OMITTED when empty (TryFunction / no body), but
+    /// PRESENT (carrying the root "block" frame) when a body tree exists even with
+    /// zero orders — mirrors al-sem `routine-indexer.ts:398`
+    /// (`...(scopeFrames.length > 0 ? { scopeFrames } : {})`).
+    #[serde(rename = "scopeFrames", default, skip_serializing_if = "Vec::is_empty")]
+    pub scope_frames: Vec<ScopeFrame>,
 }
 
 /// A projected routine envelope (for the golden files; metadata prerequisite).

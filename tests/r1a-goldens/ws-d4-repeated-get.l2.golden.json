@@ -53,7 +53,13 @@
               "endColumn": 24,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op1",
@@ -69,7 +75,13 @@
               "endColumn": 50,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 2,
+              "frameId": 2,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op2",
@@ -85,7 +97,13 @@
               "endColumn": 25,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 1,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -314,7 +332,26 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "if-then",
+            "branchAlwaysTerminates": false,
+            "branchMayFallThrough": true
+          },
+          {
+            "frameId": 2,
+            "parentFrameId": 1,
+            "kind": "loop"
+          }
+        ]
       }
     },
     {
@@ -353,7 +390,13 @@
               "endColumn": 24,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "top-level"
+            "controlContext": "top-level",
+            "order": {
+              "orderId": 0,
+              "frameId": 0,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op1",
@@ -369,7 +412,13 @@
               "endColumn": 27,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 2,
+              "frameId": 2,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op2",
@@ -385,7 +434,13 @@
               "endColumn": 27,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "loop-body"
+            "controlContext": "loop-body",
+            "order": {
+              "orderId": 3,
+              "frameId": 2,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           },
           {
             "id": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op3",
@@ -401,7 +456,13 @@
               "endColumn": 25,
               "syntaxKind": "call_expression"
             },
-            "controlContext": "conditional"
+            "controlContext": "conditional",
+            "order": {
+              "orderId": 1,
+              "frameId": 1,
+              "onSuccessPath": true,
+              "dominatesSuccessReturn": false
+            }
           }
         ],
         "recordOperations": [
@@ -653,7 +714,26 @@
               ]
             }
           ]
-        }
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          },
+          {
+            "frameId": 1,
+            "parentFrameId": 0,
+            "kind": "if-then",
+            "branchAlwaysTerminates": false,
+            "branchMayFallThrough": true
+          },
+          {
+            "frameId": 2,
+            "parentFrameId": 1,
+            "kind": "loop"
+          }
+        ]
       }
     }
   ]

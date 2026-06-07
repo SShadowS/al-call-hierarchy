@@ -30,10 +30,11 @@
 use super::control_flow::{
     branch_termination, else_termination, has_explicit_else, terminates, Termination,
 };
-use super::features::{PCFNNode, PCallSite, POperationSite};
+use super::features::{PCFNNode, PCallSite, PFeatures, POperationSite};
 use super::node_util::{named_children, node_text, strip_quotes};
 use super::scope::object_type_for;
 use super::{extract_object_number, features_for_named_routine};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -42,11 +43,18 @@ use tree_sitter::Node;
 // ============================================================================
 
 /// The execution-order fact assigned to an op/callsite leaf.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Serializes to al-sem's `POperationOrder` shape (camelCase, all four fields
+/// always present) — `r1a-l2-projection.ts:projectOperationOrder`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationOrder {
+    #[serde(rename = "orderId")]
     pub order_id: u32,
+    #[serde(rename = "frameId")]
     pub frame_id: i64,
+    #[serde(rename = "onSuccessPath")]
     pub on_success_path: bool,
+    #[serde(rename = "dominatesSuccessReturn")]
     pub dominates_success_return: bool,
 }
 
@@ -56,13 +64,29 @@ pub struct OperationOrder {
 /// `branch_always_terminates` AND `branch_may_fall_through` (even when `false`),
 /// and `branch_terminates_by` ONLY when they always-terminate. Root / loop / try
 /// frames OMIT all three (`None`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serializes to al-sem's `PScopeFrame` shape — `r1a-l2-projection.ts:projectScopeFrame`.
+/// CRITICAL: the branch flags use `skip_serializing_if = "Option::is_none"`, NOT
+/// `is_false` — branch frames store `Some(false)`, which MUST emit as `false`,
+/// while root/loop/try store `None`, which is omitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScopeFrame {
+    #[serde(rename = "frameId")]
     pub frame_id: i64,
+    #[serde(rename = "parentFrameId")]
     pub parent_frame_id: i64,
     pub kind: String,
+    #[serde(
+        rename = "branchAlwaysTerminates",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub branch_always_terminates: Option<bool>,
+    #[serde(rename = "branchTerminatesBy", skip_serializing_if = "Option::is_none")]
     pub branch_terminates_by: Option<String>,
+    #[serde(
+        rename = "branchMayFallThrough",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub branch_may_fall_through: Option<bool>,
 }
 
@@ -654,6 +678,61 @@ pub fn compute_operation_order(
         by_operation: result.by_operation,
         scope_frames: result.scope_frames,
     }
+}
+
+// ============================================================================
+// Emitter entry point (apply to a built `PFeatures`, in place)
+// ============================================================================
+
+/// Apply L2 operation-order to a routine's already-built `PFeatures`, IN PLACE.
+///
+/// This is the emitter-facing glue (`l2_workspace.rs` → `aldump --l2`):
+///   1. run [`compute_operation_order`] over the CFN skeleton + the lowercased
+///      `attributesParsed` names (the TryFunction guard),
+///   2. apply the `error-call` source-range post-pass (mirrors al-sem
+///      `routine-indexer.ts:370-381` + R1b's controlContext post-pass): an
+///      `error-call` op is NOT registered in `by_operation` (its CFN leaf carries
+///      the paired callsite id), so for each `error-call` op lacking an order, find
+///      the callsite whose `sourceAnchor.{startLine,startColumn}` matches and COPY
+///      its full `OperationOrder` verbatim — allocate NO new orderId, infer NO
+///      frame, recompute nothing,
+///   3. write `order` onto every callsite/op that has an entry (sites with no entry
+///      keep `None` → the field is ABSENT in JSON),
+///   4. set the routine's `scope_frames` (PRESENT — carrying the root frame — when
+///      a body tree exists, EMPTY for TryFunction / no body).
+///
+/// `attr_names_lc` are the lowercased `attributesParsed` names.
+pub fn apply_operation_order(features: &mut PFeatures, attr_names_lc: &[String]) {
+    let order = compute_operation_order(features.statement_tree.as_ref(), attr_names_lc);
+
+    // error-call source-range post-pass (over the op/callsite RECORDS, which carry
+    // source_anchor — the CFN skeleton dropped anchors). COPY the paired callsite's
+    // full order verbatim into the error-call op.
+    let mut by_operation = order.by_operation;
+    for op in &features.operation_sites {
+        if op.kind == "error-call" && !by_operation.contains_key(&op.id) {
+            let r = &op.source_anchor;
+            if let Some(paired) = features.call_sites.iter().find(|cs| {
+                cs.source_anchor.start_line == r.start_line
+                    && cs.source_anchor.start_column == r.start_column
+            }) {
+                if let Some(ord) = order.by_callsite.get(&paired.id).copied() {
+                    by_operation.insert(op.id.clone(), ord);
+                }
+            }
+        }
+    }
+
+    // Populate `order` on each record (absent when no entry).
+    for cs in &mut features.call_sites {
+        cs.order = order.by_callsite.get(&cs.id).copied();
+    }
+    for op in &mut features.operation_sites {
+        op.order = by_operation.get(&op.id).copied();
+    }
+
+    // Set the frame table (present-with-root when a body tree exists, empty otherwise).
+    features.scope_frames = order.scope_frames;
 }
 
 // ============================================================================

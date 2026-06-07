@@ -23,8 +23,7 @@ const WS_D2_GOLDEN: &str = r"U:\Git\al-sem\scripts\r1a-goldens\ws-d2.l2.golden.j
 /// mirrors `scripts/r1a-l2-projection.ts` FORBIDDEN_KEYS + the binding subset).
 const FORBIDDEN_KEYS: &[&str] = &[
     // R1b: controlContext is now emitted + compared (no longer forbidden).
-    "order",
-    "scopeFrames",
+    // R1c: order + scopeFrames are now emitted + compared (no longer forbidden).
     "capability",
     "resourceId",
     "tableId",

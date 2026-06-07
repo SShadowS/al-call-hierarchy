@@ -266,6 +266,7 @@ fn empty_features(
         var_assignments: vec![],
         condition_references: vec![],
         statement_tree: None,
+        scope_frames: vec![],
     }
 }
 
@@ -354,6 +355,9 @@ fn extract_body_features(
         var_assignments: result.var_assignments,
         condition_references: result.condition_references,
         statement_tree,
+        // Populated by the emitter (`l2_workspace.rs`) via `apply_operation_order`;
+        // body_walk leaves it empty.
+        scope_frames: vec![],
     }
 }
 
