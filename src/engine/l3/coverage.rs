@@ -286,8 +286,9 @@ impl L3Resolved {
 
     /// CROSS-APP (R2.5b) coverage capture: the merged workspace+dep model with the
     /// real dep ledger. `apps` is `(appGuid, sourceKind)` for the workspace ("source")
-    /// + each dep ("symbol-only" | "app-source") — symbol-only deps populate
+    /// plus each dep ("symbol-only" | "app-source"); symbol-only deps populate
     /// `opaqueApps` (NON-empty cross-app, vs the source-only baseline's empty).
+    ///
     /// `declared_dep_app_guids` / `fetched_app_guids` thread the member opaque-vs-
     /// external-target split into `resolve_calls`, so the unresolved-callsite multiset
     /// reflects cross-app resolution. NO new algorithm — the merged input + the ledger.

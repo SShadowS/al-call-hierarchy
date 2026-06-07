@@ -42,6 +42,7 @@
 //!      carry EMPTY features (no record vars / call sites), so these mutate only the
 //!      WORKSPACE caller's record vars / callsite bindings — never the dep routine.
 //!      Confirmed against al-sem (dep routines: recordVariables=[], callSites=[]).
+//!
 //! So feeding the dep entities + running the unchanged `resolve` is sufficient — the
 //! same three resolve sub-steps mutate the same fields al-sem mutates.
 
