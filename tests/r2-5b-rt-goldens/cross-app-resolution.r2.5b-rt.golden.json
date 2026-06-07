@@ -86,7 +86,12 @@
       "stableRoutineId": "11111111-0000-0000-0000-0000000000aa:Codeunit:70000#7c9c656c6885f02abe0c1f891e42bdfc6eb8c291ca998b24ff5c1ae48f6c44f6",
       "name": "DriveDeps",
       "objectType": "Codeunit",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "localcust",
+          "tableId": "dddddddd-0000-0000-0000-000000000001:Table:50000"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r2.5b/3548616a952a79d4dc3015e8ea9e732388c246e882be50494b6ddc505b251247/op0",
@@ -159,6 +164,13 @@
     {
       "stableRoutineId": "dddddddd-0000-0000-0000-000000000001:Codeunit:50100#dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
       "name": "LocalHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-000000000001:Codeunit:50100#f9dbb2615e0a5935e54f675668759b67e13f59e2862878dcdf67f38a093ee754",
+      "name": "Apply",
       "objectType": "Codeunit",
       "recordVariables": [],
       "recordOperations": []

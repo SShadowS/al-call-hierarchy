@@ -71,12 +71,13 @@ fn member_call_resolves_to_dep_routine_with_named_transitions() {
         resolved_to_dep >= 1,
         "≥1 member call resolved to a dep routine"
     );
-    // The Compute/InternalReset/LocalHelper edges all resolved — internal + local
-    // dep callees resolve IDENTICALLY (no L3 visibility gate, Rev 2 #2). The corpus
-    // has exactly 3 resolved dep-routine member edges.
+    // The Compute/InternalReset/LocalHelper/Apply edges all resolved — internal +
+    // local dep callees resolve IDENTICALLY (no L3 visibility gate, Rev 2 #2). The
+    // corpus has exactly 4 resolved dep-routine member edges (Apply added in Task 3
+    // as the cross-app argumentBindings-upgrade vector, Rev 2 #3).
     assert_eq!(
-        resolved_to_dep, 3,
-        "Compute + InternalReset + LocalHelper all resolve (internal/local NOT gated)"
+        resolved_to_dep, 4,
+        "Compute + InternalReset + LocalHelper + Apply all resolve (internal/local NOT gated)"
     );
 
     // Named transitions all present (Rev 2 #4).
