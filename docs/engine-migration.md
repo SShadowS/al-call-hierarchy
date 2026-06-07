@@ -20,6 +20,7 @@ and `docs/`.
 | **R1 (= R1a+R1b+R1c+R1d)** | Full L2 per-routine feature parity at the `indexWorkspace` (pre-resolve) boundary | **COMPLETE** — all four sub-gates SHIPPED; 152/152 corpus differential green across the entire L2 surface + a native L2-direct oracle per sub-gate |
 | **R2a** | L3 record-type resolution (source-only): resolved `recordVariable.tableId` / `recordOperation.tableId` (declared vars → ops → implicit `Rec`/`xRec` in Table/Page/Extension triggers) + merged TableExtension fields, captured POST-RESOLVE / PRE-SUMMARY in StableTableId form | **SHIPPED** — 153/153 fixtures with resolved tableIds + merged extension fields compared, 0 divergences, the anti-degenerate coverage matrix healthy (rv=228, op=281, implicitRec=76, extFields=9), native L3-direct record-type oracle green |
 | **R2b** | L3 call graph (source-only): every call-site resolved to `CallEdge[]` (`from`/`to?`/`callsiteId`/`operationId`/`dispatchKind`/`resolution`/`candidates?`/`externalTypeRef?`/`receiverType?` + GROUP-level `dispatchMeta`) — overload disambiguation, MULTI-edge interface dispatch, object-run, opaque/external-target — plus the `upgradeBindings` argument-binding upgrade + implicit-trigger edges, captured POST-RESOLVE / PRE-SUMMARY in stable-id form | **SHIPPED** — 155/155 fixtures with grouped multiset-compared CallEdges + group dispatchMeta + upgraded argumentBindings, 0 divergences, the expanded anti-degenerate coverage matrix healthy + manifest-oracle-equal (direct=123, member=26, objRun=4, ifaceMultiEdge=2, ifaceEdges=6, dynamic=3, builtin=18, implicit=6, unresolved=33, ambiguous=4, memberNotFound=1, opaque=5, external=4, upBind=54, ambBind=1), native L3-direct call-graph oracle green |
+| **R2c** | L3 event graph (source-only): `buildEventGraph` binding each `[EventSubscriber]` to its publisher(s) — `EventSymbol[]` (real `[IntegrationEvent]`/`[BusinessEvent]` publishers + synthesized maybe/unknown symbols; `eventKind`/`isolated`/`signatureHash`/`elementName`) + `EventEdge[]` (open-world: every parseable subscriber → exactly one edge; `resolution` = `resolved`/`maybe`/`unknown`) — with the FIXED `realPublisherEventIds` resolution semantics, captured POST-RESOLVE / PRE-SUMMARY in stable-id form | **SHIPPED** — 31/31 fixtures with stable-projected `events[]`+`edges[]` compared, 0 divergences, `KNOWN_DIVERGENCES` empty, the anti-degenerate coverage matrix healthy + manifest-oracle-equal (integrationPub=40, businessPub=5, unknownKind=8, isolatedPub=5, elementName=1, resolved=41, maybe=7, unknown=3), native L3-direct event-graph oracle green (8 invariants); the 6th al-sem oracle bug (false-`resolved`) fixed in the FIXED semantics |
 
 ---
 
@@ -728,28 +729,118 @@ here the differential misses would mean BOTH engines are wrong.
 
 ---
 
-## R2c (L3 event graph) — STUB
+## R2c parity status (SHIPPED — L3 event graph, source-only) — R2's THIRD sub-gate
 
-R2c is the next sub-gate after R2b: the **event graph** — `buildEventGraph` binding
-each `[EventSubscriber]` to its publisher(s), reusing the R2a workspace symbol table
-verbatim. Scope:
+R2c is the THIRD sub-gate of R2: the **event graph** — `buildEventGraph` binding each
+`[EventSubscriber]` to its publisher(s), reusing the R2a workspace symbol table
+verbatim. It extends, never replaces, the R1/R2a/R2b goldens — the validated L2
+surface + the resolved record-type identity + the resolved call graph are the inputs
+the event resolver binds.
 
+**What R2c reproduces.**
+
+- **`publisherEventKind` / read-resolved capture** — every real publisher routine
+  (`kind == "event-publisher"`) becomes one `EventSymbol`: `eventKind` =
+  `[IntegrationEvent]` → integration, `[BusinessEvent]` → business; `signatureHash` =
+  the routine's return-type-aware normalized signature hash; `parameters` carried in
+  positional shape. The dump READS `model.eventGraph` post-resolve / pre-summary — it
+  never re-runs `buildEventGraph`.
 - **`parseSubscriberAttribute`** — decode the string-encoded `[EventSubscriber(...)]`
-  attribute args (`"ObjectType::Codeunit"`, `Codeunit::"Name"`, `"'EventName'"` —
-  qualified_enum_value / database_reference / string_literal). A malformed/unparseable
-  arg yields NO subscriber edge (the edge silently never forms — mirror exactly; see
-  the al-sem app-builder gotcha).
-- **`parseIsolated`** — the positional attribute logic (which positional arg carries
-  the isolated flag); port exactly.
-- **Open-world synthetic event ids** — when the publisher object/event is absent from
-  source, synthesize a stable event id so the subscriber edge still forms (open-world:
-  an unknown co-subscriber may exist). Note (MEMORY): a publisher-write ≺ subscriber-IO
-  ordering can never be refutation-grade in open-world — binding-kind proves
-  target-runs, not no-co-subscriber-commits.
+  args (`ObjectType::Codeunit`, `Codeunit::"Name"`, `'EventName'`, `'ElementName'` —
+  qualified_enum_value / database_reference / string_literal) via the R1 structured
+  `AttributeInfo` shape (AttributeInfo parity: the SAME L2 attribute indexing that
+  produces the R1 projection's `attributesParsed`, so the arg shape cannot drift). A
+  malformed / unparseable `[EventSubscriber()]` yields NO edge AND no synthesized
+  symbol (open-world: every PARSEABLE subscriber → exactly one edge, no silent gap; a
+  non-parseable one → none).
+- **The FIXED `realPublisherEventIds` semantics** — a subscriber is `resolved` IFF a
+  REAL indexed event-publisher routine produced its eventId, tracked in
+  `real_publisher_event_ids` (NEVER in `event_by_id`, which also holds synthesized
+  maybe/unknown symbols and drives ONLY dedup). Consulting `event_by_id` for the
+  resolution decision was the **6th al-sem oracle bug** (false-`resolved`): it would
+  upgrade the 2nd+ subscriber to an unindexed event on an existing object to
+  `resolved`. FIXED: two such subscribers stay BOTH `maybe`.
+- **Open-world three-case synthesis** — target found + real publisher → `resolved` (no
+  synthesis); target found + NO real publisher → `maybe` + a synthesized symbol with
+  the EXISTING target object's conforming objectId; target NOT found → `unknown` + a
+  synthesized symbol with a NON-conforming sentinel objectId
+  (`unknown/<type>/0:<targetRef>`). Every synthesized `signatureHash ==
+  sha256Hex(RAW eventId)`; `encodeEventId` LOWERCASES the eventName (a mixed-case
+  subscriber resolves). Note (MEMORY): a publisher-write ≺ subscriber-IO ordering can
+  never be refutation-grade in open-world — binding-kind proves target-runs, not
+  no-co-subscriber-commits.
+- **Stable projection from EventSymbol** — `projectEventGraph` derives the stable
+  eventId FROM the EventSymbol (dumb `/`→`:` on `publisherObjectId`, NEVER parsing the
+  raw eventId; the sentinel `unknown/type/0:ref` → opaque `unknown:type:0:ref`), maps
+  each edge's raw eventId through the rawEventId→stableEventId LAST-wins map, sorts
+  events by stable id and edges by (stable eventId, subscriberRoutineId).
+
+**Comparison surface (R2c).** The allowlisted event-graph projection (`events[]` +
+`edges[]`) of a RESOLVED SemanticModel, byte-compared against the al-sem golden;
+`forbiddenKeys` (callGraph/dispatch, typedEdges, summary, coverage, publish, …) guard
+against later-gate leakage.
+
+**R2c's native soundness oracle is L3-DIRECT** (`tests/l3eg_oracles.rs`) — 8
+ground-truth-free STRUCTURAL invariants run NATIVELY over `build_event_graph` (inline
+workspace → `assemble_and_resolve_default` → `SymbolTable::build` → `build_event_graph`),
+asserting the event-graph CONTRACT in absolute terms (NOT a golden diff). Because the
+corpus differential is BYTE-PARITY, a bug BOTH engines share would survive a pure
+diff (that is exactly how the 6th false-`resolved` bug would hide) — the oracle catches
+it. A failure here that the differential misses means BOTH engines are wrong — it is
+NOT "fix the golden". The 8 invariants: open-world parseable→one-edge /
+non-parseable→none; subscriber-to-real-publisher → resolved (no synthesis); two
+subscribers to an unindexed event → BOTH maybe (the 6th-bug guard); target-found-no-
+publisher → maybe + conforming synthesized symbol; target-not-found → unknown +
+sentinel symbol; synthesized signatureHash == sha256Hex(raw eventId); publisher
+eventKind tracks attribute; isolated parsing (true / explicit-false-omitted /
+present-unparseable-conservative-true); eventName lowercased in the raw id. All green —
+**no `src/engine/l3/event_graph.rs` change required** for the exit gate (the FIXED
+semantics already landed in R2c Task 2; the oracle confirms it).
+
+### Covered vs deferred (R2c — honest)
+
+- **Covered (source-only intra-workspace event resolution):** real
+  `[IntegrationEvent]`/`[BusinessEvent]` publisher symbols (eventKind, isolated,
+  signatureHash, parameters); open-world subscriber edges (every parseable subscriber →
+  exactly one edge; non-parseable → none); the FIXED `resolved`/`maybe`/`unknown`
+  resolution; three-case open-world synthesis (conforming / sentinel objectId); the
+  stable projection (dumb `/`→`:`, rawEventId→stableEventId LAST-wins map). 31/31
+  corpus differential + coverage matrix + manifest oracle + native L3-direct oracle.
+- **Deferred to R2.5 / later gates:**
+  - **Cross-app event publisher / subscriber resolution** — a publisher or subscriber
+    target that lives in a `.app` symbol package, not the source workspace. The R2c
+    corpus + oracle are SOURCE-ONLY (no `.app` ingestion) → **R2.5** (`.app`
+    projection) then cross-app.
+  - **Publish-capability facts** — whether a publisher's transitive callee actually
+    `Commit`s / raises before a subscriber observes is an effect-summary property the
+    event graph does NOT compute (`op:"publish"` is L4-injected) → **L4 / R3**.
 
 R2c extends, never replaces, the R1/R2a/R2b goldens — the validated L2 surface + the
 resolved record-type identity + the resolved call graph are the inputs the event
 resolver binds.
+
+---
+
+## R2d (L3 coverage + analysis gaps) — STUB
+
+R2d is the FOURTH and LAST source-only L3 sub-gate: **`buildCoverage`** — the
+analysis-confidence accounting that consumes the now-resolved R2b call graph + R2c
+event graph (no new resolution; a pure read over the resolved model). Scope:
+
+- **Workspace coverage counts** — source / parsed unit counts (how many discovered
+  `.al` files parsed cleanly vs failed), the per-app object/routine totals.
+- **Unresolved-callsite + dynamic-dispatch accounting** — the count of callsites that
+  resolved to `unresolved` / `opaque` / `external-target` (from the R2b call graph) +
+  the count of `dynamic` dispatch sites (`Codeunit.Run` with a non-literal target,
+  interface dispatch with no in-source impls) that bound the static-analysis horizon.
+- **`opaqueApps`** — the declared dependencies whose `.app` symbols were NOT ingested
+  (source-only → ALL declared deps are opaque here), the set that makes member misses
+  `opaque` once R2.5 lands.
+- **Per-app `CoverageRecord`** — one record per app aggregating the above, the
+  `analysisGaps` surface al-perf correlates against.
+
+R2d reuses the resolved call + event graphs verbatim — it adds NO resolution, only the
+confidence accounting. It extends, never replaces, the R1/R2a/R2b/R2c goldens.
 
 ---
 
@@ -761,12 +852,14 @@ resolver binds.
 | L2 (index) | R1 (R1a+R1b+R1c+R1d) | **DONE** — 152/152, full per-routine feature surface |
 | L3 (resolve) | **R2a** (record-types, source-only) | **DONE** — 153/153 + coverage matrix + native oracle |
 | L3 (resolve) | **R2b** (call graph, source-only) | **DONE** — 155/155 + expanded coverage matrix + manifest oracle + native L3-direct oracle |
-| L3 (resolve) | R2c (event graph), R2d (coverage/gaps) | remaining |
+| L3 (resolve) | **R2c** (event graph, source-only) | **DONE** — 31/31 + coverage matrix + manifest oracle + native L3-direct oracle (8 invariants); 6th al-sem oracle bug (false-`resolved`) fixed |
+| L3 (resolve) | R2d (coverage/gaps, source-only) | remaining — the LAST source-only L3 sub-gate |
 | L3 (resolve) | R2.5 (`.app` ingestion + cross-app resolution) | remaining |
 | L4 (summaries) | R3 | not started |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
-With R2b shipped, **R0 + R1 + R2a + R2b are done**. R2c / R2d + R2.5 (`.app` /
-cross-app) remain for the L3 resolve layer; then R3 (L4 summaries), R4 (L5
+With R2c shipped, **R0 + R1 + R2a + R2b + R2c are done** — R2 is nearly complete (R2d,
+the coverage/gaps accounting, is the LAST source-only L3 sub-gate). R2d + R2.5 (`.app`
+/ cross-app) remain for the L3 resolve layer; then R3 (L4 summaries), R4 (L5
 detectors), and the product surface.
