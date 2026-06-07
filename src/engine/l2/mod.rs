@@ -14,6 +14,7 @@ pub mod body_walk;
 pub mod cfn;
 pub mod classify;
 pub mod features;
+pub mod l2_workspace;
 pub mod node_util;
 pub mod record_op;
 pub mod scope;
@@ -36,7 +37,7 @@ pub struct IdentityCtx<'a> {
 }
 
 /// Find the code_block child of a routine node.
-fn find_code_block(node: Node) -> Option<Node> {
+pub(crate) fn find_code_block(node: Node) -> Option<Node> {
     named_children(node)
         .into_iter()
         .find(|c| c.kind() == "code_block")
@@ -51,7 +52,7 @@ fn get_return_type_text(node: Node, source: &str) -> Option<String> {
 }
 
 /// `extractObjectNumber` — first `integer` named child, else 0.
-fn extract_object_number(decl: Node, source: &str) -> i64 {
+pub(crate) fn extract_object_number(decl: Node, source: &str) -> i64 {
     for child in named_children(decl) {
         if child.kind() == "integer" {
             return node_text(child, source).trim().parse::<i64>().unwrap_or(0);
