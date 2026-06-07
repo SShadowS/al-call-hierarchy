@@ -11,10 +11,12 @@
 //! R2a scope: record-types ONLY. The call graph (R2b), event graph (R2c), and
 //! coverage / gaps (R2d) are LATER gates and intentionally OUT.
 
+pub mod al_attributes;
 pub mod al_builtins;
 pub mod al_type;
 pub mod call_graph_projection;
 pub mod call_resolver;
+pub mod event_graph;
 pub mod extension_fields;
 pub mod implicit_edges;
 pub mod l3_workspace;

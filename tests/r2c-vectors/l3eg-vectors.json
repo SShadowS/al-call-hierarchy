@@ -1,0 +1,1040 @@
+{
+  "description": "R2c L3 event-graph vectors. Two sections: (a) ATTRIBUTE-ARG-SHAPE PARITY vectors — for a set of attribute strings, the REAL al-sem L2 parsed AttributeInfo (kind/value/qualifier/member per arg) PLUS the expected findAttribute/qualifiedArg/stringArg/boolArg accessor outputs at the indices the event-graph code reads; the Rust side verifies its AttributeInfo matches BEFORE using the accessors. (b) EVENT-GRAPH vectors — the full projected event graph from REAL resolveModel over inline workspaces (indexWorkspace pre-resolve → resolveModel post-resolve/pre-summary → projectL3EventGraph; READ-only, NEVER re-runs buildEventGraph). Hand-authored invariants were asserted against the live projection before emit. Covers integration/business publisher; isolated true/explicit-false(omitted)/unparseable(true)/absent; subscriber resolved/maybe/unknown(sentinel); two-subscribers-both-maybe (the FIXED semantics); elementName present+empty; non-parseable subscriber → no edge; eventName casing.",
+  "modelInstanceId": "r0",
+  "appGuid": "c2c00000-0000-0000-0000-0000000002cc",
+  "attrShapeVectorCount": 9,
+  "eventGraphVectorCount": 12,
+  "eventGraphFamilyCount": 12,
+  "attrShapeVectors": [
+    {
+      "name": "integration_iso_true",
+      "description": "[IntegrationEvent(false,false,true)] — boolArg(2)=true drives isolated",
+      "attribute": "[IntegrationEvent(false, false, true)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false, true)]"
+        }
+      ],
+      "accessor": {
+        "findName": "IntegrationEvent",
+        "findPresent": true,
+        "qualifiedArgs": [],
+        "stringArgs": [],
+        "boolArgs": [
+          {
+            "index": 0,
+            "value": false
+          },
+          {
+            "index": 1,
+            "value": false
+          },
+          {
+            "index": 2,
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "integration_iso_absent",
+      "description": "[IntegrationEvent(false,false)] — boolArg(2) absent (null) → isolated undefined",
+      "attribute": "[IntegrationEvent(false, false)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "IntegrationEvent",
+        "findPresent": true,
+        "qualifiedArgs": [],
+        "stringArgs": [],
+        "boolArgs": [
+          {
+            "index": 0,
+            "value": false
+          },
+          {
+            "index": 1,
+            "value": false
+          },
+          {
+            "index": 2,
+            "value": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "integration_iso_explicit_false",
+      "description": "[IntegrationEvent(true,false,false)] — boolArg(2)=false → isolated omitted",
+      "attribute": "[IntegrationEvent(true, false, false)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(true, false, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "IntegrationEvent",
+        "findPresent": true,
+        "qualifiedArgs": [],
+        "stringArgs": [],
+        "boolArgs": [
+          {
+            "index": 0,
+            "value": true
+          },
+          {
+            "index": 1,
+            "value": false
+          },
+          {
+            "index": 2,
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "business_simple",
+      "description": "[BusinessEvent(false)] — boolArg(1) absent → isolated undefined",
+      "attribute": "[BusinessEvent(false)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[BusinessEvent(false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "BusinessEvent",
+        "findPresent": true,
+        "qualifiedArgs": [],
+        "stringArgs": [],
+        "boolArgs": [
+          {
+            "index": 0,
+            "value": false
+          },
+          {
+            "index": 1,
+            "value": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "business_iso_true",
+      "description": "[BusinessEvent(false,true)] — boolArg(1)=true drives isolated",
+      "attribute": "[BusinessEvent(false, true)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[BusinessEvent(false, true)]"
+        }
+      ],
+      "accessor": {
+        "findName": "BusinessEvent",
+        "findPresent": true,
+        "qualifiedArgs": [],
+        "stringArgs": [],
+        "boolArgs": [
+          {
+            "index": 0,
+            "value": false
+          },
+          {
+            "index": 1,
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "subscriber_codeunit_quoted_ref",
+      "description": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnBeforePostSalesDoc', '', false, false)] — quoted target ref unquoted in member",
+      "attribute": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnBeforePostSalesDoc', '', false, false)]",
+      "routineKind": "event-subscriber",
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"Sales-Post\"",
+              "value": "Sales-Post",
+              "qualifier": "Codeunit",
+              "member": "Sales-Post"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnBeforePostSalesDoc'",
+              "value": "OnBeforePostSalesDoc"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnBeforePostSalesDoc', '', false, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "EventSubscriber",
+        "findPresent": true,
+        "qualifiedArgs": [
+          {
+            "index": 0,
+            "value": {
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            }
+          },
+          {
+            "index": 1,
+            "value": {
+              "qualifier": "Codeunit",
+              "member": "Sales-Post"
+            }
+          }
+        ],
+        "stringArgs": [
+          {
+            "index": 2,
+            "value": "OnBeforePostSalesDoc"
+          },
+          {
+            "index": 3,
+            "value": ""
+          }
+        ],
+        "boolArgs": [
+          {
+            "index": 4,
+            "value": false
+          },
+          {
+            "index": 5,
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "subscriber_codeunit_unquoted_ref",
+      "description": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Hub, 'OnPing', '', false, false)] — unquoted target ref",
+      "attribute": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Hub, 'OnPing', '', false, false)]",
+      "routineKind": "event-subscriber",
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::Hub",
+              "value": "Hub",
+              "qualifier": "Codeunit",
+              "member": "Hub"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnPing'",
+              "value": "OnPing"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Hub, 'OnPing', '', false, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "EventSubscriber",
+        "findPresent": true,
+        "qualifiedArgs": [
+          {
+            "index": 0,
+            "value": {
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            }
+          },
+          {
+            "index": 1,
+            "value": {
+              "qualifier": "Codeunit",
+              "member": "Hub"
+            }
+          }
+        ],
+        "stringArgs": [
+          {
+            "index": 2,
+            "value": "OnPing"
+          },
+          {
+            "index": 3,
+            "value": ""
+          }
+        ],
+        "boolArgs": []
+      }
+    },
+    {
+      "name": "subscriber_table_database_ref_elem",
+      "description": "[EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterValidateEvent', 'No.', true, false)] — Database:: ref + non-empty elementName",
+      "attribute": "[EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterValidateEvent', 'No.', true, false)]",
+      "routineKind": "event-subscriber",
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Table",
+              "value": "Table",
+              "qualifier": "ObjectType",
+              "member": "Table"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Database::Customer",
+              "value": "Customer",
+              "qualifier": "Database",
+              "member": "Customer"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterValidateEvent'",
+              "value": "OnAfterValidateEvent"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'No.'",
+              "value": "No."
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterValidateEvent', 'No.', true, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "EventSubscriber",
+        "findPresent": true,
+        "qualifiedArgs": [
+          {
+            "index": 0,
+            "value": {
+              "qualifier": "ObjectType",
+              "member": "Table"
+            }
+          },
+          {
+            "index": 1,
+            "value": {
+              "qualifier": "Database",
+              "member": "Customer"
+            }
+          }
+        ],
+        "stringArgs": [
+          {
+            "index": 2,
+            "value": "OnAfterValidateEvent"
+          },
+          {
+            "index": 3,
+            "value": "No."
+          }
+        ],
+        "boolArgs": [
+          {
+            "index": 4,
+            "value": true
+          },
+          {
+            "index": 5,
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "find_attribute_miss",
+      "description": "findAttribute(IntegrationEvent-only attrs, 'EventSubscriber') → absent",
+      "attribute": "[IntegrationEvent(false, false)]",
+      "routineKind": "event-publisher",
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "accessor": {
+        "findName": "EventSubscriber",
+        "findPresent": false,
+        "qualifiedArgs": [
+          {
+            "index": 0,
+            "value": null
+          },
+          {
+            "index": 1,
+            "value": null
+          }
+        ],
+        "stringArgs": [
+          {
+            "index": 2,
+            "value": null
+          },
+          {
+            "index": 3,
+            "value": null
+          }
+        ],
+        "boolArgs": []
+      }
+    }
+  ],
+  "eventGraphVectors": [
+    {
+      "family": "publisher-integration",
+      "name": "integration_publisher_resolved_subscriber",
+      "description": "an [IntegrationEvent] publisher + an in-workspace subscriber → one integration symbol + one resolved edge",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Engine\n{\n    [IntegrationEvent(false, false)]\n    procedure OnDone()\n    begin\n    end;\n}\ncodeunit 50101 Listener\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Engine, 'OnDone', '', false, false)]\n    local procedure Handle()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnDone::42d2bfd52380616b8b84c1b5698142002d2f6aea4c16267a6e8563f7f3f21958",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnDone",
+            "eventKind": "integration",
+            "signatureHash": "42d2bfd52380616b8b84c1b5698142002d2f6aea4c16267a6e8563f7f3f21958",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#42d2bfd52380616b8b84c1b5698142002d2f6aea4c16267a6e8563f7f3f21958"
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnDone::42d2bfd52380616b8b84c1b5698142002d2f6aea4c16267a6e8563f7f3f21958",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#6966be9fdf0f6a4069169dced207a5c6112f7b4da20c18946e69125734fafe50",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "resolved",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one integration symbol",
+        "the publisher symbol has a publisherRoutineId",
+        "exactly one resolved edge",
+        "no isolated field on a non-isolated publisher"
+      ]
+    },
+    {
+      "family": "publisher-business",
+      "name": "business_publisher",
+      "description": "a [BusinessEvent] publisher → one business-kind symbol",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Biz\n{\n    [BusinessEvent(false)]\n    procedure OnBizDone()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnBizDone::a9a8382f26fcb1563c20fd02dbd8db2efbd4d3778bfd251238a09a872bb69c15",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnBizDone",
+            "eventKind": "business",
+            "signatureHash": "a9a8382f26fcb1563c20fd02dbd8db2efbd4d3778bfd251238a09a872bb69c15",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#a9a8382f26fcb1563c20fd02dbd8db2efbd4d3778bfd251238a09a872bb69c15"
+          }
+        ],
+        "edges": []
+      },
+      "invariants": [
+        "exactly one business symbol",
+        "no edges (no subscriber)"
+      ]
+    },
+    {
+      "family": "isolated-true",
+      "name": "integration_isolated_true",
+      "description": "[IntegrationEvent(false,false,true)] → symbol carries isolated:true",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Iso\n{\n    [IntegrationEvent(false, false, true)]\n    procedure OnIso()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnIso::521f9de965b207ab78fb8b054bf3b7313dca44a3bfa19332536d9fd25eb7b4e8",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnIso",
+            "eventKind": "integration",
+            "signatureHash": "521f9de965b207ab78fb8b054bf3b7313dca44a3bfa19332536d9fd25eb7b4e8",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#521f9de965b207ab78fb8b054bf3b7313dca44a3bfa19332536d9fd25eb7b4e8",
+            "isolated": true
+          }
+        ],
+        "edges": []
+      },
+      "invariants": [
+        "the symbol has isolated:true"
+      ]
+    },
+    {
+      "family": "isolated-explicit-false",
+      "name": "integration_isolated_explicit_false_omitted",
+      "description": "[IntegrationEvent(true,false,false)] → isolated field OMITTED (not serialized false)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 NotIso\n{\n    [IntegrationEvent(true, false, false)]\n    procedure OnNotIso()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnNotIso::9c32dfcbb8b289bcbe0b55152a09bb2359c972773095dd44446ad0021b3f9993",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnNotIso",
+            "eventKind": "integration",
+            "signatureHash": "9c32dfcbb8b289bcbe0b55152a09bb2359c972773095dd44446ad0021b3f9993",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#9c32dfcbb8b289bcbe0b55152a09bb2359c972773095dd44446ad0021b3f9993"
+          }
+        ],
+        "edges": []
+      },
+      "invariants": [
+        "no isolated key on any symbol"
+      ]
+    },
+    {
+      "family": "isolated-unparseable",
+      "name": "integration_isolated_unparseable_conservative_true",
+      "description": "[IntegrationEvent(false,false,SomeVar)] — arg present but not a boolean literal → conservative isolated:true",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Cons\n{\n    [IntegrationEvent(false, false, SomeConst)]\n    procedure OnCons()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnCons::6bdf76e1cce9bd321796b850f9ed53053186451f0da3a9c0b821763486d4cf82",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnCons",
+            "eventKind": "integration",
+            "signatureHash": "6bdf76e1cce9bd321796b850f9ed53053186451f0da3a9c0b821763486d4cf82",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#6bdf76e1cce9bd321796b850f9ed53053186451f0da3a9c0b821763486d4cf82",
+            "isolated": true
+          }
+        ],
+        "edges": []
+      },
+      "invariants": [
+        "the symbol has isolated:true (conservative)"
+      ]
+    },
+    {
+      "family": "isolated-business",
+      "name": "business_isolated_true",
+      "description": "[BusinessEvent(false,true)] → business symbol carries isolated:true (index 1)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 BizIso\n{\n    [BusinessEvent(false, true)]\n    procedure OnBizIso()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnBizIso::246252494a6a2102dad70069c12ecb46167e9099cff0d4697c80aff9820dc5ed",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnBizIso",
+            "eventKind": "business",
+            "signatureHash": "246252494a6a2102dad70069c12ecb46167e9099cff0d4697c80aff9820dc5ed",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#246252494a6a2102dad70069c12ecb46167e9099cff0d4697c80aff9820dc5ed",
+            "isolated": true
+          }
+        ],
+        "edges": []
+      },
+      "invariants": [
+        "business symbol isolated:true"
+      ]
+    },
+    {
+      "family": "subscriber-maybe",
+      "name": "subscriber_maybe_existing_target_no_publisher",
+      "description": "a subscriber targeting an EXISTING object that has NO matching event-publisher routine → maybe + synthesized symbol (conforming publisherObjectId, NOT a sentinel)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Target\n{\n    procedure NotAnEvent()\n    begin\n    end;\n}\ncodeunit 50101 Sub\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Target, 'OnPhantom', '', false, false)]\n    local procedure Handle()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnPhantom::7a544469f09d9eeef5b7e6a8c954471d44a6cd8d9b9a186c689a5e37b4574a3f",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnPhantom",
+            "eventKind": "unknown",
+            "signatureHash": "7a544469f09d9eeef5b7e6a8c954471d44a6cd8d9b9a186c689a5e37b4574a3f",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter",
+                "note": "publisher not indexed"
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnPhantom::7a544469f09d9eeef5b7e6a8c954471d44a6cd8d9b9a186c689a5e37b4574a3f",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#6966be9fdf0f6a4069169dced207a5c6112f7b4da20c18946e69125734fafe50",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "maybe",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one maybe edge",
+        "the synthesized symbol's publisherObjectId is conforming (no 'unknown:' prefix)",
+        "the synthesized symbol has NO publisherRoutineId"
+      ]
+    },
+    {
+      "family": "subscriber-unknown",
+      "name": "subscriber_unknown_missing_target_sentinel",
+      "description": "a subscriber targeting an object NOT in the workspace → unknown + sentinel pseudo-id symbol (publisherObjectId starts 'unknown:')",
+      "files": [
+        [
+          "a",
+          "codeunit 50101 Sub\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"Out Of World\", 'OnGone', '', false, false)]\n    local procedure Handle()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "unknown:Codeunit:0:Out Of World::OnGone::4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+            "publisherObjectId": "unknown:Codeunit:0:Out Of World",
+            "eventName": "OnGone",
+            "eventKind": "unknown",
+            "signatureHash": "4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter",
+                "note": "target object not in indexed source"
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "unknown:Codeunit:0:Out Of World::OnGone::4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#6966be9fdf0f6a4069169dced207a5c6112f7b4da20c18946e69125734fafe50",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "unknown",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one unknown edge",
+        "the symbol's publisherObjectId is the sentinel 'unknown:Codeunit:0:Out Of World'",
+        "the sentinel symbol has unknown eventKind and no publisherRoutineId"
+      ]
+    },
+    {
+      "family": "two-subscribers-both-maybe",
+      "name": "two_subscribers_same_unindexed_event_both_maybe",
+      "description": "the FIXED al-sem semantics: TWO subscribers to the SAME unindexed event on an EXISTING object → BOTH maybe, sharing ONE synthesized symbol (pre-fix the 2nd falsely upgraded to resolved)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Hub\n{\n    procedure OnPing()\n    begin\n    end;\n}\ncodeunit 50101 SubA\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Hub, 'OnPing', '', false, false)]\n    local procedure HandleA()\n    begin\n    end;\n}\ncodeunit 50102 SubB\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Hub, 'OnPing', '', false, false)]\n    local procedure HandleB()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnPing::951520f49a365072b6d6cf12390a7b6711c6582e8ab96c0412d0ff9da14ee171",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnPing",
+            "eventKind": "unknown",
+            "signatureHash": "951520f49a365072b6d6cf12390a7b6711c6582e8ab96c0412d0ff9da14ee171",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter",
+                "note": "publisher not indexed"
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnPing::951520f49a365072b6d6cf12390a7b6711c6582e8ab96c0412d0ff9da14ee171",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#766598f78e48b70cf7ed5539472faa2ebd32e808eaff2ede74c5d34ee4225877",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "maybe",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          },
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnPing::951520f49a365072b6d6cf12390a7b6711c6582e8ab96c0412d0ff9da14ee171",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50102#026d0afc0c6e41d6d9cc0f3cfd984d76d2473fcc3a103695f5b513b5904dd40a",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "maybe",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly two edges, BOTH maybe",
+        "the two edges share ONE eventId (one synthesized symbol)",
+        "exactly one synthesized symbol",
+        "NO resolved edge (the bug would have produced one)"
+      ]
+    },
+    {
+      "family": "element-name",
+      "name": "subscriber_element_name_present_and_empty",
+      "description": "two subscribers: one with a non-empty elementName, one with '' → the empty one OMITS elementName, the non-empty one carries it",
+      "files": [
+        [
+          "a",
+          "table 50000 Rec\n{\n    fields { field(1; \"No.\"; Code[20]) { } field(2; Amount; Decimal) { } }\n    keys { key(PK; \"No.\") { } }\n}\ncodeunit 50101 Sub\n{\n    [EventSubscriber(ObjectType::Table, Database::Rec, 'OnAfterValidateEvent', 'Amount', false, false)]\n    local procedure HandleField()\n    begin\n    end;\n\n    [EventSubscriber(ObjectType::Table, Database::Rec, 'OnAfterInsertEvent', '', false, false)]\n    local procedure HandleNoField()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Table:50000::OnAfterInsertEvent::79bc397ec4a3bbd6d450d85a7c09feb480ed44ff22ae8f5dcc71ceabf9a430bf",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Table:50000",
+            "eventName": "OnAfterInsertEvent",
+            "eventKind": "unknown",
+            "signatureHash": "79bc397ec4a3bbd6d450d85a7c09feb480ed44ff22ae8f5dcc71ceabf9a430bf",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter",
+                "note": "publisher not indexed"
+              }
+            ]
+          },
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Table:50000::OnAfterValidateEvent::0126244324490c245270851977f810c7b65194dac3fcc6091185b3e932c3bdab",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Table:50000",
+            "eventName": "OnAfterValidateEvent",
+            "eventKind": "unknown",
+            "signatureHash": "0126244324490c245270851977f810c7b65194dac3fcc6091185b3e932c3bdab",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter",
+                "note": "publisher not indexed"
+              }
+            ],
+            "elementName": "Amount"
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Table:50000::OnAfterInsertEvent::79bc397ec4a3bbd6d450d85a7c09feb480ed44ff22ae8f5dcc71ceabf9a430bf",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#b68c3ad2a8bfba335370137c70e447e0fb408fd4f7561e72abfbaa10f4b4f1e4",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "maybe",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          },
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Table:50000::OnAfterValidateEvent::0126244324490c245270851977f810c7b65194dac3fcc6091185b3e932c3bdab",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#da6159b80a065795f3cb3d830d492db1b8746c672518b48e7c36245e98b05a1e",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "maybe",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one symbol carries elementName='Amount'",
+        "the empty-element symbol OMITS elementName"
+      ]
+    },
+    {
+      "family": "non-parseable-subscriber",
+      "name": "non_parseable_subscriber_no_edge",
+      "description": "an [EventSubscriber] missing its required positional args (parseSubscriberAttribute → null) → NO edge",
+      "files": [
+        [
+          "a",
+          "codeunit 50101 Sub\n{\n    [EventSubscriber()]\n    local procedure Handle()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [],
+        "edges": []
+      },
+      "invariants": [
+        "no edges at all"
+      ]
+    },
+    {
+      "family": "eventname-casing",
+      "name": "eventname_mixed_case_lowercased_in_raw_id",
+      "description": "a subscriber with a DIFFERENT source casing than the publisher resolves via the lowercased raw eventId; the stable id uses the publisher's case-preserved eventName",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Engine\n{\n    [IntegrationEvent(false, false)]\n    procedure OnMixedCaseEvent()\n    begin\n    end;\n}\ncodeunit 50101 Listener\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Engine, 'onmixedcaseevent', '', false, false)]\n    local procedure Handle()\n    begin\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "events": [
+          {
+            "id": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnMixedCaseEvent::5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+            "publisherObjectId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100",
+            "eventName": "OnMixedCaseEvent",
+            "eventKind": "integration",
+            "signatureHash": "5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+            "parameters": [],
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ],
+            "publisherRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100#5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d"
+          }
+        ],
+        "edges": [
+          {
+            "eventId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50100::OnMixedCaseEvent::5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+            "subscriberRoutineId": "c2c00000-0000-0000-0000-0000000002cc:Codeunit:50101#6966be9fdf0f6a4069169dced207a5c6112f7b4da20c18946e69125734fafe50",
+            "subscriberAppId": "c2c00000-0000-0000-0000-0000000002cc",
+            "resolution": "resolved",
+            "provenance": [
+              {
+                "source": "tree-sitter"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "the differently-cased subscriber resolves (one resolved edge)",
+        "the publisher symbol's eventName is case-preserved 'OnMixedCaseEvent'",
+        "the stable id contains the case-preserved eventName"
+      ]
+    }
+  ]
+}

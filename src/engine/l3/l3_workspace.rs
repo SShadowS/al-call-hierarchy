@@ -112,9 +112,15 @@ pub struct L3Variable {
 /// disambiguation (`typeText`).
 #[derive(Debug, Clone)]
 pub struct L3Parameter {
+    /// Positional index (0-based) — the EventSymbol parameter shape.
+    pub index: u32,
     pub name: String,
     pub type_text: String,
     pub is_var: bool,
+    /// True when the declared type is a `Record` (drives the event param shape).
+    pub is_record: bool,
+    /// Record table name (unquoted), when `is_record`.
+    pub table_name: Option<String>,
 }
 
 /// A workspace routine (the L3-relevant subset).
@@ -130,6 +136,19 @@ pub struct L3Routine {
     /// Owning object's type (`Codeunit` / `Page` / `Table` / …) for the projection.
     pub object_type: String,
     pub name: String,
+    /// Routine kind (`procedure` / `trigger` / `event-publisher` /
+    /// `event-subscriber`) — drives the event-graph publisher/subscriber passes.
+    pub kind: String,
+    /// Structured attributes (the grammar-derived AttributeInfo shape) — the event
+    /// graph reads `[IntegrationEvent]`/`[BusinessEvent]`/`[EventSubscriber]` args.
+    pub attributes_parsed: Vec<super::al_attributes::AttributeInfo>,
+    /// Owning object's app guid — the EventEdge `subscriberAppId`.
+    pub app_guid: String,
+    /// Owning object's number — for the publisher's `publisherObjectId`.
+    pub object_number: i64,
+    /// The return-type-aware normalized signature hash — the EventSymbol
+    /// `signatureHash` for REAL publisher routines.
+    pub normalized_signature_hash: String,
     pub record_variables: Vec<L3RecordVariable>,
     pub record_operations: Vec<L3RecordOperation>,
     pub variables: Vec<L3Variable>,
@@ -522,9 +541,12 @@ fn project_file(
             let parameters = crate::engine::l2::scope::extract_parameters(routine, source)
                 .into_iter()
                 .map(|p| L3Parameter {
+                    index: p.index,
                     name: p.name,
                     type_text: p.type_text,
                     is_var: p.is_var,
+                    is_record: p.is_record,
+                    table_name: p.table_name,
                 })
                 .collect();
             let return_type = crate::engine::l2::get_return_type_text(routine, source);
@@ -537,12 +559,30 @@ fn project_file(
             let norm_hash = routine_normalized_signature_hash(routine, source).unwrap_or_default();
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
+            // Routine kind + structured attributes (the event-graph inputs). Reuse the
+            // SAME L2 attribute indexing that produces the L2 projection's
+            // `attributesParsed`, so the AttributeInfo arg shape (kind/value/qualifier/
+            // member) cannot drift from R1.
+            let kind = crate::engine::l2::l2_workspace::classify_kind(routine, source).to_string();
+            let (_, attributes_parsed_json) =
+                crate::engine::l2::l2_workspace::collect_attributes(routine, source);
+            let attributes_parsed: Vec<super::al_attributes::AttributeInfo> =
+                attributes_parsed_json
+                    .into_iter()
+                    .filter_map(|v| serde_json::from_value(v).ok())
+                    .collect();
+
             workspace.routines.push(L3Routine {
                 id: routine_id,
                 stable_routine_id,
                 object_id: object_id.clone(),
                 object_type: object_type.to_string(),
                 name: rname,
+                kind,
+                attributes_parsed,
+                app_guid: app_guid.to_string(),
+                object_number,
+                normalized_signature_hash: norm_hash,
                 record_variables,
                 record_operations,
                 variables,

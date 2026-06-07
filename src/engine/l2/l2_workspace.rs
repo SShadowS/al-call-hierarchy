@@ -273,7 +273,7 @@ fn attr_arg_from_node(node: Node, source: &str) -> serde_json::Value {
 
 /// `attributeInfoFromNode` — structured `{name, args, raw}` JSON, or None when
 /// the attribute shape is unrecognizable (parse error).
-fn attribute_info_from_node(item: Node, source: &str) -> Option<serde_json::Value> {
+pub fn attribute_info_from_node(item: Node, source: &str) -> Option<serde_json::Value> {
     let content = item.child_by_field_name("attribute")?;
     let name = content
         .child_by_field_name("name")
@@ -303,7 +303,7 @@ fn attribute_info_from_node(item: Node, source: &str) -> Option<serde_json::Valu
 /// `classifyAndCollectAttributes` — raw `attributes` (document order) +
 /// structured `attributesParsed` (document order) by walking preceding
 /// `attribute_item` siblings.
-fn collect_attributes(node: Node, source: &str) -> (Vec<String>, Vec<serde_json::Value>) {
+pub fn collect_attributes(node: Node, source: &str) -> (Vec<String>, Vec<serde_json::Value>) {
     let mut attributes: Vec<String> = Vec::new();
     let mut parsed: Vec<serde_json::Value> = Vec::new();
     let mut sibling = node.prev_sibling();
@@ -338,7 +338,7 @@ fn classify_access_modifier(node: Node, source: &str) -> Option<String> {
 }
 
 /// `classifyAndCollectAttributes` (kind only) — base kind + first event attr.
-fn classify_kind(node: Node, source: &str) -> &'static str {
+pub fn classify_kind(node: Node, source: &str) -> &'static str {
     let mut kind = if node.kind() == "trigger_declaration" {
         "trigger"
     } else {
