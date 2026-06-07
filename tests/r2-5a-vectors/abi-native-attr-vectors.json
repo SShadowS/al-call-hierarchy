@@ -1,0 +1,154 @@
+{
+  "description": "R2.5a ABI-vs-native ATTRIBUTE classification vectors. Native AST attribute parser (attributeInfoFromNode) vs ABI classifyAbiArg/abiAttributeInfo over the SAME .app. Asserts identical AttributeInfo {name,args:{kind,text,value,qualifier,member}}, derived routine kind, and eventKind. Covers the string-encoded EventSubscriber arg gotcha.",
+  "appGuid": "11111111-2222-3333-4444-555555555555",
+  "count": 3,
+  "rows": [
+    {
+      "routineName": "OnBeforePost",
+      "assumed": false,
+      "note": "IntegrationEvent with two boolean args. ABI stores booleans as JSON primitives (false), native parses `false` literals — both classify to {kind:boolean, value:false}.",
+      "nativeAttributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ]
+        }
+      ],
+      "abiAttributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ]
+        }
+      ],
+      "nativeKind": "event-publisher",
+      "abiKind": "event-publisher",
+      "expectedKind": "event-publisher",
+      "expectedEventKind": "integration"
+    },
+    {
+      "routineName": "OnAfterCalc",
+      "assumed": false,
+      "note": "BusinessEvent with a single boolean. Derives kind:event-publisher, eventKind:business.",
+      "nativeAttributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ]
+        }
+      ],
+      "abiAttributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ]
+        }
+      ],
+      "nativeKind": "event-publisher",
+      "abiKind": "event-publisher",
+      "expectedKind": "event-publisher",
+      "expectedEventKind": "business"
+    },
+    {
+      "routineName": "HandleEvent",
+      "assumed": true,
+      "note": "The CLAUDE.md string-encoded-arg gotcha: qualified_enum_value `ObjectType::Codeunit`, database_reference `Codeunit::\"X\"`, string_literal `'Event'`, empty string_literal `''`. ABI Arguments[].Value are the already-tokenized AL text strings; classifyAbiArg must reproduce the native AST classification exactly.",
+      "nativeAttributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"X\"",
+              "value": "X",
+              "qualifier": "Codeunit",
+              "member": "X"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'Event'",
+              "value": "Event"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            }
+          ]
+        }
+      ],
+      "abiAttributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"X\"",
+              "value": "X",
+              "qualifier": "Codeunit",
+              "member": "X"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'Event'",
+              "value": "Event"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            }
+          ]
+        }
+      ],
+      "nativeKind": "event-subscriber",
+      "abiKind": "event-subscriber",
+      "expectedKind": "event-subscriber",
+      "expectedEventKind": "unknown"
+    }
+  ]
+}

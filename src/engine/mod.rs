@@ -4,6 +4,7 @@
 //! the differential harness. It must not depend on or alter the LSP method
 //! surface.
 
+pub mod deps;
 pub mod ids;
 pub mod l2;
 pub mod l3;

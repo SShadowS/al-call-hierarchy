@@ -1,0 +1,318 @@
+{
+  "description": "R2.5a ABI-vs-native SIGNATURE/ID parity vectors. Each row's native and ABI values were produced by running BOTH pipelines (tree-sitter source parse + SymbolReference.json ABI projection) over the SAME buildTestApp({includesSource:true}) .app, then asserting full equality of name/params/returnType/canonical-signature-string/normalizedSignatureHash/StableObjectId/StableRoutineId/encodeRoutineId-tuple. `assumed:true` flags a row whose BC TypeDefinition.Name spelling is authored from documented convention (no alc compiler in-env) rather than observed from a real compiler dump.",
+  "appGuid": "11111111-2222-3333-4444-555555555555",
+  "objectType": "Codeunit",
+  "objectNumber": 50100,
+  "modelInstanceId": "r2.5a",
+  "count": 12,
+  "rows": [
+    {
+      "routineName": "RecordUnquoted",
+      "assumed": true,
+      "note": "Record param, unquoted subtype. BC TypeDefinition.Name authored as the full reconstructed `Record <Subtype>` spelling; the al-sem ABI contract (symbol-reference-parser tests) is that TypeDefinition.Name carries the full AL type text. Integer return is OBSERVED (primitive).",
+      "nativeParamTypeText": [
+        "Record Customer"
+      ],
+      "abiParamTypeText": [
+        "Record Customer"
+      ],
+      "nativeReturnType": "Integer",
+      "abiReturnType": "Integer",
+      "canonicalString": "recordunquoted(record customer):integer",
+      "normalizedSignatureHash": "c4f5965524e3ca635a9e2d145c98c6272d449fb938b625df36d4ce6c3b3a938a",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "RecordUnquoted",
+        "normalizedSignatureHash": "c4f5965524e3ca635a9e2d145c98c6272d449fb938b625df36d4ce6c3b3a938a"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#c4f5965524e3ca635a9e2d145c98c6272d449fb938b625df36d4ce6c3b3a938a",
+      "routineId": "r2.5a/15d4e3b91f6157f63ff1c7b95110c9ff5b2520ffa90bf5917cf64f4d5daaa2b6"
+    },
+    {
+      "routineName": "RecordQuoted",
+      "assumed": true,
+      "note": "Record param, quoted multi-word subtype. ABI authored as `Record \"Sales Header\"` (inner spaces preserved — quoted identifiers are NOT collapsed). Boolean return OBSERVED.",
+      "nativeParamTypeText": [
+        "Record \"Sales Header\""
+      ],
+      "abiParamTypeText": [
+        "Record \"Sales Header\""
+      ],
+      "nativeReturnType": "Boolean",
+      "abiReturnType": "Boolean",
+      "canonicalString": "recordquoted(record \"sales header\"):boolean",
+      "normalizedSignatureHash": "d2afdd6e8696e55b26f21f77489d158517ce40606645bbd838504ec56156458d",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "RecordQuoted",
+        "normalizedSignatureHash": "d2afdd6e8696e55b26f21f77489d158517ce40606645bbd838504ec56156458d"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#d2afdd6e8696e55b26f21f77489d158517ce40606645bbd838504ec56156458d",
+      "routineId": "r2.5a/42b5ea276f774bd49d0e909eadf69a1d90214fea89c037a3cac6cfa9c377cee9"
+    },
+    {
+      "routineName": "EnumParam",
+      "assumed": true,
+      "note": "Enum param with quoted multi-word name. ABI authored as `Enum \"Foo Bar\"`.",
+      "nativeParamTypeText": [
+        "Enum \"Foo Bar\""
+      ],
+      "abiParamTypeText": [
+        "Enum \"Foo Bar\""
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "enumparam(enum \"foo bar\"):",
+      "normalizedSignatureHash": "3fadb2b0b5a51821e76306ff0ead5197aed0dbee7f0437077cf6fe3f1cda80af",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "EnumParam",
+        "normalizedSignatureHash": "3fadb2b0b5a51821e76306ff0ead5197aed0dbee7f0437077cf6fe3f1cda80af"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#3fadb2b0b5a51821e76306ff0ead5197aed0dbee7f0437077cf6fe3f1cda80af",
+      "routineId": "r2.5a/ac7cb236d66a17e8fd2bc99972f14efe76768e723ad7ef5b525aa775a96b1425"
+    },
+    {
+      "routineName": "InterfaceParam",
+      "assumed": true,
+      "note": "Interface-typed param. ABI authored as `Interface IFoo`.",
+      "nativeParamTypeText": [
+        "Interface IFoo"
+      ],
+      "abiParamTypeText": [
+        "Interface IFoo"
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "interfaceparam(interface ifoo):",
+      "normalizedSignatureHash": "60b21fbe16bfd54a676acb234987f9476857f3d49390c7c3d768073bba9ea117",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "InterfaceParam",
+        "normalizedSignatureHash": "60b21fbe16bfd54a676acb234987f9476857f3d49390c7c3d768073bba9ea117"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#60b21fbe16bfd54a676acb234987f9476857f3d49390c7c3d768073bba9ea117",
+      "routineId": "r2.5a/d7b8304e8692c737cc480cb36b7a780691d98fb767610f05593d47814a0d126d"
+    },
+    {
+      "routineName": "ArrayParam",
+      "assumed": true,
+      "note": "Array param. ABI authored as `array[10] of Integer`; native tree-sitter text observed as the same. Lowercased on both sides so `Array`/`array` casing is irrelevant.",
+      "nativeParamTypeText": [
+        "array[10] of Integer"
+      ],
+      "abiParamTypeText": [
+        "array[10] of Integer"
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "arrayparam(array[10] of integer):",
+      "normalizedSignatureHash": "b9e424f4d13ae993f2c7a0dc4461227f699801d9d55340549eefd00e69bf03eb",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "ArrayParam",
+        "normalizedSignatureHash": "b9e424f4d13ae993f2c7a0dc4461227f699801d9d55340549eefd00e69bf03eb"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#b9e424f4d13ae993f2c7a0dc4461227f699801d9d55340549eefd00e69bf03eb",
+      "routineId": "r2.5a/eb1fe6c0716b58d26f9b2253a227079772ecea3084d6d9b7d35cb166aa1f8ba9"
+    },
+    {
+      "routineName": "LengthedPrimitives",
+      "assumed": false,
+      "note": "Text[50]/Code[20] lengthed primitives. OBSERVED: BC TypeDefinition.Name emits `Text[50]`/`Code[20]` verbatim (matches existing symbol-reference-parser.test.ts fixtures `Code[20]`).",
+      "nativeParamTypeText": [
+        "Text[50]",
+        "Code[20]"
+      ],
+      "abiParamTypeText": [
+        "Text[50]",
+        "Code[20]"
+      ],
+      "nativeReturnType": "Code[20]",
+      "abiReturnType": "Code[20]",
+      "canonicalString": "lengthedprimitives(text[50];code[20]):code[20]",
+      "normalizedSignatureHash": "923baf0fb91d94b6b834b63e6b814ce01e2e81cd4a375e4e968d061862986b66",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "LengthedPrimitives",
+        "normalizedSignatureHash": "923baf0fb91d94b6b834b63e6b814ce01e2e81cd4a375e4e968d061862986b66"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#923baf0fb91d94b6b834b63e6b814ce01e2e81cd4a375e4e968d061862986b66",
+      "routineId": "r2.5a/a3eb314963704a38f0a6c5ea8b26107dfae12feec77f09ccb0b67daa8ee3a6bb"
+    },
+    {
+      "routineName": "DictParam",
+      "assumed": true,
+      "note": "Collection spacing crux: native tree-sitter text is `Dictionary of [Text, Integer]` (with the space after the comma). ABI authored with the SAME spacing — if BC emitted `Dictionary of [Text,Integer]` (no space) this row WOULD diverge and is the canary for that risk.",
+      "nativeParamTypeText": [
+        "Dictionary of [Text, Integer]"
+      ],
+      "abiParamTypeText": [
+        "Dictionary of [Text, Integer]"
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "dictparam(dictionary of [text, integer]):",
+      "normalizedSignatureHash": "5140b4b63851804d94375c9b01cc5d4c9fdf3805b1713bcb2c299b48062edaa5",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "DictParam",
+        "normalizedSignatureHash": "5140b4b63851804d94375c9b01cc5d4c9fdf3805b1713bcb2c299b48062edaa5"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#5140b4b63851804d94375c9b01cc5d4c9fdf3805b1713bcb2c299b48062edaa5",
+      "routineId": "r2.5a/2f0b0b597581155c4c740aec1bb3198b2783081673b00fff6a36a8279ca4d629"
+    },
+    {
+      "routineName": "ListParam",
+      "assumed": true,
+      "note": "Generic List of lengthed Code. ABI authored as `List of [Code[20]]`.",
+      "nativeParamTypeText": [
+        "List of [Code[20]]"
+      ],
+      "abiParamTypeText": [
+        "List of [Code[20]]"
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "listparam(list of [code[20]]):",
+      "normalizedSignatureHash": "fae7df7081ce381a8e7dc484e35022f8ef65d6217aae61dfb5b36780cf62093d",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "ListParam",
+        "normalizedSignatureHash": "fae7df7081ce381a8e7dc484e35022f8ef65d6217aae61dfb5b36780cf62093d"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#fae7df7081ce381a8e7dc484e35022f8ef65d6217aae61dfb5b36780cf62093d",
+      "routineId": "r2.5a/b911b4d195a8bb5c5271228f67579c9440ca5fba805d442ab1ee3bcd93b04e88"
+    },
+    {
+      "routineName": "VarPrimitive",
+      "assumed": false,
+      "note": "var (by-ref) param. The `var ` prefix comes from the IsVar flag on BOTH sides (not from typeText), so the canonical form gets `var integer`. Integer OBSERVED.",
+      "nativeParamTypeText": [
+        "Integer"
+      ],
+      "abiParamTypeText": [
+        "Integer"
+      ],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "varprimitive(var integer):",
+      "normalizedSignatureHash": "a282a878cc36905122dd7c85a3a32b47be161d09d29c32fa525e7a2382ef0d51",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "VarPrimitive",
+        "normalizedSignatureHash": "a282a878cc36905122dd7c85a3a32b47be161d09d29c32fa525e7a2382ef0d51"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#a282a878cc36905122dd7c85a3a32b47be161d09d29c32fa525e7a2382ef0d51",
+      "routineId": "r2.5a/e56d839ac2052d4f61e2965200f16e1bce8978e10ee4f50abe4e934b69caae4f"
+    },
+    {
+      "routineName": "ReturnOnly",
+      "assumed": false,
+      "note": "No params, lengthed Text return. OBSERVED.",
+      "nativeParamTypeText": [],
+      "abiParamTypeText": [],
+      "nativeReturnType": "Text[100]",
+      "abiReturnType": "Text[100]",
+      "canonicalString": "returnonly():text[100]",
+      "normalizedSignatureHash": "5d2441b0d50f06867ce5acb75ee2655030284d8fbc856291aab7daf949c218cb",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "ReturnOnly",
+        "normalizedSignatureHash": "5d2441b0d50f06867ce5acb75ee2655030284d8fbc856291aab7daf949c218cb"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#5d2441b0d50f06867ce5acb75ee2655030284d8fbc856291aab7daf949c218cb",
+      "routineId": "r2.5a/dd12df30eb781db3b87e84fa1c4b1efb846ddda2123de3bf86d5923efef53849"
+    },
+    {
+      "routineName": "NoParamsNoReturn",
+      "assumed": false,
+      "note": "Degenerate: no params, no return → canonical `noparamsnoreturn():`.",
+      "nativeParamTypeText": [],
+      "abiParamTypeText": [],
+      "nativeReturnType": null,
+      "abiReturnType": null,
+      "canonicalString": "noparamsnoreturn():",
+      "normalizedSignatureHash": "44308c447f2a54d3c3661de1bcba7a7bec91e7b297ff162e57365c0dc9c83840",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "NoParamsNoReturn",
+        "normalizedSignatureHash": "44308c447f2a54d3c3661de1bcba7a7bec91e7b297ff162e57365c0dc9c83840"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#44308c447f2a54d3c3661de1bcba7a7bec91e7b297ff162e57365c0dc9c83840",
+      "routineId": "r2.5a/87a016e46c0aa9c5046b99422eb47704c66a4ac442761df870cb241b990f2191"
+    },
+    {
+      "routineName": "Overload",
+      "assumed": true,
+      "note": "Multi-param mix (Decimal + quoted Record) exercising the `;` param separator and >=2 params. Decimal OBSERVED; quoted Record ASSUMED.",
+      "nativeParamTypeText": [
+        "Decimal",
+        "Record \"Sales Line\""
+      ],
+      "abiParamTypeText": [
+        "Decimal",
+        "Record \"Sales Line\""
+      ],
+      "nativeReturnType": "Decimal",
+      "abiReturnType": "Decimal",
+      "canonicalString": "overload(decimal;record \"sales line\"):decimal",
+      "normalizedSignatureHash": "e031014204da46b8754a9f2b27f5c615985bbaa22663defec70b48abc0a1291b",
+      "tuple": {
+        "appGuid": "11111111-2222-3333-4444-555555555555",
+        "objectType": "Codeunit",
+        "objectNumber": 50100,
+        "routineKind": "procedure",
+        "routineName": "Overload",
+        "normalizedSignatureHash": "e031014204da46b8754a9f2b27f5c615985bbaa22663defec70b48abc0a1291b"
+      },
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e031014204da46b8754a9f2b27f5c615985bbaa22663defec70b48abc0a1291b",
+      "routineId": "r2.5a/1ef18daefe6e616c80d739472c9598372cb0a5a051ceb0ced80cdbf2b6cf4acc"
+    }
+  ]
+}
