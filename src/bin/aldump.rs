@@ -24,6 +24,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 use al_call_hierarchy::engine::deps::merged_index::{
     build_merged_index_from_path, serialize_projection,
 };
@@ -38,10 +39,14 @@ use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 /// aligned.
 const R2_5A_MODEL_INSTANCE_ID: &str = "r2.5a";
 
+/// modelInstanceId for the R2.5b cross-app L3 emit (StableObjectId/StableRoutineId
+/// are modelInstanceId-independent — R0; pinned to match the al-sem capture).
+const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
+
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
-         --l3-coverage | --r2.5a-merged-index] <workspace-or-.app>"
+         --l3-coverage | --r2.5a-merged-index | --l3-cross-app] <workspace-or-.app>"
     );
     ExitCode::FAILURE
 }
@@ -53,6 +58,7 @@ fn main() -> ExitCode {
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
     let mut r2_5a_merged_index = false;
+    let mut l3_cross_app = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -83,6 +89,10 @@ fn main() -> ExitCode {
             r2_5a_merged_index = true;
             continue;
         }
+        if arg == "--l3-cross-app" {
+            l3_cross_app = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -97,6 +107,7 @@ fn main() -> ExitCode {
         l3_event_graph,
         l3_coverage,
         r2_5a_merged_index,
+        l3_cross_app,
     ]
     .iter()
     .filter(|f| **f)
@@ -105,7 +116,7 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
-             --l3-coverage / --r2.5a-merged-index are mutually exclusive"
+             --l3-coverage / --r2.5a-merged-index / --l3-cross-app are mutually exclusive"
         );
         return usage();
     }
@@ -114,6 +125,46 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if l3_cross_app {
+        // R2.5b cross-app L3 SMOKE: read the workspace `.al` source + its dep `.app`(s)
+        // under `<workspace>/.alpackages`, build the merged index, run the unchanged L3
+        // pipeline over workspace+deps, and emit the four cross-app surfaces (record
+        // types / call graph / event graph / coverage) as one JSON envelope. Task 1
+        // proves the pipeline RUNS + produces NON-EMPTY cross-app resolution; Tasks 2-5
+        // add the per-surface byte-goldens + matrices. Fail-closed → an empty envelope.
+        let envelope = match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID)
+        {
+            Some(cross) => serde_json::json!({
+                "recordTypes": cross.project_record_types(),
+                "callGraph": cross.project_call_graph(),
+                "eventGraph": cross.project_event_graph(),
+                "coverage": cross.project_coverage_disk(&workspace),
+            }),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty cross-app layout at {} — emitting empty envelope",
+                    workspace.display()
+                );
+                serde_json::json!({
+                    "recordTypes": { "tables": [], "routines": [] },
+                    "callGraph": { "groups": [], "bindings": [] },
+                    "eventGraph": { "events": [], "edges": [] },
+                    "coverage": serde_json::Value::Null,
+                })
+            }
+        };
+        return match serde_json::to_string_pretty(&envelope) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize cross-app envelope: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if r2_5a_merged_index {
         // R2.5a merged-index projection: read the `.app`(s) at `workspace` (a single

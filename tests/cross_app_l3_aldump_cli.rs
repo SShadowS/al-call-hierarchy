@@ -1,0 +1,62 @@
+//! R2.5b Task 1 — `aldump --l3-cross-app` CLI smoke. Invokes the ACTUAL `aldump`
+//! binary on the committed `.app`-bearing workspace fixture and asserts the emitted
+//! envelope carries NON-EMPTY cross-app resolution (the four L3 surfaces). Locks the
+//! CLI flag wiring + the end-to-end disk path (workspace `.al` source + `.alpackages`
+//! `.app`s → merged L3).
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn aldump_l3_cross_app_emits_nonempty_resolution() {
+    let bin = env!("CARGO_BIN_EXE_aldump");
+    let fixture = repo_root().join("tests/r2-5b-fixtures/cross-app-resolution");
+
+    let out = Command::new(bin)
+        .arg("--l3-cross-app")
+        .arg(&fixture)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn aldump: {e}"));
+    assert!(
+        out.status.success(),
+        "aldump --l3-cross-app exited non-zero: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("aldump emits valid JSON envelope");
+
+    // The call graph resolves ≥1 cross-app member call to a dep StableRoutineId.
+    let groups = v["callGraph"]["groups"]
+        .as_array()
+        .expect("callGraph.groups");
+    let resolved_to_dep = groups.iter().any(|g| {
+        g["edges"].as_array().map_or(false, |edges| {
+            edges.iter().any(|e| {
+                e["resolution"] == "resolved"
+                    && e["to"]
+                        .as_str()
+                        .map(|t| t.starts_with("dddddddd-0000-0000-0000-000000000001"))
+                        .unwrap_or(false)
+            })
+        })
+    });
+    assert!(
+        resolved_to_dep,
+        "≥1 cross-app member call resolved to a dep routine"
+    );
+
+    // coverage.opaqueApps NON-empty (the symbol-only deps).
+    let opaque = v["coverage"]["opaqueApps"].as_array().expect("opaqueApps");
+    assert!(!opaque.is_empty(), "opaqueApps non-empty cross-app");
+
+    // ≥2 event edges (ws→dep + dep→ws).
+    let edges = v["eventGraph"]["edges"]
+        .as_array()
+        .expect("eventGraph.edges");
+    assert!(edges.len() >= 2, "≥2 cross-app subscriber edges");
+}

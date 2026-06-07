@@ -342,4 +342,45 @@ impl L3Resolved {
 
         project_call_graph_inner(&resolved, &smap)
     }
+
+    /// CROSS-APP (R2.5b) call-graph projection: the merged workspace+dep model.
+    ///
+    /// PARITY-CRITICAL (verified against al-sem `src/index.ts` + `call-resolver.ts`):
+    /// the MEMBER-call opaque-vs-external-target split gates on
+    /// `has_unfetched_declared_dependency`, which reads `index.identity.primaryDependencies`.
+    /// In the production `analyzeWorkspace` path that field is stamped on the MODEL
+    /// *after* `resolveModel` (`index.ts:224`), so it is UNDEFINED during resolveModel
+    /// ⇒ `unfetched` is ALWAYS false ⇒ a missing member object is `external-target`,
+    /// NEVER member-opaque. The al-sem R2.5b capture (which mirrors `analyzeWorkspace`)
+    /// reproduces exactly this. So we pass EMPTY declared deps + EMPTY fetched here to
+    /// match — threading the real declared/fetched ledger would WRONGLY flip
+    /// `external-target`→`opaque` and DIVERGE from al-sem. (The object-run opaque path,
+    /// `call-resolver.ts:596`, is independent of the ledger and still fires for an
+    /// absent static `Codeunit.Run` target — that is the genuine cross-app `opaque`.)
+    ///
+    /// `declared_dep_app_guids` / `fetched_app_guids` are accepted for symmetry with the
+    /// coverage capture (which DOES use the ledger for `opaqueApps`) and to document the
+    /// contract, but are intentionally NOT threaded into the member split. NO new L3
+    /// algorithm — only the merged input.
+    pub fn project_call_graph_cross_app(
+        &self,
+        _declared_dep_app_guids: &[String],
+        _fetched_app_guids: &[String],
+    ) -> L3CallGraphProjection {
+        let ws = &self.workspace;
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        // Match al-sem's resolveModel: primaryDependencies undefined ⇒ unfetched=false.
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+        let by_internal: HashMap<String, String> = ws
+            .routines
+            .iter()
+            .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
+            .collect();
+        let smap = StableMap { by_internal };
+
+        project_call_graph_inner(&resolved, &smap)
+    }
 }

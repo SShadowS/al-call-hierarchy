@@ -283,6 +283,47 @@ impl L3Resolved {
         let diagnostics: Vec<CoverageDiagnostic> = Vec::new();
         self.project_coverage(&units, &diagnostics)
     }
+
+    /// CROSS-APP (R2.5b) coverage capture: the merged workspace+dep model with the
+    /// real dep ledger. `apps` is `(appGuid, sourceKind)` for the workspace ("source")
+    /// + each dep ("symbol-only" | "app-source") — symbol-only deps populate
+    /// `opaqueApps` (NON-empty cross-app, vs the source-only baseline's empty).
+    /// `declared_dep_app_guids` / `fetched_app_guids` thread the member opaque-vs-
+    /// external-target split into `resolve_calls`, so the unresolved-callsite multiset
+    /// reflects cross-app resolution. NO new algorithm — the merged input + the ledger.
+    pub fn project_coverage_cross_app(
+        &self,
+        units: &[CoverageUnit],
+        index_diagnostics: &[CoverageDiagnostic],
+        apps: &[(String, String)],
+        _declared_dep_app_guids: &[String],
+        _fetched_app_guids: &[String],
+    ) -> AnalysisCoverage {
+        let ws = &self.workspace;
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        // PARITY: the call resolution INSIDE coverage runs exactly as al-sem's
+        // resolveModel — primaryDependencies undefined ⇒ unfetched=false (member
+        // misses are external-target, never opaque). The dep ledger feeds ONLY
+        // `opaqueApps` (the symbol-only `apps` rows), NOT the member split.
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+        let by_internal: HashMap<String, String> = ws
+            .routines
+            .iter()
+            .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
+            .collect();
+
+        build_coverage(
+            &ws.routines,
+            apps,
+            &resolved.edges,
+            units,
+            index_diagnostics,
+            &by_internal,
+        )
+    }
 }
 
 /// Re-discover a workspace's `.al` files as `ws:<relPosix>` source units, in the

@@ -214,16 +214,25 @@ pub struct MergedIndexProjection {
 // ===========================================================================
 
 /// The intermediate merge state for a single `.app`: the projection plus the
-/// manifest-derived app identity needed to emit the App row.
-struct DepAppParse {
-    app_guid: String,
-    name: String,
-    publisher: String,
-    version: String,
-    includes_source: bool,
-    objects: Vec<ProjectedObject>,
-    tables: Vec<ProjectedTable>,
-    routines: Vec<ProjectedRoutine>,
+/// manifest-derived app identity needed to emit the App row. Public so the R2.5b
+/// cross-app L3 wiring can reuse the exact `.app` → projected-entity parse.
+pub struct DepAppParse {
+    pub app_guid: String,
+    pub name: String,
+    pub publisher: String,
+    pub version: String,
+    pub includes_source: bool,
+    pub objects: Vec<ProjectedObject>,
+    pub tables: Vec<ProjectedTable>,
+    pub routines: Vec<ProjectedRoutine>,
+}
+
+/// Public wrapper over [`parse_dep_app`] for the R2.5b cross-app L3 wiring — reads +
+/// parses + projects a single `.app` from raw bytes (fail-closed: `None` on an
+/// unreadable archive / missing manifest `<App>` Id). Reuses the IDENTICAL parse
+/// the R2.5a merged-index emitter uses, so the dep entities carry the same identity.
+pub fn parse_dep_app_public(app_bytes: &[u8], model_instance_id: &str) -> Option<DepAppParse> {
+    parse_dep_app(app_bytes, model_instance_id)
 }
 
 /// Read + parse + project a single `.app` from raw bytes. Returns `None` when the

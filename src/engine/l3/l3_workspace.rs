@@ -625,6 +625,19 @@ pub fn assemble_and_resolve(
     app_guid: &str,
     model_instance_id: &str,
 ) -> L3Resolved {
+    let mut workspace = assemble_workspace(files, app_guid, model_instance_id);
+    resolve(&mut workspace);
+    L3Resolved { workspace }
+}
+
+/// Assemble the workspace L3 model from inline `(name, source)` files WITHOUT
+/// resolving — the parse/project half of [`assemble_and_resolve`]. The R2.5b
+/// cross-app wiring appends dep entities to the result before calling `resolve`.
+pub fn assemble_workspace(
+    files: &[(String, String)],
+    app_guid: &str,
+    model_instance_id: &str,
+) -> L3Workspace {
     // Deterministic ingestion order: sort files by name (the `ws:<name>` unit id
     // total order), then walk each file's objects in document order.
     let mut sorted: Vec<&(String, String)> = files.iter().collect();
@@ -658,8 +671,7 @@ pub fn assemble_and_resolve(
         );
     }
 
-    resolve(&mut workspace);
-    L3Resolved { workspace }
+    workspace
 }
 
 /// Convenience: assemble + resolve with the default model-instance id (`r0`).
@@ -679,6 +691,27 @@ pub fn assemble_and_resolve_workspace(
     workspace: &std::path::Path,
     model_instance_id: &str,
 ) -> Option<L3Resolved> {
+    let resolved = {
+        let mut ws = assemble_l3_workspace_from_disk(workspace, model_instance_id)?;
+        resolve(&mut ws);
+        L3Resolved { workspace: ws }
+    };
+    // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
+    if resolved.workspace.objects.is_empty() && resolved.workspace.routines.is_empty() {
+        return None;
+    }
+    Some(resolved)
+}
+
+/// Assemble the workspace L3 model from disk WITHOUT resolving — the pre-resolve
+/// assembly half of [`assemble_and_resolve_workspace`], exposed so the R2.5b
+/// cross-app wiring can append dep entities BEFORE running `resolve` over the
+/// merged whole. Fail-closed: an unsound/empty native layout yields `None`
+/// (readable root `app.json` `id`, single `app.json`, ≥1 readable `.al`).
+pub fn assemble_l3_workspace_from_disk(
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+) -> Option<L3Workspace> {
     use crate::engine::l2::l2_workspace::{
         count_app_json, discover_al_files, read_al_source, read_root_app_guid,
     };
@@ -706,12 +739,7 @@ pub fn assemble_and_resolve_workspace(
         return None;
     }
 
-    let resolved = assemble_and_resolve(&files, &app_guid, model_instance_id);
-    // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
-    if resolved.workspace.objects.is_empty() && resolved.workspace.routines.is_empty() {
-        return None;
-    }
-    Some(resolved)
+    Some(assemble_workspace(&files, &app_guid, model_instance_id))
 }
 
 /// Disk-backed convenience with the default model-instance id (`r0`).
@@ -722,6 +750,17 @@ pub fn assemble_and_resolve_workspace_default(workspace: &std::path::Path) -> Op
 /// Run the three L3 resolve sub-steps over an assembled workspace IN ORDER:
 /// `build_symbol_table → resolve_record_types → merge_extension_fields`.
 /// `tableId` is set by record-types and never re-touched by the merge.
+///
+/// L3-ONLY BOUNDARY (R2.5b Rev 2 #5): the input `L3Workspace`
+/// (objects/tables/routines) is an L3-only merged index. Its entity structs carry
+/// NO L4/cone/summary field — there is no `summary`, `intraAppCallEdges`,
+/// `citedOperationEvidence`, `depOrderIndex`, capability-cone, or typed-edge field
+/// anywhere on `L3Object`/`L3Table`/`L3Routine`. So L4 state CANNOT influence L3:
+/// the boundary is enforced by the TYPE, not a runtime strip. When R2.5b feeds the
+/// merged (workspace + `.app`-dep) index here (`deps::cross_app_l3`), the dep side
+/// likewise comes from `project_abi_to_index`, which emits only these L3 structs.
+/// DO NOT add an L4 field to these entity structs (it would breach the boundary the
+/// `cross_app_l3_poison` test guards). NOTHING in `resolve` reads beyond them.
 pub fn resolve(workspace: &mut L3Workspace) {
     let symbols = SymbolTable::build(&workspace.objects, &workspace.tables, &workspace.routines);
 
