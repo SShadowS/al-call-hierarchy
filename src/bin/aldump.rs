@@ -30,7 +30,8 @@ use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph] <workspace>"
+        "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
+         --l3-coverage] <workspace>"
     );
     ExitCode::FAILURE
 }
@@ -40,11 +41,12 @@ fn main() -> ExitCode {
     let mut l3_record_types = false;
     let mut l3_call_graph = false;
     let mut l3_event_graph = false;
+    let mut l3_coverage = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
-        // `--l2` / `--l3-record-types` / `--l3-call-graph` / `--l3-event-graph`
-        // flags (anywhere); else the single positional.
+        // `--l2` / `--l3-record-types` / `--l3-call-graph` / `--l3-event-graph` /
+        // `--l3-coverage` flags (anywhere); else the single positional.
         if arg == "--l2" {
             l2 = true;
             continue;
@@ -61,6 +63,10 @@ fn main() -> ExitCode {
             l3_event_graph = true;
             continue;
         }
+        if arg == "--l3-coverage" {
+            l3_coverage = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -68,15 +74,21 @@ fn main() -> ExitCode {
         workspace_arg = Some(arg);
     }
 
-    if [l2, l3_record_types, l3_call_graph, l3_event_graph]
-        .iter()
-        .filter(|f| **f)
-        .count()
+    if [
+        l2,
+        l3_record_types,
+        l3_call_graph,
+        l3_event_graph,
+        l3_coverage,
+    ]
+    .iter()
+    .filter(|f| **f)
+    .count()
         > 1
     {
         eprintln!(
-            "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph are \
-             mutually exclusive"
+            "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
+             --l3-coverage are mutually exclusive"
         );
         return usage();
     }
@@ -85,6 +97,45 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if l3_coverage {
+        // L3 coverage projection (R2d): the resolved model's AnalysisCoverage —
+        // sourceUnitsTotal/Parsed, routinesTotal/BodyAvailable, parseIncomplete
+        // (StableRoutineId[]), opaqueApps (empty source-only), unresolvedCallsites
+        // (StableCallsiteId multiset), dynamicDispatchSites (StableOperationId
+        // multiset). Runs assemble→resolve→project_coverage_disk (reads the resolved
+        // call graph + L2 routine flags; the post-resolve read the dump captures).
+        // Fail-closed → an all-empty AnalysisCoverage (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => resolved.project_coverage_disk(&workspace),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty coverage",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l3::coverage::AnalysisCoverage {
+                    source_units_total: 0,
+                    source_units_parsed: 0,
+                    routines_total: 0,
+                    routines_body_available: 0,
+                    routines_parse_incomplete: vec![],
+                    opaque_apps: vec![],
+                    unresolved_callsites: vec![],
+                    dynamic_dispatch_sites: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize L3 coverage projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if l3_event_graph {
         // L3 event-graph projection (R2c): the resolved event graph — EventSymbols

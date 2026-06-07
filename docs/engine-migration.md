@@ -21,6 +21,8 @@ and `docs/`.
 | **R2a** | L3 record-type resolution (source-only): resolved `recordVariable.tableId` / `recordOperation.tableId` (declared vars → ops → implicit `Rec`/`xRec` in Table/Page/Extension triggers) + merged TableExtension fields, captured POST-RESOLVE / PRE-SUMMARY in StableTableId form | **SHIPPED** — 153/153 fixtures with resolved tableIds + merged extension fields compared, 0 divergences, the anti-degenerate coverage matrix healthy (rv=228, op=281, implicitRec=76, extFields=9), native L3-direct record-type oracle green |
 | **R2b** | L3 call graph (source-only): every call-site resolved to `CallEdge[]` (`from`/`to?`/`callsiteId`/`operationId`/`dispatchKind`/`resolution`/`candidates?`/`externalTypeRef?`/`receiverType?` + GROUP-level `dispatchMeta`) — overload disambiguation, MULTI-edge interface dispatch, object-run, opaque/external-target — plus the `upgradeBindings` argument-binding upgrade + implicit-trigger edges, captured POST-RESOLVE / PRE-SUMMARY in stable-id form | **SHIPPED** — 155/155 fixtures with grouped multiset-compared CallEdges + group dispatchMeta + upgraded argumentBindings, 0 divergences, the expanded anti-degenerate coverage matrix healthy + manifest-oracle-equal (direct=123, member=26, objRun=4, ifaceMultiEdge=2, ifaceEdges=6, dynamic=3, builtin=18, implicit=6, unresolved=33, ambiguous=4, memberNotFound=1, opaque=5, external=4, upBind=54, ambBind=1), native L3-direct call-graph oracle green |
 | **R2c** | L3 event graph (source-only): `buildEventGraph` binding each `[EventSubscriber]` to its publisher(s) — `EventSymbol[]` (real `[IntegrationEvent]`/`[BusinessEvent]` publishers + synthesized maybe/unknown symbols; `eventKind`/`isolated`/`signatureHash`/`elementName`) + `EventEdge[]` (open-world: every parseable subscriber → exactly one edge; `resolution` = `resolved`/`maybe`/`unknown`) — with the FIXED `realPublisherEventIds` resolution semantics, captured POST-RESOLVE / PRE-SUMMARY in stable-id form | **SHIPPED** — 31/31 fixtures with stable-projected `events[]`+`edges[]` compared, 0 divergences, `KNOWN_DIVERGENCES` empty, the anti-degenerate coverage matrix healthy + manifest-oracle-equal (integrationPub=40, businessPub=5, unknownKind=8, isolatedPub=5, elementName=1, resolved=41, maybe=7, unknown=3), native L3-direct event-graph oracle green (8 invariants); the 6th al-sem oracle bug (false-`resolved`) fixed in the FIXED semantics |
+| **R2d** | L3 coverage (source-only): `buildCoverage` — the "no silent clean" `AnalysisCoverage` accounting: `sourceUnitsTotal`/`sourceUnitsParsed` (the index-stage-warning `failedUnitRefs` decrement — corpus-inert, vector-covered), `routinesTotal`/`routinesBodyAvailable` (count) / `routinesParseIncomplete` (StableRoutineId[], INDEPENDENT filters — NOT a partition), `opaqueApps` (empty source-only), `unresolvedCallsites` (StableCallsiteId MULTISET: the 4 resolutions unknown/ambiguous/member-not-found/external-target — NOT opaque/builtin/maybe; duplicates PRESERVED), `dynamicDispatchSites` (StableOperationId MULTISET: dispatchKind=="dynamic"), captured POST-RESOLVE / PRE-SUMMARY in stable-id form, READ off the parity R2b call graph + L2 routine flags | **SHIPPED** — 158/158 fixtures with the projected `AnalysisCoverage` compared (multisets positional after sort, dups preserved), 0 divergences, `KNOWN_DIVERGENCES` empty, the anti-degenerate coverage matrix healthy + manifest-oracle-equal (sourceUnitsTotal=314, sourceUnitsParsed=314, routinesTotal=567, routinesBodyAvailable=567, routinesParseIncomplete=1, opaqueApps=0, unresolvedCallsites=86, dynamicDispatchSites=3; unresolvedMaxDup=1, dynamicMaxDup=1), native L3-direct coverage oracle green (5 invariants) |
+| **R2 (= R2a+R2b+R2c+R2d)** | Full **source-only L3 resolve** parity: record types + call graph + event graph + coverage at the `resolveModel` (post-resolve / pre-summary) boundary | **COMPLETE** — all four sub-gates SHIPPED; the full source-only L3 surface is at byte-parity with al-sem over the corpus + a native L3-direct oracle per sub-gate. NEXT: **R2.5** (`.app` symbol reader → cross-app L3, where `opaqueApps` + the real unfetched-dep coverage become non-empty) |
 
 ---
 
@@ -821,26 +823,116 @@ resolver binds.
 
 ---
 
-## R2d (L3 coverage + analysis gaps) — STUB
+## R2d parity status (SHIPPED — L3 coverage, source-only) — R2's FOURTH + LAST sub-gate — R2 SOURCE-ONLY L3 COMPLETE
 
-R2d is the FOURTH and LAST source-only L3 sub-gate: **`buildCoverage`** — the
-analysis-confidence accounting that consumes the now-resolved R2b call graph + R2c
-event graph (no new resolution; a pure read over the resolved model). Scope:
+R2d is the FOURTH and LAST source-only L3 sub-gate: **`buildCoverage`** — the "no
+silent clean" `AnalysisCoverage` accounting (`src/resolve/coverage.ts`, a 67-line pure
+function ported to `src/engine/l3/coverage.rs`). It adds NO resolution — it is a pure
+read over the already-parity R2b resolved call graph + the L2 routine flags, captured
+POST-RESOLVE / PRE-SUMMARY (the dump runs `assemble→resolve→project_coverage_disk` and
+reads `model.coverage` ONCE; it never re-runs `buildCoverage`).
 
-- **Workspace coverage counts** — source / parsed unit counts (how many discovered
-  `.al` files parsed cleanly vs failed), the per-app object/routine totals.
-- **Unresolved-callsite + dynamic-dispatch accounting** — the count of callsites that
-  resolved to `unresolved` / `opaque` / `external-target` (from the R2b call graph) +
-  the count of `dynamic` dispatch sites (`Codeunit.Run` with a non-literal target,
-  interface dispatch with no in-source impls) that bound the static-analysis horizon.
-- **`opaqueApps`** — the declared dependencies whose `.app` symbols were NOT ingested
-  (source-only → ALL declared deps are opaque here), the set that makes member misses
-  `opaque` once R2.5 lands.
-- **Per-app `CoverageRecord`** — one record per app aggregating the above, the
-  `analysisGaps` surface al-perf correlates against.
+**What R2d reproduces (the `AnalysisCoverage` surface, exactly).**
 
-R2d reuses the resolved call + event graphs verbatim — it adds NO resolution, only the
-confidence accounting. It extends, never replaces, the R1/R2a/R2b/R2c goldens.
+- `sourceUnitsTotal` = count of `kind:"source"` units; `sourceUnitsParsed` = that minus
+  the `failedUnitRefs` set — units whose `id` is the `sourceRef` of an index-stage
+  diagnostic with EXACTLY `stage:"index"` && `severity:"warning"` && `sourceRef`
+  present (`info` does NOT decrement; the message is NOT consulted — `buildCoverage`
+  keys ONLY on the triple). SOURCE-ONLY the decrement path is **INERT** (no fixture
+  emits an index warning → `sourceUnitsParsed === sourceUnitsTotal` everywhere); the
+  logic is implemented correctly and exercised by a `warning_unparsed` VECTOR (an empty
+  `.al` file → al-sem's exact `Failed to index …` warning).
+- `routinesTotal`; `routinesBodyAvailable` (COUNT of `bodyAvailable`);
+  `routinesParseIncomplete` (the StableRoutineId[] of `parseIncomplete` routines).
+  These two are **INDEPENDENT filters over the L2 flags, NOT a partition** — a
+  syntax-error body that still has a `code_block` is BOTH `bodyAvailable` AND
+  `parseIncomplete`. The Rust port threads `bodyAvailable`/`parseIncomplete` onto
+  `L3Routine` computed the SAME way the L2 projection does (`find_code_block(routine).
+  is_some()` / `routine.has_error()`) so the flags cannot drift.
+- `opaqueApps` = the appGuid[] of `sourceKind:"symbol-only"` apps — **EMPTY source-only**
+  (no dependency apps; becomes non-empty only in R2.5).
+- `unresolvedCallsites` = a SORTED **MULTISET** (`.map` over call-graph EDGES, NOT unique
+  sites): every edge whose `resolution ∈ {unknown, ambiguous, member-not-found,
+  external-target}` → its StableCallsiteId. **Duplicates PRESERVED, never deduped**
+  (an interface multi-edge callsite can emit the same id twice — `maybe`, excluded
+  here, but the contract holds). `opaque` / `builtin` / `maybe` are EXCLUDED.
+- `dynamicDispatchSites` = a SORTED MULTISET: edges with `dispatchKind:"dynamic"` → their
+  StableOperationId. `dynamicDispatchSites` is `OperationId[]` and `unresolvedCallsites`
+  is `CallsiteId[]` — NOT array-subsets of each other (a `/csN` id vs a `/opN` id).
+
+**Comparison surface (R2d).** The allowlisted `AnalysisCoverage` projection. The
+differential (`differential_l3_coverage_match_goldens`) compares it structurally over
+all 158 goldens — multisets POSITIONAL after the projection's sort, so a cardinality
+OR id divergence (incl. a missing/spurious duplicate) is caught. FORBIDDEN later-gate /
+L4 keys (callGraph(R2b) / eventGraph(R2c) / typedEdges / summary / `analysisGaps` /
+capability* / rootClassifications) HARD-FAIL the pass on either side. `KNOWN_DIVERGENCES`
+empty. The anti-degenerate **coverage matrix** (driven by the RUST projection) enforces
+nonzero `routinesBodyAvailable` / `routinesParseIncomplete` / `unresolvedCallsites` /
+`dynamicDispatchSites`, asserts `opaqueApps == 0` + `sourceUnitsParsed == sourceUnitsTotal`,
+and an oracle cross-check (`l3cov_coverage_matrix_matches_manifest_oracle`) asserts the
+full-corpus totals equal the al-sem manifest `coverageMatrix` (incl. the
+`unresolvedMaxDup` / `dynamicMaxDup` / `sourceUnitsDecremented` axes).
+
+**`analysisGaps` is DROPPED from R2d** (Rev 2 MUST-FIX #3) — it derives `opaqueApps`
+from body-unavailable DEPENDENCY routines + dep-app boundaries that
+`withDependencyArtifacts` injects, so it is tied to the cross-app surface → revisited in
+R2.5. The authoritative R2d surface is the raw `AnalysisCoverage` only.
+
+**R2d's native soundness oracle is L3-DIRECT** (`tests/l3cov_oracles.rs`) — 5 STRUCTURAL
+invariants run NATIVELY against the Rust coverage, RE-DERIVING the expected multisets
+from the resolved edges + L2 flags rather than diffing al-sem strings: (1)
+`unresolvedCallsites` == exactly the 4-resolution edge multiset + `dynamicDispatchSites`
+== the dynamic-edge multiset, and the OperationId/CallsiteId id-spaces never overlap;
+(2) builtin/opaque/resolved are NEVER in unresolved; (3) `bodyAvailable` (count) +
+`parseIncomplete` (list) are independent (a routine BOTH); (4) `opaqueApps` empty +
+no real duplicate (max-dup 1) source-only; (5) the sorted-multiset + duplicate-
+preservation contract (synthetic, since no AL source produces a real unresolved dup).
+
+### Covered vs deferred (R2d — honest)
+
+- **Covered (source-only):** the full `AnalysisCoverage` — source-unit counts + the
+  warning-decrement logic (vector-covered, corpus-inert), routine body/parse-incomplete
+  accounting, the 4-resolution unresolved multiset + the dynamic multiset (dups
+  preserved), `opaqueApps` empty. 158/158 corpus differential + coverage matrix +
+  manifest oracle + native L3-direct oracle.
+- **Deferred to R2.5 / later gates:**
+  - **`opaqueApps` (non-empty)** + the real **unfetched-dependency coverage** — a
+    symbol-only `.app` dependency app (`sourceKind:"symbol-only"`) is what makes
+    `opaqueApps` non-empty and a member miss `opaque`. The R2d corpus + oracle are
+    SOURCE-ONLY (empty `.app` ingestion) → **R2.5** (`.app` projection).
+  - **`analysisGaps`** — the per-app gap derivation (body-unavailable DEP routines +
+    dep-app boundaries) is tied to the cross-app surface → **R2.5**.
+  - The L4 `typedEdges` / `RoutineSummary` / per-app `CoverageRecord` (compose) facts.
+
+With R2d SHIPPED, **R2 (= R2a + R2b + R2c + R2d) is SOURCE-ONLY L3 COMPLETE**: record
+types + call graph + event graph + coverage are all at byte-parity with al-sem over the
+corpus, each with a native L3-direct oracle. R2d extends, never replaces, the
+R1/R2a/R2b/R2c goldens.
+
+---
+
+## R2.5 (`.app` symbol reader + cross-app L3) — STUB
+
+R2.5 is the FIRST cross-app gate — it lifts the SOURCE-ONLY restriction every L3
+sub-gate (R2a–R2d) carried. Scope:
+
+- **`.app` symbol reader** — port `symbols/symbol-reference-parser.ts` (~504 LOC): a
+  `.app` package is a ZIP (read via the `zip` crate); the embedded `SymbolReference`
+  JSON projects to the SAME `Routine` / `ObjectDecl` / `Table` / `Event` shape the
+  native source path produces, via `deps/dependency-projection.ts`. Per CLAUDE.md's
+  "Native + ABI must agree on model shape" — `RoutineId`, `attributesParsed`,
+  `parameters`, `accessModifier`, `features.identifierReferences`, the canonical
+  signature hash — so cross-app call resolution actually matches up.
+- **Cross-app L3 gate** — re-run R2a–R2d over `workspace + deps`: cross-app member
+  dispatch (a member miss on a typed receiver whose object lives in a fetched dep
+  resolves; in an UNfetched dep → `opaque`), record-types vs dep tables, interface-impl
+  completeness across apps, event-publisher lookup across apps, and — the R2d hook —
+  `opaqueApps` + the real unfetched-dep coverage become **non-empty**, and
+  `analysisGaps` (deferred from R2d) lands.
+
+R2.5 reuses the resolved source-only L3 verbatim — it ADDS the dependency projection as
+a second model-feed, never replaces the native one. It extends, never replaces, the
+R1/R2a/R2b/R2c/R2d goldens.
 
 ---
 
@@ -853,13 +945,15 @@ confidence accounting. It extends, never replaces, the R1/R2a/R2b/R2c goldens.
 | L3 (resolve) | **R2a** (record-types, source-only) | **DONE** — 153/153 + coverage matrix + native oracle |
 | L3 (resolve) | **R2b** (call graph, source-only) | **DONE** — 155/155 + expanded coverage matrix + manifest oracle + native L3-direct oracle |
 | L3 (resolve) | **R2c** (event graph, source-only) | **DONE** — 31/31 + coverage matrix + manifest oracle + native L3-direct oracle (8 invariants); 6th al-sem oracle bug (false-`resolved`) fixed |
-| L3 (resolve) | R2d (coverage/gaps, source-only) | remaining — the LAST source-only L3 sub-gate |
-| L3 (resolve) | R2.5 (`.app` ingestion + cross-app resolution) | remaining |
+| L3 (resolve) | **R2d** (coverage, source-only) | **DONE** — 158/158 + coverage matrix + manifest oracle (incl. max-dup/decremented axes) + native L3-direct oracle (5 invariants) |
+| L3 (resolve) | **R2 (= R2a+R2b+R2c+R2d)** | **SOURCE-ONLY L3 COMPLETE** — full source-only L3 surface at byte-parity + a native L3-direct oracle per sub-gate |
+| L3 (resolve) | R2.5 (`.app` ingestion + cross-app resolution) | remaining — the FIRST cross-app gate (`opaqueApps`/`analysisGaps` become non-empty) |
 | L4 (summaries) | R3 | not started |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
-With R2c shipped, **R0 + R1 + R2a + R2b + R2c are done** — R2 is nearly complete (R2d,
-the coverage/gaps accounting, is the LAST source-only L3 sub-gate). R2d + R2.5 (`.app`
-/ cross-app) remain for the L3 resolve layer; then R3 (L4 summaries), R4 (L5
-detectors), and the product surface.
+With R2d shipped, **R0 + R1 + R2a + R2b + R2c + R2d are done** — **R2 is SOURCE-ONLY L3
+COMPLETE** (record types + call graph + event graph + coverage all at byte-parity over
+the corpus, each with a native L3-direct oracle). NEXT: **R2.5** (`.app` symbol reader +
+cross-app L3, where `opaqueApps` + the real unfetched-dep coverage + `analysisGaps`
+become non-empty); then R3 (L4 summaries), R4 (L5 detectors), and the product surface.

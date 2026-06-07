@@ -1,0 +1,15 @@
+{
+  "sourceUnitsTotal": 2,
+  "sourceUnitsParsed": 2,
+  "routinesTotal": 4,
+  "routinesBodyAvailable": 4,
+  "routinesParseIncomplete": [],
+  "opaqueApps": [],
+  "unresolvedCallsites": [
+    "66666666-6666-6666-6666-666666666666:Codeunit:51001#2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4/cs0",
+    "66666666-6666-6666-6666-666666666666:Codeunit:51001#85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58/cs0"
+  ],
+  "dynamicDispatchSites": [
+    "66666666-6666-6666-6666-666666666666:Codeunit:51001#2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4/op0"
+  ]
+}

@@ -53,6 +53,7 @@ use std::path::{Path, PathBuf};
 use al_call_hierarchy::engine::l2::features::L2Projection;
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection;
+use al_call_hierarchy::engine::l3::coverage::AnalysisCoverage;
 use al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection;
 use al_call_hierarchy::engine::l3::l3_workspace::{
     assemble_and_resolve_workspace_default, L3RecordTypeProjection,
@@ -2365,6 +2366,476 @@ fn l3eg_coverage_matrix_matches_manifest_oracle() {
     );
 }
 
+// ===========================================================================
+// R2d — L3 COVERAGE differential pass + the anti-degenerate coverage matrix.
+//
+// For each `tests/r2d-goldens/*.l3cov.golden.json`, run the Rust disk-backed
+// assemble→resolve→project_coverage_disk and compare the projected
+// AnalysisCoverage structurally. The projection is a single flat object; its
+// multisets (unresolvedCallsites / dynamicDispatchSites) + the
+// routinesParseIncomplete list are sorted by the projection, so a POSITIONAL
+// array compare (after sort) detects any cardinality OR id divergence (duplicates
+// are preserved on BOTH sides — never deduped). HARD-FAILS on any forbidden
+// later-gate / L4 field (callGraph / eventGraph / typedEdges / summary /
+// analysisGaps / …). KNOWN_DIVERGENCES-gated (empty at R2d exit).
+//
+// Every fixture has a golden (coverage is non-empty for every source workspace),
+// so there is NO inclusion rule (unlike R2c's event graph) — all 158 compare.
+//
+// ## COVERAGE MATRIX (anti-degenerate, plan Task 3 / Rev 2 §6)
+//
+// Across the 158 goldens the pass computes + ENFORCES the al-sem manifest's
+// `coverageMatrix` axes, driven by the RUST projection (proves the port actually
+// CLASSIFIES, not "0==0"):
+//   - sourceUnitsTotal / sourceUnitsParsed (parsed == total source-only)
+//   - routinesTotal / routinesBodyAvailable
+//   - routinesParseIncomplete (NONZERO — the corpus has a parse-incomplete fixture)
+//   - opaqueApps (ZERO source-only — asserted ==0, NOT fail-on-zero)
+//   - unresolvedCallsites (NONZERO multiset cardinality)
+//   - dynamicDispatchSites (NONZERO multiset cardinality)
+// An oracle cross-check asserts the Rust totals equal BOTH the per-golden
+// recomputation AND the al-sem manifest `coverageMatrix`.
+
+/// Forbidden later-gate / L4 keys that must NEVER appear in the L3 coverage
+/// comparison surface (golden OR rust). Coverage is R2d's surface; the call graph
+/// (R2b), event graph (R2c), and summaries/typedEdges/analysisGaps are SEPARATE
+/// gates. Mirrors the manifest `forbiddenKeys`.
+const L3COV_FORBIDDEN_KEYS: &[&str] = &[
+    // call-graph surface (R2b — a separate pass)
+    "callGraph",
+    "callsiteId",
+    "dispatchKind",
+    "dispatchMeta",
+    "argumentBindings",
+    "groups",
+    "bindings",
+    "callsiteResolutions",
+    // event-graph surface (R2c — a separate pass)
+    "eventGraph",
+    "events",
+    "edges",
+    "eventKind",
+    // later-gate / L4 / R2.5
+    "typedEdges",
+    "summary",
+    "analysisGaps",
+    "capabilityFactsDirect",
+    "rootClassifications",
+];
+
+const L3COV_TEST_NAME: &str = "differential_l3_coverage_match_goldens";
+
+/// The R2d coverage matrix axes (al-sem manifest `coverageMatrix`). Driven by Rust;
+/// oracle-cross-checked against the al-sem manifest's `coverageMatrix`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CoverageMatrix2 {
+    source_units_total: usize,
+    source_units_parsed: usize,
+    routines_total: usize,
+    routines_body_available: usize,
+    routines_parse_incomplete: usize,
+    opaque_apps: usize,
+    unresolved_callsites: usize,
+    dynamic_dispatch_sites: usize,
+}
+
+impl CoverageMatrix2 {
+    fn add(&mut self, o: &CoverageMatrix2) {
+        self.source_units_total += o.source_units_total;
+        self.source_units_parsed += o.source_units_parsed;
+        self.routines_total += o.routines_total;
+        self.routines_body_available += o.routines_body_available;
+        self.routines_parse_incomplete += o.routines_parse_incomplete;
+        self.opaque_apps += o.opaque_apps;
+        self.unresolved_callsites += o.unresolved_callsites;
+        self.dynamic_dispatch_sites += o.dynamic_dispatch_sites;
+    }
+}
+
+/// Count the matrix axes from ONE coverage projection `Value` (golden OR rust —
+/// same shape). The counts are array LENGTHS (multisets) / scalars, so a duplicate
+/// in a multiset is counted once per occurrence (cardinality), matching al-sem.
+fn coverage_matrix_of(proj: &serde_json::Value) -> CoverageMatrix2 {
+    let num = |k: &str| -> usize { proj.get(k).and_then(|v| v.as_u64()).unwrap_or(0) as usize };
+    let len = |k: &str| -> usize {
+        proj.get(k)
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
+    };
+    CoverageMatrix2 {
+        source_units_total: num("sourceUnitsTotal"),
+        source_units_parsed: num("sourceUnitsParsed"),
+        routines_total: num("routinesTotal"),
+        routines_body_available: num("routinesBodyAvailable"),
+        routines_parse_incomplete: len("routinesParseIncomplete"),
+        opaque_apps: len("opaqueApps"),
+        unresolved_callsites: len("unresolvedCallsites"),
+        dynamic_dispatch_sites: len("dynamicDispatchSites"),
+    }
+}
+
+/// Discover every `tests/r2d-goldens/*.l3cov.golden.json`, sorted by fixture name.
+fn discover_l3cov_goldens() -> Vec<(String, PathBuf)> {
+    let dir = repo_root().join("tests").join("r2d-goldens");
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read L3cov goldens dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3cov.golden.json") {
+            continue; // skips manifest.json + l3cov-vectors.json
+        }
+        let fixture = name.trim_end_matches(".l3cov.golden.json").to_string();
+        out.push((fixture, entry.path()));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Rust-side L3 coverage projection for a fixture dir (fail-closed → all-empty).
+fn rust_coverage_projection(fixture_dir: &Path) -> AnalysisCoverage {
+    match assemble_and_resolve_workspace_default(fixture_dir) {
+        Some(resolved) => resolved.project_coverage_disk(fixture_dir),
+        None => AnalysisCoverage {
+            source_units_total: 0,
+            source_units_parsed: 0,
+            routines_total: 0,
+            routines_body_available: 0,
+            routines_parse_incomplete: vec![],
+            opaque_apps: vec![],
+            unresolved_callsites: vec![],
+            dynamic_dispatch_sites: vec![],
+        },
+    }
+}
+
+/// Recursively collect every forbidden later-gate object-key in `value` (L3cov set).
+fn scan_l3cov_forbidden(value: &serde_json::Value, path: &str, hits: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let child = format!("{path}.{k}");
+                if L3COV_FORBIDDEN_KEYS.contains(&k.as_str()) {
+                    hits.push(child.clone());
+                }
+                scan_l3cov_forbidden(v, &child, hits);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                scan_l3cov_forbidden(v, &format!("{path}[{i}]"), hits);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The R2d L3 coverage differential pass + the anti-degenerate coverage matrix.
+/// Gated by `R2D_L3COV_SET` (committed default `full`: all 158 goldens — the R2d /
+/// R2 source-only L3 EXIT GATE; `small` = ws-d2 + ws-unresolved +
+/// ws-policy-api-dynamic-dispatch for dev iteration).
+#[test]
+fn differential_l3_coverage_match_goldens() {
+    let all_goldens = discover_l3cov_goldens();
+    assert!(
+        !all_goldens.is_empty(),
+        "no L3cov goldens discovered under tests/r2d-goldens — corpus missing?"
+    );
+
+    let set = std::env::var("R2D_L3COV_SET").unwrap_or_else(|_| "full".to_string());
+    let small_set = ["ws-d2", "ws-unresolved", "ws-policy-api-dynamic-dispatch"];
+    let goldens: Vec<(String, PathBuf)> = match set.as_str() {
+        "full" | "" => all_goldens,
+        "small" => all_goldens
+            .into_iter()
+            .filter(|(f, _)| small_set.contains(&f.as_str()))
+            .collect(),
+        other => panic!("R2D_L3COV_SET={other:?} not recognized (expected `small` or `full`)"),
+    };
+    assert!(
+        !goldens.is_empty(),
+        "R2D_L3COV_SET={set:?} selected zero fixtures (small set = {small_set:?})"
+    );
+
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == L3COV_TEST_NAME)
+        .collect();
+
+    let mut all_divergences: Vec<Divergence> = Vec::new();
+    let mut forbidden_hits: Vec<String> = Vec::new();
+    let mut rust_cov = CoverageMatrix2::default();
+    let mut golden_cov = CoverageMatrix2::default();
+
+    for (fixture, golden_path) in &goldens {
+        let fixture_dir = corpus_dir().join(fixture);
+        assert!(
+            fixture_dir.is_dir(),
+            "L3cov golden {} has no matching in-repo fixture at {} (offline corpus incomplete)",
+            golden_path.display(),
+            fixture_dir.display()
+        );
+
+        // Golden side: parse as JSON (for the diff) AND validate it parses as the
+        // allowlisted AnalysisCoverage serde type (shape guard).
+        let golden_text = std::fs::read_to_string(golden_path)
+            .unwrap_or_else(|e| panic!("read L3cov golden {}: {e}", golden_path.display()));
+        let golden_json: serde_json::Value =
+            serde_json::from_str(&golden_text).unwrap_or_else(|e| {
+                panic!(
+                    "L3cov golden {} is not valid JSON: {e}",
+                    golden_path.display()
+                )
+            });
+        let _: AnalysisCoverage = serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
+            panic!(
+                "L3cov golden {} does not parse as AnalysisCoverage: {e}",
+                golden_path.display()
+            )
+        });
+
+        // Rust side: disk-backed assemble+resolve → project_coverage_disk → JSON.
+        let projection = rust_coverage_projection(&fixture_dir);
+        let rust_json = serde_json::to_value(&projection)
+            .unwrap_or_else(|e| panic!("serialize Rust L3cov projection for {fixture}: {e}"));
+
+        // Forbidden later-gate / L4 field scan on BOTH sides (hard fail).
+        scan_l3cov_forbidden(
+            &golden_json,
+            &format!("{fixture}:golden"),
+            &mut forbidden_hits,
+        );
+        scan_l3cov_forbidden(&rust_json, &format!("{fixture}:rust"), &mut forbidden_hits);
+
+        // Coverage (Rust drives the anti-degenerate gate; golden is the oracle).
+        rust_cov.add(&coverage_matrix_of(&rust_json));
+        golden_cov.add(&coverage_matrix_of(&golden_json));
+
+        // Structural compare of the whole flat projection (multisets positional
+        // after the projection's sort — preserves + checks duplicates).
+        diff_l2_value(
+            fixture,
+            "coverage",
+            &golden_json,
+            &rust_json,
+            &mut all_divergences,
+        );
+    }
+
+    all_divergences
+        .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
+
+    // --- Forbidden-field guard (hard fail, never allowlistable) -------------
+    assert!(
+        forbidden_hits.is_empty(),
+        "FORBIDDEN later-gate/L4 field(s) leaked into the L3 coverage comparison \
+         (golden or rust):\n  {}",
+        forbidden_hits.join("\n  ")
+    );
+
+    // --- COVERAGE MATRIX gate (anti-degenerate) -----------------------------
+    eprintln!(
+        "R2d L3cov coverage matrix (set={set:?}, {} fixture(s)):\n  \
+         sourceUnitsTotal={} sourceUnitsParsed={} routinesTotal={} routinesBodyAvailable={} \
+         routinesParseIncomplete={} opaqueApps={} unresolvedCallsites={} dynamicDispatchSites={}",
+        goldens.len(),
+        rust_cov.source_units_total,
+        rust_cov.source_units_parsed,
+        rust_cov.routines_total,
+        rust_cov.routines_body_available,
+        rust_cov.routines_parse_incomplete,
+        rust_cov.opaque_apps,
+        rust_cov.unresolved_callsites,
+        rust_cov.dynamic_dispatch_sites,
+    );
+    // Fail-on-zero per axis ONLY for the full corpus. opaqueApps is structurally
+    // EMPTY source-only (asserted ==0, NOT fail-on-zero); sourceUnitsParsed must
+    // equal sourceUnitsTotal (the decrement is corpus-inert — covered by a vector).
+    if set == "full" || set.is_empty() {
+        let nonzero_axes: [(&str, usize); 6] = [
+            ("sourceUnitsTotal", rust_cov.source_units_total),
+            ("routinesTotal", rust_cov.routines_total),
+            ("routinesBodyAvailable", rust_cov.routines_body_available),
+            (
+                "routinesParseIncomplete",
+                rust_cov.routines_parse_incomplete,
+            ),
+            ("unresolvedCallsites", rust_cov.unresolved_callsites),
+            ("dynamicDispatchSites", rust_cov.dynamic_dispatch_sites),
+        ];
+        let zero_axes: Vec<&str> = nonzero_axes
+            .iter()
+            .filter(|(_, n)| *n == 0)
+            .map(|(name, _)| *name)
+            .collect();
+        assert!(
+            zero_axes.is_empty(),
+            "DEGENERATE L3cov coverage matrix (set={set:?}): axis/axes {zero_axes:?} are ZERO — \
+             the R2d port is not actually CLASSIFYING that case (empty==empty would pass a pure \
+             equality diff). The matrix must prove coverage accounting fires.",
+        );
+        assert_eq!(
+            rust_cov.opaque_apps, 0,
+            "opaqueApps MUST be ZERO source-only (becomes non-empty only in R2.5)",
+        );
+        assert_eq!(
+            rust_cov.source_units_parsed, rust_cov.source_units_total,
+            "sourceUnitsParsed MUST equal sourceUnitsTotal source-only (decrement is corpus-inert)",
+        );
+    }
+
+    // Oracle cross-check: Rust coverage MUST equal the golden coverage (al-sem
+    // ground truth) for the SAME fixture set.
+    assert_eq!(
+        rust_cov, golden_cov,
+        "L3cov coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
+    );
+
+    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b/R2c) -------------
+    let mut entry_used = vec![false; allowlist.len()];
+    let mut undocumented: Vec<&Divergence> = Vec::new();
+    for div in &all_divergences {
+        let mut covered = false;
+        for (i, entry) in allowlist.iter().enumerate() {
+            if entry.fixture == div.fixture && entry.path == div.path {
+                entry_used[i] = true;
+                covered = true;
+            }
+        }
+        if !covered {
+            undocumented.push(div);
+        }
+    }
+    let unused: Vec<&AllowEntry> = allowlist
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !entry_used[*i])
+        .map(|(_, e)| e)
+        .collect();
+
+    let mut failure = String::new();
+    if !undocumented.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNDOCUMENTED L3cov divergence(s) (not in KNOWN_DIVERGENCES.json, \
+             test={L3COV_TEST_NAME}):\n",
+            undocumented.len()
+        ));
+        for d in &undocumented {
+            failure.push_str(&format!(
+                "  [{}] {}\n      golden = {}\n      rust   = {}\n",
+                d.fixture, d.path, d.golden_value, d.rust_value
+            ));
+        }
+    }
+    if !unused.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNUSED L3cov allowlist entr(y/ies) (no matching divergence this run):\n",
+            unused.len()
+        ));
+        for e in &unused {
+            failure.push_str(&format!(
+                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
+                e.fixture, e.path, e.reason, e.expires
+            ));
+        }
+    }
+
+    assert!(
+        failure.is_empty(),
+        "R2d L3 coverage differential FAILED (set={set:?}):{failure}"
+    );
+
+    eprintln!(
+        "R2d L3cov differential: set={set:?}, {} fixture(s), 0 divergences, \
+         allowlist fully consumed ({} L3cov entr(y/ies)).",
+        goldens.len(),
+        allowlist.len()
+    );
+}
+
+/// Oracle cross-check: the FULL-corpus Rust coverage matrix must equal the al-sem
+/// manifest's published `coverageMatrix` (the ground-truth totals). Independent of
+/// the per-fixture golden compare — guards the matrix counters against drift. The
+/// manifest carries extra axes (sourceUnitsDecremented / unresolvedMaxDup /
+/// dynamicMaxDup) that this oracle ALSO checks.
+#[test]
+fn l3cov_coverage_matrix_matches_manifest_oracle() {
+    let goldens = discover_l3cov_goldens();
+    assert!(!goldens.is_empty(), "no L3cov goldens — corpus missing?");
+
+    let mut rust_cov = CoverageMatrix2::default();
+    let mut unresolved_max_dup = 0usize;
+    let mut dynamic_max_dup = 0usize;
+    for (fixture, _) in &goldens {
+        let proj = rust_coverage_projection(&corpus_dir().join(fixture));
+        let rust_json = serde_json::to_value(&proj).expect("serialize");
+        rust_cov.add(&coverage_matrix_of(&rust_json));
+        unresolved_max_dup = unresolved_max_dup.max(max_dup(&proj.unresolved_callsites));
+        dynamic_max_dup = dynamic_max_dup.max(max_dup(&proj.dynamic_dispatch_sites));
+    }
+
+    let manifest_path = repo_root()
+        .join("tests")
+        .join("r2d-goldens")
+        .join("manifest.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("read r2d manifest"))
+            .expect("parse r2d manifest");
+    let m = manifest
+        .get("coverageMatrix")
+        .expect("manifest has coverageMatrix");
+    let mget =
+        |k: &str| -> usize { m.get(k).and_then(|v| v.as_u64()).unwrap_or(u64::MAX) as usize };
+    let manifest_cov = CoverageMatrix2 {
+        source_units_total: mget("sourceUnitsTotal"),
+        source_units_parsed: mget("sourceUnitsParsed"),
+        routines_total: mget("routinesTotal"),
+        routines_body_available: mget("routinesBodyAvailable"),
+        routines_parse_incomplete: mget("routinesParseIncomplete"),
+        opaque_apps: mget("opaqueApps"),
+        unresolved_callsites: mget("unresolvedCallsites"),
+        dynamic_dispatch_sites: mget("dynamicDispatchSites"),
+    };
+    assert_eq!(
+        rust_cov, manifest_cov,
+        "R2d coverage matrix MISMATCH vs al-sem manifest oracle\n  rust     = {rust_cov:?}\n  manifest = {manifest_cov:?}",
+    );
+    // The manifest's max-dup axes: source-only the corpus has NO real duplicate
+    // (interface multi-edges are `maybe`, excluded), so both are 1 (or 0 if an axis
+    // is empty — but unresolved/dynamic are nonzero). al-sem reports max-dup as the
+    // max occurrences of any single id; with no real dup that is 1.
+    assert_eq!(
+        unresolved_max_dup,
+        mget("unresolvedMaxDup"),
+        "unresolvedMaxDup mismatch (rust={unresolved_max_dup})",
+    );
+    assert_eq!(
+        dynamic_max_dup,
+        mget("dynamicMaxDup"),
+        "dynamicMaxDup mismatch (rust={dynamic_max_dup})",
+    );
+    assert_eq!(
+        mget("sourceUnitsDecremented"),
+        rust_cov.source_units_total - rust_cov.source_units_parsed,
+        "sourceUnitsDecremented mismatch (source-only == 0)",
+    );
+    eprintln!(
+        "R2d coverage matrix oracle: Rust full-corpus totals == al-sem manifest coverageMatrix \
+         (incl. max-dup + decremented axes)."
+    );
+}
+
+/// Max occurrences of any single id in a multiset (the manifest `*MaxDup` axis).
+fn max_dup(ids: &[String]) -> usize {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for id in ids {
+        *counts.entry(id.as_str()).or_insert(0) += 1;
+    }
+    counts.values().copied().max().unwrap_or(0)
+}
+
 /// LIVE / REFRESH mode — NOT part of the default loop.
 ///
 /// Gated behind `AL_SEM_DIR`. Run explicitly with:
@@ -2650,6 +3121,65 @@ fn refresh_goldens_from_al_sem() {
             .expect("copy r2c-goldens/manifest.json");
     }
     eprintln!("refresh: copied {l3eg_copied} L3 event-graph golden(s) into tests/r2c-goldens/.");
+
+    // (b6) Regenerate + copy the R2d L3 COVERAGE goldens. A sixth dump script
+    //      (`scripts/dump-l3-coverage.ts`) writes `scripts/r2d-goldens/
+    //      *.l3cov.golden.json` + `manifest.json`; copy them into
+    //      `tests/r2d-goldens/`. EVERY source workspace has a coverage golden (158
+    //      total — no inclusion rule); their source `ws-*` trees are the SAME ones
+    //      copied to `tests/r0-corpus/` above (copied explicitly here when missing).
+    eprintln!("refresh: running `bun run scripts/dump-l3-coverage.ts` in {al_sem_dir} ...");
+    let l3cov_status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-l3-coverage.ts"])
+        .current_dir(&al_sem)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 coverage dump: {e}"));
+    assert!(
+        l3cov_status.success(),
+        "`bun run scripts/dump-l3-coverage.ts` failed with status {l3cov_status}"
+    );
+
+    let src_l3cov_goldens = al_sem.join("scripts").join("r2d-goldens");
+    let dst_l3cov_goldens = repo_root().join("tests").join("r2d-goldens");
+    std::fs::create_dir_all(&dst_l3cov_goldens).expect("create tests/r2d-goldens");
+    let mut l3cov_copied = 0usize;
+    for entry in std::fs::read_dir(&src_l3cov_goldens).expect("read al-sem r2d-goldens") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3cov.golden.json") {
+            continue; // skips manifest.json + l3cov-vectors.json (vectors are separate).
+        }
+        // Ensure the source fixture is present in the offline corpus.
+        let fixture = name.trim_end_matches(".l3cov.golden.json").to_string();
+        let fixture_dst = dst_corpus.join(&fixture);
+        if !fixture_dst.is_dir() {
+            let fixture_src = src_fixtures.join(&fixture);
+            if fixture_src.is_dir() {
+                copy_source_fixture(&fixture_src, &fixture_dst);
+                eprintln!(
+                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
+                );
+            }
+        }
+        std::fs::copy(entry.path(), dst_l3cov_goldens.join(&name))
+            .unwrap_or_else(|e| panic!("copy L3cov golden {name}: {e}"));
+        l3cov_copied += 1;
+    }
+    // Also copy the vectors file so the offline l3cov_vectors test stays in sync.
+    let l3cov_vectors_src = src_l3cov_goldens.join("l3cov-vectors.json");
+    if l3cov_vectors_src.is_file() {
+        let dst_vectors = repo_root().join("tests").join("r2d-vectors");
+        std::fs::create_dir_all(&dst_vectors).expect("create tests/r2d-vectors");
+        std::fs::copy(&l3cov_vectors_src, dst_vectors.join("l3cov-vectors.json"))
+            .expect("copy l3cov-vectors.json");
+    }
+    let l3cov_manifest_src = src_l3cov_goldens.join("manifest.json");
+    if l3cov_manifest_src.is_file() {
+        std::fs::copy(&l3cov_manifest_src, dst_l3cov_goldens.join("manifest.json"))
+            .expect("copy r2d-goldens/manifest.json");
+    }
+    eprintln!("refresh: copied {l3cov_copied} L3 coverage golden(s) into tests/r2d-goldens/.");
 
     // (c) Provenance.
     let al_sem_sha = git_sha(&al_sem);

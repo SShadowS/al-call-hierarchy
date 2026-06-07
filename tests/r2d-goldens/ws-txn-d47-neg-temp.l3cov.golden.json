@@ -1,0 +1,12 @@
+{
+  "sourceUnitsTotal": 2,
+  "sourceUnitsParsed": 2,
+  "routinesTotal": 1,
+  "routinesBodyAvailable": 1,
+  "routinesParseIncomplete": [],
+  "opaqueApps": [],
+  "unresolvedCallsites": [
+    "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba/cs0"
+  ],
+  "dynamicDispatchSites": []
+}

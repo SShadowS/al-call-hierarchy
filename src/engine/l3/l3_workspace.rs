@@ -149,6 +149,13 @@ pub struct L3Routine {
     /// The return-type-aware normalized signature hash — the EventSymbol
     /// `signatureHash` for REAL publisher routines.
     pub normalized_signature_hash: String,
+    /// L2 `bodyAvailable` — the routine has a `code_block` body (routine-indexer.ts).
+    /// The L3 coverage (R2d) counts these. Set from the SAME `find_code_block`
+    /// the L2 projection uses so the flag cannot drift.
+    pub body_available: bool,
+    /// L2 `parseIncomplete` — the routine's subtree has a tree-sitter ERROR node.
+    /// R2d projects parse-incomplete routines' StableRoutineIds.
+    pub parse_incomplete: bool,
     pub record_variables: Vec<L3RecordVariable>,
     pub record_operations: Vec<L3RecordOperation>,
     pub variables: Vec<L3Variable>,
@@ -552,6 +559,12 @@ fn project_file(
             let return_type = crate::engine::l2::get_return_type_text(routine, source);
             let call_sites = features.call_sites.clone();
 
+            // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
+            // projection does (routine-indexer.ts parity): a code_block body is
+            // present; the routine subtree carries a tree-sitter ERROR node.
+            let body_available = crate::engine::l2::find_code_block(routine).is_some();
+            let parse_incomplete = routine.has_error();
+
             // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
             // The hash reuses the same param/kind/return extraction as the internal
             // routine id (`routine_normalized_signature_hash`), so they cannot drift.
@@ -583,6 +596,8 @@ fn project_file(
                 app_guid: app_guid.to_string(),
                 object_number,
                 normalized_signature_hash: norm_hash,
+                body_available,
+                parse_incomplete,
                 record_variables,
                 record_operations,
                 variables,

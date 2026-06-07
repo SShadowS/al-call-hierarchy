@@ -1,0 +1,418 @@
+{
+  "description": "R2d L3 coverage vectors. THREE families: (a) COVERAGE vectors — the full projected AnalysisCoverage from REAL resolveModel over inline workspaces (indexWorkspace pre-resolve → resolveModel post-resolve/pre-summary → projectL3Coverage; READ-only, NEVER re-runs buildCoverage). Covers routine count; bodyAvailable; the 4 unresolved resolutions (unknown/ambiguous/member-not-found/external-target) AND the negatives (builtin/resolved NOT counted); dynamic dispatch; opaqueApps empty. (b) WARNING-UNPARSED-UNIT — an empty .al file produces an index-stage WARNING → sourceUnitsParsed = total - 1; al-sem's EXACT diagnostic (severity/stage/sourceRef) is captured so Rust reproduces the decrement (buildCoverage keys ONLY on the triple, NOT the message). (c) MULTISET-DUPLICATE (SYNTHETIC) — a hand-built callGraph fed to the REAL buildCoverage proves the sorted multiset PRESERVES duplicates (cs0 twice, op9 twice) and the 4-resolutions filter excludes maybe/opaque/builtin/resolved. Hand-authored invariants were asserted against the live projection before emit.",
+  "modelInstanceId": "r0",
+  "appGuid": "2d000000-0000-0000-0000-0000000002dd",
+  "coverageVectorCount": 9,
+  "coverageFamilyCount": 9,
+  "coverageVectors": [
+    {
+      "family": "routine-count",
+      "name": "two_routines_all_body_available",
+      "description": "two source-defined routines → routinesTotal=2, routinesBodyAvailable=2, parseIncomplete empty",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 X\n{\n    procedure A() begin end;\n    procedure B() begin end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "routinesTotal === 2",
+        "routinesBodyAvailable === 2",
+        "routinesParseIncomplete empty",
+        "opaqueApps empty (source-only)",
+        "sourceUnitsParsed === sourceUnitsTotal (no warning)"
+      ]
+    },
+    {
+      "family": "parse-incomplete",
+      "name": "parse_incomplete_routine_independent_of_body",
+      "description": "one clean routine + one with a syntax-error body → routinesParseIncomplete has ONE StableRoutineId; crucially routinesBodyAvailable === 2 (the broken routine still has a body) — parseIncomplete and bodyAvailable are INDEPENDENT filters, NOT a partition (Rev2 #4). The parse-incomplete routine's StableRoutineId is the same form as any routine id.",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 X\n{\n    procedure Good() begin end;\n    procedure Bad()\n    begin\n        if x then ;;; @@@ broken\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50100#796e5442b1bcd4064ba7757e9524e8b80c510d9dc6acdf7619293599691c4994"
+        ],
+        "opaqueApps": [],
+        "unresolvedCallsites": [],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "routinesTotal === 2",
+        "exactly one parse-incomplete routine",
+        "routinesBodyAvailable === 2 (independent of parseIncomplete)",
+        "the parse-incomplete id is a StableRoutineId (appGuid:Type:num#hash)"
+      ]
+    },
+    {
+      "family": "unresolved-unknown",
+      "name": "unresolved_unknown_dynamic_codeunit_run",
+      "description": "a dynamic Codeunit.Run(<var>) → dispatchKind 'dynamic' + resolution 'unknown' → one unresolved callsite AND one dynamic site",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Caller\n{\n    procedure Run(which: Integer)\n    begin\n        Codeunit.Run(which);\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50100#26f200f7a6277018d62bfc7313ec607a71c56adc37c77e9abe100f3e2de34555/cs0"
+        ],
+        "dynamicDispatchSites": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50100#26f200f7a6277018d62bfc7313ec607a71c56adc37c77e9abe100f3e2de34555/op0"
+        ]
+      },
+      "invariants": [
+        "exactly one unresolved callsite",
+        "exactly one dynamic dispatch site"
+      ]
+    },
+    {
+      "family": "unresolved-ambiguous",
+      "name": "unresolved_ambiguous_overload",
+      "description": "two same-arity overloads of Do(x) called via an untyped arg → resolution 'ambiguous' → unresolved callsite",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Over\n{\n    procedure Do(c: Record Customer) begin end;\n    procedure Do(v: Record Vendor) begin end;\n\n    procedure Caller(r: Variant)\n    begin\n        Do(r);\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50100#c5b9a07117269dcec43a2715a860c2400051b9a1de07f2bd0e2cb60369863b8d/cs0"
+        ],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "at least one unresolved callsite present (ambiguous counts)"
+      ]
+    },
+    {
+      "family": "unresolved-member-not-found",
+      "name": "unresolved_member_not_found",
+      "description": "a member call to a method that does not exist on the typed receiver → 'member-not-found' → unresolved callsite",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Helper\n{\n    procedure Exists() begin end;\n}\ncodeunit 50101 Caller\n{\n    procedure Run()\n    var\n        h: Codeunit Helper;\n    begin\n        h.Nonexistent();\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50101#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+        ],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "at least one unresolved callsite present (member-not-found counts)"
+      ]
+    },
+    {
+      "family": "unresolved-external-target",
+      "name": "unresolved_external_target",
+      "description": "a member call on a var typed `Codeunit \"Nonexistent Cu\"` (named object NOT in the workspace, no dep claims it) → 'external-target' → unresolved callsite",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Caller\n{\n    procedure Run()\n    var\n        h: Codeunit \"Nonexistent Cu\";\n    begin\n        h.Foo();\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [
+          "2d000000-0000-0000-0000-0000000002dd:Codeunit:50100#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+        ],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "at least one unresolved callsite present"
+      ]
+    },
+    {
+      "family": "not-counted-builtin",
+      "name": "builtin_not_unresolved",
+      "description": "a recognized no-receiver global builtin (StrLen, in al-builtins.ts) → dispatchKind/resolution 'builtin' → NOT in unresolvedCallsites (the 4-resolutions filter excludes builtin)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 X\n{\n    procedure P()\n    var\n        n: Integer;\n    begin\n        n := StrLen('hi');\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "no unresolved callsites (builtin excluded)",
+        "no dynamic sites"
+      ]
+    },
+    {
+      "family": "not-counted-opaque",
+      "name": "opaque_codeunit_run_not_unresolved",
+      "description": "a Codeunit.Run(Codeunit::\"Out Of World Cu\") on a named codeunit NOT in the workspace → dispatchKind 'codeunit-run' + resolution 'opaque' → NOT in unresolvedCallsites (the 4-resolutions filter excludes opaque)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Caller\n{\n    procedure Run()\n    begin\n        Codeunit.Run(Codeunit::\"Out Of World Cu\");\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "no unresolved callsites (opaque excluded)",
+        "no dynamic sites (named target is not dynamic)"
+      ]
+    },
+    {
+      "family": "not-counted-resolved",
+      "name": "resolved_direct_not_unresolved",
+      "description": "a bare call to an existing same-object procedure → 'resolved' → NOT in unresolvedCallsites",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 X\n{\n    procedure P() begin Q(); end;\n    procedure Q() begin end;\n}"
+        ]
+      ],
+      "expected": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": [],
+        "opaqueApps": [],
+        "unresolvedCallsites": [],
+        "dynamicDispatchSites": []
+      },
+      "invariants": [
+        "no unresolved callsites (resolved excluded)",
+        "routinesBodyAvailable === 2"
+      ]
+    }
+  ],
+  "warningUnparsedVector": {
+    "name": "warning_unparsed_unit",
+    "description": "two source units; the EMPTY .al file produces an index-stage WARNING (tree-sitter throws on empty input) whose sourceRef === the unit id → sourceUnitsParsed = sourceUnitsTotal - 1 = 1. buildCoverage keys ONLY on (stage:'index', severity:'warning', sourceRef===unit.id); the message text is NOT consulted, so Rust reproduces the decrement by emitting a matching triple.",
+    "files": [
+      [
+        "a",
+        "codeunit 50100 X\n{\n    procedure P() begin end;\n}"
+      ],
+      [
+        "empty",
+        ""
+      ]
+    ],
+    "indexDiagnostics": [
+      {
+        "severity": "warning",
+        "stage": "index",
+        "message": "Failed to index src/empty.al: Unable to convert TypeError [ERR_INVALID_ARG_TYPE]: ArrayBufferView must have a length > 0. A pointer to empty memory doesn't work to a pointer",
+        "sourceRef": "ws:src/empty.al"
+      }
+    ],
+    "units": [
+      {
+        "id": "ws:src/a.al",
+        "kind": "source"
+      },
+      {
+        "id": "ws:src/empty.al",
+        "kind": "source"
+      }
+    ],
+    "expected": {
+      "sourceUnitsTotal": 2,
+      "sourceUnitsParsed": 1,
+      "routinesTotal": 1,
+      "routinesBodyAvailable": 1,
+      "routinesParseIncomplete": [],
+      "opaqueApps": [],
+      "unresolvedCallsites": [],
+      "dynamicDispatchSites": []
+    },
+    "decrementContract": {
+      "matchStage": "index",
+      "matchSeverity": "warning",
+      "matchSourceRefEqualsUnitId": true,
+      "messageIgnoredByBuildCoverage": true
+    },
+    "invariants": [
+      "sourceUnitsTotal === 2",
+      "sourceUnitsParsed === 1 (decremented by the empty unit)",
+      "exactly one index-stage WARNING diagnostic",
+      "the warning's sourceRef matches the empty unit's id"
+    ]
+  },
+  "multisetDuplicateVector": {
+    "name": "multiset_duplicate_synthetic",
+    "description": "SYNTHETIC (no real AL source produces a callsite with ≥2 unresolved edges — interface multi-edges are 'maybe'). A hand-built callGraph is fed to the REAL buildCoverage: two unresolved edges share callsiteId cs0 (→ cs0 appears TWICE in unresolvedCallsites), two dynamic edges share operationId op9 (→ op9 appears TWICE in dynamicDispatchSites). The projection is a SORTED MULTISET — duplicates are PRESERVED, NEVER deduped. Also asserts the 4-resolutions filter: maybe/opaque/builtin/resolved edges are EXCLUDED from unresolvedCallsites.",
+    "callGraph": [
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs0",
+        "operationId": "r0/deadbeef/op0",
+        "dispatchKind": "unresolved",
+        "resolution": "unknown",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs0",
+        "operationId": "r0/deadbeef/op1",
+        "dispatchKind": "interface",
+        "resolution": "member-not-found",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs1",
+        "operationId": "r0/deadbeef/op9",
+        "dispatchKind": "dynamic",
+        "resolution": "unknown",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs2",
+        "operationId": "r0/deadbeef/op9",
+        "dispatchKind": "dynamic",
+        "resolution": "unknown",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs3",
+        "operationId": "r0/deadbeef/op3",
+        "dispatchKind": "interface",
+        "resolution": "maybe",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs4",
+        "operationId": "r0/deadbeef/op4",
+        "dispatchKind": "method",
+        "resolution": "opaque",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      },
+      {
+        "from": "r0/deadbeef",
+        "callsiteId": "r0/deadbeef/cs5",
+        "operationId": "r0/deadbeef/op5",
+        "dispatchKind": "builtin",
+        "resolution": "builtin",
+        "provenance": [
+          {
+            "source": "tree-sitter"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "sourceUnitsTotal": 0,
+      "sourceUnitsParsed": 0,
+      "routinesTotal": 0,
+      "routinesBodyAvailable": 0,
+      "routinesParseIncomplete": [],
+      "opaqueApps": [],
+      "unresolvedCallsites": [
+        "r0/deadbeef/cs0",
+        "r0/deadbeef/cs0",
+        "r0/deadbeef/cs1",
+        "r0/deadbeef/cs2"
+      ],
+      "dynamicDispatchSites": [
+        "r0/deadbeef/op9",
+        "r0/deadbeef/op9"
+      ]
+    },
+    "invariants": [
+      "unresolvedCallsites cardinality === 4 (cs0 twice + cs1 once + cs2 once)",
+      "cs0 appears EXACTLY twice in unresolvedCallsites (duplicate preserved)",
+      "op9 appears EXACTLY twice in dynamicDispatchSites (duplicate preserved)",
+      "dynamicDispatchSites cardinality === 2 (only the two dynamic edges)",
+      "unresolvedCallsites is SORTED",
+      "maybe/opaque/builtin/resolved edges are NOT in unresolvedCallsites"
+    ]
+  }
+}

@@ -1,0 +1,3866 @@
+{
+  "description": "R2d L3 coverage goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.l3cov.golden.json is the ALLOWLISTED projection of a RESOLVED SemanticModel's `model.coverage` (AnalysisCoverage), READ post-resolve / pre-summary (`indexWorkspace` → `resolveModel` ONCE; the dump NEVER re-runs buildCoverage — it READS model.coverage). sourceUnitsTotal/sourceUnitsParsed/routinesTotal/routinesBodyAvailable as numbers; routinesParseIncomplete as a SORTED StableRoutineId[] (duplicates preserved); opaqueApps as appGuid[] (empty source-only); unresolvedCallsites as a SORTED StableCallsiteId MULTISET (callGraph edges with resolution ∈ {unknown, ambiguous, member-not-found, external-target} — NOT opaque/builtin/maybe; duplicates PRESERVED, NO dedup); dynamicDispatchSites as a SORTED StableOperationId MULTISET (edges with dispatchKind === 'dynamic'; duplicates PRESERVED). See scripts/r2d-l3cov-projection.ts.",
+  "capturePoint": "post-resolve/pre-summary (indexWorkspace → resolveModel ONCE; READ model.coverage, no rebuild)",
+  "note": "INDEX-DIAGNOSTIC DEPENDENCY: sourceUnitsParsed = sourceUnitsTotal minus units whose id is the sourceRef of an index-stage WARNING diagnostic (EXACTLY stage:'index' + severity:'warning' + sourceRef===SourceUnit.id; info does NOT decrement). resolveModel is fed the REAL indexDiagnostics. For the source-only corpus the decrement path is INERT (see failedUnitRefsAssessment below) — a warning-unparsed VECTOR (scripts/r2d-goldens/l3cov-vectors.json) covers it with al-sem's exact diagnostic shape so Rust can reproduce it. EXCLUDED (later gates): callGraph (R2b), eventGraph (R2c), typedEdges/summary (L4/R3), analysisGaps (R2.5 — opaqueApps from body-unavailable DEP routines + dep-app boundaries). MULTISETS preserve duplicates; do NOT dedup on either side.",
+  "alSemGitSha": "e5d1c5440dd40f627cc28118c9e3c0b7498f6338",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=32;depCache=7;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r2d",
+  "forbiddenKeys": [
+    "callGraph",
+    "callsiteId",
+    "dispatchKind",
+    "dispatchMeta",
+    "argumentBindings",
+    "groups",
+    "bindings",
+    "callsiteResolutions",
+    "eventGraph",
+    "events",
+    "edges",
+    "eventKind",
+    "typedEdges",
+    "summary",
+    "analysisGaps",
+    "capabilityFactsDirect",
+    "rootClassifications"
+  ],
+  "fixtureCount": 158,
+  "failedUnitRefsAssessment": {
+    "decrementingFixtureCount": 0,
+    "decrementFixtures": [],
+    "inertForCorpus": true,
+    "note": "INERT — no source-only fixture emits an index-stage warning; sourceUnitsParsed === sourceUnitsTotal everywhere. The decrement path is covered ONLY by the warning-unparsed vector (an empty .al file → 'Failed to index ...' warning)."
+  },
+  "coverageMatrix": {
+    "sourceUnitsTotal": 314,
+    "sourceUnitsParsed": 314,
+    "sourceUnitsDecremented": 0,
+    "routinesTotal": 567,
+    "routinesBodyAvailable": 567,
+    "routinesParseIncomplete": 1,
+    "opaqueApps": 0,
+    "unresolvedCallsites": 86,
+    "unresolvedMaxDup": 1,
+    "dynamicDispatchSites": 3,
+    "dynamicMaxDup": 1
+  },
+  "fixtures": [
+    {
+      "fixture": "ws-api-page",
+      "goldenFile": "ws-api-page.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-argument-bindings",
+      "goldenFile": "ws-argument-bindings.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 7,
+        "routinesBodyAvailable": 7,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-builtin-unresolved",
+      "goldenFile": "ws-builtin-unresolved.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-calls",
+      "goldenFile": "ws-calls.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 1,
+        "dynamicMaxDup": 1
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-callsite-resolutions",
+      "goldenFile": "ws-callsite-resolutions.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 1,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 1,
+        "dynamicMaxDup": 1
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-combined",
+      "goldenFile": "ws-combined.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-compose",
+      "goldenFile": "ws-compose.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1",
+      "goldenFile": "ws-d1.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-dep-terminal",
+      "goldenFile": "ws-d1-dep-terminal.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-multi-caller",
+      "goldenFile": "ws-d1-multi-caller.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-setup-singleton",
+      "goldenFile": "ws-d1-setup-singleton.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d10-self-mod",
+      "goldenFile": "ws-d10-self-mod.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-modifyall-init",
+      "goldenFile": "ws-d11-modifyall-init.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-no-get",
+      "goldenFile": "ws-d11-no-get.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d12-dead-event",
+      "goldenFile": "ws-d12-dead-event.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-internal-call",
+      "goldenFile": "ws-d13-internal-call.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-member-call",
+      "goldenFile": "ws-d13-member-call.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "goldenFile": "ws-d14-dead-routine.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-internal-no-ivt",
+      "goldenFile": "ws-d14-internal-no-ivt.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 7,
+        "routinesBodyAvailable": 7,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-page-procedure",
+      "goldenFile": "ws-d14-page-procedure.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-public-dead",
+      "goldenFile": "ws-d14-public-dead.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d16-obsolete",
+      "goldenFile": "ws-d16-obsolete.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d17-drift",
+      "goldenFile": "ws-d17-drift.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d18",
+      "goldenFile": "ws-d18.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d19",
+      "goldenFile": "ws-d19.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d2",
+      "goldenFile": "ws-d2.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 7,
+        "routinesBodyAvailable": 7,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d20",
+      "goldenFile": "ws-d20.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 4,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d21",
+      "goldenFile": "ws-d21.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d22",
+      "goldenFile": "ws-d22.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d29",
+      "goldenFile": "ws-d29.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3",
+      "goldenFile": "ws-d3.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-method-stmt",
+      "goldenFile": "ws-d3-method-stmt.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-temp",
+      "goldenFile": "ws-d3-temp.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d32",
+      "goldenFile": "ws-d32.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 5,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d33",
+      "goldenFile": "ws-d33.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d34",
+      "goldenFile": "ws-d34.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d35",
+      "goldenFile": "ws-d35.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d36",
+      "goldenFile": "ws-d36.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d37",
+      "goldenFile": "ws-d37.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 10,
+        "routinesBodyAvailable": 10,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d38",
+      "goldenFile": "ws-d38.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d39",
+      "goldenFile": "ws-d39.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d4-repeated-get",
+      "goldenFile": "ws-d4-repeated-get.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d40",
+      "goldenFile": "ws-d40.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 10,
+        "routinesBodyAvailable": 10,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d41",
+      "goldenFile": "ws-d41.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d42",
+      "goldenFile": "ws-d42.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d5-modifyall",
+      "goldenFile": "ws-d5-modifyall.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-neg",
+      "goldenFile": "ws-d50-neg.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-pos",
+      "goldenFile": "ws-d50-pos.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-jobqueue",
+      "goldenFile": "ws-d51-jobqueue.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "goldenFile": "ws-d51-neg.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "goldenFile": "ws-d51-pos.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d7-event-cycle",
+      "goldenFile": "ws-d7-event-cycle.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "goldenFile": "ws-d8-commit-in-tx.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-digest-pr49388",
+      "goldenFile": "ws-digest-pr49388.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 5,
+        "sourceUnitsParsed": 5,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-e2e",
+      "goldenFile": "ws-e2e.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 10,
+        "routinesBodyAvailable": 10,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-chains",
+      "goldenFile": "ws-event-chains.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-cycle",
+      "goldenFile": "ws-event-cycle.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-d45-deep",
+      "goldenFile": "ws-event-d45-deep.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-fanout",
+      "goldenFile": "ws-event-fanout.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 8,
+        "sourceUnitsParsed": 8,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled",
+      "goldenFile": "ws-event-ishandled.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-conditional-set",
+      "goldenFile": "ws-event-ishandled-conditional-set.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-exit",
+      "goldenFile": "ws-event-ishandled-exit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-helper",
+      "goldenFile": "ws-event-ishandled-helper.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-multi-dispatch",
+      "goldenFile": "ws-event-ishandled-multi-dispatch.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-nested-guard",
+      "goldenFile": "ws-event-ishandled-nested-guard.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-isolated",
+      "goldenFile": "ws-event-isolated.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-multi-sub-overlap",
+      "goldenFile": "ws-event-multi-sub-overlap.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-read-after-write",
+      "goldenFile": "ws-event-read-after-write.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-transitive-exposure",
+      "goldenFile": "ws-event-transitive-exposure.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-events",
+      "goldenFile": "ws-events.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-implicit-trigger",
+      "goldenFile": "ws-implicit-trigger.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-inline-suppress",
+      "goldenFile": "ws-inline-suppress.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-install-codeunit",
+      "goldenFile": "ws-install-codeunit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-interface-dispatch",
+      "goldenFile": "ws-interface-dispatch.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 7,
+        "sourceUnitsParsed": 7,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-may-facts",
+      "goldenFile": "ws-may-facts.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 10,
+        "routinesBodyAvailable": 10,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-codeunit",
+      "goldenFile": "ws-member-call-codeunit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 5,
+        "sourceUnitsParsed": 5,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-resolution",
+      "goldenFile": "ws-member-call-resolution.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-multi-object",
+      "goldenFile": "ws-multi-object.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-op-order",
+      "goldenFile": "ws-op-order.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-error",
+      "goldenFile": "ws-order-branch-error.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-exit",
+      "goldenFile": "ws-order-branch-exit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-commit-before-io",
+      "goldenFile": "ws-order-commit-before-io.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-conditional-exit-before-commit",
+      "goldenFile": "ws-order-conditional-exit-before-commit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-condleaf",
+      "goldenFile": "ws-order-condleaf.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-io-before-commit",
+      "goldenFile": "ws-order-io-before-commit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-loop",
+      "goldenFile": "ws-order-loop.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-transitive-unknown",
+      "goldenFile": "ws-order-transitive-unknown.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-tryfunction",
+      "goldenFile": "ws-order-tryfunction.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-two-commits",
+      "goldenFile": "ws-order-two-commits.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-pos2",
+      "goldenFile": "ws-overload-arg-pos2.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 5,
+        "sourceUnitsParsed": 5,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-type",
+      "goldenFile": "ws-overload-arg-type.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 4,
+        "sourceUnitsParsed": 4,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-callexpr-discriminator",
+      "goldenFile": "ws-overload-callexpr-discriminator.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-char",
+      "goldenFile": "ws-overload-char.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-enum-discriminator",
+      "goldenFile": "ws-overload-enum-discriminator.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-field-discriminator",
+      "goldenFile": "ws-overload-field-discriminator.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-negatives",
+      "goldenFile": "ws-overload-negatives.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 9,
+        "routinesBodyAvailable": 9,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-paramfx",
+      "goldenFile": "ws-paramfx.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-path-facts",
+      "goldenFile": "ws-path-facts.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 12,
+        "routinesBodyAvailable": 12,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 3,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-dynamic-dispatch",
+      "goldenFile": "ws-policy-api-dynamic-dispatch.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 1,
+        "dynamicMaxDup": 1
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-isolated-storage",
+      "goldenFile": "ws-policy-api-isolated-storage.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ledger-write",
+      "goldenFile": "ws-policy-api-ledger-write.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ui",
+      "goldenFile": "ws-policy-api-ui.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-clean",
+      "goldenFile": "ws-policy-clean.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-subscriber",
+      "goldenFile": "ws-policy-commit-in-subscriber.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-trigger",
+      "goldenFile": "ws-policy-commit-in-trigger.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-install-business-write",
+      "goldenFile": "ws-policy-install-business-write.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-trigger-http",
+      "goldenFile": "ws-policy-trigger-http.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-pr-summary-multi",
+      "goldenFile": "ws-pr-summary-multi.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preflight-missingdep",
+      "goldenFile": "ws-preflight-missingdep.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preset-txn",
+      "goldenFile": "ws-preset-txn.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-prove",
+      "goldenFile": "ws-prove.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 10,
+        "sourceUnitsParsed": 10,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 17,
+        "routinesBodyAvailable": 17,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r0-canon-stress",
+      "goldenFile": "ws-r0-canon-stress.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 16,
+        "routinesBodyAvailable": 16,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2a-record-types",
+      "goldenFile": "ws-r2a-record-types.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-external",
+      "goldenFile": "ws-r2b-external.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-opaque",
+      "goldenFile": "ws-r2b-opaque.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-maybe-elem",
+      "goldenFile": "ws-r2c-maybe-elem.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-mixed",
+      "goldenFile": "ws-r2c-mixed.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 8,
+        "routinesBodyAvailable": 8,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-two-sub-maybe",
+      "goldenFile": "ws-r2c-two-sub-maybe.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-recursive",
+      "goldenFile": "ws-recursive.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-report-trigger",
+      "goldenFile": "ws-report-trigger.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-resolve",
+      "goldenFile": "ws-resolve.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-roots-config",
+      "goldenFile": "ws-roots-config.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-statement-tree",
+      "goldenFile": "ws-statement-tree.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 26,
+        "routinesBodyAvailable": 26,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 5,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-test-codeunit",
+      "goldenFile": "ws-test-codeunit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-triggers",
+      "goldenFile": "ws-triggers.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 6,
+        "routinesBodyAvailable": 6,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-tx-span",
+      "goldenFile": "ws-tx-span.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "goldenFile": "ws-txn-d46-neg.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "goldenFile": "ws-txn-d46-pos.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 4,
+        "routinesBodyAvailable": 4,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-deduped",
+      "goldenFile": "ws-txn-d47-advisory-deduped.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-post-nowrite",
+      "goldenFile": "ws-txn-d47-advisory-post-nowrite.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-crosshop-iobeforecommit",
+      "goldenFile": "ws-txn-d47-crosshop-iobeforecommit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-clean",
+      "goldenFile": "ws-txn-d47-event-neg-clean.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-isolated",
+      "goldenFile": "ws-txn-d47-event-neg-isolated.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-pos",
+      "goldenFile": "ws-txn-d47-event-pos.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 3,
+        "routinesBodyAvailable": 3,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-commit-between",
+      "goldenFile": "ws-txn-d47-neg-commit-between.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-readonly",
+      "goldenFile": "ws-txn-d47-neg-readonly.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-temp",
+      "goldenFile": "ws-txn-d47-neg-temp.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-file",
+      "goldenFile": "ws-txn-d47-pos-file.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-commit-after",
+      "goldenFile": "ws-txn-d47-pos-http-commit-after.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "goldenFile": "ws-txn-d47-pos-http-nocommit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "goldenFile": "ws-txn-d48-neg.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "goldenFile": "ws-txn-d48-pos.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 5,
+        "routinesBodyAvailable": 5,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 2,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-commit-between",
+      "goldenFile": "ws-txn-d49-neg-commit-between.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-no-write",
+      "goldenFile": "ws-txn-d49-neg-no-write.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-run-boundary",
+      "goldenFile": "ws-txn-d49-neg-run-boundary.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-temp-write",
+      "goldenFile": "ws-txn-d49-neg-temp-write.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-message",
+      "goldenFile": "ws-txn-d49-pos-modify-message.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-runmodal",
+      "goldenFile": "ws-txn-d49-pos-modify-runmodal.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-unresolved",
+      "goldenFile": "ws-unresolved.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-upgrade-codeunit",
+      "goldenFile": "ws-upgrade-codeunit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 1,
+        "sourceUnitsParsed": 1,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-with-receiver",
+      "goldenFile": "ws-with-receiver.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 1,
+        "routinesBodyAvailable": 1,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-always-error",
+      "goldenFile": "ws-xhop-callee-always-error.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 2,
+        "sourceUnitsParsed": 2,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-error",
+      "goldenFile": "ws-xhop-callee-error.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-conditional",
+      "goldenFile": "ws-xhop-conditional.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-io-before-commit",
+      "goldenFile": "ws-xhop-io-before-commit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 1,
+        "unresolvedMaxDup": 1,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-loop",
+      "goldenFile": "ws-xhop-loop.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-tryfunction-committer",
+      "goldenFile": "ws-xhop-tryfunction-committer.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-write-commit",
+      "goldenFile": "ws-xhop-write-commit.l3cov.golden.json",
+      "coverage": {
+        "sourceUnitsTotal": 3,
+        "sourceUnitsParsed": 3,
+        "sourceUnitsDecremented": 0,
+        "routinesTotal": 2,
+        "routinesBodyAvailable": 2,
+        "routinesParseIncomplete": 0,
+        "opaqueApps": 0,
+        "unresolvedCallsites": 0,
+        "unresolvedMaxDup": 0,
+        "dynamicDispatchSites": 0,
+        "dynamicMaxDup": 0
+      },
+      "failedUnitRefs": [],
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "fixture": "ws-diff-coverage-narrowed",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-new-capability",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-permission-expanded",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-removed-field",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-rename",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    }
+  ]
+}
