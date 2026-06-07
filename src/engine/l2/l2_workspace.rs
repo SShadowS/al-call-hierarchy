@@ -663,3 +663,119 @@ pub fn project_workspace(workspace: &Path) -> anyhow::Result<L2Projection> {
 
     Ok(projection)
 }
+
+/// Project a single NAMED routine from a single-file `source` into a full
+/// [`PRoutine`] (features + control-context + operation-order applied, plus the
+/// routine-level metadata: `attributes`/`attributesParsed`/`accessModifier`/
+/// `bodyAvailable`/`parseIncomplete`). Mirrors the per-routine body of
+/// [`project_file`] EXACTLY — it is the single-routine entry point used by the
+/// R1d capability vector tests (which need a fully-populated `PRoutine`, with
+/// `controlContext` set so the unreachable filter fires, plus the internal-id
+/// `op*`/`cs*` witness references that the capability facts carry).
+///
+/// Returns `None` when the named routine isn't found in any object.
+pub fn project_named_routine(
+    source: &str,
+    routine_name: &str,
+    app_guid: &str,
+    source_unit_id: &str,
+    tree: &tree_sitter::Tree,
+) -> Option<PRoutine> {
+    let root = tree.root_node();
+    let cols = Utf16Cols::new(source);
+
+    for decl in named_children(root) {
+        let Some(object_type) = scope::object_type_for(decl.kind()) else {
+            continue;
+        };
+        let object_number = extract_object_number(decl, source);
+        let internal_object_id = encode_object_id(app_guid, object_type, object_number);
+        let stable_object_id = to_stable_object_id(&internal_object_id);
+
+        let (_, _, source_table_name, _) = extract_object_metadata(decl, object_type, source);
+
+        let object_globals = extract_object_globals(decl, source_unit_id, source);
+        let routine_nodes = collect_routine_nodes(decl);
+
+        let mut object_procedure_names = HashSet::new();
+        for n in &routine_nodes {
+            if let Some(nm) = n.child_by_field_name("name") {
+                object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
+            }
+        }
+
+        let id_ctx = IdentityCtx {
+            app_guid,
+            model_instance_id: MODEL_INSTANCE_ID,
+            source_unit_id,
+        };
+
+        for routine in routine_nodes {
+            let Some(nm) = routine.child_by_field_name("name") else {
+                continue;
+            };
+            let rname = strip_quotes(node_text(nm, source)).to_string();
+            if rname != routine_name {
+                continue;
+            }
+
+            let kind = classify_kind(routine, source);
+            let (attributes, attributes_parsed) = collect_attributes(routine, source);
+            let access_modifier = classify_access_modifier(routine, source);
+            let body_available = find_code_block(routine).is_some();
+            let parse_incomplete = routine.has_error();
+
+            let parameters = extract_parameters(routine, source);
+            let param_specs: Vec<ParamSpec> = parameters
+                .iter()
+                .map(|p| ParamSpec {
+                    type_text: p.type_text.clone(),
+                    is_var: p.is_var,
+                })
+                .collect();
+            let return_type_text = return_type_text(routine, source);
+            let norm_hash =
+                normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
+            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
+
+            let mut features: PFeatures = project_routine_features(
+                decl,
+                routine,
+                object_type,
+                object_number,
+                source_table_name.as_deref(),
+                &object_procedure_names,
+                &object_globals,
+                &id_ctx,
+                source,
+                &cols,
+            )
+            .map(|(_, f)| f)?;
+
+            let attr_names_lc: Vec<String> = attributes_parsed
+                .iter()
+                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                .map(|n| n.to_lowercase())
+                .collect();
+            crate::engine::l2::control_context::apply_control_contexts(
+                &mut features,
+                &attr_names_lc,
+                &parameters,
+            );
+            crate::engine::l2::operation_order::apply_operation_order(&mut features, &attr_names_lc);
+
+            return Some(PRoutine {
+                stable_routine_id,
+                name: rname,
+                kind: kind.to_string(),
+                attributes,
+                attributes_parsed,
+                access_modifier,
+                body_available,
+                parse_incomplete,
+                features,
+            });
+        }
+    }
+    None
+}

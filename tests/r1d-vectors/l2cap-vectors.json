@@ -1,0 +1,796 @@
+{
+  "description": "R1d direct-capability vectors. Each vector's expectedFacts/status/reasons/diagnostics were produced by the REAL al-sem capability extractors run on a PRE-RESOLVE routine (`projectDirectCapabilities` → `extractCapabilities`, NOT analyzeWorkspace/the summary pass). Facts are STRIPPED of L3 `resourceId` + redundant `subject` + deep-stripped of nested `table-field.tableId`; `op:'publish'` facts are EXCLUDED (L4-injected). status/reasons are the extractor's OWN return value (NOT the L4-augmented coverage). Universal invariants (provenance=='direct', via=='self', no publish, no resourceId, no nested tableId) are asserted on EVERY vector plus per-family hand-authored invariants, all checked against the live facts before emit. Rust loads this committed file and asserts parity.",
+  "modelInstanceId": "r0",
+  "familyCount": 17,
+  "vectorCount": 18,
+  "vectors": [
+    {
+      "family": "table",
+      "name": "table_crud_ops",
+      "description": "FindSet→read, Modify→modify, Insert→insert, Delete→delete; each carries TableExtra with opSubtype = the RecordOpType and the receiver's tempState. resourceId STRIPPED.",
+      "source": "codeunit 50100 Tbl\n{\n    procedure Crud(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        Cust.Modify();\n        Cust.Insert();\n        Cust.Delete();\n    end;\n}",
+      "routineName": "Crud",
+      "expectedFacts": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "FindSet"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/op2",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/op3",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2fb67181c209ce544af4cdb5db74d366c8dfdf47e0b1624561c635d342cf1711/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Delete"
+          }
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "FindSet → op=read, resourceKind=table, opSubtype=FindSet",
+        "Modify → op=modify, opSubtype=Modify",
+        "Insert → op=insert",
+        "Delete → op=delete",
+        "every table fact carries a witnessOperationId (record-op witness)",
+        "status complete (clean extraction)"
+      ]
+    },
+    {
+      "family": "commit",
+      "name": "commit_op",
+      "description": "a bare Commit() → op=commit, resourceKind=transaction, witnessOperationId set.",
+      "source": "codeunit 50100 Cmt\n{\n    procedure DoCommit(var Cust: Record Customer)\n    begin\n        Cust.Modify();\n        Commit();\n    end;\n}",
+      "routineName": "DoCommit",
+      "expectedFacts": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/32ca2a985edfd6dd82022b050b0b9d010db3113853f23b941eef41240de2db1e/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/32ca2a985edfd6dd82022b050b0b9d010db3113853f23b941eef41240de2db1e/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/32ca2a985edfd6dd82022b050b0b9d010db3113853f23b941eef41240de2db1e/op1"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Commit → op=commit, resourceKind=transaction"
+      ]
+    },
+    {
+      "family": "dispatch",
+      "name": "dispatch_execute_modal",
+      "description": "Codeunit.Run → execute (DispatchExtra objectType=Codeunit, no modal); Page.RunModal → execute (DispatchExtra objectType=Page, modal=true). resourceArgSource = the static target id (enum). resourceId STRIPPED.",
+      "source": "codeunit 50100 Disp\n{\n    procedure Dispatch()\n    begin\n        Codeunit.Run(Codeunit::\"Some CU\");\n        Page.RunModal(Page::\"Some Page\");\n    end;\n}",
+      "routineName": "Dispatch",
+      "expectedFacts": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Codeunit",
+            "member": "Some CU"
+          },
+          "witnessCallsiteId": "r0/44975fb9e4f7d9d76defa8e23a1d3b5ccc08bfc60323f770b481d90e5c020caa/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        },
+        {
+          "op": "execute",
+          "resourceKind": "page",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Page",
+            "member": "Some Page"
+          },
+          "witnessCallsiteId": "r0/44975fb9e4f7d9d76defa8e23a1d3b5ccc08bfc60323f770b481d90e5c020caa/cs1",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Page",
+            "modal": true
+          }
+        },
+        {
+          "op": "ui-window-open",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/44975fb9e4f7d9d76defa8e23a1d3b5ccc08bfc60323f770b481d90e5c020caa/cs1"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Codeunit.Run → execute, dispatch extra objectType=Codeunit, NOT modal",
+        "Page.RunModal → execute, dispatch extra objectType=Page, modal=true",
+        "dispatch resourceArgSource is enum/database-reference (static)"
+      ]
+    },
+    {
+      "family": "http",
+      "name": "http_send_post_body",
+      "description": "HttpClient.Post(url, request, response) → op=send, HttpExtra method=Post, resourceArgSource = the url literal (static), bodyArgSource = the request ValueSource.",
+      "source": "codeunit 50100 Http\n{\n    procedure CallApi(var Client: HttpClient; var Request: HttpContent; var Response: HttpResponseMessage)\n    begin\n        Client.Post('https://api.example.com', Request, Response);\n    end;\n}",
+      "routineName": "CallApi",
+      "expectedFacts": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://api.example.com"
+          },
+          "witnessCallsiteId": "r0/87d098eae3c801957963cdc3bd899ed69c3bdbe84d8ab8cb2bbe3b5b74b71cce/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Post",
+            "bodyArgSource": {
+              "kind": "parameter",
+              "index": 1,
+              "varName": "request"
+            }
+          }
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Post → op=send, http extra method=Post",
+        "url resourceArgSource is a literal (static)",
+        "bodyArgSource present in HttpExtra"
+      ]
+    },
+    {
+      "family": "telemetry",
+      "name": "telemetry_log",
+      "description": "Session.LogMessage(eventId, ...) → op=log, resourceKind=telemetry, resourceArgSource = the eventId literal (static). No extra.",
+      "source": "codeunit 50100 Tel\n{\n    procedure Trace(var Dim: Dictionary of [Text, Text])\n    begin\n        Session.LogMessage('AL0001', 'hello', Verbosity::Normal, DataClassification::SystemMetadata, TelemetryScope::All, Dim);\n    end;\n}",
+      "routineName": "Trace",
+      "expectedFacts": [
+        {
+          "op": "log",
+          "resourceKind": "telemetry",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "AL0001"
+          },
+          "witnessCallsiteId": "r0/c599b9ec27709f1d7149ae98e1ad161403b5929dbfbb4903feb2576bfd56c2b1/cs0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "LogMessage → op=log, resourceKind=telemetry, eventId literal static",
+        "telemetry fact has NO extra"
+      ]
+    },
+    {
+      "family": "storage",
+      "name": "storage_read_write_delete",
+      "description": "IsolatedStorage.Get → store-read; .Set(key, value, DataScope::Company) → store-write (StorageExtra keyArgSource + valueArgSource + scope=Company); .Delete → store-delete. resourceArgSource = key.",
+      "source": "codeunit 50100 Stg\n{\n    procedure Store(var V: Text)\n    begin\n        IsolatedStorage.Get('mykey', V);\n        IsolatedStorage.Set('mykey', 'val', DataScope::Company);\n        IsolatedStorage.Delete('mykey');\n    end;\n}",
+      "routineName": "Store",
+      "expectedFacts": [
+        {
+          "op": "store-read",
+          "resourceKind": "isolated-storage",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "mykey"
+          },
+          "witnessCallsiteId": "r0/b979940edf76e35d3b4a6a5d9aa9442fb334c53fc33a663c9c45d73f6f2d676d/cs0",
+          "extra": {
+            "kind": "storage",
+            "keyArgSource": {
+              "kind": "literal",
+              "value": "mykey"
+            }
+          }
+        },
+        {
+          "op": "store-write",
+          "resourceKind": "isolated-storage",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "mykey"
+          },
+          "witnessCallsiteId": "r0/b979940edf76e35d3b4a6a5d9aa9442fb334c53fc33a663c9c45d73f6f2d676d/cs1",
+          "extra": {
+            "kind": "storage",
+            "keyArgSource": {
+              "kind": "literal",
+              "value": "mykey"
+            },
+            "valueArgSource": {
+              "kind": "literal",
+              "value": "val"
+            },
+            "scope": "Company"
+          }
+        },
+        {
+          "op": "store-delete",
+          "resourceKind": "isolated-storage",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "mykey"
+          },
+          "witnessCallsiteId": "r0/b979940edf76e35d3b4a6a5d9aa9442fb334c53fc33a663c9c45d73f6f2d676d/cs2",
+          "extra": {
+            "kind": "storage",
+            "keyArgSource": {
+              "kind": "literal",
+              "value": "mykey"
+            }
+          }
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Get → store-read, key literal",
+        "Set → store-write, StorageExtra key+value+scope=Company",
+        "Delete → store-delete"
+      ]
+    },
+    {
+      "family": "hyperlink",
+      "name": "hyperlink_open",
+      "description": "a bare Hyperlink(url) → op=open, resourceKind=ui, resourceArgSource = url literal (static).",
+      "source": "codeunit 50100 Hl\n{\n    procedure OpenLink()\n    begin\n        Hyperlink('https://example.com');\n    end;\n}",
+      "routineName": "OpenLink",
+      "expectedFacts": [
+        {
+          "op": "open",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.com"
+          },
+          "witnessCallsiteId": "r0/547dffff0dccd53964f69c45dfbc16dcb298bf512880beea5b5cd9e563fa1776/cs0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Hyperlink → op=open, resourceKind=ui, literal url static"
+      ]
+    },
+    {
+      "family": "file",
+      "name": "file_write_blob",
+      "description": "File.WriteAllText(path, content) on a File-typed variable → op=write-blob, resourceKind=file, resourceArgSource = the path literal (static).",
+      "source": "codeunit 50100 Fl\n{\n    procedure WriteFile(var F: File)\n    begin\n        F.WriteAllText('c:\\temp\\out.txt', 'data');\n    end;\n}",
+      "routineName": "WriteFile",
+      "expectedFacts": [
+        {
+          "op": "write-blob",
+          "resourceKind": "file",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "c:\\temp\\out.txt"
+          },
+          "witnessCallsiteId": "r0/4bb7410d3c103989ad74f3fc45375b801a785ceaae00ebc489bf2ff6c58e043f/cs0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "WriteAllText → op=write-blob, resourceKind=file"
+      ]
+    },
+    {
+      "family": "background",
+      "name": "background_start",
+      "description": "TaskScheduler.CreateTask(CodeunitId, ...) → op=start, resourceKind=background, resourceArgSource = the codeunit-id (enum, static).",
+      "source": "codeunit 50100 Bg\n{\n    procedure Kickoff(var Rec: RecordId)\n    begin\n        TaskScheduler.CreateTask(Codeunit::\"Some CU\", Codeunit::\"Some CU\", true, CompanyName(), CurrentDateTime(), Rec);\n    end;\n}",
+      "routineName": "Kickoff",
+      "expectedFacts": [
+        {
+          "op": "start",
+          "resourceKind": "background",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Codeunit",
+            "member": "Some CU"
+          },
+          "witnessCallsiteId": "r0/d81dc0773bb3bf2f54b0900feb58ca8b6d28f39ed49cf16d0e1bd5b9fa3962e6/cs0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "CreateTask → op=start, resourceKind=background"
+      ]
+    },
+    {
+      "family": "ui",
+      "name": "ui_primitives_and_window_open",
+      "description": "Confirm→ui-confirm, Message→ui-message, Error→ui-error (presence facts, static, no resourceArgSource); StrMenu→ui-window-open.",
+      "source": "codeunit 50100 Ui\n{\n    procedure Interact()\n    var\n        c: Boolean;\n        n: Integer;\n    begin\n        c := Confirm('ok?');\n        Message('hi');\n        n := StrMenu('a,b,c');\n        Error('boom');\n    end;\n}",
+      "routineName": "Interact",
+      "expectedFacts": [
+        {
+          "op": "ui-confirm",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/5b5a8b3903cecf5ab1e34459da1d0d856b2b98c24da559c0707f0a2359b0fbc4/cs0"
+        },
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/5b5a8b3903cecf5ab1e34459da1d0d856b2b98c24da559c0707f0a2359b0fbc4/cs1"
+        },
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/5b5a8b3903cecf5ab1e34459da1d0d856b2b98c24da559c0707f0a2359b0fbc4/cs3"
+        },
+        {
+          "op": "ui-window-open",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/5b5a8b3903cecf5ab1e34459da1d0d856b2b98c24da559c0707f0a2359b0fbc4/cs2"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5b5a8b3903cecf5ab1e34459da1d0d856b2b98c24da559c0707f0a2359b0fbc4/op0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Confirm → ui-confirm (presence, static, no resourceArgSource)",
+        "Message → ui-message",
+        "Error → ui-error (UI family) AND error-throw (error family) BOTH present",
+        "StrMenu → ui-window-open"
+      ]
+    },
+    {
+      "family": "events",
+      "name": "events_subscribe_only",
+      "description": "a routine with [EventSubscriber(...)] → op=subscribe, resourceKind=event, EventExtra eventClass=Integration, confidence=static, NO resourceId. A publisher-decorated routine ([IntegrationEvent]) emits NO direct fact at L2 (publish is L4-injected).",
+      "source": "codeunit 50100 Evt\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"Some CU\", 'OnFoo', '', false, false)]\n    local procedure HandleFoo()\n    begin\n    end;\n\n    [IntegrationEvent(false, false)]\n    procedure OnFoo()\n    begin\n    end;\n}",
+      "routineName": "HandleFoo",
+      "expectedFacts": [
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "subscriber → exactly one subscribe fact, eventClass=Integration",
+        "NO publish fact (L4-injected, excluded at L2)"
+      ]
+    },
+    {
+      "family": "events",
+      "name": "events_publisher_no_direct_fact",
+      "description": "an [IntegrationEvent] PUBLISHER routine emits NO direct capability fact at L2 — its publish fact is L4-injected from the resolved eventGraph (NOT replicated here).",
+      "source": "codeunit 50100 Pub\n{\n    [IntegrationEvent(false, false)]\n    procedure OnBar()\n    begin\n    end;\n}",
+      "routineName": "OnBar",
+      "expectedFacts": [],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "publisher routine has ZERO direct facts"
+      ]
+    },
+    {
+      "family": "error",
+      "name": "error_throw",
+      "description": "a bare Error() → op=error-throw, resourceKind=error, witnessOperationId (the error-call OperationSite). (Error also yields a ui-error fact from the UI family.)",
+      "source": "codeunit 50100 Err\n{\n    procedure Throw()\n    begin\n        Error('boom');\n    end;\n}",
+      "routineName": "Throw",
+      "expectedFacts": [
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/9213c703c681f791ae9612a91a3b21be9a18fd7e12484a2840438ec7c5a72819/cs0"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/9213c703c681f791ae9612a91a3b21be9a18fd7e12484a2840438ec7c5a72819/op0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "Error → error-throw with witnessOperationId"
+      ]
+    },
+    {
+      "family": "unreachable-filter",
+      "name": "unreachable_record_op_no_fact",
+      "description": "a record op AFTER a bare Error() (controlContext=='unreachable') produces NO capability fact AND emits an index-stage unreachable diagnostic. The reachable FindSet BEFORE the Error still produces its read fact.",
+      "source": "codeunit 50100 Unr\n{\n    procedure Dead(var Cust: Record Customer)\n    begin\n        Cust.FindSet();\n        Error('boom');\n        Cust.Modify();\n    end;\n}",
+      "routineName": "Dead",
+      "expectedFacts": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/92bc50c5c60f108456e82eec90ef4c2f1cc12cdfffbdfd721dfcd404eae982b1/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/92bc50c5c60f108456e82eec90ef4c2f1cc12cdfffbdfd721dfcd404eae982b1/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "FindSet"
+          }
+        },
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/92bc50c5c60f108456e82eec90ef4c2f1cc12cdfffbdfd721dfcd404eae982b1/cs0"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/92bc50c5c60f108456e82eec90ef4c2f1cc12cdfffbdfd721dfcd404eae982b1/op1"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [
+        {
+          "severity": "info",
+          "stage": "index",
+          "message": "unreachable code: record-op after terminating statement",
+          "sourceRef": "ws:src/vec.al:7:9"
+        }
+      ],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "the reachable FindSet still produces a read fact",
+        "the unreachable Modify produces NO modify fact",
+        "at least one index-stage unreachable diagnostic was captured",
+        "a diagnostic message mentions unreachable code"
+      ]
+    },
+    {
+      "family": "non-record-receiver",
+      "name": "record_op_name_on_non_record_no_table_fact",
+      "description": "`Facade.Get(...)` where Facade is a Codeunit (not a Record) — receiver-type-aware classification routes it to a callSite, NOT a recordOperation — so it produces NO table fact (and none of the IO families match the bare method either).",
+      "source": "codeunit 50100 NonRec\n{\n    procedure UseFacade(var Facade: Codeunit \"Some CU\")\n    begin\n        Facade.Get('x');\n    end;\n}",
+      "routineName": "UseFacade",
+      "expectedFacts": [],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "NO table fact (record-op name on a non-Record receiver)"
+      ]
+    },
+    {
+      "family": "argsource-kinds",
+      "name": "argsource_constant_chain",
+      "description": "a telemetry eventId sourced from a local const-initialized var (`Id := 'AL0002'`) classifies as a constant-var chain resolving to a literal (static). Demonstrates resourceArgSource constant-chain.",
+      "source": "codeunit 50100 Args\n{\n    procedure ConstChain()\n    var\n        Id: Text;\n    begin\n        Id := 'AL0002';\n        Session.LogMessage(Id, 'msg', Verbosity::Normal, DataClassification::SystemMetadata, TelemetryScope::All);\n    end;\n}",
+      "routineName": "ConstChain",
+      "expectedFacts": [
+        {
+          "op": "log",
+          "resourceKind": "telemetry",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "AL0002"
+          },
+          "witnessCallsiteId": "r0/bb3d957ae0f9d9abe030f3d8d36e09499559977d277306362a7ceb126d8266f6/cs0"
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "telemetry eventId resourceArgSource resolves through a constant chain (static)"
+      ]
+    },
+    {
+      "family": "tableId-stripped",
+      "name": "table_field_argsource_tableid_stripped",
+      "description": "an HTTP url sourced from a record field member-expression (`Setup.Endpoint`) classifies as a `table-field` ValueSource — at L2 its tableId is 'unknown' and STRIPPED from the projection. Assert the projected ValueSource is kind=table-field WITHOUT a tableId key.",
+      "source": "codeunit 50100 TblField\n{\n    procedure FromField(var Client: HttpClient; var Setup: Record Customer; var Resp: HttpResponseMessage)\n    begin\n        Client.Get(Setup.Name, Resp);\n    end;\n}",
+      "routineName": "FromField",
+      "expectedFacts": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "configDynamic",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "table-field",
+            "fieldName": "Name"
+          },
+          "witnessCallsiteId": "r0/0ec37caa67761913781ada33e88b4b54a338332aede95771731b085267bad229/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "parameter",
+              "index": 2,
+              "varName": "resp"
+            }
+          }
+        }
+      ],
+      "expectedStatus": "complete",
+      "expectedReasons": [],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "url resourceArgSource is a table-field with NO tableId key"
+      ]
+    },
+    {
+      "family": "status-rollup",
+      "name": "opaque_override_parse_incomplete",
+      "description": "a routine whose body has a parse error (`parseIncomplete===true`) hits the L2 opaque override (summary-runner.ts:509-513): facts=[], status='unknown', reasons=['parse-incomplete']. Even though the body had record ops, NO facts survive (the override clears them). (The OTHER opaque branch — bodyAvailable===false — yields reasons=['opaque-dependency']; both are exercised by the same override.)",
+      "source": "codeunit 50100 Broken\n{\n    procedure Incomplete(var Cust: Record Customer)\n    begin\n        Cust.Modify(); @@@\n    end;\n}",
+      "routineName": "Incomplete",
+      "expectedFacts": [],
+      "expectedStatus": "unknown",
+      "expectedReasons": [
+        "parse-incomplete"
+      ],
+      "expectedDiagnostics": [],
+      "invariants": [
+        "every direct fact has provenance=='direct'",
+        "every direct fact has via=='self'",
+        "NO op:'publish' fact (L4-injected, excluded at L2)",
+        "NO fact carries a resourceId (L3, stripped)",
+        "NO nested ValueSource carries a tableId (L3, deep-stripped)",
+        "parse-incomplete routine → facts empty (override clears them)",
+        "parse-incomplete routine → status unknown",
+        "parse-incomplete routine → reasons exactly ['parse-incomplete']"
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@
 //! operation-order (R1c), and capability facts (R1d) are intentionally OUT.
 
 pub mod body_walk;
+pub mod capability;
 pub mod cfn;
 pub mod classify;
 pub mod control_context;
