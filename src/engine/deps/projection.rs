@@ -24,40 +24,12 @@
 
 use crate::engine::deps::symbol_reference::{AbiRoutine, SymbolReferenceAbi};
 use crate::engine::ids::{
-    self, encode_object_id, sha256_hex, sha256_of_strings, to_stable_object_id,
+    self, encode_field_id, encode_key_id, encode_object_id, encode_table_id, sha256_hex,
+    sha256_of_strings, to_stable_field_id, to_stable_object_id, to_stable_table_id,
     CanonicalRoutineKey, ParamSpec,
 };
 use crate::engine::l3::al_attributes::AttributeInfo;
 use std::collections::BTreeMap;
-
-/// Internal table id: `${appGuid}/table/${number}` (mirrors `encodeTableId`).
-fn encode_table_id(app_guid: &str, table_number: i64) -> String {
-    format!("{app_guid}/table/{table_number}")
-}
-
-/// Internal field id: `${tableId}/${fieldNumber}` (mirrors `encodeFieldId`).
-fn encode_field_id(table_id: &str, field_number: i64) -> String {
-    format!("{table_id}/{field_number}")
-}
-
-/// Internal key id: `${tableId}/key/${keyIndex}` (mirrors `encodeKeyId`).
-fn encode_key_id(table_id: &str, key_index: usize) -> String {
-    format!("{table_id}/key/{key_index}")
-}
-
-/// Stable table id: `${appGuid}:Table:${number}` (mirrors `toStableTableId`).
-fn to_stable_table_id(app_guid: &str, table_number: i64) -> String {
-    format!("{app_guid}:Table:{table_number}")
-}
-
-/// Stable field id: `${stableTableId}#${fieldNumber}` (mirrors `toStableFieldId`).
-fn to_stable_field_id(app_guid: &str, table_number: i64, field_number: i64) -> String {
-    format!(
-        "{}#{}",
-        to_stable_table_id(app_guid, table_number),
-        field_number
-    )
-}
 
 /// A projected dependency parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]

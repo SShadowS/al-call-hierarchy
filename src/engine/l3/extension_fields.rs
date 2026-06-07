@@ -14,17 +14,8 @@
 //! a field number resolve identically on both sides: the FIRST-ingested wins.
 
 use super::l3_workspace::{L3Field, L3Table, L3Workspace};
+use crate::engine::ids::{encode_field_id, encode_table_id};
 use std::collections::HashSet;
-
-/// Internal field id: `${tableId}/${fieldNumber}` (mirrors `encodeFieldId`).
-fn encode_field_id(table_id: &str, field_number: i64) -> String {
-    format!("{table_id}/{field_number}")
-}
-
-/// Internal table id: `${appGuid}/table/${number}` (mirrors `encodeTableId`).
-fn encode_table_id(app_guid: &str, table_number: i64) -> String {
-    format!("{app_guid}/table/{table_number}")
-}
 
 /// Merge each TableExtension's fields into its base table's field set, mutating
 /// `workspace.tables` in place. Conservative & idempotent (skip when the extends

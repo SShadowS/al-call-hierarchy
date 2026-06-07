@@ -83,6 +83,37 @@ pub fn to_stable_object_id(internal_object_id: &str) -> String {
     internal_object_id.replace('/', ":")
 }
 
+/// Internal table id: `"{appGuid}/table/{tableNumber}"` (mirrors al-sem
+/// `encodeTableId`). Single source of truth — used by both the dependency
+/// projection and the L3 extension-field merge, which MUST agree byte-for-byte.
+pub(crate) fn encode_table_id(app_guid: &str, table_number: i64) -> String {
+    format!("{app_guid}/table/{table_number}")
+}
+
+/// Internal field id: `"{tableId}/{fieldNumber}"` (mirrors `encodeFieldId`).
+pub(crate) fn encode_field_id(table_id: &str, field_number: i64) -> String {
+    format!("{table_id}/{field_number}")
+}
+
+/// Internal key id: `"{tableId}/key/{keyIndex}"` (mirrors `encodeKeyId`).
+pub(crate) fn encode_key_id(table_id: &str, key_index: usize) -> String {
+    format!("{table_id}/key/{key_index}")
+}
+
+/// Stable table id: `"{appGuid}:Table:{tableNumber}"` (mirrors `toStableTableId`).
+pub(crate) fn to_stable_table_id(app_guid: &str, table_number: i64) -> String {
+    format!("{app_guid}:Table:{table_number}")
+}
+
+/// Stable field id: `"{stableTableId}#{fieldNumber}"` (mirrors `toStableFieldId`).
+pub(crate) fn to_stable_field_id(app_guid: &str, table_number: i64, field_number: i64) -> String {
+    format!(
+        "{}#{}",
+        to_stable_table_id(app_guid, table_number),
+        field_number
+    )
+}
+
 /// Canonical, case-insensitive routine signature string.
 ///
 /// `"{name_lower}({param_specs_joined_by_';'}):{return_lower}"` where each param
