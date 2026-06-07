@@ -1,0 +1,715 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110",
+      "name": "Neg Target",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111",
+      "name": "Neg Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Interface:0",
+      "name": "Neg ILog",
+      "objectType": "Interface"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#2e7a6b3689c7b5499d4667bd0e8cf9caa81a330ed50eb74c8918efd09d499b6c",
+      "name": "O",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Interface \"Neg ILog\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#5de0c5f88abf606733a002f5155c9c9b8f68ec404a94f047178082b3ef3a5546",
+      "name": "O",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
+      "name": "I",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "b",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#bab82de24afaf3c6d5b31957b674f5b46ad354578e8d9a79afbd5909351f62b4",
+      "name": "I",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "b",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#da7119f1e7b20180d5c943d57e4e41260cf7f7b5fb50939fda2626b5d258df4e",
+      "name": "V",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#dd22ee04a1fb3c72c65b872d68bd59da5645e9fec9ccc27d89f9b2795a7bc9d6",
+      "name": "V",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Variant",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Target.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#11251ee12bbfee8cb850f20c2b73929cbfe603618bcdf548256f3dd96f1b65e9",
+      "name": "CallObject",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/f215f33c3c86964df8a9f76f0c5a22c5eef50469834fe7c00a85fd58ab18b699/cs0",
+            "operationId": "r0/f215f33c3c86964df8a9f76f0c5a22c5eef50469834fe7c00a85fd58ab18b699/op0",
+            "calleeText": "T.O",
+            "callee": {
+              "kind": "member",
+              "receiver": "T",
+              "method": "O"
+            },
+            "argumentTexts": [
+              "L"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "L",
+                "value": "L"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 20,
+                  "startColumn": 12,
+                  "endLine": 20,
+                  "endColumn": 13,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "l",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "l",
+          "t"
+        ],
+        "variables": [
+          {
+            "name": "l",
+            "declaredType": "Codeunit \"Neg Target\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "t",
+            "declaredType": "Codeunit \"Neg Target\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/f215f33c3c86964df8a9f76f0c5a22c5eef50469834fe7c00a85fd58ab18b699/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#17740f7dcb2d880967c04f896ebdf6a8ed180c4ae2e1335fe80d2895348da0c0",
+      "name": "CallVariant",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/7597d6b387082fd52242b8f9c20c1eede638b305e7e97d0eb6fa6dac2e78c562/cs0",
+            "operationId": "r0/7597d6b387082fd52242b8f9c20c1eede638b305e7e97d0eb6fa6dac2e78c562/op0",
+            "calleeText": "T.V",
+            "callee": {
+              "kind": "member",
+              "receiver": "T",
+              "method": "V"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 6,
+                  "startColumn": 12,
+                  "endLine": 6,
+                  "endColumn": 13,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "s",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "s",
+          "t"
+        ],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "t",
+            "declaredType": "Codeunit \"Neg Target\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/7597d6b387082fd52242b8f9c20c1eede638b305e7e97d0eb6fa6dac2e78c562/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#e32bf3968403e18c91e66dfba278fd2967d5b2ebfa4fab4f053f6911ec197f45",
+      "name": "CallIndistinct",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/a8a43b8df6be14f09c2db0b8efb7455d91b458df28ae81624432ae527d937151/cs0",
+            "operationId": "r0/a8a43b8df6be14f09c2db0b8efb7455d91b458df28ae81624432ae527d937151/op0",
+            "calleeText": "T.I",
+            "callee": {
+              "kind": "member",
+              "receiver": "T",
+              "method": "I"
+            },
+            "argumentTexts": [
+              "A",
+              "B"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "A",
+                "value": "A"
+              },
+              {
+                "kind": "identifier",
+                "text": "B",
+                "value": "B"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 12,
+                  "endLine": 13,
+                  "endColumn": 13,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "a",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 15,
+                  "endLine": 13,
+                  "endColumn": 16,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "b",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 17,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "a",
+          "b",
+          "t"
+        ],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "b",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "t",
+            "declaredType": "Codeunit \"Neg Target\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/a8a43b8df6be14f09c2db0b8efb7455d91b458df28ae81624432ae527d937151/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

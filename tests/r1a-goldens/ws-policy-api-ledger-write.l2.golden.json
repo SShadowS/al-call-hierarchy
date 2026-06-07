@@ -1,0 +1,101 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000009-0000-0000-0000-000000000000:Page:50106",
+      "name": "Sales API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Sales Ledger Entry"
+    },
+    {
+      "stableObjectId": "10000009-0000-0000-0000-000000000000:Table:50106",
+      "name": "Sales Ledger Entry",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 27,
+              "startColumn": 20,
+              "endLine": 27,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "unknown"
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 27,
+              "startColumn": 20,
+              "endLine": 27,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [],
+        "varAssignments": [
+          {
+            "lhsName": "\"entry no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 26,
+              "startColumn": 20,
+              "endLine": 26,
+              "endColumn": 40,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "1"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

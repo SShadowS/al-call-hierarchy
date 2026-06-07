@@ -1,0 +1,250 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50101",
+      "name": "XT Worker",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50102",
+      "name": "XT Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100",
+      "name": "XT Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50101#b2b3bf9c2ed79490ce442d67e21816cb122cfa60ea09b017a8cdfa72dfd4e740",
+      "name": "TryCommit",
+      "kind": "procedure",
+      "attributes": [
+        "[TryFunction]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "TryFunction",
+          "args": [],
+          "raw": "[TryFunction]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/rv/rec"
+          },
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "XT Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"XT Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTWorker.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/cf6907f6efd8f31ebae8838cef654703ae70c70437f57eca3c232f474d121eec/cs0",
+            "operationId": "r0/cf6907f6efd8f31ebae8838cef654703ae70c70437f57eca3c232f474d121eec/op0",
+            "calleeText": "Worker.TryCommit",
+            "callee": {
+              "kind": "member",
+              "receiver": "Worker",
+              "method": "TryCommit"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTCaller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "worker"
+        ],
+        "variables": [
+          {
+            "name": "worker",
+            "declaredType": "Codeunit \"XT Worker\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XTCaller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 37,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/cf6907f6efd8f31ebae8838cef654703ae70c70437f57eca3c232f474d121eec/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

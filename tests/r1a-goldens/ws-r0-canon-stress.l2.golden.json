@@ -1,0 +1,923 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000",
+      "name": "Canon Stress Publisher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70001",
+      "name": "Canon Stress Subscriber",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Enum:70013",
+      "name": "Doc Kind",
+      "objectType": "Enum"
+    },
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010",
+      "name": "Customer",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70011",
+      "name": "Sales Header",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70012",
+      "name": "Temp Buffer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#0a7c5d985d9f6e085790370e791958bd0c50dca7ed75aa51c9c3818eeb4efa4f",
+      "name": "Resolve",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#344ab6a84f025777e272cab490dac9b627c4c5ed3d5be7729eeecb018576fcb2",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/sales header",
+            "name": "Sales Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 1
+          },
+          {
+            "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/tempbuffer",
+            "name": "TempBuffer",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "isParameter": true,
+            "tableName": "Temp Buffer",
+            "parameterIndex": 3
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "sales header",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "items",
+            "declaredType": "array[10] of Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 2
+          },
+          {
+            "name": "tempbuffer",
+            "declaredType": "Record \"Temp Buffer\" temporary",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 3
+          },
+          {
+            "name": "kind",
+            "declaredType": "Enum \"Doc Kind\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 4
+          },
+          {
+            "name": "opt",
+            "declaredType": "Option Open,Closed",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 5
+          },
+          {
+            "name": "postcode",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 6
+          },
+          {
+            "name": "note",
+            "declaredType": "Text[100]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 7
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#5507fb2ea6acdae3aa1b5434ced8b1a0be65bac85d37f782f575b3b26313c1f1",
+      "name": "Compute",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "a"
+        ],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "b",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#5d27e6c23eb9260593c90f74196bfc91445a4811733d45d362552f41a9d1785e",
+      "name": "OnAfterPost",
+      "kind": "event-publisher",
+      "attributes": [
+        "[BusinessEvent(false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[BusinessEvent(false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "docno",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "name": "OnBeforePost",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "handled",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#b8bbbce6c254b6afb72c748449457a51b2e50eb767d5294243b909739de84d7c",
+      "name": "Mixed Case Routine",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "input",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#bb3118f5e6b7689a2d17b07c140c54a83aff20ea90029ea5dafff2cc99906db1",
+      "name": "Compute",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "a"
+        ],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Decimal",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#c7377e506cfec0cb61c02e034b0ed817a21958f0ceb0470b42fe74d83b90b878",
+      "name": "OnLegacyPost",
+      "kind": "event-publisher",
+      "attributes": [
+        "[Obsolete('use OnBeforePost', '24.0')]",
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "Obsolete",
+          "args": [
+            {
+              "kind": "string_literal",
+              "text": "'use OnBeforePost'",
+              "value": "use OnBeforePost"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'24.0'",
+              "value": "24.0"
+            }
+          ],
+          "raw": "[Obsolete('use OnBeforePost', '24.0')]"
+        },
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#ce7cd91b39519a21bcd9b62e8067063c8150d73ed197a266ce946c9539433c55",
+      "name": "Resolve",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "name": "Compute",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "a"
+        ],
+        "variables": [
+          {
+            "name": "a",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#fb03a86d7bbacf6d6292aed0f74ec3315c49e05895738470fd4c29b1f58dc058",
+      "name": "OnInternalSignal",
+      "kind": "procedure",
+      "attributes": [
+        "[InternalEvent(false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "InternalEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[InternalEvent(false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70001#3d26f4e3b748972d6459297cdc929a81e80d0e2b74043c62b26d5bc8ac291282",
+      "name": "HandleBeforePost",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Canon Stress Publisher\", 'OnBeforePost', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"Canon Stress Publisher\"",
+              "value": "Canon Stress Publisher",
+              "qualifier": "Codeunit",
+              "member": "Canon Stress Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnBeforePost'",
+              "value": "OnBeforePost"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Canon Stress Publisher\", 'OnBeforePost', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "handled",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
+      "name": "OnModify",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70011#508f205f25a9da9374cc240933be5522d7af843db4d90c4b9a46dd409a748942",
+      "name": "OnDelete",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

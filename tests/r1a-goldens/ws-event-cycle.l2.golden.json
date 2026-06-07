@@ -1,0 +1,622 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50000",
+      "name": "P1",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50001",
+      "name": "P2",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50002",
+      "name": "P3",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Table:50100",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50000#aa759f91ef5cfa0ba82d4f350565c4a9b673808c8c33fcb6b03259d0aab1e1a4",
+      "name": "Fire1",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/e9536819781945271166a12756a37cb55a22c782f983f61d0e0e3ce1bdde777b/cs0",
+            "operationId": "r0/e9536819781945271166a12756a37cb55a22c782f983f61d0e0e3ce1bdde777b/op0",
+            "calleeText": "OnA",
+            "callee": {
+              "kind": "bare",
+              "name": "OnA"
+            },
+            "argumentTexts": [
+              "C"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "C",
+                "value": "C"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Pub.al",
+                  "startLine": 2,
+                  "startColumn": 54,
+                  "endLine": 2,
+                  "endColumn": 55,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "c",
+                "sourceRecordVariableId": "r0/e9536819781945271166a12756a37cb55a22c782f983f61d0e0e3ce1bdde777b/rv/c",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 2,
+              "startColumn": 50,
+              "endLine": 2,
+              "endColumn": 56,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e9536819781945271166a12756a37cb55a22c782f983f61d0e0e3ce1bdde777b/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "c"
+        ],
+        "variables": [
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/e9536819781945271166a12756a37cb55a22c782f983f61d0e0e3ce1bdde777b/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50000#cf0899e37f3fc2659ad8f3f3564769313ea147d40c009f7587985b8328199c8b",
+      "name": "OnA",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e27ce28ad69a0f0d97aee4c308bf2a271f48b64d6a9918adc39ebc5ad129b353/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50001#5760721b1f6966b8e167ea4335e704afb8620dda39f037e8652b26663cf7a848",
+      "name": "OnB",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7c18ecbda4e0b41b032deda14388a3cb77440cfe64f2a66d390f7d8a8d65b195/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub2.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50001#f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "name": "H1",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::P1, 'OnA', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::P1",
+              "value": "P1",
+              "qualifier": "Codeunit",
+              "member": "P1"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnA'",
+              "value": "OnA"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::P1, 'OnA', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca/cs0",
+            "operationId": "r0/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca/op0",
+            "calleeText": "OnB",
+            "callee": {
+              "kind": "bare",
+              "name": "OnB"
+            },
+            "argumentTexts": [
+              "C"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "C",
+                "value": "C"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Pub2.al",
+                  "startLine": 3,
+                  "startColumn": 57,
+                  "endLine": 3,
+                  "endColumn": 58,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "c",
+                "sourceRecordVariableId": "r0/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca/rv/c",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub2.al",
+              "startLine": 3,
+              "startColumn": 53,
+              "endLine": 3,
+              "endColumn": 59,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "c"
+        ],
+        "variables": [
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub2.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "name": "H2",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::P2, 'OnB', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::P2",
+              "value": "P2",
+              "qualifier": "Codeunit",
+              "member": "P2"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnB'",
+              "value": "OnB"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::P2, 'OnB', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79/cs0",
+            "operationId": "r0/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79/op0",
+            "calleeText": "X.Fire1",
+            "callee": {
+              "kind": "member",
+              "receiver": "X",
+              "method": "Fire1"
+            },
+            "argumentTexts": [
+              "C"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "C",
+                "value": "C"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sub.al",
+                  "startLine": 7,
+                  "startColumn": 16,
+                  "endLine": 7,
+                  "endColumn": 17,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "c",
+                "sourceRecordVariableId": "r0/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79/rv/c",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79/rv/c",
+            "name": "C",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "c",
+          "x"
+        ],
+        "variables": [
+          {
+            "name": "c",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "x",
+            "declaredType": "Codeunit P1",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 23,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

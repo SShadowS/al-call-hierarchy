@@ -1,0 +1,236 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4902:Codeunit:50000",
+      "name": "D49 Sender",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4902:Table:50100",
+      "name": "D49 Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4902:Codeunit:50000#5098a6b4ccf565e1ea2c49aaa4c34564280e943633b182038eb006d80f813721",
+      "name": "ModifyThenRunModal",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op0",
+            "op": "Get",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/rv/rec",
+            "fieldArguments": [
+              "10000"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "integer",
+                "text": "10000",
+                "value": "10000"
+              }
+            ]
+          },
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op1",
+            "op": "Modify",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/cs0",
+            "operationId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op2",
+            "calleeText": "Page.RunModal",
+            "callee": {
+              "kind": "member",
+              "receiver": "Page",
+              "method": "RunModal"
+            },
+            "argumentTexts": [
+              "Page::\"D49 Sender\""
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Page::\"D49 Sender\"",
+                "value": "D49 Sender",
+                "qualifier": "Page",
+                "member": "D49 Sender"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 14,
+                  "startColumn": 22,
+                  "endLine": 14,
+                  "endColumn": 40,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 41,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Rec",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 16,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "D49 Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"D49 Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "changed"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

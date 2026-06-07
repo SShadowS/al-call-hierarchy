@@ -1,0 +1,517 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101",
+      "name": "CEX Poster",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100",
+      "name": "CEX Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#657c039f0622512878db555199b43a3d91f37e649d16f710341c1c89627025ea",
+      "name": "ConditionalExitThenCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op1",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op0",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "CEX Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec",
+          "skip"
+        ],
+        "variables": [
+          {
+            "name": "skip",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "rec",
+            "declaredType": "Record \"CEX Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "skip",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 17,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 11,
+              "endLine": 11,
+              "endColumn": 15,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionGuard": {
+                "identifier": "skip",
+                "polarity": "positive"
+              },
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "exit"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#763d969c57f6133e7243a0fd65472eee180f92bd96669f1fed5fa5884a1e8d59",
+      "name": "StraightLineCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op1",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op0",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "CEX Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"CEX Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#ea4eb4100545321d544dcb25384a35d643f20f98bb9afa2801b465a3155c0430",
+      "name": "ErrorGuardThenCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 36,
+              "startColumn": 12,
+              "endLine": 36,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 37,
+              "startColumn": 8,
+              "endLine": 37,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 38,
+              "startColumn": 8,
+              "endLine": 38,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 37,
+              "startColumn": 8,
+              "endLine": 37,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/cs0",
+            "operationId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op3",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'Aborted'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Aborted'",
+                "value": "Aborted"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Poster.Codeunit.al",
+                  "startLine": 36,
+                  "startColumn": 18,
+                  "endLine": 36,
+                  "endColumn": 27,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 36,
+              "startColumn": 12,
+              "endLine": 36,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "CEX Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "bad",
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "bad",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "rec",
+            "declaredType": "Record \"CEX Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 33,
+              "startColumn": 8,
+              "endLine": 33,
+              "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "bad",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 35,
+              "startColumn": 8,
+              "endLine": 36,
+              "endColumn": 29,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 35,
+              "startColumn": 11,
+              "endLine": 35,
+              "endColumn": 14,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionGuard": {
+                "identifier": "bad",
+                "polarity": "positive"
+              },
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "error",
+                      "callsiteId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/cs0"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

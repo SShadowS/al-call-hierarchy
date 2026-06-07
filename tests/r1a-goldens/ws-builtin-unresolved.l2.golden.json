@@ -1,0 +1,441 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100",
+      "name": "BU Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+      "name": "Run",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs0",
+            "operationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op1",
+            "calleeText": "CopyStr",
+            "callee": {
+              "kind": "bare",
+              "name": "CopyStr"
+            },
+            "argumentTexts": [
+              "'abcdef'",
+              "1",
+              "MaxStrLen(S)"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'abcdef'",
+                "value": "abcdef"
+              },
+              {
+                "kind": "integer",
+                "text": "1",
+                "value": "1"
+              },
+              {
+                "kind": "call_expression",
+                "text": "MaxStrLen(S)"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 21,
+                  "endLine": 7,
+                  "endColumn": 29,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 31,
+                  "endLine": 7,
+                  "endColumn": 32,
+                  "syntaxKind": "integer"
+                }
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 34,
+                  "endLine": 7,
+                  "endColumn": 46,
+                  "syntaxKind": "call_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 13,
+              "endLine": 7,
+              "endColumn": 47,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs1",
+            "operationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op2",
+            "calleeText": "MaxStrLen",
+            "callee": {
+              "kind": "bare",
+              "name": "MaxStrLen"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 44,
+                  "endLine": 7,
+                  "endColumn": 45,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 34,
+              "endLine": 7,
+              "endColumn": 46,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs2",
+            "operationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op3",
+            "calleeText": "StrLen",
+            "callee": {
+              "kind": "bare",
+              "name": "StrLen"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 20,
+                  "endLine": 8,
+                  "endColumn": 21,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 13,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs3",
+            "operationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op4",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'empty'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'empty'",
+                "value": "empty"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 10,
+                  "startColumn": 18,
+                  "endLine": 10,
+                  "endColumn": 25,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs4",
+            "operationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op5",
+            "calleeText": "L.Add",
+            "callee": {
+              "kind": "member",
+              "receiver": "L",
+              "method": "Add"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 11,
+                  "startColumn": 14,
+                  "endLine": 11,
+                  "endColumn": 15,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "l",
+          "n",
+          "s"
+        ],
+        "variables": [
+          {
+            "name": "l",
+            "declaredType": "List of [Text]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "s",
+            "declaredType": "Text",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 16,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          },
+          {
+            "name": "n",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "s",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 47,
+              "syntaxKind": "assignment_statement"
+            }
+          },
+          {
+            "lhsName": "n",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "n",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 27,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 11,
+              "endLine": 9,
+              "endColumn": 12,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs0",
+                  "conditionLeaves": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs1"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "other",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs2"
+                }
+              ]
+            },
+            {
+              "kind": "if",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "error",
+                      "callsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs3"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs4"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

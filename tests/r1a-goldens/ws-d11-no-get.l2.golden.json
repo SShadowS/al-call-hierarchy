@@ -1,0 +1,445 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111",
+      "name": "D11NoGet",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+      "name": "BadNoGet",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/op0",
+            "op": "Modify",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 16,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 3,
+              "startColumn": 5,
+              "endLine": 3,
+              "endColumn": 31,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 23,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "x"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/op0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945",
+      "name": "FromParam",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 20,
+              "startColumn": 2,
+              "endLine": 20,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/op0",
+            "op": "Modify",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 20,
+              "startColumn": 2,
+              "endLine": 20,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "Last Date Modified",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 19,
+              "startColumn": 2,
+              "endLine": 19,
+              "endColumn": 31,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "today"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"last date modified\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 19,
+              "startColumn": 2,
+              "endLine": 19,
+              "endColumn": 40,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/op0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6",
+      "name": "SafeGet",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 12,
+              "startColumn": 2,
+              "endLine": 12,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 14,
+              "startColumn": 2,
+              "endLine": 14,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op0",
+            "op": "Get",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 12,
+              "startColumn": 2,
+              "endLine": 12,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
+            "fieldArguments": [
+              "'X'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'X'",
+                "value": "X"
+              }
+            ]
+          },
+          {
+            "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op1",
+            "op": "Modify",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 14,
+              "startColumn": 2,
+              "endLine": 14,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "Last Date Modified",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 13,
+              "startColumn": 2,
+              "endLine": 13,
+              "endColumn": 31,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "today"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 10,
+              "startColumn": 5,
+              "endLine": 10,
+              "endColumn": 31,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"last date modified\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 13,
+              "startColumn": 2,
+              "endLine": 13,
+              "endColumn": 40,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op1"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

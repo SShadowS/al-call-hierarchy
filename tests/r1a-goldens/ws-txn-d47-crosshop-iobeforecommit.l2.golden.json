@@ -1,0 +1,377 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50000",
+      "name": "D47 Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001",
+      "name": "D47 Worker",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4707:Table:50100",
+      "name": "D47 Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50000#302dc2332e7a9ae6fb0474a4d66e256730ee465bd1df06a0f8f46b10716cf434",
+      "name": "WriteThenRemoteCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 23,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op0",
+            "op": "Get",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/rv/rec",
+            "fieldArguments": [
+              "10000"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "integer",
+                "text": "10000",
+                "value": "10000"
+              }
+            ]
+          },
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op1",
+            "op": "Modify",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/cs0",
+            "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op3",
+            "calleeText": "Worker.DoHttp",
+            "callee": {
+              "kind": "member",
+              "receiver": "Worker",
+              "method": "DoHttp"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Rec",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 16,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "D47 Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec",
+          "worker"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"D47 Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "worker",
+            "declaredType": "Codeunit \"D47 Worker\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "changed"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/cs0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
+      "name": "DoHttp",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/0b637c19b140d4d4b3bdc6a8a454c7e68a83f732d24adbd3d5a9aa97e86bd9f5/cs0",
+            "operationId": "r0/0b637c19b140d4d4b3bdc6a8a454c7e68a83f732d24adbd3d5a9aa97e86bd9f5/op0",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://example.test/ping'",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.test/ping'",
+                "value": "https://example.test/ping"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/App.Codeunit.al",
+                  "startLine": 34,
+                  "startColumn": 19,
+                  "endLine": 34,
+                  "endColumn": 46,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/App.Codeunit.al",
+                  "startLine": 34,
+                  "startColumn": 48,
+                  "endLine": 34,
+                  "endColumn": 52,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 34,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 53,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 31,
+              "startColumn": 8,
+              "endLine": 31,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/App.Codeunit.al",
+              "startLine": 32,
+              "startColumn": 8,
+              "endLine": 32,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/0b637c19b140d4d4b3bdc6a8a454c7e68a83f732d24adbd3d5a9aa97e86bd9f5/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

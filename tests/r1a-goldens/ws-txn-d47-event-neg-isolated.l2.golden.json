@@ -1,0 +1,473 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000",
+      "name": "D47 Isolated Publisher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001",
+      "name": "D47 Isolated Subscriber",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4721:Table:50100",
+      "name": "D47 Isolated Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "name": "ProcessAndNotify",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0",
+            "op": "Get",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
+            "fieldArguments": [
+              "10000"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "integer",
+                "text": "10000",
+                "value": "10000"
+              }
+            ]
+          },
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1",
+            "op": "Modify",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/cs0",
+            "operationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op2",
+            "calleeText": "OnAfterProcessIsolated",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterProcessIsolated"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Rec",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 16,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "D47 Isolated Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"D47 Isolated Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 39,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "updated"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
+      "name": "OnAfterProcessIsolated",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001#3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
+      "name": "HandleAfterProcessIsolated",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D47 Isolated Publisher\", 'OnAfterProcessIsolated', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"D47 Isolated Publisher\"",
+              "value": "D47 Isolated Publisher",
+              "qualifier": "Codeunit",
+              "member": "D47 Isolated Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterProcessIsolated'",
+              "value": "OnAfterProcessIsolated"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D47 Isolated Publisher\", 'OnAfterProcessIsolated', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/aecb8d1c4b22c3dd741b6aa7393109f1e9d0caea2effc9221c19b580fe096ebf/cs0",
+            "operationId": "r0/aecb8d1c4b22c3dd741b6aa7393109f1e9d0caea2effc9221c19b580fe096ebf/op0",
+            "calleeText": "Client.Post",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Post"
+            },
+            "argumentTexts": [
+              "'https://example.test/notify'",
+              "Content",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.test/notify'",
+                "value": "https://example.test/notify"
+              },
+              {
+                "kind": "identifier",
+                "text": "Content",
+                "value": "Content"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+                  "startLine": 9,
+                  "startColumn": 20,
+                  "endLine": 9,
+                  "endColumn": 49,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+                  "startLine": 9,
+                  "startColumn": 51,
+                  "endLine": 9,
+                  "endColumn": 58,
+                  "syntaxKind": "identifier"
+                }
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+                  "startLine": 9,
+                  "startColumn": 60,
+                  "endLine": 9,
+                  "endColumn": 64,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 65,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "content",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "content",
+            "declaredType": "HttpContent",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/aecb8d1c4b22c3dd741b6aa7393109f1e9d0caea2effc9221c19b580fe096ebf/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

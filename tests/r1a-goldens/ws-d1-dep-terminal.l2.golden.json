@@ -1,0 +1,137 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000001112:Codeunit:50101",
+      "name": "D1Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000001112:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/a77ac746d7f0f3e31e2675a01025cb526227016e14bb4af82f376f72e0831e88/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 48,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/a77ac746d7f0f3e31e2675a01025cb526227016e14bb4af82f376f72e0831e88/cs0",
+            "operationId": "r0/a77ac746d7f0f3e31e2675a01025cb526227016e14bb4af82f376f72e0831e88/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D1DepHelper",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D1DepHelper"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D1DepHelper",
+                "value": "D1DepHelper",
+                "qualifier": "Codeunit",
+                "member": "D1DepHelper"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 7,
+                  "startColumn": 25,
+                  "endLine": 7,
+                  "endColumn": 46,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/a77ac746d7f0f3e31e2675a01025cb526227016e14bb4af82f376f72e0831e88/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 47,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "d1dephelper",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/a77ac746d7f0f3e31e2675a01025cb526227016e14bb4af82f376f72e0831e88/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

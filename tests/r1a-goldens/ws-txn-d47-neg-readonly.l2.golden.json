@@ -1,0 +1,138 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000",
+      "name": "D47 Sender",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+      "name": "JustFetch",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/cs0",
+            "operationId": "r0/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/op0",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://example.test/ping'",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.test/ping'",
+                "value": "https://example.test/ping"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 11,
+                  "startColumn": 19,
+                  "endLine": 11,
+                  "endColumn": 46,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 11,
+                  "startColumn": 48,
+                  "endLine": 11,
+                  "endColumn": 52,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 53,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

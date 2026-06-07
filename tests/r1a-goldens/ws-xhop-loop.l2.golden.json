@@ -1,0 +1,324 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xl0001:Codeunit:50101",
+      "name": "XL Worker",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xl0001:Codeunit:50102",
+      "name": "XL Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xl0001:Table:50100",
+      "name": "XL Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xl0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+      "name": "DoCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/531d35e9ec853d9ae0205f7903c4e56a2c9134d835cfa55ba5af3ca2afbc6964/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLWorker.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/531d35e9ec853d9ae0205f7903c4e56a2c9134d835cfa55ba5af3ca2afbc6964/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xl0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 18,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op1",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 12,
+              "endLine": 11,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec"
+          },
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 12,
+              "endLine": 11,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/cs0",
+            "operationId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op2",
+            "calleeText": "Worker.DoCommit",
+            "callee": {
+              "kind": "member",
+              "receiver": "Worker",
+              "method": "DoCommit"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [
+              "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 12,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "XL Rec"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "done",
+          "rec",
+          "worker"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"XL Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "worker",
+            "declaredType": "Codeunit \"XL Worker\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 37,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "done",
+            "declaredType": "Boolean",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 22,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "done",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 21,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "false"
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "done",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 18,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 14,
+              "endLine": 13,
+              "endColumn": 18,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "repeat",
+              "children": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op0"
+                },
+                {
+                  "kind": "op",
+                  "operationId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op1"
+                },
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/cs0"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

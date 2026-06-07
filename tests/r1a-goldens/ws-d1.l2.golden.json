@@ -1,0 +1,813 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-d100-0000-0000-000000000001:Codeunit:63101",
+      "name": "D1 Jobs",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-d100-0000-0000-000000000001:Table:63100",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+      "name": "DirectLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 34,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 23,
+              "startColumn": 12,
+              "endLine": 23,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/op0",
+            "op": "Get",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 23,
+              "startColumn": 12,
+              "endLine": 23,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/rv/customer",
+            "fieldArguments": [
+              "'C0001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'C0001'",
+                "value": "C0001"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/94dd393c73dd9ea974fefea4c365412dd31d5251ee793b9071937ebcff5b18d7/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+      "name": "ProcessAll",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/2d6794fb7af6f3b2215478b7887da54f7abf5312e3062ac3dd9f663639619892/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 25,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/2d6794fb7af6f3b2215478b7887da54f7abf5312e3062ac3dd9f663639619892/cs0",
+            "operationId": "r0/2d6794fb7af6f3b2215478b7887da54f7abf5312e3062ac3dd9f663639619892/op0",
+            "calleeText": "ProcessOne",
+            "callee": {
+              "kind": "bare",
+              "name": "ProcessOne"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [
+              "r0/2d6794fb7af6f3b2215478b7887da54f7abf5312e3062ac3dd9f663639619892/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/2d6794fb7af6f3b2215478b7887da54f7abf5312e3062ac3dd9f663639619892/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+      "name": "NestedLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 51,
+              "startColumn": 8,
+              "endLine": 53,
+              "endColumn": 35,
+              "syntaxKind": "for_statement"
+            }
+          },
+          {
+            "id": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop1",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 52,
+              "startColumn": 12,
+              "endLine": 53,
+              "endColumn": 35,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop0",
+              "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 53,
+              "startColumn": 16,
+              "endLine": 53,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/op0",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop0",
+              "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 53,
+              "startColumn": 16,
+              "endLine": 53,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 2,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "i",
+          "j"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 47,
+              "startColumn": 8,
+              "endLine": 47,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 48,
+              "startColumn": 8,
+              "endLine": 48,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "j",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 49,
+              "startColumn": 8,
+              "endLine": 49,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "for",
+                      "children": [
+                        {
+                          "kind": "block",
+                          "children": [
+                            {
+                              "kind": "op",
+                              "operationId": "r0/c7ace0275dbfeec1c69a47c5cdcbab6ea70c24c89ed37722fae77fa1c837cd25/op0"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#8eede75440d2ac0e0a639ec4c4b9fea900368574a32a8c0a623b77c406ee274c",
+      "name": "SafeLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 31,
+              "startColumn": 8,
+              "endLine": 32,
+              "endColumn": 46,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 45,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/op0",
+            "op": "SetRange",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 45,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/rv/customer",
+            "fieldArguments": [
+              "\"No.\"",
+              "'C0001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"No.\"",
+                "value": "No."
+              },
+              {
+                "kind": "string_literal",
+                "text": "'C0001'",
+                "value": "C0001"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 28,
+              "startColumn": 8,
+              "endLine": 28,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 29,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/dfe1925bdb3ffc317da0f505eb7e7147662831ede6843c1cb60d96ed1abbea1f/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626",
+      "name": "TwoCallsSameCallee",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 39,
+              "startColumn": 8,
+              "endLine": 42,
+              "endColumn": 12,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/cs0",
+            "operationId": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/op0",
+            "calleeText": "ProcessOne",
+            "callee": {
+              "kind": "bare",
+              "name": "ProcessOne"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [
+              "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 40,
+              "startColumn": 12,
+              "endLine": 40,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/cs1",
+            "operationId": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/op1",
+            "calleeText": "ProcessOne",
+            "callee": {
+              "kind": "bare",
+              "name": "ProcessOne"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [
+              "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 41,
+              "startColumn": 12,
+              "endLine": 41,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 37,
+              "startColumn": 8,
+              "endLine": 37,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/cs0"
+                    },
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/556022b6b55046d6bb8b8c846b38c50a89c8263de3b5912c56111c0af5a567bb/cs1"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+      "name": "ProcessOne",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/7e2b98df594b8648d4ceb9ec01d791b7f056cdd6fa630d345e529cff8f204301/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7e2b98df594b8648d4ceb9ec01d791b7f056cdd6fa630d345e529cff8f204301/op0",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7e2b98df594b8648d4ceb9ec01d791b7f056cdd6fa630d345e529cff8f204301/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7e2b98df594b8648d4ceb9ec01d791b7f056cdd6fa630d345e529cff8f204301/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/7e2b98df594b8648d4ceb9ec01d791b7f056cdd6fa630d345e529cff8f204301/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-000000000003:Page:50400",
+      "name": "Item API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Integer"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000003:Page:50400#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "name": "ApiHelper",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000003:Page:50400#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+      "name": "OnOpenPage",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

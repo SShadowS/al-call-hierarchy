@@ -1,0 +1,116 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114",
+      "name": "D13McPrimary",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/cs0",
+            "operationId": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/op0",
+            "calleeText": "Dep.InternalMethod",
+            "callee": {
+              "kind": "member",
+              "receiver": "Dep",
+              "method": "InternalMethod"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 10,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/cs1",
+            "operationId": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/op1",
+            "calleeText": "Dep.PublicMethod",
+            "callee": {
+              "kind": "member",
+              "receiver": "Dep",
+              "method": "PublicMethod"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 11,
+              "startColumn": 2,
+              "endLine": 11,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "dep"
+        ],
+        "variables": [
+          {
+            "name": "dep",
+            "declaredType": "Codeunit DepCU",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 22,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/cs0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/c7b082683466046cabf0520456584207c38e714a18b5ebc04a81ad65d3fe74d7/cs1"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

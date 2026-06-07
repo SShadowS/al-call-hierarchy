@@ -1,0 +1,163 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Codeunit:50500",
+      "name": "Public Worker",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Codeunit:50501",
+      "name": "Install Handler",
+      "objectType": "Codeunit",
+      "objectSubtype": "Install"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-000000000001:Page:50502",
+      "name": "Sales Order API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Integer"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50500#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/4859461f8b305244bda94cfa4e28a4e091a3bd6c0b734f9deb34e2a0bff163b4/cs0",
+            "operationId": "r0/4859461f8b305244bda94cfa4e28a4e091a3bd6c0b734f9deb34e2a0bff163b4/op0",
+            "calleeText": "DoInstallWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoInstallWork"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/sample.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/4859461f8b305244bda94cfa4e28a4e091a3bd6c0b734f9deb34e2a0bff163b4/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#a294f20b2d2574bb03cb1addf01aef9cf5e250904a7c8d3b8b7c30782fa63caf",
+      "name": "DoInstallWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-000000000001:Page:50502#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
+      "name": "ApiHelper",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

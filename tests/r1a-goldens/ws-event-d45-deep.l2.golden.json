@@ -1,0 +1,647 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000",
+      "name": "SalesMgr",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001",
+      "name": "SalesNotifier",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002",
+      "name": "SalesAudit",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100",
+      "name": "Sales",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101",
+      "name": "AuditLog",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+      "name": "OnAfterSales",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/5bb994ddbc480751ae3d89df05a0ee3a22f66901520dbd052f6dca38d10e53ca/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record Sales",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubA.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#ba363574e206d62c50a9fdfc7a3fbf2ff2522200c4b3c3ba5d7103e46a8a3674",
+      "name": "RunSales",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/b63e3d9091fa86cc70e10a6ab7c1adedf2154e1a17030d59c4570aeea797dea7/cs0",
+            "operationId": "r0/b63e3d9091fa86cc70e10a6ab7c1adedf2154e1a17030d59c4570aeea797dea7/op0",
+            "calleeText": "OnAfterSales",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterSales"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/PubA.al",
+                  "startLine": 4,
+                  "startColumn": 21,
+                  "endLine": 4,
+                  "endColumn": 22,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "s",
+                "sourceRecordVariableId": "r0/b63e3d9091fa86cc70e10a6ab7c1adedf2154e1a17030d59c4570aeea797dea7/rv/s",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubA.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/b63e3d9091fa86cc70e10a6ab7c1adedf2154e1a17030d59c4570aeea797dea7/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "s"
+        ],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record Sales",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubA.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/b63e3d9091fa86cc70e10a6ab7c1adedf2154e1a17030d59c4570aeea797dea7/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+      "name": "OnNotifyComplete",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/b803e1b083798099b85066a831d6f27688e2721ab4621892b65f6191e46e7948/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record Sales",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubB.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+      "name": "HNotify",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::SalesMgr, 'OnAfterSales', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::SalesMgr",
+              "value": "SalesMgr",
+              "qualifier": "Codeunit",
+              "member": "SalesMgr"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterSales'",
+              "value": "OnAfterSales"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::SalesMgr, 'OnAfterSales', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/f1c2025b731d4ad998e31a3837fbcf2345113f567e6d5f226f41da7e914d895f/cs0",
+            "operationId": "r0/f1c2025b731d4ad998e31a3837fbcf2345113f567e6d5f226f41da7e914d895f/op0",
+            "calleeText": "OnNotifyComplete",
+            "callee": {
+              "kind": "bare",
+              "name": "OnNotifyComplete"
+            },
+            "argumentTexts": [
+              "S"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "S",
+                "value": "S"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/PubB.al",
+                  "startLine": 5,
+                  "startColumn": 25,
+                  "endLine": 5,
+                  "endColumn": 26,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "s",
+                "sourceRecordVariableId": "r0/f1c2025b731d4ad998e31a3837fbcf2345113f567e6d5f226f41da7e914d895f/rv/s",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubB.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 27,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/f1c2025b731d4ad998e31a3837fbcf2345113f567e6d5f226f41da7e914d895f/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "s"
+        ],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record Sales",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PubB.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/f1c2025b731d4ad998e31a3837fbcf2345113f567e6d5f226f41da7e914d895f/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+      "name": "HAudit",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::SalesNotifier, 'OnNotifyComplete', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::SalesNotifier",
+              "value": "SalesNotifier",
+              "qualifier": "Codeunit",
+              "member": "SalesNotifier"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnNotifyComplete'",
+              "value": "OnNotifyComplete"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::SalesNotifier, 'OnNotifyComplete', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/op0",
+            "op": "Insert",
+            "recordVariableName": "L",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/rv/l"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "L",
+            "fieldName": "Entry No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 21,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/rv/l",
+            "name": "L",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "AuditLog"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "l"
+        ],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record Sales",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "l",
+            "declaredType": "Record AuditLog",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"entry no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubAudit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 26,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "1"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

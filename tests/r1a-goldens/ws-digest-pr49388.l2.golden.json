@@ -1,0 +1,560 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50300",
+      "name": "Import Mgt",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50301",
+      "name": "File Archive",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50302",
+      "name": "Import Validator",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50303",
+      "name": "Import Dispatcher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Interface:0",
+      "name": "IImportProcessor",
+      "objectType": "Interface"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50300#ae08ddf0a19d7883b0ae954d7882cf70b1452587f074917ad87b6dddb58a19cc",
+      "name": "ImportStream",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/4b75ada9457287bf7f675572740c387843a317389ce179d1d0821be086f303ed/cs0",
+            "operationId": "r0/4b75ada9457287bf7f675572740c387843a317389ce179d1d0821be086f303ed/op0",
+            "calleeText": "FileArchive.InsertFile",
+            "callee": {
+              "kind": "member",
+              "receiver": "FileArchive",
+              "method": "InsertFile"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportMgt.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "filearchive"
+        ],
+        "variables": [
+          {
+            "name": "filearchive",
+            "declaredType": "Codeunit \"File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportMgt.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 2,
+              "endLine": 3,
+              "endColumn": 39,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/4b75ada9457287bf7f675572740c387843a317389ce179d1d0821be086f303ed/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50301#713d2cf2f656457832ef4c4aa857778f3cacca25be8ebfc15b1830fb7413915f",
+      "name": "InsertFile",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op1",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 10,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op0",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "File Archive Entry"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"File Archive Entry\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 2,
+              "endLine": 4,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op1"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50301#ce09ce00dcbd4d567e2a8f6261a80829cf123ae434882d04c74dd10aee6f48fd",
+      "name": "ValidateAndError",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/820b8bd86ed1ff37e9de57cb7092b0495c96dda427183f816b4fce54ed01a399/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 3,
+              "endLine": 13,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/820b8bd86ed1ff37e9de57cb7092b0495c96dda427183f816b4fce54ed01a399/cs0",
+            "operationId": "r0/820b8bd86ed1ff37e9de57cb7092b0495c96dda427183f816b4fce54ed01a399/op1",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'Validation failed'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Validation failed'",
+                "value": "Validation failed"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 9,
+                  "endLine": 13,
+                  "endColumn": 28,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 3,
+              "endLine": 13,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "ok"
+        ],
+        "variables": [
+          {
+            "name": "ok",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "ok",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 2,
+              "endLine": 13,
+              "endColumn": 30,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 9,
+              "endLine": 12,
+              "endColumn": 11,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionGuard": {
+                "identifier": "ok",
+                "polarity": "negative"
+              },
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "error",
+                      "callsiteId": "r0/820b8bd86ed1ff37e9de57cb7092b0495c96dda427183f816b4fce54ed01a399/cs0"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50302#fcc6afdd5f784713b573d4b055bc74da221d9d3f120046d2c43ef2e5c2f7bfe3",
+      "name": "ValidateImport",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/94255dcdedfb69e5c016e7cf452a1c38aeea9d510aa5454179f5ed9ec220f9e0/cs0",
+            "operationId": "r0/94255dcdedfb69e5c016e7cf452a1c38aeea9d510aa5454179f5ed9ec220f9e0/op0",
+            "calleeText": "Archive.ValidateAndError",
+            "callee": {
+              "kind": "member",
+              "receiver": "Archive",
+              "method": "ValidateAndError"
+            },
+            "argumentTexts": [
+              "OK"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "OK",
+                "value": "OK"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 27,
+                  "endLine": 7,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "ok",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "archive",
+          "ok"
+        ],
+        "variables": [
+          {
+            "name": "ok",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "archive",
+            "declaredType": "Codeunit \"File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 2,
+              "endLine": 3,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/94255dcdedfb69e5c016e7cf452a1c38aeea9d510aa5454179f5ed9ec220f9e0/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50303#73ff2dc495e3730b431ce1443d56bfcbd9664d87ba2cbed30c9587a66f17ad72",
+      "name": "DispatchImport",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/2ebedc4d2d5a3bdb6dbf4086a5f61219bbb72b8f12ac4446e7314e70503127c1/cs0",
+            "operationId": "r0/2ebedc4d2d5a3bdb6dbf4086a5f61219bbb72b8f12ac4446e7314e70503127c1/op0",
+            "calleeText": "Processor.Process",
+            "callee": {
+              "kind": "member",
+              "receiver": "Processor",
+              "method": "Process"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportDispatcher.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "processor"
+        ],
+        "variables": [
+          {
+            "name": "processor",
+            "declaredType": "Interface IImportProcessor",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ImportDispatcher.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 2,
+              "endLine": 3,
+              "endColumn": 40,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/2ebedc4d2d5a3bdb6dbf4086a5f61219bbb72b8f12ac4446e7314e70503127c1/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

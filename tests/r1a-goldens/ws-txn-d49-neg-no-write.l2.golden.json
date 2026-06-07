@@ -1,0 +1,87 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000",
+      "name": "D49 Sender",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000#840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+      "name": "MessageOnly",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/7b97ad47d6566eaff171c2537de0c9d022759afaa10244c83838be0eb3d045b4/cs0",
+            "operationId": "r0/7b97ad47d6566eaff171c2537de0c9d022759afaa10244c83838be0eb3d045b4/op0",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'Hello'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Hello'",
+                "value": "Hello"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 16,
+                  "endLine": 8,
+                  "endColumn": 23,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/7b97ad47d6566eaff171c2537de0c9d022759afaa10244c83838be0eb3d045b4/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

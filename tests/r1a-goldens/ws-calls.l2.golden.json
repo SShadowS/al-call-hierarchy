@@ -1,0 +1,297 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "66666666-6666-6666-6666-666666666666:Codeunit:51000",
+      "name": "Worker CU",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "66666666-6666-6666-6666-666666666666:Codeunit:51001",
+      "name": "Caller CU",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51000#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4",
+      "name": "RunDynamic",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/d5580d9ab288c511adece53766ed2a218900f1a6588903c1787351124a361c41/cs0",
+            "operationId": "r0/d5580d9ab288c511adece53766ed2a218900f1a6588903c1787351124a361c41/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetIsName": false
+            },
+            "argumentTexts": [
+              "CUId"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "CUId",
+                "value": "CUId"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 18,
+                  "startColumn": 21,
+                  "endLine": 18,
+                  "endColumn": 25,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cuid"
+        ],
+        "variables": [
+          {
+            "name": "cuid",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 22,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/d5580d9ab288c511adece53766ed2a218900f1a6588903c1787351124a361c41/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58",
+      "name": "CallMember",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/1f26efca5858b2b7fd84bfc8f93f6054f0efc6e14e93ab00c4d767291b85b31c/cs0",
+            "operationId": "r0/1f26efca5858b2b7fd84bfc8f93f6054f0efc6e14e93ab00c4d767291b85b31c/op0",
+            "calleeText": "Other.SomeMethod",
+            "callee": {
+              "kind": "member",
+              "receiver": "Other",
+              "method": "SomeMethod"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "other"
+        ],
+        "variables": [
+          {
+            "name": "other",
+            "declaredType": "Codeunit \"Worker CU\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 36,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/1f26efca5858b2b7fd84bfc8f93f6054f0efc6e14e93ab00c4d767291b85b31c/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#9ea668d8f3ea2f69b3060163f2cbc2af9c1d900a6ffe08cad452e21f3d4bacef",
+      "name": "RunIt",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/3a7b8a26356a5f342704003742ba9d03b4df70a367b2461ddab31e18e8bb6aa2/cs0",
+            "operationId": "r0/3a7b8a26356a5f342704003742ba9d03b4df70a367b2461ddab31e18e8bb6aa2/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "Worker CU",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::\"Worker CU\""
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::\"Worker CU\"",
+                "value": "Worker CU",
+                "qualifier": "Codeunit",
+                "member": "Worker CU"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 11,
+                  "startColumn": 21,
+                  "endLine": 11,
+                  "endColumn": 42,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 43,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/3a7b8a26356a5f342704003742ba9d03b4df70a367b2461ddab31e18e8bb6aa2/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

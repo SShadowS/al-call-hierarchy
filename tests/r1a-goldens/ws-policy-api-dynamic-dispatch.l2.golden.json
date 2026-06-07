@@ -1,0 +1,186 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000005-0000-0000-0000-000000000000:Page:50102",
+      "name": "Dispatcher API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Dispatch Setup"
+    },
+    {
+      "stableObjectId": "10000005-0000-0000-0000-000000000000:Table:50102",
+      "name": "Dispatch Setup",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 28,
+              "startColumn": 20,
+              "endLine": 28,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0",
+            "op": "Get",
+            "recordVariableName": "S",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 28,
+              "startColumn": 20,
+              "endLine": 28,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
+            "fieldArguments": [
+              "Rec.\"No.\""
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "member_expression",
+                "text": "Rec.\"No.\""
+              }
+            ]
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/cs0",
+            "operationId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op1",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetIsName": false
+            },
+            "argumentTexts": [
+              "S.\"Codeunit Id\""
+            ],
+            "argumentInfos": [
+              {
+                "kind": "member_expression",
+                "text": "S.\"Codeunit Id\""
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Page.al",
+                  "startLine": 29,
+                  "startColumn": 33,
+                  "endLine": 29,
+                  "endColumn": 48,
+                  "syntaxKind": "member_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 29,
+              "startColumn": 20,
+              "endLine": 29,
+              "endColumn": 49,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "S",
+            "fieldName": "Codeunit Id",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 29,
+              "startColumn": 33,
+              "endLine": 29,
+              "endColumn": 48,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
+            "name": "S",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Dispatch Setup"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec",
+          "s"
+        ],
+        "variables": [
+          {
+            "name": "s",
+            "declaredType": "Record \"Dispatch Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 26,
+              "startColumn": 20,
+              "endLine": 26,
+              "endColumn": 47,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

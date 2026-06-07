@@ -1,0 +1,210 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101",
+      "name": "BE BranchExit",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#b84da27a98a1e6ae28a8a326250eab8dcd5b3363e3d98ff9c54673cad6818ce5",
+      "name": "RunBranchExit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/cs0",
+            "operationId": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/op1",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://example.com/notify'",
+              "Response"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.com/notify'",
+                "value": "https://example.com/notify"
+              },
+              {
+                "kind": "identifier",
+                "text": "Response",
+                "value": "Response"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 23,
+                  "endLine": 8,
+                  "endColumn": 51,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 53,
+                  "endLine": 8,
+                  "endColumn": 61,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 12,
+              "endLine": 8,
+              "endColumn": 62,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "condition",
+          "response"
+        ],
+        "variables": [
+          {
+            "name": "condition",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "response",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "condition",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 12,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/BranchExit.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 20,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionGuard": {
+                "identifier": "condition",
+                "polarity": "positive"
+              },
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/cs0"
+                    },
+                    {
+                      "kind": "exit"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/28cb24539d114132924b7eb5f4a16e91e6648cc87b576a76fa3481592a498875/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

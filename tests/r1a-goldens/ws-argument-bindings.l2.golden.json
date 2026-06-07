@@ -1,0 +1,707 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190",
+      "name": "Argument Bindings Test",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#3755b2bcc3810f832f558942274e295ee4c6df0c7a903757ff26a1844e4dc31b",
+      "name": "HelperLocalRecord",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/fb0a15e61f261a32902934fedb8f2fcf7ffe87252702ebbcfe168b10d402c37e/rv/x",
+            "name": "X",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#527bd909d5505e183d5e2702037446125f547d3d8b50f755823e51af17adcb2e",
+      "name": "HelperImplicitRec",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/964ed935ee0af777b60dd091af6aef9e2c1c4c862096e4a544b8853de620c671/rv/x",
+            "name": "X",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#8481ef61f5c6997beefa9fd32e4f2a21b378e1fe467d0d69c45f318df51d91c7",
+      "name": "HelperExpression",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "n",
+            "declaredType": "Decimal",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#915fcfe9748e440484eaf7a1205f8c1bffe74885aa41e5f4ed90d00f890d2d8a",
+      "name": "CallVariations",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs0",
+            "operationId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/op0",
+            "calleeText": "HelperLocalRecord",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperLocalRecord"
+            },
+            "argumentTexts": [
+              "Customer"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Customer",
+                "value": "Customer"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 26,
+                  "endLine": 7,
+                  "endColumn": 34,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "customer",
+                "sourceRecordVariableId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/rv/customer",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs1",
+            "operationId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/op1",
+            "calleeText": "HelperLiteral",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperLiteral"
+            },
+            "argumentTexts": [
+              "42"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "integer",
+                "text": "42",
+                "value": "42"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 22,
+                  "endLine": 8,
+                  "endColumn": 24,
+                  "syntaxKind": "integer"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs2",
+            "operationId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/op2",
+            "calleeText": "HelperExpression",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperExpression"
+            },
+            "argumentTexts": [
+              "Amount + 1"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "other",
+                "text": "Amount + 1"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 9,
+                  "startColumn": 25,
+                  "endLine": 9,
+                  "endColumn": 35,
+                  "syntaxKind": "additive_expression"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs3",
+            "operationId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/op3",
+            "calleeText": "HelperImplicitRec",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperImplicitRec"
+            },
+            "argumentTexts": [
+              "Rec"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Rec",
+                "value": "Rec"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "implicit-rec",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 10,
+                  "startColumn": 26,
+                  "endLine": 10,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "rec"
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "amount",
+          "customer",
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "amount",
+            "declaredType": "Decimal",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 24,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs2"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/0b8b30600327287e204ec78bf7655ea9646e0b462bc0111836e1168144ce9ecd/cs3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#9297aa6f9fcf1c232f9506fe4c4afd4af00ca07a5465ac3c1bf4feae1a707a7a",
+      "name": "HelperLiteral",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "n",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#a229541f8bf0e2b8188723eff495bbbb0932f04b2f00e717167052cdc2cf7ac7",
+      "name": "WithByValueParam",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/d4e4b43372c6d80e41116d9c52287814df45f9294556c1d9ef252fe41d8646c4/cs0",
+            "operationId": "r0/d4e4b43372c6d80e41116d9c52287814df45f9294556c1d9ef252fe41d8646c4/op0",
+            "calleeText": "HelperLocalRecord",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperLocalRecord"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 20,
+                  "startColumn": 26,
+                  "endLine": 20,
+                  "endColumn": 30,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/d4e4b43372c6d80e41116d9c52287814df45f9294556c1d9ef252fe41d8646c4/rv/cust",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/d4e4b43372c6d80e41116d9c52287814df45f9294556c1d9ef252fe41d8646c4/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/d4e4b43372c6d80e41116d9c52287814df45f9294556c1d9ef252fe41d8646c4/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc100:Codeunit:50190#f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7",
+      "name": "WithVarParam",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/0a609eb5b38579ee3b365476e4417692c952b9861a2962fc351b10f89348901f/cs0",
+            "operationId": "r0/0a609eb5b38579ee3b365476e4417692c952b9861a2962fc351b10f89348901f/op0",
+            "calleeText": "HelperLocalRecord",
+            "callee": {
+              "kind": "bare",
+              "name": "HelperLocalRecord"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 15,
+                  "startColumn": 26,
+                  "endLine": 15,
+                  "endColumn": 30,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/0a609eb5b38579ee3b365476e4417692c952b9861a2962fc351b10f89348901f/rv/cust",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 15,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/0a609eb5b38579ee3b365476e4417692c952b9861a2962fc351b10f89348901f/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/0a609eb5b38579ee3b365476e4417692c952b9861a2962fc351b10f89348901f/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

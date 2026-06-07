@@ -1,0 +1,241 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50101",
+      "name": "XW Worker",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50102",
+      "name": "XW Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000xw0001:Table:50100",
+      "name": "XW Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+      "name": "DoCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/d5de6816fa04c2f64c4a25b9e26b8dce4e4a824f727c4f94e277400d72ce5167/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWWorker.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/d5de6816fa04c2f64c4a25b9e26b8dce4e4a824f727c4f94e277400d72ce5167/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec"
+          },
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/cs0",
+            "operationId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op2",
+            "calleeText": "Worker.DoCommit",
+            "callee": {
+              "kind": "member",
+              "receiver": "Worker",
+              "method": "DoCommit"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "XW Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec",
+          "worker"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"XW Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "worker",
+            "declaredType": "Codeunit \"XW Worker\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/XWCaller.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 37,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

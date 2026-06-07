@@ -1,0 +1,198 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaabbbb-cccc-dddd-eeee-100000000d51:Codeunit:50201",
+      "name": "D51 NegSender",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaabbbb-cccc-dddd-eeee-100000000d51:Codeunit:50201#2e254ac7f120ad15b09c2e5449a1513e4746dbbfba3c362dc73c040a888723e1",
+      "name": "GetThenError",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs0",
+            "operationId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/op1",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://api.example.test/orders'",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://api.example.test/orders'",
+                "value": "https://api.example.test/orders"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 19,
+                  "endLine": 12,
+                  "endColumn": 52,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 54,
+                  "endLine": 12,
+                  "endColumn": 58,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 59,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs1",
+            "operationId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/op2",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'Something went wrong'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Something went wrong'",
+                "value": "Something went wrong"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 14,
+                  "endLine": 13,
+                  "endColumn": 36,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs0"
+            },
+            {
+              "kind": "error",
+              "callsiteId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

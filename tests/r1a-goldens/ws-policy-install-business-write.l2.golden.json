@@ -1,0 +1,141 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000007-0000-0000-0000-000000000000:Codeunit:50104",
+      "name": "Install Mgr",
+      "objectType": "Codeunit",
+      "objectSubtype": "Install"
+    },
+    {
+      "stableObjectId": "10000007-0000-0000-0000-000000000000:Table:50104",
+      "name": "Test Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000007-0000-0000-0000-000000000000:Codeunit:50104#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Install.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/op0",
+            "op": "Insert",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Install.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Cust",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Install.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 18,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Test Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record \"Test Customer\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Install.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 37,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Install.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 28,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "c001"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

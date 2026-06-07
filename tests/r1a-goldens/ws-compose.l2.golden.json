@@ -1,0 +1,169 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101",
+      "name": "Compose Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+      "name": "RunAll",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/729a1c23e67f89b685cb10917c9ef0eee38ea9257e9012ba2644404f77b5966a/cs0",
+            "operationId": "r0/729a1c23e67f89b685cb10917c9ef0eee38ea9257e9012ba2644404f77b5966a/op0",
+            "calleeText": "DoDbWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoDbWork"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/729a1c23e67f89b685cb10917c9ef0eee38ea9257e9012ba2644404f77b5966a/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+      "name": "DoDbWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/op0",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

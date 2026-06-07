@@ -1,0 +1,566 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001",
+      "name": "Install Handler",
+      "objectType": "Codeunit",
+      "objectSubtype": "Install"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002",
+      "name": "Upgrade Handler",
+      "objectType": "Codeunit",
+      "objectSubtype": "Upgrade"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d460:Table:50000",
+      "name": "My Setup",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+            "operationId": "r0/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/op0",
+            "calleeText": "DoSetup",
+            "callee": {
+              "kind": "bare",
+              "name": "DoSetup"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 23,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 17,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "name": "DoSetup",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 30,
+              "startColumn": 15,
+              "endLine": 30,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 31,
+              "startColumn": 12,
+              "endLine": 31,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op3",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 34,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0",
+            "op": "Get",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 30,
+              "startColumn": 15,
+              "endLine": 30,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op1",
+            "op": "Init",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 31,
+              "startColumn": 12,
+              "endLine": 31,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup"
+          },
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2",
+            "op": "Insert",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+            "name": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "My Setup"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "setup"
+        ],
+        "variables": [
+          {
+            "name": "setup",
+            "declaredType": "Record \"My Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 28,
+              "startColumn": 8,
+              "endLine": 28,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "get",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 30,
+              "startColumn": 8,
+              "endLine": 33,
+              "endColumn": 12,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/InstallCU.al",
+              "startLine": 30,
+              "startColumn": 21,
+              "endLine": 30,
+              "endColumn": 24,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op1"
+                    },
+                    {
+                      "kind": "op",
+                      "operationId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op3"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+      "name": "DoUpgrade",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 13,
+              "startColumn": 11,
+              "endLine": 13,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 15,
+              "startColumn": 12,
+              "endLine": 15,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0",
+            "op": "Get",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 13,
+              "startColumn": 11,
+              "endLine": 13,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1",
+            "op": "Modify",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 15,
+              "startColumn": 12,
+              "endLine": 15,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Setup",
+            "fieldName": "Description",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 14,
+              "startColumn": 12,
+              "endLine": 14,
+              "endColumn": 29,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+            "name": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "My Setup"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "setup"
+        ],
+        "variables": [
+          {
+            "name": "setup",
+            "declaredType": "Record \"My Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "description",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 14,
+              "startColumn": 12,
+              "endLine": 14,
+              "endColumn": 43,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "migrated"
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "get",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 12,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 13,
+              "startColumn": 17,
+              "endLine": 13,
+              "endColumn": 20,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "other"
+                    },
+                    {
+                      "kind": "op",
+                      "operationId": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op2"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "name": "OnUpgradePerCompany",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+            "operationId": "r0/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/op0",
+            "calleeText": "DoUpgrade",
+            "callee": {
+              "kind": "bare",
+              "name": "DoUpgrade"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/UpgradeCU.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

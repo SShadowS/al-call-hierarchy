@@ -1,0 +1,683 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50105",
+      "name": "D5ModifyAll",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d50a:Table:18",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50105#8eede75440d2ac0e0a639ec4c4b9fea900368574a32a8c0a623b77c406ee274c",
+      "name": "SafeLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 17,
+              "startColumn": 3,
+              "endLine": 20,
+              "endColumn": 28,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 16,
+              "startColumn": 5,
+              "endLine": 16,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op1",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 18,
+              "startColumn": 4,
+              "endLine": 18,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op2",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 19,
+              "startColumn": 4,
+              "endLine": 19,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op3",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 20,
+              "startColumn": 9,
+              "endLine": 20,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op0",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 16,
+              "startColumn": 5,
+              "endLine": 16,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op1",
+            "op": "Get",
+            "recordVariableName": "Helper",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 18,
+              "startColumn": 4,
+              "endLine": 18,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/helper",
+            "fieldArguments": [
+              "Customer.\"Buy-from No.\""
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "member_expression",
+                "text": "Customer.\"Buy-from No.\""
+              }
+            ]
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op2",
+            "op": "Modify",
+            "recordVariableName": "Helper",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 19,
+              "startColumn": 4,
+              "endLine": 19,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/helper"
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op3",
+            "op": "Next",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 20,
+              "startColumn": 9,
+              "endLine": 20,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "Buy-from No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 18,
+              "startColumn": 15,
+              "endLine": 18,
+              "endColumn": 38,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          },
+          {
+            "id": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/rv/helper",
+            "name": "Helper",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "helper"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 14,
+              "startColumn": 5,
+              "endLine": 14,
+              "endColumn": 31,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "helper",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 14,
+              "startColumn": 32,
+              "endLine": 14,
+              "endColumn": 56,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "findset",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 20,
+              "endColumn": 29,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 16,
+              "startColumn": 14,
+              "endLine": 16,
+              "endColumn": 21,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "next",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 17,
+              "startColumn": 3,
+              "endLine": 20,
+              "endColumn": 28,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 20,
+              "startColumn": 18,
+              "endLine": 20,
+              "endColumn": 22,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "repeat",
+                      "conditionLeaves": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op3"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op1"
+                        },
+                        {
+                          "kind": "op",
+                          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op2"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50105#fb7a8c745a9c558d5e375fbda79681bcc79c2beb5548e44eb977a6839fe1f5e1",
+      "name": "BadLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/loop0",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 7,
+              "startColumn": 3,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 5,
+              "endLine": 6,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op2",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 9,
+              "startColumn": 4,
+              "endLine": 9,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op3",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 10,
+              "startColumn": 9,
+              "endLine": 10,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op0",
+            "op": "SetRange",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/rv/customer",
+            "fieldArguments": [
+              "\"Buy-from No.\"",
+              "''"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"Buy-from No.\"",
+                "value": "Buy-from No."
+              },
+              {
+                "kind": "string_literal",
+                "text": "''",
+                "value": ""
+              }
+            ]
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op1",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 5,
+              "endLine": 6,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op2",
+            "op": "Modify",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 9,
+              "startColumn": 4,
+              "endLine": 9,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/rv/customer"
+          },
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op3",
+            "op": "Next",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 10,
+              "startColumn": 9,
+              "endLine": 10,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "Blocked",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 8,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 20,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 3,
+              "startColumn": 5,
+              "endLine": 3,
+              "endColumn": 31,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "blocked",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 8,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 45,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "findset",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 29,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 14,
+              "endLine": 6,
+              "endColumn": 21,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "next",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 7,
+              "startColumn": 3,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 10,
+              "startColumn": 18,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op0"
+            },
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op1"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "repeat",
+                      "conditionLeaves": [
+                        {
+                          "kind": "op",
+                          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op3"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "kind": "other"
+                        },
+                        {
+                          "kind": "op",
+                          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op2"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,231 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101",
+      "name": "D51 Sender",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "name": "PostThenError",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs0",
+            "operationId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/op1",
+            "calleeText": "Client.Post",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Post"
+            },
+            "argumentTexts": [
+              "'https://api.example.test/orders'",
+              "Content",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://api.example.test/orders'",
+                "value": "https://api.example.test/orders"
+              },
+              {
+                "kind": "identifier",
+                "text": "Content",
+                "value": "Content"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 20,
+                  "endLine": 12,
+                  "endColumn": 53,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 55,
+                  "endLine": 12,
+                  "endColumn": 62,
+                  "syntaxKind": "identifier"
+                }
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 64,
+                  "endLine": 12,
+                  "endColumn": 68,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 69,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs1",
+            "operationId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/op2",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'Something went wrong'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Something went wrong'",
+                "value": "Something went wrong"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 14,
+                  "endLine": 13,
+                  "endColumn": 36,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "content",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "content",
+            "declaredType": "HttpContent",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs0"
+            },
+            {
+              "kind": "error",
+              "callsiteId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

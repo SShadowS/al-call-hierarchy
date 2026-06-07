@@ -1,0 +1,217 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-000000tc0001:Codeunit:50101",
+      "name": "TC TwoCommits",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-000000tc0001:Table:50100",
+      "name": "TC Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-000000tc0001:Codeunit:50101#b98534c8e119670e003c70125148eef540e4601c29918592575459a053af66a5",
+      "name": "PostTwice",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op3",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op4",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+          },
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op3",
+            "op": "Modify",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "TC Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"TC Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TwoCommits.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op2"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op3"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op4"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

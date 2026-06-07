@@ -1,0 +1,121 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000000a01:Codeunit:50200",
+      "name": "MultiObjectCaller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000000a01:Table:18",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000000a01:Codeunit:50200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit-and-table.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/op0",
+            "op": "Get",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit-and-table.al",
+              "startLine": 5,
+              "startColumn": 2,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/rv/customer",
+            "fieldArguments": [
+              "'X'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'X'",
+                "value": "X"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit-and-table.al",
+              "startLine": 3,
+              "startColumn": 5,
+              "endLine": 3,
+              "endColumn": 31,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

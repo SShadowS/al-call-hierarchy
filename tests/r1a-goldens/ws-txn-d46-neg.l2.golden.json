@@ -1,0 +1,292 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001",
+      "name": "Normal Handler",
+      "objectType": "Codeunit",
+      "objectSubtype": "Normal"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+      "name": "My Setup",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "name": "DoSetup",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 31,
+              "startColumn": 15,
+              "endLine": 31,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 33,
+              "startColumn": 12,
+              "endLine": 33,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op3",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 35,
+              "startColumn": 8,
+              "endLine": 35,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0",
+            "op": "Get",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 31,
+              "startColumn": 15,
+              "endLine": 31,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          },
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op1",
+            "op": "Init",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 32,
+              "startColumn": 12,
+              "endLine": 32,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup"
+          },
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2",
+            "op": "Insert",
+            "recordVariableName": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 33,
+              "startColumn": 12,
+              "endLine": 33,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
+            "name": "Setup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "My Setup"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "setup"
+        ],
+        "variables": [
+          {
+            "name": "setup",
+            "declaredType": "Record \"My Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 29,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "get",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 31,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 12,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 31,
+              "startColumn": 21,
+              "endLine": 31,
+              "endColumn": 24,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op1"
+                    },
+                    {
+                      "kind": "op",
+                      "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op3"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "name": "RunSetup",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+            "operationId": "r0/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/op0",
+            "calleeText": "DoSetup",
+            "callee": {
+              "kind": "bare",
+              "name": "DoSetup"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/NormalCU.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 17,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

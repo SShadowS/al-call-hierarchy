@@ -1,0 +1,95 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-000000000002:Codeunit:50301",
+      "name": "Upgrade Handler",
+      "objectType": "Codeunit",
+      "objectSubtype": "Upgrade"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "name": "OnUpgradePerCompany",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/77fe9cbfa9855a8cfbb36af19400bb7bdbbd5cfa2ecec8f8b3388d12cc266e7f/cs0",
+            "operationId": "r0/77fe9cbfa9855a8cfbb36af19400bb7bdbbd5cfa2ecec8f8b3388d12cc266e7f/op0",
+            "calleeText": "DoUpgradeWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoUpgradeWork"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/upgrade.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/77fe9cbfa9855a8cfbb36af19400bb7bdbbd5cfa2ecec8f8b3388d12cc266e7f/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "name": "DoUpgradeWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

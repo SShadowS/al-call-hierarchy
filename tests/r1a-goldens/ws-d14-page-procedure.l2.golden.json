@@ -1,0 +1,121 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301",
+      "name": "D14 Page Helper Codeunit",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-0000-0000-0000-00000000d14e:Page:50300",
+      "name": "D14 Page With Helper",
+      "objectType": "Page"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301#9096216fb31324b8abd478c602c12ccc233673702a41bdadcd922e87b09f15b4",
+      "name": "DeadCodeunitLocal",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Page:50300#e300132a792d18b6e5ec381db1b017333a0e64ed140f84a7ddd7054b55ee2896",
+      "name": "ComputeCaption",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record Integer",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PageWithProcedure.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 28,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

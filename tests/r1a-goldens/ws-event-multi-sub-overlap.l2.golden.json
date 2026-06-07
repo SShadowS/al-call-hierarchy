@@ -1,0 +1,497 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50000",
+      "name": "Publisher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50001",
+      "name": "Sub1",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50002",
+      "name": "Sub2",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Table:50100",
+      "name": "Widget",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "name": "FirePost",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/cs0",
+            "operationId": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/op0",
+            "calleeText": "OnAfterPost",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterPost"
+            },
+            "argumentTexts": [
+              "W"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "W",
+                "value": "W"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 20,
+                  "endLine": 4,
+                  "endColumn": 21,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "w",
+                "sourceRecordVariableId": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/rv/w",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/rv/w",
+            "name": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Widget",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "w"
+        ],
+        "variables": [
+          {
+            "name": "w",
+            "declaredType": "Record Widget",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "name": "OnAfterPost",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/c494e2e26ef5d2e521cb5a07d634e52f8231eadd92f0f38901b3ed4e56632da0/rv/w",
+            "name": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Widget",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "w",
+            "declaredType": "Record Widget",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "name": "HandleAfterPost1",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::Publisher",
+              "value": "Publisher",
+              "qualifier": "Codeunit",
+              "member": "Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterPost'",
+              "value": "OnAfterPost"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/op0",
+            "op": "Modify",
+            "recordVariableName": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/rv/w"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/rv/w",
+            "name": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Widget",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "w"
+        ],
+        "variables": [
+          {
+            "name": "w",
+            "declaredType": "Record Widget",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "name": "HandleAfterPost2",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::Publisher",
+              "value": "Publisher",
+              "qualifier": "Codeunit",
+              "member": "Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterPost'",
+              "value": "OnAfterPost"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/op0",
+            "op": "Modify",
+            "recordVariableName": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/rv/w"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/rv/w",
+            "name": "W",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Widget",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "w"
+        ],
+        "variables": [
+          {
+            "name": "w",
+            "declaredType": "Record Widget",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

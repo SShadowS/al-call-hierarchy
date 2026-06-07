@@ -1,0 +1,39 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000001-0000-0000-0000-000000000000:Codeunit:50000",
+      "name": "Cleanup",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000001-0000-0000-0000-000000000000:Codeunit:50000#3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+      "name": "DoNothing",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

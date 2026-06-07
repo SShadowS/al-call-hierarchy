@@ -1,0 +1,251 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "99999999-9999-9999-9999-999999999901:Codeunit:52100",
+      "name": "Isolated Event Publisher",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "99999999-9999-9999-9999-999999999901:Codeunit:52100#214355588da1aadca6342b6e54f89c871b5319e2bfdf3c71a4eaa9ae031ac4a0",
+      "name": "OnNormal",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "99999999-9999-9999-9999-999999999901:Codeunit:52100#43a6b7425bbbfd9655a6809b2ee0e2ff9f30ee7140cce75a2c0795a9dd571a5d",
+      "name": "OnBizIsolated",
+      "kind": "event-publisher",
+      "attributes": [
+        "[BusinessEvent(false, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[BusinessEvent(false, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "99999999-9999-9999-9999-999999999901:Codeunit:52100#4647273137f7cba0e480648edf9fcc53512f7f0d90ca8df2a47b674505fa3456",
+      "name": "OnIsolated",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "99999999-9999-9999-9999-999999999901:Codeunit:52100#875df1b823b800836205a1487b0759aa2fa331565c4a4916a90ffe32a6f283ba",
+      "name": "OnBizNormal",
+      "kind": "event-publisher",
+      "attributes": [
+        "[BusinessEvent(false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "BusinessEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[BusinessEvent(false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "99999999-9999-9999-9999-999999999901:Codeunit:52100#ef841be63eacd5bc2700430f94f380f82d14e2d91f3be54d3104067ba2a983e1",
+      "name": "OnExplicitFalse",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(true, false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(true, false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

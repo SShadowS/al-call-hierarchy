@@ -1,0 +1,346 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101",
+      "name": "Line Enricher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-0000000000b2:Table:60100",
+      "name": "Sales Line",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#3ebe9ba4f4136ce3468dcd2d2e56a6ece24f875e327feba3e6b7d04982d3c4df",
+      "name": "AdjustLine",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op0",
+            "op": "Validate",
+            "recordVariableName": "SalesLine",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
+            "fieldArguments": [
+              "Amount"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Amount",
+                "value": "Amount"
+              }
+            ]
+          },
+          {
+            "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op1",
+            "op": "Reset",
+            "recordVariableName": "SalesLine",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
+            "name": "SalesLine",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales Line",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "amount",
+          "salesline"
+        ],
+        "variables": [
+          {
+            "name": "salesline",
+            "declaredType": "Record \"Sales Line\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#4f889b3e38f3c9db922a145b91eeacfc5b95254e1ddc8f6eb65a29e7647814bf",
+      "name": "EnrichLine",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "SalesLine",
+            "fieldName": "Amount",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 4,
+              "startColumn": 11,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "SalesLine",
+            "fieldName": "Amount",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 5,
+              "startColumn": 12,
+              "endLine": 5,
+              "endColumn": 28,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "SalesLine",
+            "fieldName": "Amount",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 5,
+              "startColumn": 32,
+              "endLine": 5,
+              "endColumn": 48,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/c962affadaaa6ee10853f16325a7c9fba5c92a051945e49287e82567a24905c9/rv/salesline",
+            "name": "SalesLine",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales Line",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "salesline"
+        ],
+        "variables": [
+          {
+            "name": "salesline",
+            "declaredType": "Record \"Sales Line\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "amount",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 5,
+              "startColumn": 12,
+              "endLine": 5,
+              "endColumn": 48,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "amount",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 49,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 4,
+              "startColumn": 21,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "other"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#f0bc39e194dc7d20f8b89f70003c8340feffca10f075f4614f162e48e5c93813",
+      "name": "NoRecordParam",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "n",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,470 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000",
+      "name": "Preset Looper",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Codeunit:50001",
+      "name": "Preset Sender",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000preset1:Table:50100",
+      "name": "Preset Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "_n",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000#9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
+      "name": "CommitInLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 12,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/op0",
+            "kind": "commit",
+            "loopStack": [
+              "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/cs0",
+            "operationId": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/op1",
+            "calleeText": "DoWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoWork"
+            },
+            "argumentTexts": [
+              "i"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "i",
+                "value": "i"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 19,
+                  "endLine": 8,
+                  "endColumn": 20,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 12,
+              "endLine": 8,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/cs0"
+                    },
+                    {
+                      "kind": "op",
+                      "operationId": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50001#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "name": "SendAfterModify",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 27,
+              "startColumn": 8,
+              "endLine": 27,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op0",
+            "op": "Get",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
+            "fieldArguments": [
+              "1"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "integer",
+                "text": "1",
+                "value": "1"
+              }
+            ]
+          },
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op1",
+            "op": "Modify",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 27,
+              "startColumn": 8,
+              "endLine": 27,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/cs0",
+            "operationId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op2",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://example.test/ping'",
+              "Resp"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.test/ping'",
+                "value": "https://example.test/ping"
+              },
+              {
+                "kind": "identifier",
+                "text": "Resp",
+                "value": "Resp"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+                  "startLine": 28,
+                  "startColumn": 19,
+                  "endLine": 28,
+                  "endColumn": 46,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+                  "startLine": 28,
+                  "startColumn": 48,
+                  "endLine": 28,
+                  "endColumn": 52,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 28,
+              "startColumn": 8,
+              "endLine": 28,
+              "endColumn": 53,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Rec",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 26,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 16,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Preset Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "rec",
+          "resp"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"Preset Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "resp",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 23,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 26,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "changed"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

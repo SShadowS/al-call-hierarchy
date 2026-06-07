@@ -1,0 +1,413 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117",
+      "name": "D7EventCycle",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254",
+      "name": "SubB",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::D7EventCycle, 'OnB', '', true, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::D7EventCycle",
+              "value": "D7EventCycle",
+              "qualifier": "Codeunit",
+              "member": "D7EventCycle"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnB'",
+              "value": "OnB"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::D7EventCycle, 'OnB', '', true, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/38e6147c5d17ab71e8add2b821acb4d2139e425687312f8c5a7c8a3c8bd0fd70/cs0",
+            "operationId": "r0/38e6147c5d17ab71e8add2b821acb4d2139e425687312f8c5a7c8a3c8bd0fd70/op0",
+            "calleeText": "RaiseA",
+            "callee": {
+              "kind": "bare",
+              "name": "RaiseA"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/event-a.al",
+              "startLine": 16,
+              "startColumn": 30,
+              "endLine": 16,
+              "endColumn": 38,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/38e6147c5d17ab71e8add2b821acb4d2139e425687312f8c5a7c8a3c8bd0fd70/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da",
+      "name": "RaiseB",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/7ebb42ca1c78391afd18484894cdf7f2419b72ad41434301b77cbd8b4b619b3d/cs0",
+            "operationId": "r0/7ebb42ca1c78391afd18484894cdf7f2419b72ad41434301b77cbd8b4b619b3d/op0",
+            "calleeText": "OnB",
+            "callee": {
+              "kind": "bare",
+              "name": "OnB"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/event-a.al",
+              "startLine": 10,
+              "startColumn": 26,
+              "endLine": 10,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/7ebb42ca1c78391afd18484894cdf7f2419b72ad41434301b77cbd8b4b619b3d/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211",
+      "name": "SubA",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::D7EventCycle, 'OnA', '', true, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::D7EventCycle",
+              "value": "D7EventCycle",
+              "qualifier": "Codeunit",
+              "member": "D7EventCycle"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnA'",
+              "value": "OnA"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::D7EventCycle, 'OnA', '', true, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/f337a21ad2ccd910551529e679508666565244ff7e8b8ffbc422b1c7e24f688a/cs0",
+            "operationId": "r0/f337a21ad2ccd910551529e679508666565244ff7e8b8ffbc422b1c7e24f688a/op0",
+            "calleeText": "RaiseB",
+            "callee": {
+              "kind": "bare",
+              "name": "RaiseB"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/event-a.al",
+              "startLine": 13,
+              "startColumn": 30,
+              "endLine": 13,
+              "endColumn": 38,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/f337a21ad2ccd910551529e679508666565244ff7e8b8ffbc422b1c7e24f688a/cs0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+      "name": "OnA",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+      "name": "OnB",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+      "name": "RaiseA",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/ff8cd535a22011db48f62aaa8892df0e12acb2d89b45eab2955bf1f864a9f97a/cs0",
+            "operationId": "r0/ff8cd535a22011db48f62aaa8892df0e12acb2d89b45eab2955bf1f864a9f97a/op0",
+            "calleeText": "OnA",
+            "callee": {
+              "kind": "bare",
+              "name": "OnA"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/event-a.al",
+              "startLine": 5,
+              "startColumn": 26,
+              "endLine": 5,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/ff8cd535a22011db48f62aaa8892df0e12acb2d89b45eab2955bf1f864a9f97a/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

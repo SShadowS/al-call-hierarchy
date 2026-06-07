@@ -1,0 +1,135 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000008-0000-0000-0000-000000000000:Page:50105",
+      "name": "Storage API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Test Customer"
+    },
+    {
+      "stableObjectId": "10000008-0000-0000-0000-000000000000:Table:50105",
+      "name": "Test Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/540f1230de4894e8ccba17d7e78d92c3528ac50fed8cf8f8fed90134b0d03c02/cs0",
+            "operationId": "r0/540f1230de4894e8ccba17d7e78d92c3528ac50fed8cf8f8fed90134b0d03c02/op0",
+            "calleeText": "IsolatedStorage.Set",
+            "callee": {
+              "kind": "member",
+              "receiver": "IsolatedStorage",
+              "method": "Set"
+            },
+            "argumentTexts": [
+              "'secret-key'",
+              "'secret-value'",
+              "DataScope::Module"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'secret-key'",
+                "value": "secret-key"
+              },
+              {
+                "kind": "string_literal",
+                "text": "'secret-value'",
+                "value": "secret-value"
+              },
+              {
+                "kind": "qualified_enum_value",
+                "text": "DataScope::Module",
+                "value": "Module",
+                "qualifier": "DataScope",
+                "member": "Module"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Page.al",
+                  "startLine": 26,
+                  "startColumn": 40,
+                  "endLine": 26,
+                  "endColumn": 52,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Page.al",
+                  "startLine": 26,
+                  "startColumn": 54,
+                  "endLine": 26,
+                  "endColumn": 68,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Page.al",
+                  "startLine": 26,
+                  "startColumn": 70,
+                  "endLine": 26,
+                  "endColumn": 87,
+                  "syntaxKind": "qualified_enum_value"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 26,
+              "startColumn": 20,
+              "endLine": 26,
+              "endColumn": 88,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "isolatedstorage"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/540f1230de4894e8ccba17d7e78d92c3528ac50fed8cf8f8fed90134b0d03c02/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,750 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+      "name": "D38 Publisher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401",
+      "name": "D38 Subscriber",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs0",
+            "operationId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/op0",
+            "calleeText": "OnAfterDoStuffPending",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterDoStuffPending"
+            },
+            "argumentTexts": [
+              "1"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "integer",
+                "text": "1",
+                "value": "1"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 24,
+                  "startColumn": 30,
+                  "endLine": 24,
+                  "endColumn": 31,
+                  "syntaxKind": "integer"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs1",
+            "operationId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/op1",
+            "calleeText": "OnAfterDoStuffRemoved",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterDoStuffRemoved"
+            },
+            "argumentTexts": [
+              "2"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "integer",
+                "text": "2",
+                "value": "2"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 25,
+                  "startColumn": 30,
+                  "endLine": 25,
+                  "endColumn": 31,
+                  "syntaxKind": "integer"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs2",
+            "operationId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/op2",
+            "calleeText": "OnAfterFresh",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterFresh"
+            },
+            "argumentTexts": [
+              "3"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "integer",
+                "text": "3",
+                "value": "3"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 26,
+                  "startColumn": 21,
+                  "endLine": 26,
+                  "endColumn": 22,
+                  "syntaxKind": "integer"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 26,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/ea54bd380f40b07f7bc8a27f99031be5add2ca3a2a6c87d396b6fe9f827510a1/cs2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "name": "OnAfterDoStuffRemoved",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]",
+        "[Obsolete('Removed; use OnAfterDoStuffV2.', '25.0', ObsoleteState::Removed)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        },
+        {
+          "name": "Obsolete",
+          "args": [
+            {
+              "kind": "string_literal",
+              "text": "'Removed; use OnAfterDoStuffV2.'",
+              "value": "Removed; use OnAfterDoStuffV2."
+            },
+            {
+              "kind": "string_literal",
+              "text": "'25.0'",
+              "value": "25.0"
+            },
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObsoleteState::Removed",
+              "value": "Removed",
+              "qualifier": "ObsoleteState",
+              "member": "Removed"
+            }
+          ],
+          "raw": "[Obsolete('Removed; use OnAfterDoStuffV2.', '25.0', ObsoleteState::Removed)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "name": "OnAfterDoStuffPending",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]",
+        "[Obsolete('Use OnAfterDoStuffV2; this will be removed in 25.0.', '24.0')]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        },
+        {
+          "name": "Obsolete",
+          "args": [
+            {
+              "kind": "string_literal",
+              "text": "'Use OnAfterDoStuffV2; this will be removed in 25.0.'",
+              "value": "Use OnAfterDoStuffV2; this will be removed in 25.0."
+            },
+            {
+              "kind": "string_literal",
+              "text": "'24.0'",
+              "value": "24.0"
+            }
+          ],
+          "raw": "[Obsolete('Use OnAfterDoStuffV2; this will be removed in 25.0.', '24.0')]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "name": "OnAfterFresh",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+      "name": "HandleRemoved",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffRemoved', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher",
+              "qualifier": "Codeunit",
+              "member": "D38 Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterDoStuffRemoved'",
+              "value": "OnAfterDoStuffRemoved"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffRemoved', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "name": "HandleUnknown",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 NonExistent\", 'OnSomethingUnknown', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"D38 NonExistent\"",
+              "value": "D38 NonExistent",
+              "qualifier": "Codeunit",
+              "member": "D38 NonExistent"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnSomethingUnknown'",
+              "value": "OnSomethingUnknown"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 NonExistent\", 'OnSomethingUnknown', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
+      "name": "HandleFresh",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterFresh', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher",
+              "qualifier": "Codeunit",
+              "member": "D38 Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterFresh'",
+              "value": "OnAfterFresh"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterFresh', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+      "name": "HandlePending",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffPending', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher",
+              "qualifier": "Codeunit",
+              "member": "D38 Publisher"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterDoStuffPending'",
+              "value": "OnAfterDoStuffPending"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffPending', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "arg",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d170:Codeunit:50170",
+      "name": "D17Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d170:Codeunit:50170#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/647a35d4ae4e21c7679bb0ebd37be23864629fd29a1addb64c06387660e3ec82/cs0",
+            "operationId": "r0/647a35d4ae4e21c7679bb0ebd37be23864629fd29a1addb64c06387660e3ec82/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D17DepNewer",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D17DepNewer"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D17DepNewer",
+                "value": "D17DepNewer",
+                "qualifier": "Codeunit",
+                "member": "D17DepNewer"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 4,
+                  "startColumn": 15,
+                  "endLine": 4,
+                  "endColumn": 36,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 4,
+              "startColumn": 2,
+              "endLine": 4,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "d17depnewer"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/647a35d4ae4e21c7679bb0ebd37be23864629fd29a1addb64c06387660e3ec82/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

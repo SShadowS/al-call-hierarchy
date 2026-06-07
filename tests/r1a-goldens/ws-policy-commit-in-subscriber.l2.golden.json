@@ -1,0 +1,209 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000002-0000-0000-0000-000000000000:Codeunit:50000",
+      "name": "PubA",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "10000002-0000-0000-0000-000000000000:Codeunit:50001",
+      "name": "SubA",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000002-0000-0000-0000-000000000000:Codeunit:50000#4fec5b9a9cfd6b9b188c8b68bf37265e0dd508724ce4b8576015d956b44a0754",
+      "name": "OnEvent",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "10000002-0000-0000-0000-000000000000:Codeunit:50000#98346da5d6b1d05da0daaffb1ca53f81633333dea8bf0e5d72bc9e0fc4c18f6a",
+      "name": "Fire",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/c41a7e4db87b47776bbe29f97ceb923c60f85a3de3d9aed74897c602272513ea/cs0",
+            "operationId": "r0/c41a7e4db87b47776bbe29f97ceb923c60f85a3de3d9aed74897c602272513ea/op0",
+            "calleeText": "OnEvent",
+            "callee": {
+              "kind": "bare",
+              "name": "OnEvent"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 17,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/c41a7e4db87b47776bbe29f97ceb923c60f85a3de3d9aed74897c602272513ea/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "10000002-0000-0000-0000-000000000000:Codeunit:50001#e7dcab6bf11e66911db86de47ca9f95ba764b4bca66a975d31a70b65e9d88f74",
+      "name": "HandleEvent",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnEvent', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::PubA",
+              "value": "PubA",
+              "qualifier": "Codeunit",
+              "member": "PubA"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnEvent'",
+              "value": "OnEvent"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnEvent', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

@@ -1,0 +1,616 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000",
+      "name": "InvMgr",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001",
+      "name": "InvWriter",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002",
+      "name": "InvReader",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100",
+      "name": "Inventory",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "name": "Adjust",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/cs0",
+            "operationId": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/op0",
+            "calleeText": "OnAfterAdjust",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterAdjust"
+            },
+            "argumentTexts": [
+              "Inv"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Inv",
+                "value": "Inv"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 22,
+                  "endLine": 4,
+                  "endColumn": 25,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "inv",
+                "sourceRecordVariableId": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/rv/inv",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/rv/inv",
+            "name": "Inv",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Inventory",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "inv"
+        ],
+        "variables": [
+          {
+            "name": "inv",
+            "declaredType": "Record Inventory",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "name": "OnAfterAdjust",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/9e1e6b0771b4bdb5de60aef74eaa7546b18a69264eef32468b66904317e024f4/rv/inv",
+            "name": "Inv",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Inventory",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "inv",
+            "declaredType": "Record Inventory",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "name": "HW",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::InvMgr",
+              "value": "InvMgr",
+              "qualifier": "Codeunit",
+              "member": "InvMgr"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterAdjust'",
+              "value": "OnAfterAdjust"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/op0",
+            "op": "Modify",
+            "recordVariableName": "Inv",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/rv/inv"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Inv",
+            "fieldName": "Qty",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 15,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Inv",
+            "fieldName": "Qty",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 5,
+              "startColumn": 19,
+              "endLine": 5,
+              "endColumn": 26,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/rv/inv",
+            "name": "Inv",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Inventory",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "inv"
+        ],
+        "variables": [
+          {
+            "name": "inv",
+            "declaredType": "Record Inventory",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "qty",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubWriter.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 30,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "name": "HR",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::InvMgr",
+              "value": "InvMgr",
+              "qualifier": "Codeunit",
+              "member": "InvMgr"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterAdjust'",
+              "value": "OnAfterAdjust"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/op0",
+            "op": "Get",
+            "recordVariableName": "Other",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/other",
+            "fieldArguments": [
+              "Inv.\"No.\""
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "member_expression",
+                "text": "Inv.\"No.\""
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Inv",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 21,
+              "endLine": 7,
+              "endColumn": 30,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/inv",
+            "name": "Inv",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Inventory",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/other",
+            "name": "Other",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Inventory"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "inv",
+          "other"
+        ],
+        "variables": [
+          {
+            "name": "inv",
+            "declaredType": "Record Inventory",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "other",
+            "declaredType": "Record Inventory",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 32,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "get",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 37,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 17,
+              "endLine": 7,
+              "endColumn": 20,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/op0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

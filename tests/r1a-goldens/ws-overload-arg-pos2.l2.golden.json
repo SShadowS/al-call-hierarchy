@@ -1,0 +1,934 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100",
+      "name": "Probe Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50101",
+      "name": "Probe Sha",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50103",
+      "name": "Probe Log",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Interface:0",
+      "name": "Probe ILog",
+      "objectType": "Interface"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Table:50102",
+      "name": "Probe File",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100#2e82b18721b001d3aa73777e4d6ac3a6671567dca7256279d08daf3a23d4b233",
+      "name": "RunWithPlainArg",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/f28213f3e9623a386f3b59e3fbde7a5725d2040b7d023d26566fea6e894b8acf/cs0",
+            "operationId": "r0/f28213f3e9623a386f3b59e3fbde7a5725d2040b7d023d26566fea6e894b8acf/op0",
+            "calleeText": "Sha.M",
+            "callee": {
+              "kind": "member",
+              "receiver": "Sha",
+              "method": "M"
+            },
+            "argumentTexts": [
+              "Tok",
+              "InStr",
+              "Acc"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Tok",
+                "value": "Tok"
+              },
+              {
+                "kind": "identifier",
+                "text": "InStr",
+                "value": "InStr"
+              },
+              {
+                "kind": "identifier",
+                "text": "Acc",
+                "value": "Acc"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 14,
+                  "startColumn": 14,
+                  "endLine": 14,
+                  "endColumn": 17,
+                  "syntaxKind": "identifier"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 14,
+                  "startColumn": 19,
+                  "endLine": 14,
+                  "endColumn": 24,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 14,
+                  "startColumn": 26,
+                  "endLine": 14,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "acc",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "acc",
+          "instr",
+          "sha",
+          "tok"
+        ],
+        "variables": [
+          {
+            "name": "instr",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "sha",
+            "declaredType": "Codeunit \"Probe Sha\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "tok",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 21,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/f28213f3e9623a386f3b59e3fbde7a5725d2040b7d023d26566fea6e894b8acf/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100#4313e32b6fc50220dbada46ba33d297ef096c79fe34624e2d46583934c8f4479",
+      "name": "GetLog",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "log"
+        ],
+        "variables": [
+          {
+            "name": "log",
+            "declaredType": "Codeunit \"Probe Log\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100#be006be101702ffd2fd98f3cbd192ca239edff06dc39039d14165b2553a601b4",
+      "name": "RunWithCallExprArg",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/cs0",
+            "operationId": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/op0",
+            "calleeText": "Sha.InsertWithSha1",
+            "callee": {
+              "kind": "member",
+              "receiver": "Sha",
+              "method": "InsertWithSha1"
+            },
+            "argumentTexts": [
+              "GetLog()",
+              "InStr",
+              "Acc"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "call_expression",
+                "text": "GetLog()"
+              },
+              {
+                "kind": "identifier",
+                "text": "InStr",
+                "value": "InStr"
+              },
+              {
+                "kind": "identifier",
+                "text": "Acc",
+                "value": "Acc"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 6,
+                  "startColumn": 27,
+                  "endLine": 6,
+                  "endColumn": 35,
+                  "syntaxKind": "call_expression"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 6,
+                  "startColumn": 37,
+                  "endLine": 6,
+                  "endColumn": 42,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              },
+              {
+                "parameterIndex": 2,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 6,
+                  "startColumn": 44,
+                  "endLine": 6,
+                  "endColumn": 47,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "acc",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 48,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/cs1",
+            "operationId": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/op1",
+            "calleeText": "GetLog",
+            "callee": {
+              "kind": "bare",
+              "name": "GetLog"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 27,
+              "endLine": 6,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "acc",
+          "instr",
+          "sha"
+        ],
+        "variables": [
+          {
+            "name": "instr",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "sha",
+            "declaredType": "Codeunit \"Probe Sha\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/cs0",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/20b8065212b176e84f80df6e914442f7fa9c763c8dd9f033c131014a3a2ac043/cs1"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50101#172aedfb3456e6c52cc81c60e5d7c65ef506182815d9623465e6c4ba3829ad6e",
+      "name": "InsertWithSha1",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec"
+          },
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Probe File"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "l",
+            "declaredType": "Interface \"Probe ILog\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "s",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 2
+          },
+          {
+            "name": "rec",
+            "declaredType": "Record \"Probe File\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op2"
+            },
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50101#55da55ecbe8c962a597a51871c9778038021046a907ddc1b22a72a3d592fe122",
+      "name": "InsertWithSha1",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "l",
+            "declaredType": "Interface \"Probe ILog\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "s",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 2
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50101#723e2789cd7d8282e4bc60a9cb9328f83263afe6ad214078ef9a9a32ba894c6d",
+      "name": "M",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/0b14dad47a5accd1b6f6dad8b06d8439e197b79d2ac752458684f6d00b0af3df/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "tok",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "s",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 2
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/0b14dad47a5accd1b6f6dad8b06d8439e197b79d2ac752458684f6d00b0af3df/op0"
+            },
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50101#8ae669921b4ed5ea1be30ed230f7a11f6fc4e0c57edb2dfa29e7ea162790e46f",
+      "name": "M",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "tok",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "s",
+            "declaredType": "Text",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "acc",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sha.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 2
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50103#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683",
+      "name": "Touch",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

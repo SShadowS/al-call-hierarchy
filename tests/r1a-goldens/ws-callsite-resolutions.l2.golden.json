@@ -1,0 +1,487 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50100",
+      "name": "CSR Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50101",
+      "name": "CSR Broken",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-2222-3333-4444-555555555555:Codeunit:50102",
+      "name": "CSR Member Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+      "name": "RunByVariable",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/851f0b3261fe7185a5de5def2be730a733a621feb8a6030a505782d66249e5b1/cs0",
+            "operationId": "r0/851f0b3261fe7185a5de5def2be730a733a621feb8a6030a505782d66249e5b1/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetIsName": false
+            },
+            "argumentTexts": [
+              "CodeunitId"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "CodeunitId",
+                "value": "CodeunitId"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 22,
+                  "startColumn": 21,
+                  "endLine": 22,
+                  "endColumn": 31,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "codeunitid"
+        ],
+        "variables": [
+          {
+            "name": "codeunitid",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 28,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "literal",
+              "value": "50100"
+            }
+          },
+          {
+            "name": "helper",
+            "declaredType": "Codeunit \"CSR Caller\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "codeunitid",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 27,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "50100"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/851f0b3261fe7185a5de5def2be730a733a621feb8a6030a505782d66249e5b1/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs0",
+            "operationId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/op0",
+            "calleeText": "DirectTarget",
+            "callee": {
+              "kind": "bare",
+              "name": "DirectTarget"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs1",
+            "operationId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/op1",
+            "calleeText": "Helper.DirectTarget",
+            "callee": {
+              "kind": "member",
+              "receiver": "Helper",
+              "method": "DirectTarget"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs2",
+            "operationId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/op2",
+            "calleeText": "RunByVariable",
+            "callee": {
+              "kind": "bare",
+              "name": "RunByVariable"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "helper"
+        ],
+        "variables": [
+          {
+            "name": "helper",
+            "declaredType": "Codeunit \"CSR Caller\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs1"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/ce91d0476fe625dc13e3ad0b2462afd2a2dc24345a7597005ce167a4c1f0eb86/cs2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+      "name": "DirectTarget",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/bbbd3c4dea4e091b88ad6ee97d6a259a91be9f47fcd6a9cf260fc85c09ef40b6/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "helper",
+            "declaredType": "Codeunit \"CSR Caller\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/bbbd3c4dea4e091b88ad6ee97d6a259a91be9f47fcd6a9cf260fc85c09ef40b6/op0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+      "name": "Incomplete",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": true,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/accf77edfb07984129b261e98c32a8df38dadc04f77d0c6185894f8566aef5b3/cs0",
+            "operationId": "r0/accf77edfb07984129b261e98c32a8df38dadc04f77d0c6185894f8566aef5b3/op0",
+            "calleeText": "CallSomething",
+            "callee": {
+              "kind": "bare",
+              "name": "CallSomething"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Broken.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/accf77edfb07984129b261e98c32a8df38dadc04f77d0c6185894f8566aef5b3/cs0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+      "name": "CallViaVariable",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/4cf8c46bc3be4282cc35b481713021935f44fa18acb63ed7b265df152be64175/cs0",
+            "operationId": "r0/4cf8c46bc3be4282cc35b481713021935f44fa18acb63ed7b265df152be64175/op0",
+            "calleeText": "Target.DirectTarget",
+            "callee": {
+              "kind": "member",
+              "receiver": "Target",
+              "method": "DirectTarget"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 33,
+              "startColumn": 8,
+              "endLine": 33,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "target"
+        ],
+        "variables": [
+          {
+            "name": "target",
+            "declaredType": "Codeunit \"CSR Caller\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 29,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/4cf8c46bc3be4282cc35b481713021935f44fa18acb63ed7b265df152be64175/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

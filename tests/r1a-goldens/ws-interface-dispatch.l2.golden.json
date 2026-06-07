@@ -1,0 +1,262 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50150",
+      "name": "Processor A",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50151",
+      "name": "Processor B",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50153",
+      "name": "Dispatcher",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50154",
+      "name": "EmptyCaller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Enum:50152",
+      "name": "ProcKind",
+      "objectType": "Enum"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Interface:0",
+      "name": "IEmpty",
+      "objectType": "Interface"
+    },
+    {
+      "stableObjectId": "22222222-2222-2222-2222-222222222222:Interface:0",
+      "name": "IProcessor",
+      "objectType": "Interface"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50150#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/3f3008e6bd5490f7364b24bf754b984153c6998e8e7d28b4ff567a2cdd881b25/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/ProcessorA.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/3f3008e6bd5490f7364b24bf754b984153c6998e8e7d28b4ff567a2cdd881b25/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50151#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "name": "Dispatch",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/74206747c5de6013d351603b93b0b0f8f089403adb5492503aed55ddc4ce8d1e/cs0",
+            "operationId": "r0/74206747c5de6013d351603b93b0b0f8f089403adb5492503aed55ddc4ce8d1e/op0",
+            "calleeText": "Proc.Process",
+            "callee": {
+              "kind": "member",
+              "receiver": "Proc",
+              "method": "Process"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Dispatcher.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "proc"
+        ],
+        "variables": [
+          {
+            "name": "proc",
+            "declaredType": "Interface IProcessor",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Dispatcher.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/74206747c5de6013d351603b93b0b0f8f089403adb5492503aed55ddc4ce8d1e/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50154#f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21",
+      "name": "CallNothing",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/bb748065892d8eede735a73b2bba26b8b7570ce67ab79a96f794925a8996f1b7/cs0",
+            "operationId": "r0/bb748065892d8eede735a73b2bba26b8b7570ce67ab79a96f794925a8996f1b7/op0",
+            "calleeText": "E.Nothing",
+            "callee": {
+              "kind": "member",
+              "receiver": "E",
+              "method": "Nothing"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/EmptyCaller.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "e"
+        ],
+        "variables": [
+          {
+            "name": "e",
+            "declaredType": "Interface IEmpty",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/EmptyCaller.Codeunit.al",
+              "startLine": 3,
+              "startColumn": 8,
+              "endLine": 3,
+              "endColumn": 28,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/bb748065892d8eede735a73b2bba26b8b7570ce67ab79a96f794925a8996f1b7/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

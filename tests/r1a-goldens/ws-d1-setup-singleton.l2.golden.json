@@ -1,0 +1,446 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200",
+      "name": "D1 Setup Singleton Demo",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Table:50200",
+      "name": "Sales Receivables Setup",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d100:Table:50201",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+      "name": "InLoopSetupFindSet",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 30,
+              "endColumn": 33,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 30,
+              "startColumn": 12,
+              "endLine": 30,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/op0",
+            "op": "FindSet",
+            "recordVariableName": "SalesSetup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 30,
+              "startColumn": 12,
+              "endLine": 30,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/rv/salessetup",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/rv/salessetup",
+            "name": "SalesSetup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Sales Receivables Setup"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i",
+          "salessetup"
+        ],
+        "variables": [
+          {
+            "name": "salessetup",
+            "declaredType": "Record \"Sales Receivables Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 26,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 53,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 27,
+              "startColumn": 8,
+              "endLine": 27,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/75fd210c862a7fd4af39c4f6865af6782e3d90694eb7efc03dee6736cfb8d927/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+      "name": "InLoopCustomerGet",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 34,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 12,
+              "endLine": 20,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/op0",
+            "op": "Get",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 12,
+              "endLine": 20,
+              "endColumn": 33,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/rv/customer",
+            "fieldArguments": [
+              "'C0001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'C0001'",
+                "value": "C0001"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/7c26561cb04ec3c92725f1a6531a078711b33eb92c9f4d3659bc5831c2a73387/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+      "name": "InLoopSetupGet",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 29,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/op0",
+            "op": "Get",
+            "recordVariableName": "SalesSetup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/rv/salessetup",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/rv/salessetup",
+            "name": "SalesSetup",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Sales Receivables Setup"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i",
+          "salessetup"
+        ],
+        "variables": [
+          {
+            "name": "salessetup",
+            "declaredType": "Record \"Sales Receivables Setup\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 53,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/49c48945530a2f3a0e55cc4d37676f3880f017cb91b9b9d0cc96bb716fa0f523/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

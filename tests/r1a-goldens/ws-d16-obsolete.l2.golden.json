@@ -1,0 +1,181 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116",
+      "name": "D16Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+      "name": "UseVeryOld",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/24b7a433c3aa9c2f8aab7bc9fc6311d223ea3275c0f33a347a3f213c74b0d122/cs0",
+            "operationId": "r0/24b7a433c3aa9c2f8aab7bc9fc6311d223ea3275c0f33a347a3f213c74b0d122/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D16VeryOldWay",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D16VeryOldWay"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D16VeryOldWay",
+                "value": "D16VeryOldWay",
+                "qualifier": "Codeunit",
+                "member": "D16VeryOldWay"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 9,
+                  "startColumn": 15,
+                  "endLine": 9,
+                  "endColumn": 38,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 9,
+              "startColumn": 2,
+              "endLine": 9,
+              "endColumn": 39,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "d16veryoldway"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/24b7a433c3aa9c2f8aab7bc9fc6311d223ea3275c0f33a347a3f213c74b0d122/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+      "name": "UseOld",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/296a978349352f4c090f4981dd91ce3b2714d75d09c439b6169cb81c48ddfd37/cs0",
+            "operationId": "r0/296a978349352f4c090f4981dd91ce3b2714d75d09c439b6169cb81c48ddfd37/op0",
+            "calleeText": "Codeunit.Run",
+            "callee": {
+              "kind": "object-run",
+              "objectKind": "Codeunit",
+              "targetType": "Codeunit",
+              "targetRef": "D16OldWay",
+              "targetIsName": true
+            },
+            "argumentTexts": [
+              "Codeunit::D16OldWay"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "database_reference",
+                "text": "Codeunit::D16OldWay",
+                "value": "D16OldWay",
+                "qualifier": "Codeunit",
+                "member": "D16OldWay"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/caller.al",
+                  "startLine": 4,
+                  "startColumn": 15,
+                  "endLine": 4,
+                  "endColumn": 34,
+                  "syntaxKind": "database_reference"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/caller.al",
+              "startLine": 4,
+              "startColumn": 2,
+              "endLine": 4,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            },
+            "resultConsumed": false,
+            "objectRunReturnUsed": false
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "d16oldway"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/296a978349352f4c090f4981dd91ce3b2714d75d09c439b6169cb81c48ddfd37/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

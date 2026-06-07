@@ -1,0 +1,639 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000",
+      "name": "D34 Demo",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+      "name": "TransitiveCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 30,
+              "endColumn": 23,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+            "operationId": "r0/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/op0",
+            "calleeText": "Persist",
+            "callee": {
+              "kind": "bare",
+              "name": "Persist"
+            },
+            "argumentTexts": [
+              "i"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "i",
+                "value": "i"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 30,
+                  "startColumn": 20,
+                  "endLine": 30,
+                  "endColumn": 21,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 30,
+              "startColumn": 12,
+              "endLine": 30,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 27,
+              "startColumn": 8,
+              "endLine": 27,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+      "name": "DirectCommitInLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 12,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op0",
+            "kind": "commit",
+            "loopStack": [
+              "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/cs0",
+            "operationId": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op1",
+            "calleeText": "DoWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoWork"
+            },
+            "argumentTexts": [
+              "i"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "i",
+                "value": "i"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 19,
+                  "endLine": 8,
+                  "endColumn": 20,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 8,
+              "startColumn": 12,
+              "endLine": 8,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/cs0"
+                    },
+                    {
+                      "kind": "op",
+                      "operationId": "r0/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+      "name": "Persist",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 47,
+              "startColumn": 8,
+              "endLine": 47,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "_n",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "_n",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+      "name": "NestedCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 25,
+              "syntaxKind": "for_statement"
+            }
+          },
+          {
+            "id": "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/loop1",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 12,
+              "endLine": 21,
+              "endColumn": 25,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/op0",
+            "kind": "commit",
+            "loopStack": [
+              "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/loop0",
+              "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/loop1"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 21,
+              "startColumn": 16,
+              "endLine": 21,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 2,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i",
+          "j"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "j",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "for",
+                      "children": [
+                        {
+                          "kind": "block",
+                          "children": [
+                            {
+                              "kind": "op",
+                              "operationId": "r0/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/op0"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+      "name": "CommitAfterLoop",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 38,
+              "startColumn": 8,
+              "endLine": 39,
+              "endColumn": 22,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/op0",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 40,
+              "startColumn": 8,
+              "endLine": 40,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/cs0",
+            "operationId": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/op1",
+            "calleeText": "DoWork",
+            "callee": {
+              "kind": "bare",
+              "name": "DoWork"
+            },
+            "argumentTexts": [
+              "i"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "i",
+                "value": "i"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 39,
+                  "startColumn": 19,
+                  "endLine": 39,
+                  "endColumn": 20,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 39,
+              "startColumn": 12,
+              "endLine": 39,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 36,
+              "startColumn": 8,
+              "endLine": 36,
+              "endColumn": 19,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/cs0"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

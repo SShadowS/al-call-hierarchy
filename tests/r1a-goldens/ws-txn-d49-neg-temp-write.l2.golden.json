@@ -1,0 +1,223 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4905:Codeunit:50000",
+      "name": "D49 Sender",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000d4905:Table:50100",
+      "name": "D49 Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4905:Codeunit:50000#a591d2a398ad6ce91a101498d5c299e2f6b930c4f46bc882282bd5e511bf2256",
+      "name": "TempInsertThenMessage",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op0",
+            "op": "Init",
+            "recordVariableName": "TempRec",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec"
+          },
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1",
+            "op": "Insert",
+            "recordVariableName": "TempRec",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/cs0",
+            "operationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op2",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'Done'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Done'",
+                "value": "Done"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Sender.Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 16,
+                  "endLine": 13,
+                  "endColumn": 22,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "TempRec",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 21,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec",
+            "name": "TempRec",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "isParameter": false,
+            "tableName": "D49 Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "temprec"
+        ],
+        "variables": [
+          {
+            "name": "temprec",
+            "declaredType": "Record \"D49 Rec\" temporary",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 44,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 26,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "1"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

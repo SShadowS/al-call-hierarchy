@@ -1,0 +1,396 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "77777777-7777-7777-7777-777777777777:Codeunit:51101",
+      "name": "Writer CU",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "77777777-7777-7777-7777-777777777777:Table:51100",
+      "name": "Item",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#062c53a0a18bc81d40e1eeb8aa85f456e33a6d63f5e0fb727f509f6852024e27",
+      "name": "ValidateIt",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/op0",
+            "op": "Validate",
+            "recordVariableName": "Item",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/rv/item",
+            "fieldArguments": [
+              "Description"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Description",
+                "value": "Description"
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/rv/item",
+            "name": "Item",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Item"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "description",
+          "item"
+        ],
+        "variables": [
+          {
+            "name": "item",
+            "declaredType": "Record Item",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 26,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#327c471c4fac614af61059ecfc7d16e9a45bc3162be054055edd6d110c4ea795",
+      "name": "WriteIt",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/op0",
+            "op": "Modify",
+            "recordVariableName": "Item",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/rv/item"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/rv/item",
+            "name": "Item",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Item"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "item"
+        ],
+        "variables": [
+          {
+            "name": "item",
+            "declaredType": "Record Item",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 26,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#9c0af5fd7ebb8786915caac03824a333156b86e486f44eee5d58878ce952b5e4",
+      "name": "UnknownIt",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 27,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/op0",
+            "op": "Modify",
+            "recordVariableName": "Ledger",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 27,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/rv/ledger"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/rv/ledger",
+            "name": "Ledger",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "G/L Entry"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "ledger"
+        ],
+        "variables": [
+          {
+            "name": "ledger",
+            "declaredType": "Record \"G/L Entry\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/writer.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
+      "name": "OnModify",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
+      "name": "OnValidate",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,516 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000",
+      "name": "PostingMgr",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001",
+      "name": "PostingHandler",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100",
+      "name": "PostingEntry",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "name": "OnBeforePost",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/e09553a89af3f4589284ad8bd7eb5ec5099dbb0dddfcb9168a84b9ec1f987b94/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "PostingEntry",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record PostingEntry",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "ishandled",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+      "name": "DoPost",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/op0",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/cs0",
+            "operationId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/op1",
+            "calleeText": "OnBeforePost",
+            "callee": {
+              "kind": "bare",
+              "name": "OnBeforePost"
+            },
+            "argumentTexts": [
+              "Rec",
+              "IsHandled"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Rec",
+                "value": "Rec"
+              },
+              {
+                "kind": "identifier",
+                "text": "IsHandled",
+                "value": "IsHandled"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 7,
+                  "startColumn": 21,
+                  "endLine": 7,
+                  "endColumn": 24,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "rec",
+                "sourceRecordVariableId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/rv/rec",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 7,
+                  "startColumn": 26,
+                  "endLine": 7,
+                  "endColumn": 35,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "PostingEntry",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "extracheck",
+          "ishandled",
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record PostingEntry",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "extracheck",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "ishandled",
+            "declaredType": "Boolean",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "ishandled",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 26,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "false"
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "extracheck",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 29,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 8,
+              "startColumn": 11,
+              "endLine": 8,
+              "endColumn": 21,
+              "syntaxKind": "identifier"
+            }
+          },
+          {
+            "identifier": "ishandled",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 29,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 8,
+              "startColumn": 30,
+              "endLine": 8,
+              "endColumn": 39,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/cs0"
+            },
+            {
+              "kind": "if",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "op",
+                      "operationId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/op0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "name": "H",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::PostingMgr, 'OnBeforePost', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::PostingMgr",
+              "value": "PostingMgr",
+              "qualifier": "Codeunit",
+              "member": "PostingMgr"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnBeforePost'",
+              "value": "OnBeforePost"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::PostingMgr, 'OnBeforePost', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/752f9f49c2319cd87a2caf5504515814b04fb7cbcc85508af6e422b98c398b9a/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "PostingEntry",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "ishandled"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record PostingEntry",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "ishandled",
+            "declaredType": "Boolean",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "ishandled",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 25,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "true"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "ffffffff-0000-0000-0000-000000tf0001:Codeunit:50101",
+      "name": "TF TryFunction",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100",
+      "name": "TF Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "ffffffff-0000-0000-0000-000000tf0001:Codeunit:50101#f9a5dfcf0917d1e622d68f636bbf365aa236fb666ad293adafff775a30cf3ee2",
+      "name": "TryInsertAndCommit",
+      "kind": "procedure",
+      "attributes": [
+        "[TryFunction]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "TryFunction",
+          "args": [],
+          "raw": "[TryFunction]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec"
+          },
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "TF Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"TF Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/TryFunction.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

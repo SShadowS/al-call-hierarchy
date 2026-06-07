@@ -1,0 +1,156 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100",
+      "name": "D3TempCheck",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-0000000033d3:Table:50200",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+      "name": "Foo",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/op0",
+            "op": "FindFirst",
+            "recordVariableName": "TempCustomer",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 32,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/rv/tempcustomer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "TempCustomer",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 28,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/rv/tempcustomer",
+            "name": "TempCustomer",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "tempcustomer"
+        ],
+        "variables": [
+          {
+            "name": "tempcustomer",
+            "declaredType": "Record Customer temporary",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 48,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "name",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 13,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 7,
+              "startColumn": 24,
+              "endLine": 7,
+              "endColumn": 28,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/op0"
+            },
+            {
+              "kind": "if",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

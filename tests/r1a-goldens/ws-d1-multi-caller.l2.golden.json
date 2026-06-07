@@ -1,0 +1,683 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101",
+      "name": "D1 Multi Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d01a:Table:50101",
+      "name": "MC Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "name": "CallerB",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 33,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 31,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 32,
+              "startColumn": 8,
+              "endLine": 32,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 32,
+              "startColumn": 8,
+              "endLine": 32,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/cs0",
+            "operationId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op1",
+            "calleeText": "ModifyHelper",
+            "callee": {
+              "kind": "bare",
+              "name": "ModifyHelper"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/D1MultiCaller.al",
+                  "startLine": 34,
+                  "startColumn": 25,
+                  "endLine": 34,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/rv/cust",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 34,
+              "startColumn": 12,
+              "endLine": 34,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "MC Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record \"MC Customer\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 30,
+              "startColumn": 8,
+              "endLine": 30,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 30,
+              "startColumn": 36,
+              "endLine": 30,
+              "endColumn": 47,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op0"
+            },
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "name": "CallerC",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 41,
+              "startColumn": 8,
+              "endLine": 42,
+              "endColumn": 31,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 40,
+              "startColumn": 8,
+              "endLine": 40,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 40,
+              "startColumn": 8,
+              "endLine": 40,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/cs0",
+            "operationId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op1",
+            "calleeText": "ModifyHelper",
+            "callee": {
+              "kind": "bare",
+              "name": "ModifyHelper"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/D1MultiCaller.al",
+                  "startLine": 42,
+                  "startColumn": 25,
+                  "endLine": 42,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/rv/cust",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 42,
+              "startColumn": 12,
+              "endLine": 42,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "MC Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record \"MC Customer\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 38,
+              "startColumn": 8,
+              "endLine": 38,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 38,
+              "startColumn": 36,
+              "endLine": 38,
+              "endColumn": 47,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op0"
+            },
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "name": "CallerA",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/loop0",
+            "type": "for",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 31,
+              "syntaxKind": "for_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op0",
+            "op": "FindSet",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/rv/cust",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/cs0",
+            "operationId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op1",
+            "calleeText": "ModifyHelper",
+            "callee": {
+              "kind": "bare",
+              "name": "ModifyHelper"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/D1MultiCaller.al",
+                  "startLine": 26,
+                  "startColumn": 25,
+                  "endLine": 26,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/rv/cust",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [
+              "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 26,
+              "startColumn": 12,
+              "endLine": 26,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "MC Customer"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust",
+          "i"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record \"MC Customer\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 35,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "i",
+            "declaredType": "Integer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 22,
+              "startColumn": 36,
+              "endLine": 22,
+              "endColumn": 47,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op0"
+            },
+            {
+              "kind": "for",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "call",
+                      "callsiteId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/cs0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "name": "ModifyHelper",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0",
+            "op": "Modify",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "MC Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record \"MC Customer\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,260 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101",
+      "name": "OI IoBeforeCommit",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100",
+      "name": "OI Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "name": "SendThenPost",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec"
+          },
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/cs0",
+            "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op3",
+            "calleeText": "Client.Get",
+            "callee": {
+              "kind": "member",
+              "receiver": "Client",
+              "method": "Get"
+            },
+            "argumentTexts": [
+              "'https://example.com/notify'",
+              "Response"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'https://example.com/notify'",
+                "value": "https://example.com/notify"
+              },
+              {
+                "kind": "identifier",
+                "text": "Response",
+                "value": "Response"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 19,
+                  "endLine": 8,
+                  "endColumn": 47,
+                  "syntaxKind": "string_literal"
+                }
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "unknown",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+                  "startLine": 8,
+                  "startColumn": 49,
+                  "endLine": 8,
+                  "endColumn": 57,
+                  "syntaxKind": "identifier"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 58,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "OI Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "client",
+          "rec",
+          "response"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"OI Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "client",
+            "declaredType": "HttpClient",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 27,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "response",
+            "declaredType": "HttpResponseMessage",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/IoBeforeCommit.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/cs0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

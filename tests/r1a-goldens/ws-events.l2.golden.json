@@ -1,0 +1,262 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "88888888-8888-8888-8888-888888888888:Codeunit:51200",
+      "name": "Work Engine",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "88888888-8888-8888-8888-888888888888:Codeunit:51201",
+      "name": "Work Listener",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6",
+      "name": "OnAfterDoWork",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/cd6af572c9d9a2b9c395cebf5752e33113655a60e975afbd17fffbe2d2fb2d45/cs0",
+            "operationId": "r0/cd6af572c9d9a2b9c395cebf5752e33113655a60e975afbd17fffbe2d2fb2d45/op0",
+            "calleeText": "OnAfterDoWork",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterDoWork"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/cd6af572c9d9a2b9c395cebf5752e33113655a60e975afbd17fffbe2d2fb2d45/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#c3bc0da359a54bc1da8602c5641dfacc7217a117934afbb5075e2737578fc7c1",
+      "name": "HandleAfterDoWork",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Work Engine\", 'OnAfterDoWork', '', true, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"Work Engine\"",
+              "value": "Work Engine",
+              "qualifier": "Codeunit",
+              "member": "Work Engine"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterDoWork'",
+              "value": "OnAfterDoWork"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Work Engine\", 'OnAfterDoWork', '', true, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#cfd8945a4ad1fbdb2e10040effb2aff532999d8a707a507196b19d4fa9919651",
+      "name": "HandleBaseAppEvent",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnAfterPostSalesDoc', '', true, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::\"Sales-Post\"",
+              "value": "Sales-Post",
+              "qualifier": "Codeunit",
+              "member": "Sales-Post"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterPostSalesDoc'",
+              "value": "OnAfterPostSalesDoc"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnAfterPostSalesDoc', '', true, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

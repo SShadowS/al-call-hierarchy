@@ -1,0 +1,775 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108",
+      "name": "D8PostingChain",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109",
+      "name": "D8BadSubscriber",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:36",
+      "name": "Sales Header",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:37",
+      "name": "Sales Line",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d80a:Table:50100",
+      "name": "Audit Entry",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "name": "PostSalesDoc",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 51,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op3",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 45,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op4",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op0",
+            "op": "Get",
+            "recordVariableName": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/header",
+            "fieldArguments": [
+              "'001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'001'",
+                "value": "001"
+              }
+            ]
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op1",
+            "op": "Modify",
+            "recordVariableName": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/header"
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op2",
+            "op": "SetRange",
+            "recordVariableName": "Line",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 51,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/line",
+            "fieldArguments": [
+              "\"Document No.\"",
+              "Header.\"No.\""
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"Document No.\"",
+                "value": "Document No."
+              },
+              {
+                "kind": "member_expression",
+                "text": "Header.\"No.\""
+              }
+            ]
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op3",
+            "op": "ModifyAll",
+            "recordVariableName": "Line",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 45,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/line"
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op4",
+            "op": "Modify",
+            "recordVariableName": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/header"
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/cs0",
+            "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op5",
+            "calleeText": "OnAfterPostSalesDoc",
+            "callee": {
+              "kind": "bare",
+              "name": "OnAfterPostSalesDoc"
+            },
+            "argumentTexts": [
+              "Header"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Header",
+                "value": "Header"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "local",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/posting.al",
+                  "startLine": 12,
+                  "startColumn": 28,
+                  "endLine": 12,
+                  "endColumn": 34,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "header",
+                "sourceRecordVariableId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/header",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 35,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Header",
+            "fieldName": "Status Posted",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 30,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Header",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 10,
+              "startColumn": 38,
+              "endLine": 10,
+              "endColumn": 50,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Header",
+            "fieldName": "Last Posting Date",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 34,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/header",
+            "name": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Sales Header"
+          },
+          {
+            "id": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/rv/line",
+            "name": "Line",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Sales Line"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "header",
+          "line",
+          "today"
+        ],
+        "variables": [
+          {
+            "name": "header",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 38,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "line",
+            "declaredType": "Record \"Sales Line\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"status posted\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 38,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "true"
+          },
+          {
+            "lhsName": "\"last posting date\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 43,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op2"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op3"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/cs0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "name": "OnAfterPostSalesDoc",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/cef6be65ffad540c497f12505e92be6971f278eddb0f9cf1180f61e12fe6ef20/rv/header",
+            "name": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "header",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/posting.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "name": "HandlePosted",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::D8PostingChain, 'OnAfterPostSalesDoc', '', true, true)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::D8PostingChain",
+              "value": "D8PostingChain",
+              "qualifier": "Codeunit",
+              "member": "D8PostingChain"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnAfterPostSalesDoc'",
+              "value": "OnAfterPostSalesDoc"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            },
+            {
+              "kind": "boolean",
+              "text": "true",
+              "value": "true"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::D8PostingChain, 'OnAfterPostSalesDoc', '', true, true)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op0",
+            "op": "Init",
+            "recordVariableName": "Audit",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/rv/audit"
+          },
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op1",
+            "op": "Insert",
+            "recordVariableName": "Audit",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/rv/audit"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Audit",
+            "fieldName": "Doc No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 23,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Header",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 8,
+              "startColumn": 27,
+              "endLine": 8,
+              "endColumn": 39,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/rv/header",
+            "name": "Header",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/rv/audit",
+            "name": "Audit",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Audit Entry"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "audit",
+          "header"
+        ],
+        "variables": [
+          {
+            "name": "header",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "audit",
+            "declaredType": "Record \"Audit Entry\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 36,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"doc no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 39,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op2"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

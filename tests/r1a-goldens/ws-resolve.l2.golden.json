@@ -1,0 +1,255 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Codeunit:50901",
+      "name": "Processor",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-5555-5555-5555-555555555555:Table:50900",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/1192dd0167d3f67d2d1112510a7cae449fcd67467f9d049b4ba82212d4e4dcad/cs0",
+            "operationId": "r0/1192dd0167d3f67d2d1112510a7cae449fcd67467f9d049b4ba82212d4e4dcad/op0",
+            "calleeText": "Process",
+            "callee": {
+              "kind": "bare",
+              "name": "Process"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 17,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/1192dd0167d3f67d2d1112510a7cae449fcd67467f9d049b4ba82212d4e4dcad/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op0",
+            "op": "Get",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
+            "fieldArguments": [
+              "'C0001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'C0001'",
+                "value": "C0001"
+              }
+            ]
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/cs0",
+            "operationId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op1",
+            "calleeText": "Helper",
+            "callee": {
+              "kind": "bare",
+              "name": "Helper"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          },
+          {
+            "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/salesline",
+            "name": "SalesLine",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Sales Line"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "salesline",
+            "declaredType": "Record \"Sales Line\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 39,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+      "name": "Helper",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

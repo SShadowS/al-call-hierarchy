@@ -1,0 +1,833 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50100",
+      "name": "Probe Caller",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50101",
+      "name": "Probe Insert File Archive",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50103",
+      "name": "Probe Unknown Receiver",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50104",
+      "name": "Probe Global Receivers",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Table:50102",
+      "name": "Probe File Archive",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50100#cb01deefa01c77b7b956a4b280cfec1b430a6b3948de68e9348999e3b4867125",
+      "name": "RunImport",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/50080ca989da10020ae7e834c0052b6173fa9865e77e4d2eb54dca5f9f63a302/cs0",
+            "operationId": "r0/50080ca989da10020ae7e834c0052b6173fa9865e77e4d2eb54dca5f9f63a302/op0",
+            "calleeText": "Archive.Insert",
+            "callee": {
+              "kind": "member",
+              "receiver": "Archive",
+              "method": "Insert"
+            },
+            "argumentTexts": [
+              "InStr",
+              "AccNo"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "InStr",
+                "value": "InStr"
+              },
+              {
+                "kind": "identifier",
+                "text": "AccNo",
+                "value": "AccNo"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 10,
+                  "startColumn": 17,
+                  "endLine": 10,
+                  "endColumn": 22,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Caller.Codeunit.al",
+                  "startLine": 10,
+                  "startColumn": 24,
+                  "endLine": 10,
+                  "endColumn": 29,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "accno",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 30,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "accno",
+          "archive",
+          "instr"
+        ],
+        "variables": [
+          {
+            "name": "instr",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "accno",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "archive",
+            "declaredType": "Codeunit \"Probe Insert File Archive\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 2,
+              "endLine": 8,
+              "endColumn": 48,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/50080ca989da10020ae7e834c0052b6173fa9865e77e4d2eb54dca5f9f63a302/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50101#a409707d31efb836493088d2e29cbb71f098f017068b06ed0050ddea85f49f92",
+      "name": "Insert",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 2,
+              "endLine": 8,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 2,
+              "endLine": 9,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 10,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op0",
+            "op": "Init",
+            "recordVariableName": "FileArchive",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 2,
+              "endLine": 8,
+              "endColumn": 20,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive"
+          },
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op1",
+            "op": "Insert",
+            "recordVariableName": "FileArchive",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 2,
+              "endLine": 9,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive",
+            "name": "FileArchive",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Probe File Archive"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "filearchive"
+        ],
+        "variables": [
+          {
+            "name": "instr",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "accno",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "filearchive",
+            "declaredType": "Record \"Probe File Archive\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Archive.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 43,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op1"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op2"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50103#75abfc7f25a5229f6ce569c1f0dd904b76add65be0fe6628d59c51ed167cd844",
+      "name": "CallOnUnknown",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/e9122d1f79fe3910eb788c9b8027e518e60c2470292145d829be1a3504854501/cs0",
+            "operationId": "r0/e9122d1f79fe3910eb788c9b8027e518e60c2470292145d829be1a3504854501/op0",
+            "calleeText": "Mystery.Insert",
+            "callee": {
+              "kind": "member",
+              "receiver": "Mystery",
+              "method": "Insert"
+            },
+            "argumentTexts": [
+              "true"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "boolean",
+                "text": "true",
+                "value": "true"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Unknown.Codeunit.al",
+                  "startLine": 7,
+                  "startColumn": 17,
+                  "endLine": 7,
+                  "endColumn": 21,
+                  "syntaxKind": "boolean"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Unknown.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "mystery"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/e9122d1f79fe3910eb788c9b8027e518e60c2470292145d829be1a3504854501/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
+      "name": "InsertViaGlobalRecord",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 16,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 17,
+              "startColumn": 2,
+              "endLine": 17,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op0",
+            "op": "Init",
+            "recordVariableName": "GlobalRec",
+            "tempState": {
+              "kind": "unknown"
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 16,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op1",
+            "op": "Insert",
+            "recordVariableName": "GlobalRec",
+            "tempState": {
+              "kind": "unknown"
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 17,
+              "startColumn": 2,
+              "endLine": 17,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "globalrec"
+        ],
+        "variables": [
+          {
+            "name": "globalarchive",
+            "declaredType": "Codeunit \"Probe Insert File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 54,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "globalrec",
+            "declaredType": "Record \"Probe File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 41,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op1"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
+      "name": "CallViaGlobalCodeunit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/972d3444439d73ad88cc39986df044e39cb2d78fbf50e6b77cb9cdcfd6e38f78/cs0",
+            "operationId": "r0/972d3444439d73ad88cc39986df044e39cb2d78fbf50e6b77cb9cdcfd6e38f78/op0",
+            "calleeText": "GlobalArchive.Insert",
+            "callee": {
+              "kind": "member",
+              "receiver": "GlobalArchive",
+              "method": "Insert"
+            },
+            "argumentTexts": [
+              "InStr",
+              "AccNo"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "InStr",
+                "value": "InStr"
+              },
+              {
+                "kind": "identifier",
+                "text": "AccNo",
+                "value": "AccNo"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+                  "startLine": 11,
+                  "startColumn": 23,
+                  "endLine": 11,
+                  "endColumn": 28,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false
+              },
+              {
+                "parameterIndex": 1,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+                  "startLine": 11,
+                  "startColumn": 30,
+                  "endLine": 11,
+                  "endColumn": 35,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "accno",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 2,
+              "endLine": 11,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "accno",
+          "globalarchive",
+          "instr"
+        ],
+        "variables": [
+          {
+            "name": "instr",
+            "declaredType": "InStream",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "accno",
+            "declaredType": "Code[20]",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 1
+          },
+          {
+            "name": "globalarchive",
+            "declaredType": "Codeunit \"Probe Insert File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 54,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "globalrec",
+            "declaredType": "Record \"Probe File Archive\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 2,
+              "endLine": 7,
+              "endColumn": 41,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/972d3444439d73ad88cc39986df044e39cb2d78fbf50e6b77cb9cdcfd6e38f78/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Table:50102#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Table.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 16,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",
+            "op": "TestField",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "unknown"
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Table.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 16,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "fieldArguments": [
+              "\"Entry No.\""
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"Entry No.\"",
+                "value": "Entry No."
+              }
+            ]
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

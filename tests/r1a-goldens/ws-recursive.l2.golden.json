@@ -1,0 +1,194 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101",
+      "name": "Cycle CU",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "name": "Ping",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/cycle.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op0",
+            "op": "FindSet",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/cycle.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 26,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
+            "fieldArguments": [],
+            "fieldArgumentInfos": []
+          }
+        ],
+        "callSites": [
+          {
+            "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/cs0",
+            "operationId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op1",
+            "calleeText": "Pong",
+            "callee": {
+              "kind": "bare",
+              "name": "Pong"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/cycle.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/cycle.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "name": "Pong",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/5f0b591fa8aa0dfe868a068b0f9c51a6f6835ddb7204f8e0ae072a37f8739205/cs0",
+            "operationId": "r0/5f0b591fa8aa0dfe868a068b0f9c51a6f6835ddb7204f8e0ae072a37f8739205/op0",
+            "calleeText": "Ping",
+            "callee": {
+              "kind": "bare",
+              "name": "Ping"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/cycle.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 14,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/5f0b591fa8aa0dfe868a068b0f9c51a6f6835ddb7204f8e0ae072a37f8739205/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

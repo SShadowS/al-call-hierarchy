@@ -1,0 +1,149 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200",
+      "name": "MCR Helper",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50201",
+      "name": "MCR Caller",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#cdf36153067507b0be60121294d4836340ca51b2bbdea12d7099dfec85ee05a8",
+      "name": "PublicEntry",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
+      "name": "LocalHelper",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/7578753f945ec8d03b7b386aa869693584cedbe4ad2ce2f15cd25d6daa613149/cs0",
+            "operationId": "r0/7578753f945ec8d03b7b386aa869693584cedbe4ad2ce2f15cd25d6daa613149/op0",
+            "calleeText": "Helper.LocalHelper",
+            "callee": {
+              "kind": "member",
+              "receiver": "Helper",
+              "method": "LocalHelper"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "helper"
+        ],
+        "variables": [
+          {
+            "name": "helper",
+            "declaredType": "Codeunit \"MCR Helper\"",
+            "scope": "global",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Caller.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 32,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/7578753f945ec8d03b7b386aa869693584cedbe4ad2ce2f15cd25d6daa613149/cs0"
+            },
+            {
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

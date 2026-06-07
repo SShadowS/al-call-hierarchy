@@ -1,0 +1,126 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "10000004-0000-0000-0000-000000000000:Page:50101",
+      "name": "Test Customer API",
+      "objectType": "Page",
+      "pageType": "API",
+      "sourceTableName": "Test Customer"
+    },
+    {
+      "stableObjectId": "10000004-0000-0000-0000-000000000000:Table:50101",
+      "name": "Test Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295/cs0",
+            "operationId": "r0/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295/op0",
+            "calleeText": "Confirm",
+            "callee": {
+              "kind": "bare",
+              "name": "Confirm"
+            },
+            "argumentTexts": [
+              "'Confirm?'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'Confirm?'",
+                "value": "Confirm?"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Page.al",
+                  "startLine": 31,
+                  "startColumn": 31,
+                  "endLine": 31,
+                  "endColumn": 41,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 31,
+              "startColumn": 23,
+              "endLine": 31,
+              "endColumn": 42,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "confirm",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 31,
+              "startColumn": 20,
+              "endLine": 31,
+              "endColumn": 48,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 31,
+              "startColumn": 23,
+              "endLine": 31,
+              "endColumn": 30,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "conditionLeaves": [
+                {
+                  "kind": "call",
+                  "callsiteId": "r0/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295/cs0"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "block",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

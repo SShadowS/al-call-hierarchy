@@ -1,0 +1,497 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50000",
+      "name": "PubA",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50001",
+      "name": "SubA",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50002",
+      "name": "SubB",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "44444444-4444-4444-4444-444444444444:Table:50100",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50000#4646aa1a34fe0681afba23f3850cb9ea65b37e524e26ae14ce274dd0d5b707fb",
+      "name": "Fire",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/7629a43197735c9e950d2b1112867da268cfcbbc0483c27c60a74afe1a131a74/cs0",
+            "operationId": "r0/7629a43197735c9e950d2b1112867da268cfcbbc0483c27c60a74afe1a131a74/op0",
+            "calleeText": "OnE",
+            "callee": {
+              "kind": "bare",
+              "name": "OnE"
+            },
+            "argumentTexts": [
+              "Cust"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Cust",
+                "value": "Cust"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Pub.al",
+                  "startLine": 2,
+                  "startColumn": 56,
+                  "endLine": 2,
+                  "endColumn": 60,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "cust",
+                "sourceRecordVariableId": "r0/7629a43197735c9e950d2b1112867da268cfcbbc0483c27c60a74afe1a131a74/rv/cust",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 2,
+              "startColumn": 52,
+              "endLine": 2,
+              "endColumn": 61,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/7629a43197735c9e950d2b1112867da268cfcbbc0483c27c60a74afe1a131a74/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/7629a43197735c9e950d2b1112867da268cfcbbc0483c27c60a74afe1a131a74/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50000#7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "name": "OnE",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/4179e5dd90cf4231c332339264f56f47da84d622a15705e9851c6d28d5893915/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Pub.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50001#f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "name": "H1",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnE', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::PubA",
+              "value": "PubA",
+              "qualifier": "Codeunit",
+              "member": "PubA"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnE'",
+              "value": "OnE"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnE', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 3,
+              "startColumn": 56,
+              "endLine": 3,
+              "endColumn": 73,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/op0",
+            "op": "Modify",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 3,
+              "startColumn": 56,
+              "endLine": 3,
+              "endColumn": 73,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub1.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "name": "H2",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnE', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::PubA",
+              "value": "PubA",
+              "qualifier": "Codeunit",
+              "member": "PubA"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnE'",
+              "value": "OnE"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::PubA, 'OnE', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 3,
+              "startColumn": 56,
+              "endLine": 3,
+              "endColumn": 73,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/op0",
+            "op": "Insert",
+            "recordVariableName": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 3,
+              "startColumn": 56,
+              "endLine": 3,
+              "endColumn": 73,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/rv/cust"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/rv/cust",
+            "name": "Cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Customer",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "cust"
+        ],
+        "variables": [
+          {
+            "name": "cust",
+            "declaredType": "Record Customer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sub2.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/op0"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

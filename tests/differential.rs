@@ -50,14 +50,25 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use al_call_hierarchy::engine::l2::features::L2Projection;
+use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use al_call_hierarchy::engine::snapshot::{
     snapshot_workspace, IdentitySnapshot, ObjectIdentity, RoutineIdentity,
 };
 use serde::Deserialize;
 
 /// One entry in `KNOWN_DIVERGENCES.json`.
+///
+/// `test` scopes the entry to ONE differential pass. It defaults to the R0
+/// identity test (`differential_identity_subset_matches_goldens`) so existing
+/// R0 entries need no `test` field. L2 entries MUST carry
+/// `"test": "differential_l2_features_match_goldens"`. Matching is exact on the
+/// `(test, fixture, path)` triple, so an R0 entry can never cover an L2
+/// divergence (or vice versa).
 #[derive(Debug, Clone, Deserialize)]
 struct AllowEntry {
+    #[serde(default = "default_allow_test")]
+    test: String,
     fixture: String,
     path: String,
     #[serde(default)]
@@ -66,6 +77,11 @@ struct AllowEntry {
     #[serde(default)]
     #[allow(dead_code)]
     expires: String,
+}
+
+/// Default allowlist scope: the R0 identity pass.
+fn default_allow_test() -> String {
+    "differential_identity_subset_matches_goldens".to_string()
 }
 
 /// A single, machine-checkable divergence between a golden and the Rust output.
@@ -90,6 +106,12 @@ fn goldens_dir() -> PathBuf {
 
 fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
+}
+
+/// The R1a L2-feature goldens live alongside the R0 goldens but in their own
+/// dir; the corpus (source fixtures) is shared with R0 (`tests/r0-corpus/`).
+fn r1a_goldens_dir() -> PathBuf {
+    repo_root().join("tests").join("r1a-goldens")
 }
 
 /// Discover every `tests/r0-goldens/*.golden.json` (skipping `manifest.json`),
@@ -282,7 +304,12 @@ fn differential_identity_subset_matches_goldens() {
         goldens_dir().display()
     );
 
-    let allowlist = load_allowlist();
+    // Only R0-scoped allowlist entries apply to this pass; L2 entries are
+    // filtered out (and vice versa in the L2 test).
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == "differential_identity_subset_matches_goldens")
+        .collect();
 
     // Collect every divergence across every fixture.
     let mut all_divergences: Vec<Divergence> = Vec::new();
@@ -376,6 +403,390 @@ fn differential_identity_subset_matches_goldens() {
     );
 }
 
+// =============================================================================
+// R1a L2-features differential pass
+// =============================================================================
+//
+// For each `tests/r1a-goldens/<name>.l2.golden.json`, run the Rust L2 dump
+// (`project_workspace`) on `tests/r0-corpus/<name>` (the same source fixtures
+// the R0 pass uses), and compare the allowlisted R1a projection as PARSED
+// structures.
+//
+// ## Comparison rules (R1 spec §2 / R1a plan Task 4)
+//
+//   - Both sides are validated to parse as the `L2Projection` serde type (which
+//     STRUCTURALLY OMITS every forbidden field), then compared as the raw parsed
+//     `serde_json::Value` so the path locator is precise to the leaf.
+//   - The differ MAY sort the top-level `objects`/`routines` lists (by
+//     stableObjectId / stableRoutineId) — and ONLY those. It MUST NOT transform
+//     any value. All enumerated arrays (operationSites / recordOperations /
+//     callSites / loops / fieldAccesses / statementTree.children /
+//     conditionLeaves / recordVariables / variables / …) are compared
+//     POSITIONALLY, in order, because their order is semantically meaningful.
+//   - MUST FAIL if EITHER side carries a forbidden field anywhere
+//     (`controlContext` / `order` / `scopeFrames` / capability / `resourceId` /
+//     `tableId` / `calleeParameterIsVar` / `bindingResolution` / `sourceTableId`)
+//     — a recursive key scan on both parsed values, belt-and-suspenders even
+//     though the serde types omit them.
+//
+// ## Divergence record + `path` locator
+//
+// Each divergence is `{ fixture, path, golden, rust }`. The `path` is a JSON
+// pointer-ish locator into the (top-sorted) projection, e.g.
+//   routines[12].features.callSites[0].argumentInfos[1].kind
+//   objects[2].sourceTableName:MISSING_IN_RUST
+//   …:FORBIDDEN_FIELD
+// so the locality (raw text / CFN node path / ExpressionInfo / operationId)
+// falls straight out of the pointer.
+//
+// ## Allowlist gating
+//
+// Reuses `KNOWN_DIVERGENCES.json` + the exact-`(test,fixture,path)` gating, but
+// only entries scoped to `test == "differential_l2_features_match_goldens"`
+// apply here. Target: empty.
+//
+// ## Scope gate (Task 4 vs Task 5)
+//
+// `R1A_L2_SET` selects which fixtures this test ASSERTS on:
+//   - unset / "small" (the committed default): ws-d2 + ws-r0-canon-stress only.
+//     This is the proven-green Task-4 set.
+//   - "full": every `tests/r1a-goldens/*.l2.golden.json`. Used for the
+//     full-corpus dry-run; widening the committed default to "full" is Task 5.
+// Either way the harness, forbidden-field scan, and gating are identical — only
+// the fixture set differs.
+
+/// Keys that must NEVER appear on either side of the L2 comparison (later-gate /
+/// L3-resolved). Mirrors `al2dump_smoke::FORBIDDEN_KEYS` + the projection's
+/// `r1a-l2-projection.ts` FORBIDDEN_KEYS.
+const L2_FORBIDDEN_KEYS: &[&str] = &[
+    "controlContext",
+    "order",
+    "scopeFrames",
+    "capability",
+    "resourceId",
+    "tableId",
+    "calleeParameterIsVar",
+    "bindingResolution",
+    "sourceTableId",
+];
+
+const L2_TEST_NAME: &str = "differential_l2_features_match_goldens";
+
+/// Discover every `tests/r1a-goldens/*.l2.golden.json`, sorted by fixture name.
+fn discover_l2_goldens() -> Vec<(String, PathBuf)> {
+    let dir = r1a_goldens_dir();
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read L2 goldens dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l2.golden.json") {
+            continue; // skips manifest.json, l2-vectors.json
+        }
+        let fixture = name.trim_end_matches(".l2.golden.json").to_string();
+        out.push((fixture, entry.path()));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Recursively collect every forbidden object-key in `value`, with its JSON
+/// pointer path (so a leak is reported with locality, not just "present").
+fn scan_forbidden_keys(value: &serde_json::Value, path: &str, hits: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let child = format!("{path}.{k}");
+                if L2_FORBIDDEN_KEYS.contains(&k.as_str()) {
+                    hits.push(child.clone());
+                }
+                scan_forbidden_keys(v, &child, hits);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                scan_forbidden_keys(v, &format!("{path}[{i}]"), hits);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Canonicalize a projection `Value` for comparison: sort ONLY the top-level
+/// `objects` (by stableObjectId) and `routines` (by stableRoutineId) arrays. No
+/// other transform. Returns a fresh value (does not mutate the input).
+fn canonicalize_l2_top(value: &serde_json::Value) -> serde_json::Value {
+    let mut v = value.clone();
+    if let Some(obj) = v.as_object_mut() {
+        if let Some(serde_json::Value::Array(arr)) = obj.get_mut("objects") {
+            arr.sort_by(|a, b| {
+                a.get("stableObjectId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .cmp(
+                        b.get("stableObjectId")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or(""),
+                    )
+            });
+        }
+        if let Some(serde_json::Value::Array(arr)) = obj.get_mut("routines") {
+            arr.sort_by(|a, b| {
+                a.get("stableRoutineId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .cmp(
+                        b.get("stableRoutineId")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or(""),
+                    )
+            });
+        }
+    }
+    v
+}
+
+/// Recursively diff two canonicalized projection values POSITIONALLY, emitting a
+/// `Divergence` per leaf mismatch / shape mismatch / missing-or-extra key/elem.
+fn diff_l2_value(
+    fixture: &str,
+    path: &str,
+    golden: &serde_json::Value,
+    rust: &serde_json::Value,
+    out: &mut Vec<Divergence>,
+) {
+    use serde_json::Value;
+    match (golden, rust) {
+        (Value::Object(g), Value::Object(r)) => {
+            // Keys present in golden — compare or flag MISSING_IN_RUST.
+            for (k, gv) in g {
+                let child = format!("{path}.{k}");
+                match r.get(k) {
+                    Some(rv) => diff_l2_value(fixture, &child, gv, rv, out),
+                    None => out.push(Divergence {
+                        fixture: fixture.to_string(),
+                        path: format!("{child}:MISSING_IN_RUST"),
+                        golden_value: compact(gv),
+                        rust_value: "<absent>".to_string(),
+                    }),
+                }
+            }
+            // Keys only in rust — EXTRA_IN_RUST.
+            for (k, rv) in r {
+                if !g.contains_key(k) {
+                    out.push(Divergence {
+                        fixture: fixture.to_string(),
+                        path: format!("{path}.{k}:EXTRA_IN_RUST"),
+                        golden_value: "<absent>".to_string(),
+                        rust_value: compact(rv),
+                    });
+                }
+            }
+        }
+        (Value::Array(g), Value::Array(r)) => {
+            if g.len() != r.len() {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}:LENGTH"),
+                    golden_value: g.len().to_string(),
+                    rust_value: r.len().to_string(),
+                });
+            }
+            // Positional comparison up to the shorter length; surplus elems on
+            // either side are reported as MISSING/EXTRA at their index.
+            let n = g.len().min(r.len());
+            for i in 0..n {
+                diff_l2_value(fixture, &format!("{path}[{i}]"), &g[i], &r[i], out);
+            }
+            for (i, gv) in g.iter().enumerate().skip(n) {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}[{i}]:MISSING_IN_RUST"),
+                    golden_value: compact(gv),
+                    rust_value: "<absent>".to_string(),
+                });
+            }
+            for (i, rv) in r.iter().enumerate().skip(n) {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}[{i}]:EXTRA_IN_RUST"),
+                    golden_value: "<absent>".to_string(),
+                    rust_value: compact(rv),
+                });
+            }
+        }
+        _ => {
+            if golden != rust {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: path.to_string(),
+                    golden_value: compact(golden),
+                    rust_value: compact(rust),
+                });
+            }
+        }
+    }
+}
+
+/// Compact single-line JSON for divergence reporting.
+fn compact(v: &serde_json::Value) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| format!("{v:?}"))
+}
+
+/// The L2-features differential pass. Gated by `R1A_L2_SET` (see module doc) —
+/// committed default is the small proven-green set (ws-d2 + ws-r0-canon-stress).
+#[test]
+fn differential_l2_features_match_goldens() {
+    let all_goldens = discover_l2_goldens();
+    assert!(
+        !all_goldens.is_empty(),
+        "no L2 goldens discovered under {} — corpus missing?",
+        r1a_goldens_dir().display()
+    );
+
+    // Scope gate: which fixtures this test ASSERTS on.
+    let set = std::env::var("R1A_L2_SET").unwrap_or_else(|_| "small".to_string());
+    let small_set = ["ws-d2", "ws-r0-canon-stress"];
+    let goldens: Vec<(String, PathBuf)> = match set.as_str() {
+        "full" => all_goldens,
+        "small" | "" => all_goldens
+            .into_iter()
+            .filter(|(f, _)| small_set.contains(&f.as_str()))
+            .collect(),
+        other => panic!("R1A_L2_SET={other:?} not recognized (expected `small` or `full`)"),
+    };
+    assert!(
+        !goldens.is_empty(),
+        "R1A_L2_SET={set:?} selected zero fixtures (small set = {small_set:?})"
+    );
+
+    // Only L2-scoped allowlist entries apply here.
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == L2_TEST_NAME)
+        .collect();
+
+    let mut all_divergences: Vec<Divergence> = Vec::new();
+    let mut forbidden_hits: Vec<String> = Vec::new();
+
+    for (fixture, golden_path) in &goldens {
+        let fixture_dir = corpus_dir().join(fixture);
+        assert!(
+            fixture_dir.is_dir(),
+            "L2 golden {} has no matching in-repo fixture at {} (offline corpus incomplete)",
+            golden_path.display(),
+            fixture_dir.display()
+        );
+
+        // Golden side: parse as JSON (for the diff) AND validate it parses as the
+        // allowlisted L2Projection serde type (shape guard).
+        let golden_text = std::fs::read_to_string(golden_path)
+            .unwrap_or_else(|e| panic!("read L2 golden {}: {e}", golden_path.display()));
+        let golden_json: serde_json::Value =
+            serde_json::from_str(&golden_text).unwrap_or_else(|e| {
+                panic!("L2 golden {} is not valid JSON: {e}", golden_path.display())
+            });
+        let _: L2Projection = serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
+            panic!(
+                "L2 golden {} does not parse as L2Projection: {e}",
+                golden_path.display()
+            )
+        });
+
+        // Rust side: project + serialize back to JSON for the structural diff.
+        let projection = project_workspace(&fixture_dir)
+            .unwrap_or_else(|e| panic!("project_workspace failed on {fixture}: {e:#}"));
+        let rust_json = serde_json::to_value(&projection)
+            .unwrap_or_else(|e| panic!("serialize Rust L2 projection for {fixture}: {e}"));
+
+        // Forbidden-field scan on BOTH sides (belt-and-suspenders).
+        scan_forbidden_keys(
+            &golden_json,
+            &format!("{fixture}:golden"),
+            &mut forbidden_hits,
+        );
+        scan_forbidden_keys(&rust_json, &format!("{fixture}:rust"), &mut forbidden_hits);
+
+        // Canonicalize top-level lists only, then positional diff.
+        let g = canonicalize_l2_top(&golden_json);
+        let r = canonicalize_l2_top(&rust_json);
+        diff_l2_value(fixture, "", &g, &r, &mut all_divergences);
+    }
+
+    all_divergences
+        .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
+
+    // --- Forbidden-field guard (hard fail, never allowlistable) -------------
+    assert!(
+        forbidden_hits.is_empty(),
+        "FORBIDDEN later-gate/L3 field(s) leaked into the L2 comparison \
+         (golden or rust):\n  {}",
+        forbidden_hits.join("\n  ")
+    );
+
+    // --- Allowlist gating (same semantics as R0) ----------------------------
+    let mut entry_used = vec![false; allowlist.len()];
+    let mut undocumented: Vec<&Divergence> = Vec::new();
+    for div in &all_divergences {
+        let mut covered = false;
+        for (i, entry) in allowlist.iter().enumerate() {
+            if entry.fixture == div.fixture && entry.path == div.path {
+                entry_used[i] = true;
+                covered = true;
+            }
+        }
+        if !covered {
+            undocumented.push(div);
+        }
+    }
+    let unused: Vec<&AllowEntry> = allowlist
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !entry_used[*i])
+        .map(|(_, e)| e)
+        .collect();
+
+    let mut failure = String::new();
+    if !undocumented.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNDOCUMENTED L2 divergence(s) (not in KNOWN_DIVERGENCES.json, \
+             test={L2_TEST_NAME}):\n",
+            undocumented.len()
+        ));
+        for d in &undocumented {
+            failure.push_str(&format!(
+                "  [{}] {}\n      golden = {}\n      rust   = {}\n",
+                d.fixture, d.path, d.golden_value, d.rust_value
+            ));
+        }
+    }
+    if !unused.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNUSED L2 allowlist entr(y/ies) (no matching divergence this run):\n",
+            unused.len()
+        ));
+        for e in &unused {
+            failure.push_str(&format!(
+                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
+                e.fixture, e.path, e.reason, e.expires
+            ));
+        }
+    }
+
+    assert!(
+        failure.is_empty(),
+        "R1a L2-features differential FAILED (set={set:?}):{failure}"
+    );
+
+    eprintln!(
+        "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences, \
+         allowlist fully consumed ({} L2 entr(y/ies)).",
+        goldens.len(),
+        allowlist.len()
+    );
+}
+
 /// LIVE / REFRESH mode — NOT part of the default loop.
 ///
 /// Gated behind `AL_SEM_DIR`. Run explicitly with:
@@ -459,6 +870,46 @@ fn refresh_goldens_from_al_sem() {
         std::fs::copy(&manifest_src, dst_goldens.join("manifest.json"))
             .expect("copy manifest.json");
     }
+
+    // (b2) Regenerate + copy the R1a L2-feature goldens. Same al-sem checkout,
+    //      a second dump script (`scripts/dump-l2-features.ts`). The L2 goldens
+    //      land in `scripts/r1a-goldens/`; copy them + their manifest into
+    //      `tests/r1a-goldens/`. The source fixtures are the SAME `ws-*` trees
+    //      already copied to `tests/r0-corpus/` above, so no separate corpus.
+    eprintln!("refresh: running `bun run scripts/dump-l2-features.ts` in {al_sem_dir} ...");
+    let l2_status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-l2-features.ts"])
+        .current_dir(&al_sem)
+        // dump-l2-features writes its manifest JSON to stdout; discard it (files
+        // are the artifact). Logs go to the inherited stderr.
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L2 dump: {e}"));
+    assert!(
+        l2_status.success(),
+        "`bun run scripts/dump-l2-features.ts` failed with status {l2_status}"
+    );
+
+    let src_l2_goldens = al_sem.join("scripts").join("r1a-goldens");
+    let dst_l2_goldens = r1a_goldens_dir();
+    std::fs::create_dir_all(&dst_l2_goldens).expect("create tests/r1a-goldens");
+    let mut l2_copied = 0usize;
+    for entry in std::fs::read_dir(&src_l2_goldens).expect("read al-sem r1a-goldens") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l2.golden.json") {
+            continue; // skips manifest.json + l2-vectors.json (vectors are separate).
+        }
+        std::fs::copy(entry.path(), dst_l2_goldens.join(&name))
+            .unwrap_or_else(|e| panic!("copy L2 golden {name}: {e}"));
+        l2_copied += 1;
+    }
+    let l2_manifest_src = src_l2_goldens.join("manifest.json");
+    if l2_manifest_src.is_file() {
+        std::fs::copy(&l2_manifest_src, dst_l2_goldens.join("manifest.json"))
+            .expect("copy r1a-goldens/manifest.json");
+    }
+    eprintln!("refresh: copied {l2_copied} L2 golden(s) into tests/r1a-goldens/.");
 
     // (c) Provenance.
     let al_sem_sha = git_sha(&al_sem);

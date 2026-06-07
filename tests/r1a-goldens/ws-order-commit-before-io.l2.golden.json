@@ -1,0 +1,164 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101",
+      "name": "OC Poster",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100",
+      "name": "OC Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "name": "PostAndCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/rv/rec"
+          },
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "OC Rec"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"OC Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Poster.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

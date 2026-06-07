@@ -1,0 +1,245 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000lo0001:Codeunit:50101",
+      "name": "LO LoopThenCommit",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-000000lo0001:Table:50100",
+      "name": "LO Rec",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000lo0001:Codeunit:50101#3a212825f19ada075ee0affc78b05b7f6e92a64652962fa7848ff5ae8bfa3e3e",
+      "name": "PostLoopThenCommit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/loop0",
+            "type": "repeat",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 18,
+              "syntaxKind": "repeat_statement"
+            }
+          }
+        ],
+        "operationSites": [
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op0",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op1",
+            "kind": "record-op",
+            "loopStack": [
+              "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op2",
+            "kind": "commit",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op0",
+            "op": "Init",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec"
+          },
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op1",
+            "op": "Insert",
+            "recordVariableName": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [
+              "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 10,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "LO Rec"
+          }
+        ],
+        "nestingDepth": 1,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "done",
+          "rec"
+        ],
+        "variables": [
+          {
+            "name": "rec",
+            "declaredType": "Record \"LO Rec\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 29,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "done",
+            "declaredType": "Boolean",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 22,
+              "syntaxKind": "variable_declaration"
+            },
+            "initializer": {
+              "kind": "expression"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "done",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 21,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "false"
+          }
+        ],
+        "conditionReferences": [
+          {
+            "identifier": "done",
+            "conditionKind": "repeat-until",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 18,
+              "syntaxKind": "repeat_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 14,
+              "endLine": 11,
+              "endColumn": 18,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "repeat",
+              "children": [
+                {
+                  "kind": "op",
+                  "operationId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op0"
+                },
+                {
+                  "kind": "op",
+                  "operationId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op1"
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

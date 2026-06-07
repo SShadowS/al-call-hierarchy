@@ -1,0 +1,457 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50000",
+      "name": "ExportMgr",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50001",
+      "name": "ExportLog",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Table:50100",
+      "name": "Sales Header",
+      "objectType": "Table"
+    },
+    {
+      "stableObjectId": "33333333-3333-3333-3333-333333333333:Table:50101",
+      "name": "Document Log",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#0d8d490bd2716acc6fd32441b143c1e32b6ab8132c6e8e6a25caefd767dd6c32",
+      "name": "RunExport",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/cs0",
+            "operationId": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/op0",
+            "calleeText": "OnExport",
+            "callee": {
+              "kind": "bare",
+              "name": "OnExport"
+            },
+            "argumentTexts": [
+              "Doc"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "identifier",
+                "text": "Doc",
+                "value": "Doc"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "parameter",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 17,
+                  "endLine": 4,
+                  "endColumn": 20,
+                  "syntaxKind": "identifier"
+                },
+                "sourceVariableName": "doc",
+                "sourceRecordVariableId": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/rv/doc",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": true,
+                "sourceTempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/rv/doc",
+            "name": "Doc",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "doc"
+        ],
+        "variables": [
+          {
+            "name": "doc",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+      "name": "OnExport",
+      "kind": "event-publisher",
+      "attributes": [
+        "[IntegrationEvent(false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "IntegrationEvent",
+          "args": [
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[IntegrationEvent(false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/6295e47ecf668152e48755369c2a8aa0f0b5b2b22b1cba3e313a5ddf32fbeb9a/rv/doc",
+            "name": "Doc",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 0
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [
+          {
+            "name": "doc",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      }
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50001#cac320d2ba49755e20d89b2940f64618c1e09d953b7b86c28677381a030daed4",
+      "name": "LogExport",
+      "kind": "event-subscriber",
+      "attributes": [
+        "[EventSubscriber(ObjectType::Codeunit, Codeunit::ExportMgr, 'OnExport', '', false, false)]"
+      ],
+      "attributesParsed": [
+        {
+          "name": "EventSubscriber",
+          "args": [
+            {
+              "kind": "qualified_enum_value",
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit",
+              "qualifier": "ObjectType",
+              "member": "Codeunit"
+            },
+            {
+              "kind": "database_reference",
+              "text": "Codeunit::ExportMgr",
+              "value": "ExportMgr",
+              "qualifier": "Codeunit",
+              "member": "ExportMgr"
+            },
+            {
+              "kind": "string_literal",
+              "text": "'OnExport'",
+              "value": "OnExport"
+            },
+            {
+              "kind": "string_literal",
+              "text": "''",
+              "value": ""
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            },
+            {
+              "kind": "boolean",
+              "text": "false",
+              "value": "false"
+            }
+          ],
+          "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::ExportMgr, 'OnExport', '', false, false)]"
+        }
+      ],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op0",
+            "op": "Init",
+            "recordVariableName": "L",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 16,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l"
+          },
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op1",
+            "op": "Insert",
+            "recordVariableName": "L",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "L",
+            "fieldName": "Document No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 24,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Doc",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 8,
+              "startColumn": 28,
+              "endLine": 8,
+              "endColumn": 37,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/doc",
+            "name": "Doc",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "isParameter": true,
+            "tableName": "Sales Header",
+            "parameterIndex": 0
+          },
+          {
+            "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l",
+            "name": "L",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Document Log"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "doc",
+          "l"
+        ],
+        "variables": [
+          {
+            "name": "doc",
+            "declaredType": "Record \"Sales Header\"",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          },
+          {
+            "name": "l",
+            "declaredType": "Record \"Document Log\"",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 33,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"document no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Subscriber.al",
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 37,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op1"
+            }
+          ]
+        }
+      },
+      "accessModifier": "local"
+    }
+  ]
+}

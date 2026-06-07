@@ -1,0 +1,263 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "77777777-7777-7777-7777-777777777777:Codeunit:52000",
+      "name": "Hub CU",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#5cb610a4a24b3fef5b5cb1aed99d3b7c936948c476f23b72ade176c5d8ad85b6",
+      "name": "StepA",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#6132c6824114439cac503cdaae9f59d0c613667a94a2e11719b032d167299438",
+      "name": "StepB",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        }
+      },
+      "accessModifier": "local"
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#643606ee9719728aa596be54724e439aa372040daeec39afb07a7cca719bc8f9",
+      "name": "ManyUnknowns",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/cs0",
+            "operationId": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/op0",
+            "calleeText": "First.DoThing",
+            "callee": {
+              "kind": "member",
+              "receiver": "First",
+              "method": "DoThing"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/cs1",
+            "operationId": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/op1",
+            "calleeText": "Second.DoOther",
+            "callee": {
+              "kind": "member",
+              "receiver": "Second",
+              "method": "DoOther"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 24,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "first",
+          "second"
+        ],
+        "variables": [
+          {
+            "name": "first",
+            "declaredType": "Variant",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 23,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "second",
+            "declaredType": "Variant",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 24,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/11015b06a94d4c9bb3b0f01eecaa7393a71476222aa4c7b8e6eac5780cc0bbf7/cs1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:52000#a9ee3b3b926421bac18302aeef914f206e27fd00e9f8f029c1830308b1e6bc1b",
+      "name": "FanOut",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/cs0",
+            "operationId": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/op0",
+            "calleeText": "StepA",
+            "callee": {
+              "kind": "bare",
+              "name": "StepA"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 15,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/cs1",
+            "operationId": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/op1",
+            "calleeText": "StepB",
+            "callee": {
+              "kind": "bare",
+              "name": "StepB"
+            },
+            "argumentTexts": [],
+            "argumentInfos": [],
+            "argumentBindings": [],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/hub.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 15,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/053bfbdf4c9150da433ebbcb693a26db6a52fb979ba31353e32c827a16b36637/cs1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

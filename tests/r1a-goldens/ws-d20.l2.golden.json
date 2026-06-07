@@ -1,0 +1,475 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600",
+      "name": "D20 Demo",
+      "objectType": "Codeunit"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+      "name": "ErrorThenStatement",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/op0",
+            "kind": "error-call",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/cs0",
+            "operationId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/op1",
+            "calleeText": "Error",
+            "callee": {
+              "kind": "bare",
+              "name": "Error"
+            },
+            "argumentTexts": [
+              "'oops'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'oops'",
+                "value": "oops"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 12,
+                  "startColumn": 14,
+                  "endLine": 12,
+                  "endColumn": 20,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/cs1",
+            "operationId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/op2",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'never runs'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'never runs'",
+                "value": "never runs"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 13,
+                  "startColumn": 16,
+                  "endLine": 13,
+                  "endColumn": 28,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [
+          {
+            "id": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/u0",
+            "exitKind": "error",
+            "exitAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 21,
+              "syntaxKind": "call_expression"
+            },
+            "unreachableAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "error",
+              "callsiteId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/cs0"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/cs1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#44e0fdb6d53d88a31d6e40f68c1ff5683ad26226756dcc1168ee481ab4231f7a",
+      "name": "ExitAtEnd",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/6d4b247c45de2cb140c7da24e6208a8e9d0948c05da22fd49b4448d9f73f894f/cs0",
+            "operationId": "r0/6d4b247c45de2cb140c7da24e6208a8e9d0948c05da22fd49b4448d9f73f894f/op0",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'runs'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'runs'",
+                "value": "runs"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 28,
+                  "startColumn": 16,
+                  "endLine": 28,
+                  "endColumn": 22,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 28,
+              "startColumn": 8,
+              "endLine": 28,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "call",
+              "callsiteId": "r0/6d4b247c45de2cb140c7da24e6208a8e9d0948c05da22fd49b4448d9f73f894f/cs0"
+            },
+            {
+              "kind": "exit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#4f7f5a57a0fcb6422158b06e2964336d205f15e2dba4e4906ae677c8d1d5937c",
+      "name": "ConditionalExit",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/e42e1e0acd023b4f43762f19aefc2bc5d4ed7318e8b3c23bc4438714999b3a1d/cs0",
+            "operationId": "r0/e42e1e0acd023b4f43762f19aefc2bc5d4ed7318e8b3c23bc4438714999b3a1d/op0",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'reachable when x <= 0'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'reachable when x <= 0'",
+                "value": "reachable when x <= 0"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 22,
+                  "startColumn": 16,
+                  "endLine": 22,
+                  "endColumn": 39,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 40,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": true,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "x"
+        ],
+        "variables": [
+          {
+            "name": "x",
+            "declaredType": "Integer",
+            "scope": "parameter",
+            "isParameter": true,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 0,
+              "startColumn": 0,
+              "endLine": 0,
+              "endColumn": 0,
+              "syntaxKind": "parameter"
+            },
+            "parameterIndex": 0
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [
+          {
+            "identifier": "x",
+            "conditionKind": "if",
+            "statementAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 17,
+              "syntaxKind": "if_statement"
+            },
+            "referenceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 20,
+              "startColumn": 11,
+              "endLine": 20,
+              "endColumn": 12,
+              "syntaxKind": "identifier"
+            }
+          }
+        ],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "if",
+              "children": [
+                {
+                  "kind": "block",
+                  "children": [
+                    {
+                      "kind": "exit"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/e42e1e0acd023b4f43762f19aefc2bc5d4ed7318e8b3c23bc4438714999b3a1d/cs0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+      "name": "ExitThenStatement",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [
+          {
+            "id": "r0/4952ebc97fa725d1d6252dcce073eba35f27e2a0e045269a8178fd70f640859f/cs0",
+            "operationId": "r0/4952ebc97fa725d1d6252dcce073eba35f27e2a0e045269a8178fd70f640859f/op0",
+            "calleeText": "Message",
+            "callee": {
+              "kind": "bare",
+              "name": "Message"
+            },
+            "argumentTexts": [
+              "'never runs'"
+            ],
+            "argumentInfos": [
+              {
+                "kind": "string_literal",
+                "text": "'never runs'",
+                "value": "never runs"
+              }
+            ],
+            "argumentBindings": [
+              {
+                "parameterIndex": 0,
+                "sourceKind": "expression",
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "startLine": 6,
+                  "startColumn": 16,
+                  "endLine": 6,
+                  "endColumn": 28,
+                  "syntaxKind": "string_literal"
+                }
+              }
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "fieldAccesses": [],
+        "recordVariables": [],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [
+          {
+            "id": "r0/4952ebc97fa725d1d6252dcce073eba35f27e2a0e045269a8178fd70f640859f/u0",
+            "exitKind": "exit",
+            "exitAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 12,
+              "syntaxKind": "exit_statement"
+            },
+            "unreachableAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "exit"
+            },
+            {
+              "kind": "call",
+              "callsiteId": "r0/4952ebc97fa725d1d6252dcce073eba35f27e2a0e045269a8178fd70f640859f/cs0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

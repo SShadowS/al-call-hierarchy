@@ -1,0 +1,501 @@
+{
+  "objects": [
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116",
+      "name": "D11Patterns",
+      "objectType": "Codeunit"
+    },
+    {
+      "stableObjectId": "11111111-0000-0000-0000-00000000d11b:Table:18",
+      "name": "Customer",
+      "objectType": "Table"
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#30bcc525bb539b81f14504e19fbbe7041d043e3396622cfc67d739758febdb70",
+      "name": "SetBasedBulk",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 55,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op0",
+            "op": "SetRange",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 37,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/rv/customer",
+            "fieldArguments": [
+              "\"No.\"",
+              "'X'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"No.\"",
+                "value": "No."
+              },
+              {
+                "kind": "string_literal",
+                "text": "'X'",
+                "value": "X"
+              }
+            ]
+          },
+          {
+            "id": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op1",
+            "op": "ModifyAll",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 55,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "today"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 4,
+              "startColumn": 8,
+              "endLine": 4,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op0"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/45bb13fc92aafd606b9366a4ac6354723d543563a01992925d6b0bf7adac88af/op1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#736faf1af08ea8dc98dfd8fcf11c33b0729492a1788d019dab2d17beb861c82f",
+      "name": "RealBug",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/c2693b80cf557e73fc9a4b630e5e170b00df8020ad6c339afde56d1b797a0805/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/c2693b80cf557e73fc9a4b630e5e170b00df8020ad6c339afde56d1b797a0805/op0",
+            "op": "Modify",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/c2693b80cf557e73fc9a4b630e5e170b00df8020ad6c339afde56d1b797a0805/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 22,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/c2693b80cf557e73fc9a4b630e5e170b00df8020ad6c339afde56d1b797a0805/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "z"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/c2693b80cf557e73fc9a4b630e5e170b00df8020ad6c339afde56d1b797a0805/op0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#f0e297a0373556cc47988105bb46918582da6d9ff909c4f27b02684b5cf5809c",
+      "name": "InitInsertPattern",
+      "kind": "procedure",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op0",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op1",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 54,
+              "syntaxKind": "call_expression"
+            }
+          },
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op2",
+            "kind": "record-op",
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
+          }
+        ],
+        "recordOperations": [
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op0",
+            "op": "Init",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/rv/customer"
+          },
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op1",
+            "op": "Validate",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 54,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/rv/customer",
+            "fieldArguments": [
+              "\"Last Date Modified\"",
+              "Today"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"Last Date Modified\"",
+                "value": "Last Date Modified"
+              },
+              {
+                "kind": "identifier",
+                "text": "Today",
+                "value": "Today"
+              }
+            ]
+          },
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op2",
+            "op": "Insert",
+            "recordVariableName": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            },
+            "recordVariableId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/rv/customer"
+          }
+        ],
+        "callSites": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Customer",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 15,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 22,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/rv/customer",
+            "name": "Customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false,
+            "tableName": "Customer"
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [
+          "customer",
+          "today"
+        ],
+        "variables": [
+          {
+            "name": "customer",
+            "declaredType": "Record Customer",
+            "scope": "local",
+            "isParameter": false,
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 34,
+              "syntaxKind": "variable_declaration"
+            }
+          }
+        ],
+        "varAssignments": [
+          {
+            "lhsName": "\"no.\"",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D11Patterns.al",
+              "startLine": 15,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 29,
+              "syntaxKind": "assignment_statement"
+            },
+            "rhsLiteralValue": "y"
+          }
+        ],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": [
+            {
+              "kind": "op",
+              "operationId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op0"
+            },
+            {
+              "kind": "other"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op1"
+            },
+            {
+              "kind": "op",
+              "operationId": "r0/7b72dc66b4072eae4f6566341a7e0a3e02abae097f9fe8010474b2cc6152d319/op2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
