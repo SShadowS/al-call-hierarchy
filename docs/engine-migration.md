@@ -15,8 +15,8 @@ and `docs/`.
 | **R0** | Source identity parity (objects + routines: stable ids, signature fingerprints, canonical signature text) | **SHIPPED** — full source-only corpus differential green |
 | **R1a** | L2 structural body walk + ids + CFN skeleton + routine/object metadata (operations, call-sites incl. `ExpressionInfo` + result-use flags, record-ops, loops, record/scalar vars, var-assignments, condition-refs, field-accesses, `nestingDepth`, `hasBranching`, `identifierReferences`, `unreachableStatements`, normalized CFN) | **SHIPPED** — 152/152 fixtures, 0 divergences, native receiver oracles green |
 | **R1b** | L2 control-context lattice + shared control-flow primitives (`controlContext` per op/callsite; IsHandled-guard elevation; TryFunction guard; error-call source-range post-pass) | **SHIPPED** — 152/152 fixtures WITH `controlContext` compared, 0 divergences, native L2-direct control-context oracle green |
-| R1c (next) | L2 operation-order + scope frames (`orderId`/`frameId`/`onSuccessPath`/`dominatesSuccessReturn`; ordering oracles) | stub (below) |
-| R1d | Direct capability facts (no `resourceId`) + extraction `status`/`reasons` | deferred |
+| **R1c** | L2 operation-order + scope frames (`orderId`/`frameId`/`onSuccessPath`/`dominatesSuccessReturn` per op/callsite; routine `scopeFrames[]`; error-call order post-pass) | **SHIPPED** — 152/152 fixtures WITH `order`+`scopeFrames` compared, 0 divergences, native L2-direct structural ordering oracle green |
+| R1d (next) | Direct capability facts (no `resourceId`/`tableId`) + extraction `status`/`reasons` + unreachable-filtered diagnostics | stub (below) |
 
 ---
 
@@ -327,28 +327,119 @@ R1c+/R2 surfaces. At L2 we assert the upstream lattice invariant they all rest o
 
 ---
 
-## R1c (next sub-gate) — STUB
+## R1c parity status (SHIPPED — L2 operation-order + scope frames)
 
-R1c adds **operation-order + scope frames** to the L2 projection, reusing the
-shared `control_flow.rs` primitives (R1b's branch-termination helpers) and the
-same error-call source-range post-pass pattern:
+R1c widens parity from the R1b control-context lattice to the **operation-order
+index** — `OperationOrder` (`orderId`/`frameId`/`onSuccessPath`/
+`dominatesSuccessReturn`) on every op/callsite, plus the routine's
+`ScopeFrame[]` table — at parity over the source-only `ws-*` corpus. The walk
+(`src/engine/l2/operation_order.rs`, a faithful port of al-sem
+`src/index/operation-order.ts:computeOperationOrder`) is PURE over the validated
+R1a CFN skeleton + the lowercased `attributesParsed` names, REUSING R1b's shared
+`control_flow.rs` branch-termination primitives (NOT re-derived). The **full L2
+differential is 152/152 green WITH `order`+`scopeFrames` compared**, 0
+divergences, `KNOWN_DIVERGENCES` empty.
 
-- **Operation order** — `orderId` (and the `OperationOrder` envelope) on every
-  op/callsite, walking the validated R1a CFN skeleton in execution order. The
-  `error-call` ops need the SAME source-range post-pass for `order`
-  (`routine-indexer.ts:370-381`) that R1b added for `controlContext`. The
-  repeat-loop quirk (condition leaves before body) is already baked into the R1a
-  skeleton.
-- **Scope frames** — `frameId`/`onSuccessPath`/`dominatesSuccessReturn` per
-  op/callsite (the success-path / dominator analysis over the skeleton).
-- **Comparison surface** — DROP `order`/`OperationOrder` + `scopeFrames` from the
-  forbidden set (still forbid capability facts (R1d) + all L3-resolved fields).
-- **Native oracle** — an L2-direct **ordering-never-overclaim** oracle (like R1b's,
-  NOT the downstream-effects oracle): assert the emitted order is a sound
-  linearization of the CFN skeleton and that `onSuccessPath`/`dominatesSuccessReturn`
-  never claim a site is on the success path / dominates the success return when the
-  skeleton does not prove it.
+The walker is correct as-is — the native structural ordering oracle
+(`tests/l2order_oracles.rs`) and the byte-parity differential BOTH pass with **no
+`src/engine/l2/**` change required** for the exit gate.
 
-R1c → R1d (direct capability facts) complete R1 per the spec staging. R1a's body
-walk + ids + CFN skeleton and R1b's control-context are the validated substrate the
-rest hang off — R1c extends, never replaces, the existing goldens.
+Notes that fell out of the port (worth remembering for R1d / R2):
+
+- **Capture point = POST-INDEX / PRE-RESOLVE** (unchanged). `order` + `scopeFrames`
+  are computed during `indexRoutines` so `indexWorkspace` already carries them;
+  R1a/R1b EXCLUDED them as forbidden, R1c moves them into the comparison surface.
+  The differ still forbids capability facts (R1d) + all L3-resolved fields
+  (`tableId`/`resourceId`/resolver-upgraded `argumentBindings`).
+- **`order` absent-when-undefined.** Assigned only when the walk produced an entry
+  (`if ord !== undefined`); ABSENT (key omitted, never `null`) for symbol-only /
+  no-body / TryFunction routines. `scopeFrames` is omitted when empty.
+- **`scopeFrames` present-when-a-root-exists.** A present-but-empty body tree still
+  emits the root frame (kind `block`, parentFrameId -1) even with zero orders — so
+  scopeFrames is NOT omitted just because there are no operations. TryFunction →
+  empty (no orders, NO scopeFrames). `statementTree` undefined → no root frame.
+- **Branch-frame `false`-field serialization trap.** A branch frame (if-then /
+  if-else / case-branch) ALWAYS emits `branchAlwaysTerminates` AND
+  `branchMayFallThrough` (even when `false`), and emits `branchTerminatesBy` only
+  when it always-terminates (`exit`/`error`). Root/loop/try frames OMIT all three.
+  Modeled as `Option<bool>`/`Option<String>` with `skip_serializing_if =
+  "Option::is_none"` (NOT `is_false`, which would wrongly drop the `false`).
+- **Per-leaf `orderId` gaps + aliases are VALID.** `orderId` increments once per
+  leaf assignment (BEFORE checking which ids are present). A leaf with BOTH an
+  op-id and a callsite-id clones the SAME `OperationOrder` into both maps;
+  `exit`/`error` leaves consume an orderId even when not projected. So emitted
+  orderIds may have GAPS and ALIASES — the oracle asserts RELATIVE pre-order
+  (`<`), never global density/uniqueness.
+- **Error-call order post-pass** runs in the EMITTER layer (`l2_workspace.rs` /
+  `apply_operation_order`), NOT in the pure walk — the CFN skeleton dropped
+  anchors, but the op/callsite RECORDS carry `source_anchor`. For each
+  `error-call` op with no order, find the callsite whose
+  `source_anchor.{startLine,startColumn}` matches and COPY its full
+  `OperationOrder` verbatim (no new orderId, no inferred frame). Identical to
+  R1b's controlContext post-pass.
+- **`onSuccessPath` exit-vs-error.** Uses the EXACT check `term != "error"` (NOT
+  `!terminates`): **exit-arms ARE on the success path** (exit is a normal return);
+  **error-arms are NOT**. Unreachable-after-bare-exit/error sites → false. A bare
+  top-level `Error()` follows the AMBIENT `onSuccessPath` (usually `true`) — error
+  leaves are NOT force-set to false.
+- **`dominatesSuccessReturn` timing + the loop-contained-exit caveat.** True ONLY
+  for a reachable op DIRECTLY in the routine ROOT block with no prior
+  normal-return-possible statement. `normalReturnPossibleBeforeHere` is updated
+  AFTER visiting each if/case (the construct's own leaves never see its own
+  update; only LATER root statements do). The `"other"`/default wrapper PROPAGATES
+  the caller's value; block/if/case/case-branch/loop/try + all conditionLeaves +
+  error/exit leaves reset it to false. **Loops are NOT treated as
+  normal-return-possible** — an `exit` inside a loop does NOT set the flag, so
+  `dominatesSuccessReturn` is NOT a full postdominance proof (the oracle
+  intentionally does not assert the loop-contained-exit case; R1d/R2 must treat
+  the flag as a sound-but-incomplete dominator signal).
+
+**R1c's native soundness oracle is L2-DIRECT** (`tests/l2order_oracles.rs`), NOT a
+port of the TS happens-before oracle. The TS `ordering-never-overclaim*` /
+`ordering-metamorphic*` tests reason over the DOWNSTREAM `src/digest/ordering.ts`
+happens-before graph (`buildHBEdges`/`dom`/`mayCoExecute`: a `must_all_paths` edge
+only when `dom`, no edge between exclusive sibling branches, no intra-iteration
+loop edge). That graph is an R2 (digest) surface the L2 output never builds — so we
+assert at the L2 boundary the STRUCTURAL ordering facts the HB graph rests on:
+non-root-frame ops never claim `dominatesSuccessReturn`; error-arm ops are never
+`onSuccessPath` while exit-arm ops are; the frame chain is well-formed (every
+frameId resolves, parent chains terminate at the root, branch flags match
+termination); and relative pre-order holds (condition before owning op, if-cond
+before then before else, case selector before branches, loop condition before body
+incl. the repeat quirk). The downstream never-overclaim edges are DEFERRED to R2.
+
+---
+
+## R1d (next sub-gate) — STUB
+
+R1d completes R1 with **direct capability facts** — the 13 capability extractors
+projected straight to a `CapabilityFact[]` surface (WITHOUT `resourceId`/`tableId`,
+which are L3-resolved and stay forbidden), reusing the now-validated R1a body walk +
+R1b control-context + R1c operation-order substrate:
+
+- **Direct facts, no L3 identity.** Each extractor emits its `CapabilityFact[]`
+  with the L2-available fields only; `resourceId`/`tableId`/`resourceDisplay`
+  remain STRUCTURALLY ABSENT from the projection (resolved at L3, forbidden at L2 —
+  the differ hard-fails on them). The native receiver-genus classification (R1a,
+  `classify_receiver` → record-op vs call-site) already covers the
+  record-op-vs-call distinction several extractors key on, so it is reused, not
+  re-derived.
+- **Split by family.** Extractors project per family (the existing al-sem
+  extractor families) rather than one flat list, mirroring the source layout so a
+  divergence localizes to one extractor.
+- **Extraction status + reasons.** Each fact carries its extraction `status` /
+  `reasons` (why a candidate was kept or skipped) so the differential can compare
+  the negative space (skipped/partial extractions), not just the positive facts.
+- **Unreachable diagnostics filtered by R1b control-context.** Capability
+  extraction filters ops whose R1b `controlContext == "unreachable"` (so R1d
+  depends on R1b) — an unreachable record-op / call must NOT seed a capability
+  fact. The unreachable-filtered diagnostics are part of the compared surface.
+- **Comparison surface** — ADD `CapabilityFact[]` (sans L3 identity) + extraction
+  status/reasons + unreachable diagnostics; KEEP forbidding `resourceId`/`tableId`
+  and all L3-resolved fields. Native oracle: a capability-never-overclaim oracle
+  (no fact from an unreachable op; record-op-keyed extractors fire only on
+  Record-typed receivers).
+
+R1d completes R1 per the spec staging. R1a's body walk + ids + CFN skeleton, R1b's
+control-context, and R1c's operation-order are the validated substrate the
+capability extractors hang off — R1d extends, never replaces, the existing goldens.
