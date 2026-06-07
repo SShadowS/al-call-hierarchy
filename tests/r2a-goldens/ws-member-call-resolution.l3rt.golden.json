@@ -1,0 +1,26 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#cdf36153067507b0be60121294d4836340ca51b2bbdea12d7099dfec85ee05a8",
+      "name": "PublicEntry",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50200#dd43e45aa64d386a900278524a3c80a7255222006bc7f52a4237daecb7b3bcd5",
+      "name": "LocalHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "55555555-0000-0000-0000-0000000d14mc:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

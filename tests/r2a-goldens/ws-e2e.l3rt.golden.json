@@ -1,0 +1,172 @@
+{
+  "tables": [
+    {
+      "stableTableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        },
+        {
+          "fieldNumber": 3,
+          "name": "Address",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:50990#289070bbfbe78fa3c2fbf9f7ee780124680b5324738fb1a4f8c5252d68941163",
+      "name": "Hop2",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:50990#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71",
+      "name": "Top",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:50990#cfe4fe4fbe1cfec704e6fcbce5d44d1b3abb2b3674a2558bbd56ec7a69427eab",
+      "name": "Hop1",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:50990#ded7dc9f07a66f435835b0448cbc15279a94ca7c25d5c4eeff78e6235f0d1b69",
+      "name": "Hop3",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4f99cefb7683fef0411894e5170e33fa4deb0f918e7108151b10e0a53a0b67aa/op0",
+          "op": "Modify",
+          "recordVariableName": "cust",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#2c61bb4341cccaf1a3eff57ee712cdfde0ca74c33f6548301453cfffb33c050b",
+      "name": "LoadCustomer",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/967704bb9297f11919464f2b53bd61a22c010c37b5cb24e4380d25507437519e/op0",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#7df2741a7e11e50ddc0a862bce6dd980f1307cfe0b57266c1fd7e8e5093c7d9f",
+      "name": "ReportNames",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/a1d0db60fba502df001d04d903fc802003650da30ae54222fa849b3876d460b5/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        },
+        {
+          "operationId": "r0/a1d0db60fba502df001d04d903fc802003650da30ae54222fa849b3876d460b5/op1",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#ef416bae2295a822d663d04fe57150340b961d83fed90753e0ed3c6494773c5a",
+      "name": "OnAfterRunIteration",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#fa4c5bace0489dffc44cb7e147b3c8399e939479b70ebc672127d0ca24a9d455",
+      "name": "RunBatch",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66102#da57b1541781f8c20c098c6e7dbd0eeb7506d4cac67358df94731723e13e06ac",
+      "name": "HandleIteration",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0c4468fb829752cad0004d3ca5d804cf725acd7ecbd26546bbee70296806db26/op0",
+          "op": "FindFirst",
+          "recordVariableName": "customer",
+          "tableId": "ee2eee2e-0000-0000-0000-00000000e2e2:Table:66100"
+        }
+      ]
+    }
+  ]
+}

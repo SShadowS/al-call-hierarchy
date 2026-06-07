@@ -1,0 +1,58 @@
+{
+  "tables": [
+    {
+      "stableTableId": "22222222-0000-0000-0000-000000tu0001:Table:50100",
+      "name": "TU Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "22222222-0000-0000-0000-000000tu0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "22222222-0000-0000-0000-000000tu0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+      "name": "CommitWorker",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "22222222-0000-0000-0000-000000tu0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "22222222-0000-0000-0000-000000tu0001:Table:50100"
+        },
+        {
+          "operationId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "22222222-0000-0000-0000-000000tu0001:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+      "name": "CallerWithTransitiveCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "tables": [
+    {
+      "stableTableId": "44444444-4444-4444-4444-444444444444:Table:50320",
+      "name": "Prove Entry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "44444444-4444-4444-4444-444444444444:Table:50320"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Description",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "44444444-4444-4444-4444-444444444444:Table:50320"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50300#7b8f8951bad83ffc891c413d59f2aa338de19d0a5d40c9bdbc46173f252fccd3",
+      "name": "StraightDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50301#4515fd84ef278ab243679391fd9c447440208171d3db5756bc78b3660104bed7",
+      "name": "EarlyExitDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50302#7a0c468adec1ac3b9d8a8572a2a79bb58eafea345e948e4c8559692b645d1afc",
+      "name": "ConditionalDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50303#9d3d5d7d9164dfd56a0e56e35f31286a2925e018b7ce6a88684f24b12f5cba0f",
+      "name": "LoopDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50304#4e617d3f345202f6e7276257eaea57783b0c33995c984713e3bba6cf3b070da1",
+      "name": "UnreachableDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50305#1082a006b77fdc2a1487900924766c8753ce146d4810dc2f004ac100550f1677",
+      "name": "CleanDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50305#c329f1b6c0a2c003fc25981b5509bff6d374359d5ad8760bf21f30c4b89b6258",
+      "name": "CleanHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50306#228a030e151f7c46afdc2d288b0920caf58832e471a537ca606911768f9dca17",
+      "name": "ProveProcess",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50307#228a030e151f7c46afdc2d288b0920caf58832e471a537ca606911768f9dca17",
+      "name": "ProveProcess",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50308#4fc9c208115a49d177097a4b5f0c47d07a073f6f4ef6ea75daa5daa73fc25ec0",
+      "name": "CallProcess",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50309#1b2e090b4a6c5e6f89a5b9b8f3be9c14b7b12196d1735b25928670b5189223b3",
+      "name": "TryDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50310#9a610effb3fb042e9279086b5818bf646cb65df91b5ad4905e598dfa545a4b6b",
+      "name": "NestedDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50311#4fab5a2c9393b391dfaef9633863b075cafb51e477a33456a8685afc45b15541",
+      "name": "WriteProveEntry",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "entry",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50320"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/op0",
+          "op": "Init",
+          "recordVariableName": "entry",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50320"
+        },
+        {
+          "operationId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/op1",
+          "op": "Insert",
+          "recordVariableName": "entry",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50320"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50312#3e974e17d1d2e8263c9a3c18282a3e10d19111f1276ea2d068273da58e8982c6",
+      "name": "DoProvePost",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50312#f8a2fe8f30655a2917f1f136850d37bc48ef7f1f1834fe61b4c7b5f7f991197c",
+      "name": "OnBeforeProvePost",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50313#3a37c5e25937158952eb172527027f46d1f3e4a20a8646fa4a6dbab624521ba5",
+      "name": "ShowProveMessage",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50314#8a587b1fd5595a47d407998f2378504117ace65fa6a64edffc9f47d78cb15e2a",
+      "name": "ValidateProve",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

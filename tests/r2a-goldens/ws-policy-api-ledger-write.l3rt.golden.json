@@ -1,0 +1,33 @@
+{
+  "tables": [
+    {
+      "stableTableId": "10000009-0000-0000-0000-000000000000:Table:50106",
+      "name": "Sales Ledger Entry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000009-0000-0000-0000-000000000000:Table:50106"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "objectType": "Page",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "10000009-0000-0000-0000-000000000000:Table:50106"
+        }
+      ]
+    }
+  ]
+}

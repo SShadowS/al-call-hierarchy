@@ -1,0 +1,65 @@
+{
+  "tables": [
+    {
+      "stableTableId": "cccccccc-1111-2222-3333-444444444444:Table:50121",
+      "name": "CE Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-1111-2222-3333-444444444444:Table:50121"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+      "name": "P",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "cccccccc-1111-2222-3333-444444444444:Table:50121"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "cccccccc-1111-2222-3333-444444444444:Table:50121"
+        },
+        {
+          "operationId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "cccccccc-1111-2222-3333-444444444444:Table:50121"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+      "name": "P",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#92cff6d6e03f88c2443ee3aed57332dcc51be2e3548ae89a7395387446a9158e",
+      "name": "GetCount",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

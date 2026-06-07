@@ -1,0 +1,133 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d360:Table:51200",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "fieldNumber": 3,
+          "name": "Address",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+      "name": "SetLoadFieldsAfterGet",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/1841cb921cea2faea469ba5006b57b2f9bf419a218b3d364e63b23bc4acb9d3e/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "operationId": "r0/1841cb921cea2faea469ba5006b57b2f9bf419a218b3d364e63b23bc4acb9d3e/op1",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#22adc8e4e943caff091839daf19c8a9fa5556becc9ccc1e01b331dc9660ce141",
+      "name": "SetLoadFieldsBeforeGet",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/ab49c68d4579213ac87ad456086f5136022ae08cee32b7de8f8aa8852c97d382/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "operationId": "r0/ab49c68d4579213ac87ad456086f5136022ae08cee32b7de8f8aa8852c97d382/op1",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#24d7fafd64e851e791d6f81f4c896b0771ccc88d0e7c52df90e1e1100c44321e",
+      "name": "SetLoadFieldsBetweenLoads",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/741e8c0bf15d9e6b419c13d32987015c0de1e843d19c7b2d6d1b0a6626c4677e/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "operationId": "r0/741e8c0bf15d9e6b419c13d32987015c0de1e843d19c7b2d6d1b0a6626c4677e/op1",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        },
+        {
+          "operationId": "r0/741e8c0bf15d9e6b419c13d32987015c0de1e843d19c7b2d6d1b0a6626c4677e/op2",
+          "op": "FindFirst",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#5ee36758eef871f2033de0b0e258a919f0157e7f37a1d89ef57a7a32409f3738",
+      "name": "NoPriorLoad",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/eb6057bf052d135cd98f00a3b5d45143c65cb7cb7642576c2fcd78d807dc04ec/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d360:Table:51200"
+        }
+      ]
+    }
+  ]
+}

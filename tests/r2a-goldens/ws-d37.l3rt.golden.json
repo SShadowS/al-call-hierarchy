@@ -1,0 +1,276 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d370:Table:51400",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "fieldNumber": 3,
+          "name": "Blocked",
+          "dataType": "Boolean",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555",
+      "name": "ValidateWithoutModify",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/8ab0c126b0dfee10002bb681531edfc7c575737064c145dee578fc4a950dcc08/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/8ab0c126b0dfee10002bb681531edfc7c575737064c145dee578fc4a950dcc08/op1",
+          "op": "Validate",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#65a793bd1c808a1005a47760ee9112bb2ead26aed75cde37413fe1f31812ff3e",
+      "name": "ValidateThenModify",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/32ad62766e5df6a8f427d7af927cfab643bb067da3600cbc89629229eb903629/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/32ad62766e5df6a8f427d7af927cfab643bb067da3600cbc89629229eb903629/op1",
+          "op": "Validate",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/32ad62766e5df6a8f427d7af927cfab643bb067da3600cbc89629229eb903629/op2",
+          "op": "Modify",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#7e98f1e4048d8dfc2db19c252c53bcc1394f26e6315cb46d5c7ee8d1ee41e7c5",
+      "name": "NonPersistingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a",
+      "name": "ValidateThenNonPersistingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/beb55ea21c3b79298abc79e0b0500613ad5b5b66b9a07645d4161c2ed46d8214/op0",
+          "op": "Get",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/beb55ea21c3b79298abc79e0b0500613ad5b5b66b9a07645d4161c2ed46d8214/op1",
+          "op": "Validate",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#8f6cffb9bee1f9f3dee66d1489c90b81923f9c6cbda271c7f1f28ea141952c4d",
+      "name": "ForwardedAfterValidate",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/41da3975f806e4e958cfdf1780a8cb2c975db576722ba112badf14a1be453983/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/41da3975f806e4e958cfdf1780a8cb2c975db576722ba112badf14a1be453983/op1",
+          "op": "Validate",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#913ab675601dae45cb482be7854bd3d02cca5321b4d29d667f98211f2eae3759",
+      "name": "ValidateThenInsert",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/db6e9d2740cb7042ddc4d525d30c11f18c7d5a46dede51439f82a58a8e1b173f/op0",
+          "op": "Init",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/db6e9d2740cb7042ddc4d525d30c11f18c7d5a46dede51439f82a58a8e1b173f/op1",
+          "op": "Validate",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/db6e9d2740cb7042ddc4d525d30c11f18c7d5a46dede51439f82a58a8e1b173f/op2",
+          "op": "Insert",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#b04bf0137166040020fd655ddb5c3798e661f3acfe597250d2118d6862a2164c",
+      "name": "ValidateThenUnresolvedMemberCall",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4184850d0c47aa9c43370fbb756f1d8f7737968b667d8be0dc51a6b9db50b259/op0",
+          "op": "Get",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/4184850d0c47aa9c43370fbb756f1d8f7737968b667d8be0dc51a6b9db50b259/op1",
+          "op": "Validate",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8",
+      "name": "ValidateThenReload",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/43013010072b3505ac3089ee92ed8a5869e775626c199d654ed0dc6b9d622f38/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/43013010072b3505ac3089ee92ed8a5869e775626c199d654ed0dc6b9d622f38/op1",
+          "op": "Validate",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        },
+        {
+          "operationId": "r0/43013010072b3505ac3089ee92ed8a5869e775626c199d654ed0dc6b9d622f38/op2",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#dd26c455215e39bdf24b2d0f048a6d218a581ec9fd714ee3b89e12befd37c4bb",
+      "name": "Helper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/5362585f9316180dbe65e8cfec69c95e577b5b18f0723aa087b6a19dde74831b/op0",
+          "op": "Modify",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51401#2b5fd19c97b07a115b38939e2824bc2cddc5e933af084d9a5625299e51914698",
+      "name": "DoSomething",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/98a95fa1a120b314a8ac662f9353fb43d9dc03679a44a456010c088645959dd6/op0",
+          "op": "Modify",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d370:Table:51400"
+        }
+      ]
+    }
+  ]
+}

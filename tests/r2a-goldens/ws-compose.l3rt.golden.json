@@ -1,0 +1,52 @@
+{
+  "tables": [
+    {
+      "stableTableId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+      "name": "RunAll",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+      "name": "DoDbWork",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/op0",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100"
+        }
+      ]
+    }
+  ]
+}

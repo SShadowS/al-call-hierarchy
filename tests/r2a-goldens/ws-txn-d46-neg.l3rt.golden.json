@@ -1,0 +1,64 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+      "name": "My Setup",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Primary Key",
+          "dataType": "Code[10]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Description",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "name": "DoSetup",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "setup",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0",
+          "op": "Get",
+          "recordVariableName": "setup",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        },
+        {
+          "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op1",
+          "op": "Init",
+          "recordVariableName": "setup",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        },
+        {
+          "operationId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2",
+          "op": "Insert",
+          "recordVariableName": "setup",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "name": "RunSetup",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

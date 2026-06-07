@@ -1,0 +1,26 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000004:Codeunit:50500#23bdb6039aff0fd1f15b21ecc9d67c9c3a0a2ebf7a92ce02c1cecc90c785e263",
+      "name": "HelperNotATest",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000004:Codeunit:50500#3ab5f81fccc111e66c720b2d9d1561be83b9c59c5e77775a726122a87667db25",
+      "name": "TestAnother",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000004:Codeunit:50500#59d63cd9133302aefce7c835ee3368808fa78438cc948e71ef40587ed38ee0a5",
+      "name": "TestSomething",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

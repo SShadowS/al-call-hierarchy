@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000d4704:Table:50100",
+      "name": "D47 Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4704:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4704:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01",
+      "name": "SendAfterCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4704:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e78563a8d158a66a1a0e6bf88c6dd9d8afb1e9b338e4d4c7463da5745d83cae3/op0",
+          "op": "Get",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4704:Table:50100"
+        },
+        {
+          "operationId": "r0/e78563a8d158a66a1a0e6bf88c6dd9d8afb1e9b338e4d4c7463da5745d83cae3/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4704:Table:50100"
+        }
+      ]
+    }
+  ]
+}

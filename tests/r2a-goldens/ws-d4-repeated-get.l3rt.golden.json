@@ -1,0 +1,115 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d40a:Table:18",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        }
+      ]
+    },
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d40a:Table:37",
+      "name": "Sales Line",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Document No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Sell-to Customer No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#36d5b91b0eb9bf0424fd25ca6476fad7be51489d99e7aceaaa493d9e24ce84d8",
+      "name": "SafeLookup",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        },
+        {
+          "name": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op0",
+          "op": "FindSet",
+          "recordVariableName": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        },
+        {
+          "operationId": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op1",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        },
+        {
+          "operationId": "r0/119282c0acba03444896fb40cb7ee2e57a298f77ceb48a71a4e0f5f93c21c2e4/op2",
+          "op": "Next",
+          "recordVariableName": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+      "name": "BadLookup",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        },
+        {
+          "name": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op0",
+          "op": "FindSet",
+          "recordVariableName": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        },
+        {
+          "operationId": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op1",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        },
+        {
+          "operationId": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op2",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:18"
+        },
+        {
+          "operationId": "r0/e1ce44892a000e331746290c24604d4055839874bbfadf3424a5f6f2d310d343/op3",
+          "op": "Next",
+          "recordVariableName": "salesline",
+          "tableId": "11111111-0000-0000-0000-00000000d40a:Table:37"
+        }
+      ]
+    }
+  ]
+}

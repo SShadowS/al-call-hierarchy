@@ -1,0 +1,102 @@
+{
+  "tables": [
+    {
+      "stableTableId": "77777777-7777-7777-7777-777777777777:Table:51100",
+      "name": "Item",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Description",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#062c53a0a18bc81d40e1eeb8aa85f456e33a6d63f5e0fb727f509f6852024e27",
+      "name": "ValidateIt",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "item",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e9107abf1036bcf625962fb20016a9ec77a496435b18141df8ed317e91236eba/op0",
+          "op": "Validate",
+          "recordVariableName": "item",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#327c471c4fac614af61059ecfc7d16e9a45bc3162be054055edd6d110c4ea795",
+      "name": "WriteIt",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "item",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/efd8d5a13aca85edc2cda05f8529d5a46c087bfbb04954ef75b4ad3d267e75c4/op0",
+          "op": "Modify",
+          "recordVariableName": "item",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:51101#9c0af5fd7ebb8786915caac03824a333156b86e486f44eee5d58878ce952b5e4",
+      "name": "UnknownIt",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "ledger"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/3d654599a0f2075e358a15c6c4f7f44bd75ee1ded10fd16cc4e19680b8e4e81d/op0",
+          "op": "Modify",
+          "recordVariableName": "ledger"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
+      "name": "OnModify",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
+      "name": "OnValidate",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

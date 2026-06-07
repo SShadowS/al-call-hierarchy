@@ -1,0 +1,130 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d50b:Table:50210",
+      "name": "D50N Header",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50210"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Status",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50210"
+        }
+      ]
+    },
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d50b:Table:50211",
+      "name": "D50N Line",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Doc No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50211"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Status",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50211"
+        }
+      ]
+    },
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d50b:Table:50212",
+      "name": "D50N Entry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50b:Table:50212"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50210#9f8a0fc26e8224d3e621cefff0df179ba73b118ea75268f02fa066bf4ba2653e",
+      "name": "RunWorkerUnchecked",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50210#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "name": "PostDocument",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "entry",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50212"
+        },
+        {
+          "name": "hdr",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50210"
+        },
+        {
+          "name": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50211"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op0",
+          "op": "Get",
+          "recordVariableName": "hdr",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50210"
+        },
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op1",
+          "op": "Modify",
+          "recordVariableName": "hdr",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50210"
+        },
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op2",
+          "op": "SetRange",
+          "recordVariableName": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50211"
+        },
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op3",
+          "op": "ModifyAll",
+          "recordVariableName": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50211"
+        },
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op4",
+          "op": "Init",
+          "recordVariableName": "entry",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50212"
+        },
+        {
+          "operationId": "r0/7881ece10a8504f9fecc101043499a18dc5f95d36938d05e86bc07ea433f50e7/op5",
+          "op": "Insert",
+          "recordVariableName": "entry",
+          "tableId": "11111111-0000-0000-0000-00000000d50b:Table:50212"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50b:Codeunit:50211#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

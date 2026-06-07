@@ -1,0 +1,76 @@
+{
+  "tables": [
+    {
+      "stableTableId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000",
+      "name": "PostingEntry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        },
+        {
+          "fieldNumber": 3,
+          "name": "Description",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Codeunit:50000#52d4f6e9f0d8415f293b8e403f633ad1730b40db6a00641cc763ead4b55d5249",
+      "name": "DoPost",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e45c2a4a971555588bdfcb4423a4fac750c6b2d5267eb684c2420314490435d1/op0",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "name": "OnBeforePost",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "name": "H",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "dddddddd-dddd-dddd-dddd-dddddddddd01:Table:50000"
+        }
+      ],
+      "recordOperations": []
+    }
+  ]
+}

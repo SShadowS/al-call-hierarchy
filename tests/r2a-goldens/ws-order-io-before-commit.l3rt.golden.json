@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100",
+      "name": "OI Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "name": "SendThenPost",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100"
+        },
+        {
+          "operationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100"
+        }
+      ]
+    }
+  ]
+}

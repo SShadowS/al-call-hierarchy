@@ -1,0 +1,33 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6",
+      "name": "OnAfterDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#c3bc0da359a54bc1da8602c5641dfacc7217a117934afbb5075e2737578fc7c1",
+      "name": "HandleAfterDoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#cfd8945a4ad1fbdb2e10040effb2aff532999d8a707a507196b19d4fa9919651",
+      "name": "HandleBaseAppEvent",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

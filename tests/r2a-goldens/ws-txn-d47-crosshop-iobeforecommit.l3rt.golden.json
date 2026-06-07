@@ -1,0 +1,58 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000d4707:Table:50100",
+      "name": "D47 Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4707:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4707:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50000#302dc2332e7a9ae6fb0474a4d66e256730ee465bd1df06a0f8f46b10716cf434",
+      "name": "WriteThenRemoteCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4707:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op0",
+          "op": "Get",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4707:Table:50100"
+        },
+        {
+          "operationId": "r0/567706b3c2202a86627f7e32abb7ec9fb5349003f9c28508dcd078c1a1413c2e/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4707:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
+      "name": "DoHttp",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

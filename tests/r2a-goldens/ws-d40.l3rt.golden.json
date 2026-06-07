@@ -1,0 +1,146 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-000000abc440:Table:50411",
+      "name": "D40 Cust Ext",
+      "fields": []
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+      "name": "DoesNotLoadThenForwardsToReader",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+      "name": "MutatingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/8e10df7eda3e5e9c8377e7baf4e7b93ced50078ea04953c405397c24df059ca0/op0",
+          "op": "Modify",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#47b609f9c4d4e8a53dd827cb18024683ca5b3925ea5b99842fb1a8eef3132d04",
+      "name": "ForwardsToSelfLoader",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+      "name": "ReadingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#545a6114186c4acdbc2e5c958de4d92f4f25e8af8cca9982187d93c3a01caeef",
+      "name": "TempForward",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "tempcustomer"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#6738c0b561d3132c9c85cff30267e82beebeddc7d13d503ad2aecac8cee171fd",
+      "name": "LoadsBeforeForwarding",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/c77e36c3a6061c8f57a2b2acf3805183d9771803445cfffcad91504fb3ee18a5/op0",
+          "op": "Get",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#84e76c958f1fd32a9c074fb901f8a340fc8e5e30f6841e7bdcca9d38787f89a8",
+      "name": "SelfLoadingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0d8721d8d1c18dba266bf0a93bfc630ccdfb604da858d3aad97ec3b2016df412/op0",
+          "op": "Get",
+          "recordVariableName": "cust"
+        },
+        {
+          "operationId": "r0/0d8721d8d1c18dba266bf0a93bfc630ccdfb604da858d3aad97ec3b2016df412/op1",
+          "op": "Modify",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+      "name": "DoesNotLoadThenForwardsToMutator",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:TableExtension:50411#41aa37e5d85bb65592c32bb70095a37f9b8bad7d26bc61acafe5340bf50bd73e",
+      "name": "OnAfterInsert",
+      "objectType": "TableExtension",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc440:TableExtension:50411#6bd302e9c3fb7fd8e26d5de9f456184b0512cd30d4fe37e26acc862905234da8",
+      "name": "TouchHelper",
+      "objectType": "TableExtension",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/25a86ea2bb0ceb753714ee11411a10cc225b886767e1588edbc63481c043448e/op0",
+          "op": "Modify",
+          "recordVariableName": "cust"
+        }
+      ]
+    }
+  ]
+}

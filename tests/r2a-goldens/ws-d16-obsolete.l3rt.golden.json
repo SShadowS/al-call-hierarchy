@@ -1,0 +1,19 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+      "name": "UseVeryOld",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+      "name": "UseOld",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

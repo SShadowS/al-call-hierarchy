@@ -1,0 +1,92 @@
+{
+  "tables": [
+    {
+      "stableTableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100",
+      "name": "Inventory",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Qty",
+          "dataType": "Decimal",
+          "fieldClass": "Normal",
+          "declaringObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "name": "Adjust",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "inv",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "name": "OnAfterAdjust",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "inv",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "name": "HW",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "inv",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/op0",
+          "op": "Modify",
+          "recordVariableName": "inv",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "name": "HR",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "inv",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        },
+        {
+          "name": "other",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/op0",
+          "op": "Get",
+          "recordVariableName": "other",
+          "tableId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+        }
+      ]
+    }
+  ]
+}

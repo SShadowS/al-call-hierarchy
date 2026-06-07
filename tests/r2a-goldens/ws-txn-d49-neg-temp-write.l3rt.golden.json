@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000d4905:Table:50100",
+      "name": "D49 Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4905:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4905:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4905:Codeunit:50000#a591d2a398ad6ce91a101498d5c299e2f6b930c4f46bc882282bd5e511bf2256",
+      "name": "TempInsertThenMessage",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "temprec",
+          "tableId": "11111111-0000-0000-0000-0000000d4905:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op0",
+          "op": "Init",
+          "recordVariableName": "temprec",
+          "tableId": "11111111-0000-0000-0000-0000000d4905:Table:50100"
+        },
+        {
+          "operationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1",
+          "op": "Insert",
+          "recordVariableName": "temprec",
+          "tableId": "11111111-0000-0000-0000-0000000d4905:Table:50100"
+        }
+      ]
+    }
+  ]
+}

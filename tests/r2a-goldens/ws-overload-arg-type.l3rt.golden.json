@@ -1,0 +1,127 @@
+{
+  "tables": [
+    {
+      "stableTableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200",
+      "name": "Probe Ovl Setup",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Code",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ]
+    },
+    {
+      "stableTableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201",
+      "name": "Probe Ovl Archive",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe",
+      "name": "RunAmbiguous",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "setup",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "name": "RunImport",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "setup",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#13e64af2cfa9a6c1b678a140a5e20293ae6f81b88196424df3a6a5e9402f2b1d",
+      "name": "ImportToFileArchive",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "archive",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        },
+        {
+          "name": "setup",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/cc8a7c439b2ed6f9216682208030eea9363d8bfb8f621929a64c0d15321726d2/op0",
+          "op": "Init",
+          "recordVariableName": "archive",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
+      "name": "ImportToFileArchive",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "setup",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "name": "ImportToFileArchive",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "archive",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        },
+        {
+          "name": "setup",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/af77f5231190ef524d820d2b9a4661e55f86f10c6ad5bf15ddac86014bf6c7d8/op0",
+          "op": "Init",
+          "recordVariableName": "archive",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        },
+        {
+          "operationId": "r0/af77f5231190ef524d820d2b9a4661e55f86f10c6ad5bf15ddac86014bf6c7d8/op1",
+          "op": "Insert",
+          "recordVariableName": "archive",
+          "tableId": "cccccccc-dddd-eeee-ffff-111111111111:Table:50201"
+        }
+      ]
+    }
+  ]
+}

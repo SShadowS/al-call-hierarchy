@@ -1,0 +1,45 @@
+{
+  "tables": [
+    {
+      "stableTableId": "10000005-0000-0000-0000-000000000000:Table:50102",
+      "name": "Dispatch Setup",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000005-0000-0000-0000-000000000000:Table:50102"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Codeunit Id",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000005-0000-0000-0000-000000000000:Table:50102"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "objectType": "Page",
+      "recordVariables": [
+        {
+          "name": "s",
+          "tableId": "10000005-0000-0000-0000-000000000000:Table:50102"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0",
+          "op": "Get",
+          "recordVariableName": "s",
+          "tableId": "10000005-0000-0000-0000-000000000000:Table:50102"
+        }
+      ]
+    }
+  ]
+}

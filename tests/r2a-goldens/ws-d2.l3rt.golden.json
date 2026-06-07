@@ -1,0 +1,80 @@
+{
+  "tables": [
+    {
+      "stableTableId": "22222222-d200-0000-0000-000000000002:Table:64100",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "22222222-d200-0000-0000-000000000002:Table:64100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+      "name": "RaiseInLoop",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#5d8a0ba361956a3c86c043fc786cca40124994cb9f5c856ea5fe2b9c01d6f316",
+      "name": "RaiseQuietInLoop",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#8ec33b291b887ac8a845e99d37943b2f9667ae5d4415c1ab7b7de45ccb164df3",
+      "name": "OnQuietEvent",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+      "name": "RaiseTwiceInLoop",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "name": "OnProcessLine",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+      "name": "HandleProcessLine",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "22222222-d200-0000-0000-000000000002:Table:64100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/ead13ed879b59adcc99fe37843cd70a4dffbe6c488453c051a4404b409bd4e3a/op0",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "22222222-d200-0000-0000-000000000002:Table:64100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#f8154584e1e27f484e40a75672dc34f9d2cebf5d71845a7949c25f6d646b2b7e",
+      "name": "HandleQuietEvent",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

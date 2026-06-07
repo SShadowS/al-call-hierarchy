@@ -1,0 +1,58 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100",
+      "name": "XT Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50101#b2b3bf9c2ed79490ce442d67e21816cb122cfa60ea09b017a8cdfa72dfd4e740",
+      "name": "TryCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100"
+        },
+        {
+          "operationId": "r0/2bb02c2367039ce089f82fb833b4995e8269edd3c2bbfaf5eab95735644d1d35/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000xt0001:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xt0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

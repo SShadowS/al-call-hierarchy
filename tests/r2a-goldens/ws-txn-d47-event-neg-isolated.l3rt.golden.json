@@ -1,0 +1,65 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000d4721:Table:50100",
+      "name": "D47 Isolated Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4721:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4721:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "name": "ProcessAndNotify",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4721:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0",
+          "op": "Get",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4721:Table:50100"
+        },
+        {
+          "operationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4721:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
+      "name": "OnAfterProcessIsolated",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001#3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
+      "name": "HandleAfterProcessIsolated",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

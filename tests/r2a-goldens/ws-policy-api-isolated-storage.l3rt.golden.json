@@ -1,0 +1,26 @@
+{
+  "tables": [
+    {
+      "stableTableId": "10000008-0000-0000-0000-000000000000:Table:50105",
+      "name": "Test Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000008-0000-0000-0000-000000000000:Table:50105"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "name": "OnAction",
+      "objectType": "Page",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

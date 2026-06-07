@@ -1,0 +1,102 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d01a:Table:50101",
+      "name": "MC Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "name": "CallerB",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op0",
+          "op": "FindSet",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "name": "CallerC",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op0",
+          "op": "FindSet",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "name": "CallerA",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op0",
+          "op": "FindSet",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "name": "ModifyHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0",
+          "op": "Modify",
+          "recordVariableName": "cust",
+          "tableId": "11111111-0000-0000-0000-00000000d01a:Table:50101"
+        }
+      ]
+    }
+  ]
+}

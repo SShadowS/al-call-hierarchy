@@ -1,0 +1,26 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#2275281dfa00e2f2aba921ef7a4d876fafbdc55229d489dc645292b6bbfcef44",
+      "name": "ReportHelper",
+      "objectType": "Report",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#36c47ab4ec8ab1248f2cdaaf9f4dc9e2b88e3186dce77f71a43c6dd05cc2ae27",
+      "name": "OnPreReport",
+      "objectType": "Report",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-0000-0000-0000-000000000005:Report:50600#b9b3c0bba2dccb925237d5fcafbb6e689103eee7e21c10db7440836cc6d80847",
+      "name": "OnPostReport",
+      "objectType": "Report",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000d4720:Table:50100",
+      "name": "D47 Evt Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4720:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000d4720:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "name": "ProcessAndNotify",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4720:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op0",
+          "op": "Get",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4720:Table:50100"
+        },
+        {
+          "operationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-0000000d4720:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+      "name": "OnAfterProcess",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+      "name": "HandleAfterProcess",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

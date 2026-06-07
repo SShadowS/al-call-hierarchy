@@ -1,0 +1,161 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d80a:Table:36",
+      "name": "Sales Header",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        },
+        {
+          "fieldNumber": 50,
+          "name": "Status Posted",
+          "dataType": "Boolean",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        },
+        {
+          "fieldNumber": 60,
+          "name": "Last Posting Date",
+          "dataType": "Date",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        }
+      ]
+    },
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d80a:Table:37",
+      "name": "Sales Line",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Document No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:37"
+        },
+        {
+          "fieldNumber": 50,
+          "name": "Status Posted",
+          "dataType": "Boolean",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:37"
+        }
+      ]
+    },
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d80a:Table:50100",
+      "name": "Audit Entry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Doc No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d80a:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "name": "PostSalesDoc",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        },
+        {
+          "name": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:37"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op0",
+          "op": "Get",
+          "recordVariableName": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        },
+        {
+          "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op1",
+          "op": "Modify",
+          "recordVariableName": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        },
+        {
+          "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op2",
+          "op": "SetRange",
+          "recordVariableName": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:37"
+        },
+        {
+          "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op3",
+          "op": "ModifyAll",
+          "recordVariableName": "line",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:37"
+        },
+        {
+          "operationId": "r0/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/op4",
+          "op": "Modify",
+          "recordVariableName": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "name": "OnAfterPostSalesDoc",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "name": "HandlePosted",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "audit",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:50100"
+        },
+        {
+          "name": "header",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:36"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op0",
+          "op": "Init",
+          "recordVariableName": "audit",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:50100"
+        },
+        {
+          "operationId": "r0/de44ffb97b75e0364873d48d89b13d9c03c4f18ce271401a46c0eb6e39b89574/op1",
+          "op": "Insert",
+          "recordVariableName": "audit",
+          "tableId": "11111111-0000-0000-0000-00000000d80a:Table:50100"
+        }
+      ]
+    }
+  ]
+}

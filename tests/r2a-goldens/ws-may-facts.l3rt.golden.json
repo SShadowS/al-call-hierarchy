@@ -1,0 +1,166 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#04db63ab2b7a77057515802cbab0226c92037a3eebfe6d4b6e4ba5bb50a17eb4",
+      "name": "ForwardsByValue",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0918411750a46be1a1e5d08e4bf65a80c49f67db546e155cca34ade73a0afee0",
+      "name": "LoadsFromDb",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4a3c0f88e4d8257468d38b8e2b34717fafc0202a478163e8bc765359d596170c/op0",
+          "op": "Get",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#2387ac7eebaec0fdb8b460c5fe1d7ca1ac1ea8da4bb7ce5642902828951cd1ff",
+      "name": "Validates",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/ec707cad5bae24350a843ce5a6c7682a47886723f2fd6b8aa7ae889cc5fd2a48/op0",
+          "op": "Validate",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#23c33fa0989f81e7701abd7c3f35b00789299d8c24cae6593b1143a593bcf26e",
+      "name": "ForwardsToValidator",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#3bbd30bac6c05bf33d984f641c4c869e6600a8d0eed0af6cac698192c133e411",
+      "name": "ResetsFilter",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/51907af365ab9bc3e141ec9faf237b0a2c74b078de312fbcaf99de9346b2912f/op0",
+          "op": "Reset",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7568aaf3d0417a168e8cbe54a1984a17947361f25fcb6975d401b5dda3400dd3",
+      "name": "Neutral",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/96009ccb226c64b233a6fea212171cd7d993cacd691d493ab7921ac3bc976a42/op0",
+          "op": "SetRange",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#8117c68ef66cc7e5ebae698a6c91f3be983e3e848bd88f926d7c3c5b5f2a1e0e",
+      "name": "CopiesInto",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        },
+        {
+          "name": "other"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/af7969736681e7f9d8ae7fbbc3cc167ab7dfd62ab4abc2bfe7b93db7b6b7bdaf/op0",
+          "op": "Copy",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#8dca4fb9954194806622318f9b429b487328db200cf264e20ccc8a5870bf1ba3",
+      "name": "SetBasedWrites",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/723f1b2e2fe495b3b2cab2a47dd7562c8bcbd3f8dd9894ffb2119b99f93607c2/op0",
+          "op": "ModifyAll",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d6ee65c4d3efc19f2babe4c903031180010f33240fe2780a6cb83ae2807afd81",
+      "name": "PersistsCurrent",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/cceedab4376d0129db7ef9bd1b8ac93b5911003c387412486d48e7310c6b4438/op0",
+          "op": "Modify",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e1e7e444138de3871b1d355a0a0e2aa831815f25d916712b332128232139058e",
+      "name": "Initialises",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0ab9009b0568ce250c43b12026fe24cc62dcca4a42e5f76f9d10ed6aabccef11/op0",
+          "op": "Init",
+          "recordVariableName": "cust"
+        }
+      ]
+    }
+  ]
+}

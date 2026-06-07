@@ -1,0 +1,83 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100",
+      "name": "CEX Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#657c039f0622512878db555199b43a3d91f37e649d16f710341c1c89627025ea",
+      "name": "ConditionalExitThenCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op0",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#763d969c57f6133e7243a0fd65472eee180f92bd96669f1fed5fa5884a1e8d59",
+      "name": "StraightLineCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op0",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000cex001:Codeunit:50101#ea4eb4100545321d544dcb25384a35d643f20f98bb9afa2801b465a3155c0430",
+      "name": "ErrorGuardThenCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000cex001:Table:50100"
+        }
+      ]
+    }
+  ]
+}

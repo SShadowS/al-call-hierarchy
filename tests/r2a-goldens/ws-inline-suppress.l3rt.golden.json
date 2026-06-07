@@ -1,0 +1,107 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100",
+      "name": "IS Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#cf05afce05393ac27b085edce25b3d151eac2ae64579536be0fee05affd52863",
+      "name": "UnsuppressedD3",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec3",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op0",
+          "op": "FindSet",
+          "recordVariableName": "rec3",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        },
+        {
+          "operationId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op1",
+          "op": "Get",
+          "recordVariableName": "rec3",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        },
+        {
+          "operationId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op2",
+          "op": "Next",
+          "recordVariableName": "rec3",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf",
+      "name": "WrongDirectiveIo",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec2",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/op0",
+          "op": "Get",
+          "recordVariableName": "rec2",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        },
+        {
+          "operationId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/op1",
+          "op": "Modify",
+          "recordVariableName": "rec2",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f",
+      "name": "SuppressedIo",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/op0",
+          "op": "Get",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        },
+        {
+          "operationId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000000099:Table:50100"
+        }
+      ]
+    }
+  ]
+}

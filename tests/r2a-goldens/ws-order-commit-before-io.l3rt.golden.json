@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100",
+      "name": "OC Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "name": "PostAndCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100"
+        },
+        {
+          "operationId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100"
+        }
+      ]
+    }
+  ]
+}

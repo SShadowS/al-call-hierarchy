@@ -1,0 +1,85 @@
+{
+  "tables": [
+    {
+      "stableTableId": "33333333-3333-3333-3333-333333333333:Table:50100",
+      "name": "Sales Header",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "33333333-3333-3333-3333-333333333333:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableTableId": "33333333-3333-3333-3333-333333333333:Table:50101",
+      "name": "Document Log",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Document No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "33333333-3333-3333-3333-333333333333:Table:50101"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#0d8d490bd2716acc6fd32441b143c1e32b6ab8132c6e8e6a25caefd767dd6c32",
+      "name": "RunExport",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "doc",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+      "name": "OnExport",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "doc",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50001#cac320d2ba49755e20d89b2940f64618c1e09d953b7b86c28677381a030daed4",
+      "name": "LogExport",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "doc",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50100"
+        },
+        {
+          "name": "l",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50101"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op0",
+          "op": "Init",
+          "recordVariableName": "l",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50101"
+        },
+        {
+          "operationId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op1",
+          "op": "Insert",
+          "recordVariableName": "l",
+          "tableId": "33333333-3333-3333-3333-333333333333:Table:50101"
+        }
+      ]
+    }
+  ]
+}

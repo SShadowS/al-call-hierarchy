@@ -1,0 +1,47 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254",
+      "name": "SubB",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da",
+      "name": "RaiseB",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211",
+      "name": "SubA",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+      "name": "OnA",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+      "name": "OnB",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+      "name": "RaiseA",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

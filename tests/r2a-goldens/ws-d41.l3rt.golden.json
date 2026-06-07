@@ -1,0 +1,105 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#0b835052dda12f5eca44832c8a99946d3dc11927c7545aae49abb04c03173a31",
+      "name": "FilterThenCallNoPostUse",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/op0",
+          "op": "SetRange",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#1726521fed1c9b5151bc6042c44fb74c605ac856ed32f3e151e8dcf241294153",
+      "name": "ResettingHelper",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/7b847abe1829425b98ebeba6aa84983b2f468b3e3a1a2512fe331fea714be98c/op0",
+          "op": "Reset",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+      "name": "FilterThenCallResetThenFind",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/op0",
+          "op": "SetRange",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/op1",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#416a69ac42ec428dd535e2b030ab6d508d755f76938f13e31eb4d2133d38cba6",
+      "name": "CallResetThenFindNoPriorFilter",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/op0",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#69bcfd1945a6c4fa538e6c14e852a055ad9c71ce868491fcbd54e1c7f3c9cfa3",
+      "name": "FilterThenCallResetThenReFilterThenFind",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op0",
+          "op": "SetRange",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op1",
+          "op": "SetRange",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op2",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    }
+  ]
+}

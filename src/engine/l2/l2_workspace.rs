@@ -51,16 +51,16 @@ const MODEL_INSTANCE_ID: &str = "r0";
 /// (used both for deterministic sort AND as the `ws:<path>` sourceUnitId) and
 /// the absolute path on disk.
 #[derive(Debug, Clone)]
-struct AlFile {
+pub(crate) struct AlFile {
     /// Lowercased? NO — the sourceUnitId keeps original case; we sort on it
     /// lexicographically (matching al-sem's `ws:`-prefixed unit ids).
-    rel_posix: String,
-    abs_path: std::path::PathBuf,
+    pub(crate) rel_posix: String,
+    pub(crate) abs_path: std::path::PathBuf,
 }
 
 /// Recursively discover `*.al` files under `workspace`, excluding dependency
 /// dirs (`.alpackages`, `.git`). Mirrors R0's `discover_al_files`.
-fn discover_al_files(workspace: &Path) -> std::io::Result<Vec<AlFile>> {
+pub(crate) fn discover_al_files(workspace: &Path) -> std::io::Result<Vec<AlFile>> {
     let mut files = Vec::new();
     let mut stack = vec![workspace.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -100,7 +100,7 @@ fn discover_al_files(workspace: &Path) -> std::io::Result<Vec<AlFile>> {
 }
 
 /// Read a file as UTF-8, stripping a leading UTF-8 BOM if present (matches TS).
-fn read_al_source(path: &Path) -> std::io::Result<String> {
+pub(crate) fn read_al_source(path: &Path) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
     Ok(String::from_utf8_lossy(bytes).into_owned())
@@ -108,7 +108,7 @@ fn read_al_source(path: &Path) -> std::io::Result<String> {
 
 /// Read the workspace ROOT's `app.json` `id` field VERBATIM when it is a
 /// non-empty string. Mirrors `providers/workspace.ts` (GAP 2).
-fn read_root_app_guid(workspace: &Path) -> Option<String> {
+pub(crate) fn read_root_app_guid(workspace: &Path) -> Option<String> {
     let text = std::fs::read_to_string(workspace.join("app.json")).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
     let id = value.get("id")?.as_str()?;
@@ -121,7 +121,7 @@ fn read_root_app_guid(workspace: &Path) -> Option<String> {
 
 /// Count `app.json` files anywhere under `workspace`, EXCLUDING `node_modules`
 /// and `.alpackages` (case-insensitive). Mirrors al-sem `SKIP_DIR_EXACT`.
-fn count_app_json(workspace: &Path) -> usize {
+pub(crate) fn count_app_json(workspace: &Path) -> usize {
     let mut count = 0usize;
     let mut stack = vec![workspace.to_path_buf()];
     while let Some(dir) = stack.pop() {

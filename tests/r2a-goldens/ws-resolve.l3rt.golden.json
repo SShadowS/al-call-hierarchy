@@ -1,0 +1,62 @@
+{
+  "tables": [
+    {
+      "stableTableId": "55555555-5555-5555-5555-555555555555:Table:50900",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "55555555-5555-5555-5555-555555555555:Table:50900"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "55555555-5555-5555-5555-555555555555:Table:50900"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "name": "OnRun",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "name": "Process",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "55555555-5555-5555-5555-555555555555:Table:50900"
+        },
+        {
+          "name": "salesline"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "55555555-5555-5555-5555-555555555555:Table:50900"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+      "name": "Helper",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

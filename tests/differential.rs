@@ -52,6 +52,9 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::l2::features::L2Projection;
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
+use al_call_hierarchy::engine::l3::l3_workspace::{
+    assemble_and_resolve_workspace_default, L3RecordTypeProjection,
+};
 use al_call_hierarchy::engine::snapshot::{
     snapshot_workspace, IdentitySnapshot, ObjectIdentity, RoutineIdentity,
 };
@@ -799,6 +802,383 @@ fn differential_l2_features_match_goldens() {
     );
 }
 
+// =============================================================================
+// R2a L3 record-types differential pass + COVERAGE MATRIX (anti-degenerate)
+// =============================================================================
+//
+// For each `tests/r2a-goldens/<name>.l3rt.golden.json`, run the disk-backed L3
+// assemble+resolve (`assemble_and_resolve_workspace_default`) on
+// `tests/r0-corpus/<name>` (the SAME source fixtures the R0/R1a passes use),
+// project to the golden-shaped record-type projection, and compare structurally:
+// resolved record-var/op StableTableId (OMITTED when unresolved) + per-Table
+// merged fields.
+//
+// ## Capture point (R2a)
+//
+// POST-RESOLVE / PRE-SUMMARY: only the record-type surface. Every emitted field
+// is built key-by-key (serde projection types), so later-gate / L4 fields cannot
+// leak through a spread. A belt-and-suspenders recursive scan HARD-FAILS if any
+// of `callGraph` / `eventGraph` / `coverage` / `typedEdges` / `resourceId` /
+// `bindingResolution` / `argumentBindings` / `summary` / `capabilityFactsDirect`
+// appears on EITHER side (matches the manifest `forbiddenKeys`).
+//
+// ## Comparison rules
+//
+//   - Both sides validated to parse as the `L3RecordTypeProjection` serde type
+//     (shape guard — structurally omits everything but the record-type surface),
+//     then compared as raw `serde_json::Value` POSITIONALLY (the projection is
+//     already canonically sorted: tables by stableTableId, routines by
+//     stableRoutineId, fields by (fieldNumber,name), vars by (name,tableId), ops
+//     by operationId — so NO further sort/transform is applied here).
+//
+// ## COVERAGE MATRIX (anti-degenerate, [REV2])
+//
+// Across the corpus, the pass computes + ENFORCES nonzero counts of:
+//   1. resolved record-var tableIds
+//   2. resolved record-op tableIds
+//   3. implicit-Rec resolutions (recordVariableName lc ∈ {"rec","xrec"} AND tableId set)
+//   4. merged extension fields (declaringObjectId contains ":TableExtension:")
+// computed from the RUST output (so it proves the Rust resolution actually FIRES,
+// not "unresolved == unresolved"). If ANY of the four is zero the test FAILS —
+// a degenerate (all-unresolved) port would otherwise pass a pure equality diff.
+// The matrix counts are printed; an oracle cross-check asserts they equal the
+// counts computed from the GOLDENS (al-sem ground truth).
+//
+// ## Allowlist gating + scope gate
+//
+// Reuses `KNOWN_DIVERGENCES.json` with `test == L3_TEST_NAME`; target empty.
+// `R2A_L3_SET` selects the asserted fixtures:
+//   - "small" (committed default for THIS task): ws-d2 + ws-r2a-record-types —
+//     proven green.
+//   - "full": every `tests/r2a-goldens/*.l3rt.golden.json` (the 153-fixture
+//     corpus; Task 4 promotes the default to full at the R2a exit gate).
+
+/// Keys that must NEVER appear on either side of the L3 record-type comparison —
+/// later-gate / L4 surfaces. Mirrors the manifest `forbiddenKeys` + the
+/// projection's `r2a-l3-projection.ts` FORBIDDEN_KEYS.
+const L3_FORBIDDEN_KEYS: &[&str] = &[
+    "callGraph",
+    "eventGraph",
+    "coverage",
+    "typedEdges",
+    "resourceId",
+    "bindingResolution",
+    "argumentBindings",
+    "summary",
+    "capabilityFactsDirect",
+];
+
+const L3_TEST_NAME: &str = "differential_l3_record_types_match_goldens";
+
+/// The four anti-degenerate coverage counts.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CoverageMatrix {
+    resolved_record_var_table_ids: usize,
+    resolved_record_op_table_ids: usize,
+    implicit_rec_resolutions: usize,
+    merged_extension_fields: usize,
+}
+
+impl CoverageMatrix {
+    fn add(&mut self, other: &CoverageMatrix) {
+        self.resolved_record_var_table_ids += other.resolved_record_var_table_ids;
+        self.resolved_record_op_table_ids += other.resolved_record_op_table_ids;
+        self.implicit_rec_resolutions += other.implicit_rec_resolutions;
+        self.merged_extension_fields += other.merged_extension_fields;
+    }
+}
+
+/// Compute the coverage matrix for ONE projection `Value` (golden OR rust). The
+/// shapes are identical, so the same walker serves both.
+fn coverage_of(proj: &serde_json::Value) -> CoverageMatrix {
+    let mut m = CoverageMatrix::default();
+    if let Some(tables) = proj.get("tables").and_then(|t| t.as_array()) {
+        for t in tables {
+            if let Some(fields) = t.get("fields").and_then(|f| f.as_array()) {
+                for f in fields {
+                    if f.get("declaringObjectId")
+                        .and_then(|d| d.as_str())
+                        .map(|d| d.contains(":TableExtension:"))
+                        .unwrap_or(false)
+                    {
+                        m.merged_extension_fields += 1;
+                    }
+                }
+            }
+        }
+    }
+    if let Some(routines) = proj.get("routines").and_then(|r| r.as_array()) {
+        for r in routines {
+            if let Some(vars) = r.get("recordVariables").and_then(|v| v.as_array()) {
+                for v in vars {
+                    if v.get("tableId").is_some() {
+                        m.resolved_record_var_table_ids += 1;
+                    }
+                }
+            }
+            if let Some(ops) = r.get("recordOperations").and_then(|o| o.as_array()) {
+                for o in ops {
+                    let has_table = o.get("tableId").is_some();
+                    if has_table {
+                        m.resolved_record_op_table_ids += 1;
+                    }
+                    let name = o
+                        .get("recordVariableName")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("");
+                    if (name == "rec" || name == "xrec") && has_table {
+                        m.implicit_rec_resolutions += 1;
+                    }
+                }
+            }
+        }
+    }
+    m
+}
+
+/// Discover every `tests/r2a-goldens/*.l3rt.golden.json`, sorted by fixture name.
+fn discover_l3_goldens() -> Vec<(String, PathBuf)> {
+    let dir = repo_root().join("tests").join("r2a-goldens");
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read L3 goldens dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3rt.golden.json") {
+            continue; // skips manifest.json, l3rt-vectors.json
+        }
+        let fixture = name.trim_end_matches(".l3rt.golden.json").to_string();
+        out.push((fixture, entry.path()));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// The L3 record-types differential pass + coverage matrix. Gated by
+/// `R2A_L3_SET` (committed default `small`: ws-d2 + ws-r2a-record-types).
+#[test]
+fn differential_l3_record_types_match_goldens() {
+    let all_goldens = discover_l3_goldens();
+    assert!(
+        !all_goldens.is_empty(),
+        "no L3 goldens discovered under tests/r2a-goldens — corpus missing?"
+    );
+
+    // Scope gate. Committed default for THIS task is the proven-green small set.
+    let set = std::env::var("R2A_L3_SET").unwrap_or_else(|_| "small".to_string());
+    let small_set = ["ws-d2", "ws-r2a-record-types"];
+    let goldens: Vec<(String, PathBuf)> = match set.as_str() {
+        "full" => all_goldens,
+        "small" | "" => all_goldens
+            .into_iter()
+            .filter(|(f, _)| small_set.contains(&f.as_str()))
+            .collect(),
+        other => panic!("R2A_L3_SET={other:?} not recognized (expected `small` or `full`)"),
+    };
+    assert!(
+        !goldens.is_empty(),
+        "R2A_L3_SET={set:?} selected zero fixtures (small set = {small_set:?})"
+    );
+
+    // Only L3-scoped allowlist entries apply.
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == L3_TEST_NAME)
+        .collect();
+
+    let mut all_divergences: Vec<Divergence> = Vec::new();
+    let mut forbidden_hits: Vec<String> = Vec::new();
+    let mut rust_cov = CoverageMatrix::default();
+    let mut golden_cov = CoverageMatrix::default();
+
+    for (fixture, golden_path) in &goldens {
+        let fixture_dir = corpus_dir().join(fixture);
+        assert!(
+            fixture_dir.is_dir(),
+            "L3 golden {} has no matching in-repo fixture at {} (offline corpus incomplete)",
+            golden_path.display(),
+            fixture_dir.display()
+        );
+
+        // Golden side: parse as JSON (for the diff) AND validate it parses as the
+        // allowlisted L3RecordTypeProjection serde type (shape guard).
+        let golden_text = std::fs::read_to_string(golden_path)
+            .unwrap_or_else(|e| panic!("read L3 golden {}: {e}", golden_path.display()));
+        let golden_json: serde_json::Value =
+            serde_json::from_str(&golden_text).unwrap_or_else(|e| {
+                panic!("L3 golden {} is not valid JSON: {e}", golden_path.display())
+            });
+        let _: L3RecordTypeProjection =
+            serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
+                panic!(
+                    "L3 golden {} does not parse as L3RecordTypeProjection: {e}",
+                    golden_path.display()
+                )
+            });
+
+        // Rust side: disk-backed assemble+resolve → project → JSON. Fail-closed
+        // (empty) layouts yield an empty projection (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&fixture_dir) {
+            Some(resolved) => resolved.project(),
+            None => L3RecordTypeProjection {
+                tables: vec![],
+                routines: vec![],
+            },
+        };
+        let rust_json = serde_json::to_value(&projection)
+            .unwrap_or_else(|e| panic!("serialize Rust L3 projection for {fixture}: {e}"));
+
+        // Forbidden later-gate / L4 field scan on BOTH sides.
+        scan_l3_forbidden(
+            &golden_json,
+            &format!("{fixture}:golden"),
+            &mut forbidden_hits,
+        );
+        scan_l3_forbidden(&rust_json, &format!("{fixture}:rust"), &mut forbidden_hits);
+
+        // Coverage matrices (Rust drives the anti-degenerate gate; golden is the
+        // oracle cross-check).
+        rust_cov.add(&coverage_of(&rust_json));
+        golden_cov.add(&coverage_of(&golden_json));
+
+        // Positional structural diff (both sides already canonically sorted).
+        diff_l2_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    all_divergences
+        .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
+
+    // --- Forbidden-field guard (hard fail, never allowlistable) -------------
+    assert!(
+        forbidden_hits.is_empty(),
+        "FORBIDDEN later-gate/L4 field(s) leaked into the L3 comparison \
+         (golden or rust):\n  {}",
+        forbidden_hits.join("\n  ")
+    );
+
+    // --- COVERAGE MATRIX gate (anti-degenerate, [REV2]) ---------------------
+    eprintln!(
+        "R2a L3 coverage matrix (set={set:?}, {} fixture(s)): \
+         resolvedRecordVarTableIds={} resolvedRecordOpTableIds={} \
+         implicitRecResolutions={} mergedExtensionFields={}",
+        goldens.len(),
+        rust_cov.resolved_record_var_table_ids,
+        rust_cov.resolved_record_op_table_ids,
+        rust_cov.implicit_rec_resolutions,
+        rust_cov.merged_extension_fields,
+    );
+    let mut zero_axes: Vec<&str> = Vec::new();
+    if rust_cov.resolved_record_var_table_ids == 0 {
+        zero_axes.push("resolvedRecordVarTableIds");
+    }
+    if rust_cov.resolved_record_op_table_ids == 0 {
+        zero_axes.push("resolvedRecordOpTableIds");
+    }
+    if rust_cov.implicit_rec_resolutions == 0 {
+        zero_axes.push("implicitRecResolutions");
+    }
+    if rust_cov.merged_extension_fields == 0 {
+        zero_axes.push("mergedExtensionFields");
+    }
+    assert!(
+        zero_axes.is_empty(),
+        "DEGENERATE coverage matrix (set={set:?}): axis/axes {zero_axes:?} are ZERO — \
+         the L3 port is not actually RESOLVING (unresolved==unresolved would pass a \
+         pure equality diff). The matrix must prove resolution fires.",
+    );
+    // Oracle cross-check: Rust coverage must equal the GOLDEN coverage (al-sem
+    // ground truth). A mismatch means resolution diverged even if the structural
+    // diff somehow missed it.
+    assert_eq!(
+        rust_cov, golden_cov,
+        "L3 coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
+    );
+
+    // --- Allowlist gating (same semantics as R0/L2) -------------------------
+    let mut entry_used = vec![false; allowlist.len()];
+    let mut undocumented: Vec<&Divergence> = Vec::new();
+    for div in &all_divergences {
+        let mut covered = false;
+        for (i, entry) in allowlist.iter().enumerate() {
+            if entry.fixture == div.fixture && entry.path == div.path {
+                entry_used[i] = true;
+                covered = true;
+            }
+        }
+        if !covered {
+            undocumented.push(div);
+        }
+    }
+    let unused: Vec<&AllowEntry> = allowlist
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !entry_used[*i])
+        .map(|(_, e)| e)
+        .collect();
+
+    let mut failure = String::new();
+    if !undocumented.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNDOCUMENTED L3 divergence(s) (not in KNOWN_DIVERGENCES.json, \
+             test={L3_TEST_NAME}):\n",
+            undocumented.len()
+        ));
+        for d in &undocumented {
+            failure.push_str(&format!(
+                "  [{}] {}\n      golden = {}\n      rust   = {}\n",
+                d.fixture, d.path, d.golden_value, d.rust_value
+            ));
+        }
+    }
+    if !unused.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNUSED L3 allowlist entr(y/ies) (no matching divergence this run):\n",
+            unused.len()
+        ));
+        for e in &unused {
+            failure.push_str(&format!(
+                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
+                e.fixture, e.path, e.reason, e.expires
+            ));
+        }
+    }
+
+    assert!(
+        failure.is_empty(),
+        "R2a L3 record-types differential FAILED (set={set:?}):{failure}"
+    );
+
+    eprintln!(
+        "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences, \
+         allowlist fully consumed ({} L3 entr(y/ies)).",
+        goldens.len(),
+        allowlist.len()
+    );
+}
+
+/// Recursively collect every forbidden object-key in `value` (L3 later-gate set),
+/// with its JSON pointer path.
+fn scan_l3_forbidden(value: &serde_json::Value, path: &str, hits: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let child = format!("{path}.{k}");
+                if L3_FORBIDDEN_KEYS.contains(&k.as_str()) {
+                    hits.push(child.clone());
+                }
+                scan_l3_forbidden(v, &child, hits);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                scan_l3_forbidden(v, &format!("{path}[{i}]"), hits);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// LIVE / REFRESH mode — NOT part of the default loop.
 ///
 /// Gated behind `AL_SEM_DIR`. Run explicitly with:
@@ -922,6 +1302,63 @@ fn refresh_goldens_from_al_sem() {
             .expect("copy r1a-goldens/manifest.json");
     }
     eprintln!("refresh: copied {l2_copied} L2 golden(s) into tests/r1a-goldens/.");
+
+    // (b3) Regenerate + copy the R2a L3 record-type goldens. A third dump script
+    //      (`scripts/dump-l3-record-types.ts`) writes `scripts/r2a-goldens/
+    //      *.l3rt.golden.json` + `manifest.json`; copy them into
+    //      `tests/r2a-goldens/`. Source fixtures are the SAME `ws-*` trees already
+    //      copied to `tests/r0-corpus/` above (no separate corpus). NOTE the new
+    //      `ws-r2a-record-types` fixture only appears here if al-sem's r2a goldens
+    //      include it (its golden's source fixture is copied via the R0 loop above
+    //      when an R0 golden exists; if not, copy it explicitly below).
+    eprintln!("refresh: running `bun run scripts/dump-l3-record-types.ts` in {al_sem_dir} ...");
+    let l3_status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-l3-record-types.ts"])
+        .current_dir(&al_sem)
+        // dump-l3-record-types writes its manifest JSON to stdout; discard it
+        // (files are the artifact). Logs go to the inherited stderr.
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 dump: {e}"));
+    assert!(
+        l3_status.success(),
+        "`bun run scripts/dump-l3-record-types.ts` failed with status {l3_status}"
+    );
+
+    let src_l3_goldens = al_sem.join("scripts").join("r2a-goldens");
+    let dst_l3_goldens = repo_root().join("tests").join("r2a-goldens");
+    std::fs::create_dir_all(&dst_l3_goldens).expect("create tests/r2a-goldens");
+    let mut l3_copied = 0usize;
+    for entry in std::fs::read_dir(&src_l3_goldens).expect("read al-sem r2a-goldens") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3rt.golden.json") {
+            continue; // skips manifest.json + l3rt-vectors.json (vectors are separate).
+        }
+        // Ensure the source fixture is present in the offline corpus (the R0 loop
+        // above only copies fixtures with an R0 golden; a record-types-only fixture
+        // like ws-r2a-record-types would otherwise be missing).
+        let fixture = name.trim_end_matches(".l3rt.golden.json").to_string();
+        let fixture_dst = dst_corpus.join(&fixture);
+        if !fixture_dst.is_dir() {
+            let fixture_src = src_fixtures.join(&fixture);
+            if fixture_src.is_dir() {
+                copy_source_fixture(&fixture_src, &fixture_dst);
+                eprintln!(
+                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
+                );
+            }
+        }
+        std::fs::copy(entry.path(), dst_l3_goldens.join(&name))
+            .unwrap_or_else(|e| panic!("copy L3 golden {name}: {e}"));
+        l3_copied += 1;
+    }
+    let l3_manifest_src = src_l3_goldens.join("manifest.json");
+    if l3_manifest_src.is_file() {
+        std::fs::copy(&l3_manifest_src, dst_l3_goldens.join("manifest.json"))
+            .expect("copy r2a-goldens/manifest.json");
+    }
+    eprintln!("refresh: copied {l3_copied} L3 golden(s) into tests/r2a-goldens/.");
 
     // (c) Provenance.
     let al_sem_sha = git_sha(&al_sem);

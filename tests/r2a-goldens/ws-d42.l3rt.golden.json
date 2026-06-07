@@ -1,0 +1,121 @@
+{
+  "tables": [],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5",
+      "name": "FullThenForward",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/094165181057b3bc92b154adb48e8fb4489f94109f4ddc283d6fae63d7340f36/op0",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847",
+      "name": "NarrowedThenForwardToSelfLoader",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e6d6c2b142558b42d430ae866e8c6843b68e0d32bdc183dd036c89219840a2ee/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/e6d6c2b142558b42d430ae866e8c6843b68e0d32bdc183dd036c89219840a2ee/op1",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+      "name": "ReadsAddress",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4",
+      "name": "SelfLoadsAddress",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/4032d182944bd7fbb902ebb020c8009aea2c02d85675d0eacbd65393e028c55e/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "cust"
+        },
+        {
+          "operationId": "r0/4032d182944bd7fbb902ebb020c8009aea2c02d85675d0eacbd65393e028c55e/op1",
+          "op": "FindFirst",
+          "recordVariableName": "cust"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639",
+      "name": "NarrowCoversCalleeRequirement",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0200416bdd9289be3aa66d9a2c51961d5b87116e907a090d4e506180d7beac03/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/0200416bdd9289be3aa66d9a2c51961d5b87116e907a090d4e506180d7beac03/op1",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+      "name": "NarrowedThenForwardToReader",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/07fa2222ef019839c126028159b2171af12ba0a92df638c172d6ff665dcfb423/op0",
+          "op": "SetLoadFields",
+          "recordVariableName": "customer"
+        },
+        {
+          "operationId": "r0/07fa2222ef019839c126028159b2171af12ba0a92df638c172d6ff665dcfb423/op1",
+          "op": "FindFirst",
+          "recordVariableName": "customer"
+        }
+      ]
+    }
+  ]
+}

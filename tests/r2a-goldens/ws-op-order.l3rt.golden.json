@@ -1,0 +1,57 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-000000aa0001:Table:50100",
+      "name": "OO Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-000000aa0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
+      "name": "GuardOpen",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
+      "name": "Run",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100"
+        },
+        {
+          "operationId": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100"
+        },
+        {
+          "operationId": "r0/38b27795d64e6cf017b32fb22b0db77e48d7855c426fb2f14b922156a136da8a/op2",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100"
+        }
+      ]
+    }
+  ]
+}

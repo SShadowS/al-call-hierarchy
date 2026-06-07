@@ -1,0 +1,62 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100",
+      "name": "PostingEntry",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "name": "OnBeforePost",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+      "name": "DoPost",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/op0",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "name": "H",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    }
+  ]
+}

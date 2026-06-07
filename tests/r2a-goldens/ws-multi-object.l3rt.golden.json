@@ -1,0 +1,38 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-000000000a01:Table:18",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-000000000a01:Table:18"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000000a01:Codeunit:50200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "name": "DoWork",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-000000000a01:Table:18"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/2bd8139ea3e68be14b6a2bac5f71688dfa94bd6e00ac4456a99ffcb7a7023280/op0",
+          "op": "Get",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-000000000a01:Table:18"
+        }
+      ]
+    }
+  ]
+}

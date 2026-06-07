@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-000000abc210:Table:50100",
+      "name": "Probe Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-000000abc210:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-000000abc210:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-000000abc210:Codeunit:50108#ac1e52074481f48b63d44cfb2bbd0e46c6bed856e9f8d97b1b0c2edb9839d536",
+      "name": "DoWith",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "r",
+          "tableId": "11111111-0000-0000-0000-000000abc210:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op0",
+          "op": "Insert",
+          "recordVariableName": "r",
+          "tableId": "11111111-0000-0000-0000-000000abc210:Table:50100"
+        },
+        {
+          "operationId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op1",
+          "op": "Modify",
+          "recordVariableName": "r",
+          "tableId": "11111111-0000-0000-0000-000000abc210:Table:50100"
+        }
+      ]
+    }
+  ]
+}

@@ -248,6 +248,34 @@ pub fn project_routine_features(
     Some((routine_id, features))
 }
 
+/// Compute a routine's `normalizedSignatureHash` (the return-type-aware canonical
+/// signature SHA-256) from its node. Mirrors the hash baked into the internal
+/// routine id and the StableRoutineId (`${stableObjectId}#${normalizedSignatureHash}`).
+/// L3's record-type projection needs the StableRoutineId, which is keyed by this
+/// hash; computing it here reuses the same `extract_parameters` / `classify_kind` /
+/// return-type extraction the routine-id path uses, so the two cannot drift.
+pub fn routine_normalized_signature_hash(routine: Node, source: &str) -> Option<String> {
+    let name_node = routine.child_by_field_name("name")?;
+    let name = strip_quotes(node_text(name_node, source)).to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let parameters = extract_parameters(routine, source);
+    let return_type_text = get_return_type_text(routine, source);
+    let param_specs: Vec<crate::engine::ids::ParamSpec> = parameters
+        .iter()
+        .map(|p| crate::engine::ids::ParamSpec {
+            type_text: p.type_text.clone(),
+            is_var: p.is_var,
+        })
+        .collect();
+    Some(crate::engine::ids::normalized_signature_hash(
+        &name,
+        &param_specs,
+        return_type_text.as_deref(),
+    ))
+}
+
 fn empty_features(
     variables: &[features::PVariableSymbol],
     record_variables: &[RecordVariable],

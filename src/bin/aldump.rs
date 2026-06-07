@@ -25,21 +25,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
+use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: aldump [--l2] <workspace>");
+    eprintln!("usage: aldump [--l2 | --l3-record-types] <workspace>");
     ExitCode::FAILURE
 }
 
 fn main() -> ExitCode {
     let mut l2 = false;
+    let mut l3_record_types = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
-        // `--l2` flag (anywhere); everything else is the single positional.
+        // `--l2` / `--l3-record-types` flags (anywhere); else the single positional.
         if arg == "--l2" {
             l2 = true;
+            continue;
+        }
+        if arg == "--l3-record-types" {
+            l3_record_types = true;
             continue;
         }
         if workspace_arg.is_some() {
@@ -49,10 +55,44 @@ fn main() -> ExitCode {
         workspace_arg = Some(arg);
     }
 
+    if l2 && l3_record_types {
+        eprintln!("aldump: error: --l2 and --l3-record-types are mutually exclusive");
+        return usage();
+    }
+
     let Some(workspace_arg) = workspace_arg else {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if l3_record_types {
+        // L3 record-type projection (R2a): resolved record-var/op StableTableIds
+        // (omitted when unresolved) + per-Table merged fields. Fail-closed →
+        // empty `{tables, routines}` (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => resolved.project(),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l3::l3_workspace::L3RecordTypeProjection {
+                    tables: vec![],
+                    routines: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize L3 projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if l2 {
         let projection = match project_workspace(&workspace) {

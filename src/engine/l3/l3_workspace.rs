@@ -21,10 +21,12 @@
 use super::extension_fields::merge_extension_fields;
 use super::record_types::resolve_routine_record_types;
 use super::symbol_table::SymbolTable;
-use crate::engine::ids::{encode_object_id, to_stable_object_id};
+use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
 use crate::engine::l2::node_util::{named_children, node_text, strip_quotes, Utf16Cols};
 use crate::engine::l2::scope;
-use crate::engine::l2::{extract_object_number, project_routine_features, IdentityCtx};
+use crate::engine::l2::{
+    extract_object_number, project_routine_features, routine_normalized_signature_hash, IdentityCtx,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -110,8 +112,13 @@ pub struct L3Variable {
 pub struct L3Routine {
     /// Internal routine id: `${modelInstanceId}/${canonicalRoutineKeyHash}`.
     pub id: String,
+    /// StableRoutineId: `${stableObjectId}#${normalizedSignatureHash}` — the
+    /// modelInstanceId-independent key the L3 record-type projection emits.
+    pub stable_routine_id: String,
     /// Owning object's internal id.
     pub object_id: String,
+    /// Owning object's type (`Codeunit` / `Page` / `Table` / …) for the projection.
+    pub object_type: String,
     pub name: String,
     pub record_variables: Vec<L3RecordVariable>,
     pub record_operations: Vec<L3RecordOperation>,
@@ -490,9 +497,18 @@ fn project_file(
                 })
                 .collect();
 
+            // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
+            // The hash reuses the same param/kind/return extraction as the internal
+            // routine id (`routine_normalized_signature_hash`), so they cannot drift.
+            let stable_object_id = to_stable_object_id(&object_id);
+            let norm_hash = routine_normalized_signature_hash(routine, source).unwrap_or_default();
+            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
+
             workspace.routines.push(L3Routine {
                 id: routine_id,
+                stable_routine_id,
                 object_id: object_id.clone(),
+                object_type: object_type.to_string(),
                 name: rname,
                 record_variables,
                 record_operations,
@@ -560,6 +576,58 @@ pub fn assemble_and_resolve_default(files: &[(String, String)], app_guid: &str) 
     assemble_and_resolve(files, app_guid, MODEL_INSTANCE_ID_DEFAULT)
 }
 
+/// Disk-backed assemble + resolve over a workspace directory (the emitter +
+/// differential entry point). Reuses L2's discovery so the file order, BOM
+/// strip, app-guid read, and fail-closed layout detection match al-sem EXACTLY:
+/// a sound workspace is ONE AL app (readable root `app.json` `id`, single
+/// `app.json` excl. node_modules/.alpackages). The inline `ws:<relPosix>` unit
+/// ids match `project_workspace`.
+///
+/// Returns `None` on an unsound / empty layout (fail-closed) — never throws.
+pub fn assemble_and_resolve_workspace(
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+) -> Option<L3Resolved> {
+    use crate::engine::l2::l2_workspace::{
+        count_app_json, discover_al_files, read_al_source, read_root_app_guid,
+    };
+
+    // Fail-closed: need a readable root app.json with a string `id`, single app.
+    let app_guid = read_root_app_guid(workspace)?;
+    if count_app_json(workspace) > 1 {
+        return None;
+    }
+    let discovered = discover_al_files(workspace).ok()?;
+
+    // Build (relPosix, source) pairs in discovery (rel-posix-sorted) order; the
+    // inline assembler re-sorts by name, which is the same total order.
+    let mut files: Vec<(String, String)> = Vec::new();
+    for f in &discovered {
+        match read_al_source(&f.abs_path) {
+            Ok(src) => files.push((f.rel_posix.clone(), src)),
+            Err(e) => {
+                eprintln!("warning: skipping {} (read error: {e})", f.rel_posix);
+            }
+        }
+    }
+
+    if files.is_empty() {
+        return None;
+    }
+
+    let resolved = assemble_and_resolve(&files, &app_guid, model_instance_id);
+    // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
+    if resolved.workspace.objects.is_empty() && resolved.workspace.routines.is_empty() {
+        return None;
+    }
+    Some(resolved)
+}
+
+/// Disk-backed convenience with the default model-instance id (`r0`).
+pub fn assemble_and_resolve_workspace_default(workspace: &std::path::Path) -> Option<L3Resolved> {
+    assemble_and_resolve_workspace(workspace, MODEL_INSTANCE_ID_DEFAULT)
+}
+
 /// Run the three L3 resolve sub-steps over an assembled workspace IN ORDER:
 /// `build_symbol_table → resolve_record_types → merge_extension_fields`.
 /// `tableId` is set by record-types and never re-touched by the merge.
@@ -602,6 +670,166 @@ pub fn to_stable_table_id(internal: &str) -> String {
 /// surface compares.
 pub struct L3Resolved {
     pub workspace: L3Workspace,
+}
+
+// ---------------------------------------------------------------------------
+// Serde projection — the golden-shaped L3 record-type projection (matches
+// `scripts/r2a-l3-projection.ts` / `*.l3rt.golden.json` EXACTLY).
+//
+// ALLOWLIST: only the record-type surface. Every field is built key-by-key, so
+// later-gate fields (callGraph/eventGraph/coverage/typedEdges/resourceId/
+// argumentBindings upgrades) cannot leak through. `tableId` is OMITTED when
+// unresolved (serde `skip_serializing_if`), matching al-sem (never guessed).
+// ---------------------------------------------------------------------------
+
+/// A resolved record VARIABLE: lowercased name + resolved StableTableId (omitted
+/// when unresolved).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PRecordVariable {
+    pub name: String,
+    #[serde(rename = "tableId", skip_serializing_if = "Option::is_none")]
+    pub table_id: Option<String>,
+}
+
+/// A resolved record OPERATION keyed by operationId.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PRecordOperation {
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    pub op: String,
+    #[serde(rename = "recordVariableName")]
+    pub record_variable_name: String,
+    #[serde(rename = "tableId", skip_serializing_if = "Option::is_none")]
+    pub table_id: Option<String>,
+}
+
+/// Per-routine record-type resolution surface, keyed by StableRoutineId.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PRoutineRecordTypes {
+    #[serde(rename = "stableRoutineId")]
+    pub stable_routine_id: String,
+    pub name: String,
+    #[serde(rename = "objectType")]
+    pub object_type: String,
+    #[serde(rename = "recordVariables")]
+    pub record_variables: Vec<PRecordVariable>,
+    #[serde(rename = "recordOperations")]
+    pub record_operations: Vec<PRecordOperation>,
+}
+
+/// One MERGED field (post `merge_extension_fields`) in stable id form.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PMergedField {
+    #[serde(rename = "fieldNumber")]
+    pub field_number: i64,
+    pub name: String,
+    #[serde(rename = "dataType")]
+    pub data_type: String,
+    #[serde(rename = "fieldClass")]
+    pub field_class: String,
+    #[serde(rename = "declaringObjectId")]
+    pub declaring_object_id: String,
+}
+
+/// A Table with its MERGED field set (base + TableExtension fields).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PTableRecordTypes {
+    #[serde(rename = "stableTableId")]
+    pub stable_table_id: String,
+    pub name: String,
+    pub fields: Vec<PMergedField>,
+}
+
+/// The full L3 record-type projection — the golden document shape.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct L3RecordTypeProjection {
+    pub tables: Vec<PTableRecordTypes>,
+    pub routines: Vec<PRoutineRecordTypes>,
+}
+
+impl L3Resolved {
+    /// Project the resolved workspace to the golden-shaped L3 record-type
+    /// projection. Tables sorted by StableTableId; routines by StableRoutineId;
+    /// record vars by (name, tableId); record ops by operationId; fields by
+    /// (fieldNumber, name) — matching `scripts/r2a-l3-projection.ts`.
+    pub fn project(&self) -> L3RecordTypeProjection {
+        let mut tables: Vec<PTableRecordTypes> = self
+            .workspace
+            .tables
+            .iter()
+            .map(|t| {
+                let mut fields: Vec<PMergedField> = t
+                    .fields
+                    .iter()
+                    .map(|f| PMergedField {
+                        field_number: f.field_number,
+                        name: f.name.clone(),
+                        data_type: f.data_type.clone(),
+                        field_class: f.field_class.clone(),
+                        declaring_object_id: to_stable_object_id(&f.declaring_object_id),
+                    })
+                    .collect();
+                fields.sort_by(|a, b| {
+                    a.field_number
+                        .cmp(&b.field_number)
+                        .then_with(|| a.name.cmp(&b.name))
+                });
+                PTableRecordTypes {
+                    stable_table_id: to_stable_table_id(&t.id),
+                    name: t.name.clone(),
+                    fields,
+                }
+            })
+            .collect();
+        tables.sort_by(|a, b| a.stable_table_id.cmp(&b.stable_table_id));
+
+        let mut routines: Vec<PRoutineRecordTypes> = self
+            .workspace
+            .routines
+            .iter()
+            .map(|r| {
+                let mut record_variables: Vec<PRecordVariable> = r
+                    .record_variables
+                    .iter()
+                    .map(|v| PRecordVariable {
+                        name: v.name.to_lowercase(),
+                        table_id: v.table_id.as_deref().map(to_stable_table_id),
+                    })
+                    .collect();
+                record_variables.sort_by(|a, b| {
+                    a.name.cmp(&b.name).then_with(|| {
+                        a.table_id
+                            .clone()
+                            .unwrap_or_default()
+                            .cmp(&b.table_id.clone().unwrap_or_default())
+                    })
+                });
+
+                let mut record_operations: Vec<PRecordOperation> = r
+                    .record_operations
+                    .iter()
+                    .map(|op| PRecordOperation {
+                        operation_id: op.id.clone(),
+                        op: op.op.clone(),
+                        record_variable_name: op.record_variable_name.to_lowercase(),
+                        table_id: op.table_id.as_deref().map(to_stable_table_id),
+                    })
+                    .collect();
+                record_operations.sort_by(|a, b| a.operation_id.cmp(&b.operation_id));
+
+                PRoutineRecordTypes {
+                    stable_routine_id: r.stable_routine_id.clone(),
+                    name: r.name.clone(),
+                    object_type: r.object_type.clone(),
+                    record_variables,
+                    record_operations,
+                }
+            })
+            .collect();
+        routines.sort_by(|a, b| a.stable_routine_id.cmp(&b.stable_routine_id));
+
+        L3RecordTypeProjection { tables, routines }
+    }
 }
 
 /// A merged field projected for comparison (StableObjectId declaring provenance).

@@ -1,0 +1,222 @@
+{
+  "tables": [
+    {
+      "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "fieldNumber": 50000,
+          "name": "Loyalty Points",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50910"
+        },
+        {
+          "fieldNumber": 50001,
+          "name": "Tier",
+          "dataType": "Text[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50910"
+        },
+        {
+          "fieldNumber": 50002,
+          "name": "Segment",
+          "dataType": "Code[10]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50911"
+        }
+      ]
+    },
+    {
+      "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50901",
+      "name": "Sales Line",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Document No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50901"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Line No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:Table:50901"
+        },
+        {
+          "fieldNumber": 50100,
+          "name": "Custom Note",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50912"
+        }
+      ]
+    },
+    {
+      "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50910",
+      "name": "Customer Ext A",
+      "fields": [
+        {
+          "fieldNumber": 50000,
+          "name": "Loyalty Points",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50910"
+        },
+        {
+          "fieldNumber": 50001,
+          "name": "Tier",
+          "dataType": "Text[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50910"
+        }
+      ]
+    },
+    {
+      "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50911",
+      "name": "Customer Ext B",
+      "fields": [
+        {
+          "fieldNumber": 50000,
+          "name": "Collides 50000",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50911"
+        },
+        {
+          "fieldNumber": 50002,
+          "name": "Segment",
+          "dataType": "Code[10]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50911"
+        }
+      ]
+    },
+    {
+      "stableTableId": "2a000000-0000-0000-0000-0000000002aa:Table:50912",
+      "name": "Sales Line Ext",
+      "fields": [
+        {
+          "fieldNumber": 50100,
+          "name": "Custom Note",
+          "dataType": "Text[50]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50912"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#02305e3c6fe826baede8c365e9290e47e29fd5c76542b5581cde894972f5b58f",
+      "name": "GlobalScopeOp",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/cf366210bade77d3b3f37f179ead08fe44076c32bc5e4f4db38c6f83232615de/op0",
+          "op": "Modify",
+          "recordVariableName": "globalcust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e",
+      "name": "DeclaredVars",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "name": "missing"
+        },
+        {
+          "name": "sales",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50901"
+        },
+        {
+          "name": "tempcust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/op0",
+          "op": "FindSet",
+          "recordVariableName": "cust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "operationId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/op1",
+          "op": "FindFirst",
+          "recordVariableName": "sales",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50901"
+        },
+        {
+          "operationId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/op2",
+          "op": "Insert",
+          "recordVariableName": "tempcust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "operationId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/op3",
+          "op": "Get",
+          "recordVariableName": "missing"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Page:50900#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+      "name": "OnOpenPage",
+      "objectType": "Page",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/7c5ea76a29da1ad429fbe8da5d35db4144e6ffedb88646f62da75ae49834357c/op0",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/625c461177a40e58def191ce8909c1dddd128540a9fe95e03c2caf6d4963fe72/op0",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "operationId": "r0/625c461177a40e58def191ce8909c1dddd128540a9fe95e03c2caf6d4963fe72/op1",
+          "op": "Modify",
+          "recordVariableName": "rec",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ]
+    }
+  ]
+}

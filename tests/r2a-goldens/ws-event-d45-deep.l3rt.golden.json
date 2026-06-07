@@ -1,0 +1,103 @@
+{
+  "tables": [
+    {
+      "stableTableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100",
+      "name": "Sales",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableTableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101",
+      "name": "AuditLog",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+      "name": "OnAfterSales",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "s",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#ba363574e206d62c50a9fdfc7a3fbf2ff2522200c4b3c3ba5d7103e46a8a3674",
+      "name": "RunSales",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "s",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+      "name": "OnNotifyComplete",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "s",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+      "name": "HNotify",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "s",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+      "name": "HAudit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "l",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101"
+        },
+        {
+          "name": "s",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e70e09afd978f1a30aa9717744b083d66fbc4638075fc24c1584fe61abe83c3c/op0",
+          "op": "Insert",
+          "recordVariableName": "l",
+          "tableId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101"
+        }
+      ]
+    }
+  ]
+}

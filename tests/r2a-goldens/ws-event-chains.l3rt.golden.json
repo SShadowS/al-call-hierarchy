@@ -1,0 +1,81 @@
+{
+  "tables": [
+    {
+      "stableTableId": "44444444-4444-4444-4444-444444444444:Table:50100",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50000#4646aa1a34fe0681afba23f3850cb9ea65b37e524e26ae14ce274dd0d5b707fb",
+      "name": "Fire",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50000#7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "name": "OnE",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50001#f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "name": "H1",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/1cb7a5388bab4c89b63ae19aa3699839545047eabf7e97c86fe3902d71e45ba3/op0",
+          "op": "Modify",
+          "recordVariableName": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "name": "H2",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/f3b39fb5c881105fd08e6896d6744e3fbe12bb52816f2886ff4502592966edcc/op0",
+          "op": "Insert",
+          "recordVariableName": "cust",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50100"
+        }
+      ]
+    }
+  ]
+}

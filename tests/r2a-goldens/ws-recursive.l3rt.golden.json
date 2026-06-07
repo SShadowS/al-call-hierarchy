@@ -1,0 +1,45 @@
+{
+  "tables": [
+    {
+      "stableTableId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "name": "Ping",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op0",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "name": "Pong",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

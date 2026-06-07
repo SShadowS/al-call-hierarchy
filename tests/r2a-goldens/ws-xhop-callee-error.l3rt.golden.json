@@ -1,0 +1,40 @@
+{
+  "tables": [
+    {
+      "stableTableId": "aaaaaaaa-0000-0000-0000-000000xe0001:Table:50100",
+      "name": "XE Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000xe0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "aaaaaaaa-0000-0000-0000-000000xe0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+      "name": "DoStuff",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "name": "Run",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

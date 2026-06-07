@@ -1,0 +1,111 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-00000000d50a:Table:18",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Blocked",
+          "dataType": "Option",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "fieldNumber": 60,
+          "name": "Buy-from No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50105#8eede75440d2ac0e0a639ec4c4b9fea900368574a32a8c0a623b77c406ee274c",
+      "name": "SafeLoop",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "name": "helper",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op0",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op1",
+          "op": "Get",
+          "recordVariableName": "helper",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op2",
+          "op": "Modify",
+          "recordVariableName": "helper",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/402546b88cac76f92a112529a6d6f50d810a911ad4620521982cb1f349799bfa/op3",
+          "op": "Next",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50105#fb7a8c745a9c558d5e375fbda79681bcc79c2beb5548e44eb977a6839fe1f5e1",
+      "name": "BadLoop",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op0",
+          "op": "SetRange",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op1",
+          "op": "FindSet",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op2",
+          "op": "Modify",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        },
+        {
+          "operationId": "r0/e5b444b2cd936344db886a32ffc5784678c36e53209d1ec807d70b4a1879b6e7/op3",
+          "op": "Next",
+          "recordVariableName": "customer",
+          "tableId": "11111111-0000-0000-0000-00000000d50a:Table:18"
+        }
+      ]
+    }
+  ]
+}

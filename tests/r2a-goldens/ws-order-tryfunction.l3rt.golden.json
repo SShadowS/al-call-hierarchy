@@ -1,0 +1,51 @@
+{
+  "tables": [
+    {
+      "stableTableId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100",
+      "name": "TF Rec",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "ffffffff-0000-0000-0000-000000tf0001:Codeunit:50101#f9a5dfcf0917d1e622d68f636bbf365aa236fb666ad293adafff775a30cf3ee2",
+      "name": "TryInsertAndCommit",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op0",
+          "op": "Init",
+          "recordVariableName": "rec",
+          "tableId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100"
+        },
+        {
+          "operationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1",
+          "op": "Insert",
+          "recordVariableName": "rec",
+          "tableId": "ffffffff-0000-0000-0000-000000tf0001:Table:50100"
+        }
+      ]
+    }
+  ]
+}

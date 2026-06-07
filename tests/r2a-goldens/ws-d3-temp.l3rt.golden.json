@@ -1,0 +1,45 @@
+{
+  "tables": [
+    {
+      "stableTableId": "11111111-0000-0000-0000-0000000033d3:Table:50200",
+      "name": "Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000033d3:Table:50200"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Name",
+          "dataType": "Text[100]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "11111111-0000-0000-0000-0000000033d3:Table:50200"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+      "name": "Foo",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "tempcustomer",
+          "tableId": "11111111-0000-0000-0000-0000000033d3:Table:50200"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/op0",
+          "op": "FindFirst",
+          "recordVariableName": "tempcustomer",
+          "tableId": "11111111-0000-0000-0000-0000000033d3:Table:50200"
+        }
+      ]
+    }
+  ]
+}

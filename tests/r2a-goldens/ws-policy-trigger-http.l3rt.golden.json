@@ -1,0 +1,26 @@
+{
+  "tables": [
+    {
+      "stableTableId": "10000006-0000-0000-0000-000000000000:Table:50103",
+      "name": "Outbound Event",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000006-0000-0000-0000-000000000000:Table:50103"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000006-0000-0000-0000-000000000000:Table:50103#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": []
+    }
+  ]
+}

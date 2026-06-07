@@ -1,0 +1,38 @@
+{
+  "tables": [
+    {
+      "stableTableId": "10000007-0000-0000-0000-000000000000:Table:50104",
+      "name": "Test Customer",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "10000007-0000-0000-0000-000000000000:Table:50104"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "10000007-0000-0000-0000-000000000000:Codeunit:50104#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "name": "OnInstallAppPerCompany",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "cust",
+          "tableId": "10000007-0000-0000-0000-000000000000:Table:50104"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/op0",
+          "op": "Insert",
+          "recordVariableName": "cust",
+          "tableId": "10000007-0000-0000-0000-000000000000:Table:50104"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "tables": [
+    {
+      "stableTableId": "44444444-4444-4444-4444-444444444444:Table:50102",
+      "name": "Probe File Archive",
+      "fields": [
+        {
+          "fieldNumber": 1,
+          "name": "Entry No.",
+          "dataType": "Integer",
+          "fieldClass": "Normal",
+          "declaringObjectId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        },
+        {
+          "fieldNumber": 2,
+          "name": "Bank Account No.",
+          "dataType": "Code[20]",
+          "fieldClass": "Normal",
+          "declaringObjectId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50100#cb01deefa01c77b7b956a4b280cfec1b430a6b3948de68e9348999e3b4867125",
+      "name": "RunImport",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50101#a409707d31efb836493088d2e29cbb71f098f017068b06ed0050ddea85f49f92",
+      "name": "Insert",
+      "objectType": "Codeunit",
+      "recordVariables": [
+        {
+          "name": "filearchive",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ],
+      "recordOperations": [
+        {
+          "operationId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op0",
+          "op": "Init",
+          "recordVariableName": "filearchive",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        },
+        {
+          "operationId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op1",
+          "op": "Insert",
+          "recordVariableName": "filearchive",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50103#75abfc7f25a5229f6ce569c1f0dd904b76add65be0fe6628d59c51ed167cd844",
+      "name": "CallOnUnknown",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
+      "name": "InsertViaGlobalRecord",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op0",
+          "op": "Init",
+          "recordVariableName": "globalrec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        },
+        {
+          "operationId": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op1",
+          "op": "Insert",
+          "recordVariableName": "globalrec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ]
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
+      "name": "CallViaGlobalCodeunit",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
+      "stableRoutineId": "44444444-4444-4444-4444-444444444444:Table:50102#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+      "name": "OnInsert",
+      "objectType": "Table",
+      "recordVariables": [],
+      "recordOperations": [
+        {
+          "operationId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",
+          "op": "TestField",
+          "recordVariableName": "rec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ]
+    }
+  ]
+}
