@@ -16,7 +16,8 @@ and `docs/`.
 | **R1a** | L2 structural body walk + ids + CFN skeleton + routine/object metadata (operations, call-sites incl. `ExpressionInfo` + result-use flags, record-ops, loops, record/scalar vars, var-assignments, condition-refs, field-accesses, `nestingDepth`, `hasBranching`, `identifierReferences`, `unreachableStatements`, normalized CFN) | **SHIPPED** — 152/152 fixtures, 0 divergences, native receiver oracles green |
 | **R1b** | L2 control-context lattice + shared control-flow primitives (`controlContext` per op/callsite; IsHandled-guard elevation; TryFunction guard; error-call source-range post-pass) | **SHIPPED** — 152/152 fixtures WITH `controlContext` compared, 0 divergences, native L2-direct control-context oracle green |
 | **R1c** | L2 operation-order + scope frames (`orderId`/`frameId`/`onSuccessPath`/`dominatesSuccessReturn` per op/callsite; routine `scopeFrames[]`; error-call order post-pass) | **SHIPPED** — 152/152 fixtures WITH `order`+`scopeFrames` compared, 0 divergences, native L2-direct structural ordering oracle green |
-| R1d (next) | Direct capability facts (no `resourceId`/`tableId`) + extraction `status`/`reasons` + unreachable-filtered diagnostics | stub (below) |
+| **R1d** | L2 direct capability facts (the 13 `extractCapabilities` family extractors run on PRE-RESOLVE routines: `op`/`resourceKind`/`confidence`/`provenance`=direct/`via`=self/`resourceArgSource`/`extra`/witness ids; STRIPPED of L3 `resourceId` + nested `table-field.tableId`; `op:"publish"` excluded — L4-injected) + extraction `status`/`reasons` + unreachable-filtered index diagnostics | **SHIPPED** — 152/152 fixtures WITH capability facts compared, 0 divergences, native L2-direct capability oracle green |
+| **R1 (= R1a+R1b+R1c+R1d)** | Full L2 per-routine feature parity at the `indexWorkspace` (pre-resolve) boundary | **COMPLETE** — all four sub-gates SHIPPED; 152/152 corpus differential green across the entire L2 surface + a native L2-direct oracle per sub-gate |
 
 ---
 
@@ -410,36 +411,142 @@ incl. the repeat quirk). The downstream never-overclaim edges are DEFERRED to R2
 
 ---
 
-## R1d (next sub-gate) — STUB
+## R1d parity status (SHIPPED — L2 direct capability facts) — R1 COMPLETE
 
-R1d completes R1 with **direct capability facts** — the 13 capability extractors
-projected straight to a `CapabilityFact[]` surface (WITHOUT `resourceId`/`tableId`,
-which are L3-resolved and stay forbidden), reusing the now-validated R1a body walk +
-R1b control-context + R1c operation-order substrate:
+R1d widens parity from the R1c operation-order surface to the **direct capability
+facts** — the output of al-sem's 13 `extractCapabilities` family extractors run
+INTRAPROCEDURALLY on each routine — reusing the now-validated R1a body walk + R1b
+control-context + R1c operation-order substrate. With R1d SHIPPED, **R1
+(= R1a + R1b + R1c + R1d) is COMPLETE**: the full L2 per-routine feature surface is
+at parity, 152/152 corpus fixtures green WITH capability facts compared, 0
+divergences (`KNOWN_DIVERGENCES.json` empty), plus a native L2-direct oracle per
+sub-gate.
 
-- **Direct facts, no L3 identity.** Each extractor emits its `CapabilityFact[]`
-  with the L2-available fields only; `resourceId`/`tableId`/`resourceDisplay`
-  remain STRUCTURALLY ABSENT from the projection (resolved at L3, forbidden at L2 —
-  the differ hard-fails on them). The native receiver-genus classification (R1a,
-  `classify_receiver` → record-op vs call-site) already covers the
-  record-op-vs-call distinction several extractors key on, so it is reused, not
-  re-derived.
-- **Split by family.** Extractors project per family (the existing al-sem
-  extractor families) rather than one flat list, mirroring the source layout so a
-  divergence localizes to one extractor.
-- **Extraction status + reasons.** Each fact carries its extraction `status` /
-  `reasons` (why a candidate was kept or skipped) so the differential can compare
-  the negative space (skipped/partial extractions), not just the positive facts.
-- **Unreachable diagnostics filtered by R1b control-context.** Capability
-  extraction filters ops whose R1b `controlContext == "unreachable"` (so R1d
-  depends on R1b) — an unreachable record-op / call must NOT seed a capability
-  fact. The unreachable-filtered diagnostics are part of the compared surface.
-- **Comparison surface** — ADD `CapabilityFact[]` (sans L3 identity) + extraction
-  status/reasons + unreachable diagnostics; KEEP forbidding `resourceId`/`tableId`
-  and all L3-resolved fields. Native oracle: a capability-never-overclaim oracle
-  (no fact from an unreachable op; record-op-keyed extractors fire only on
-  Record-typed receivers).
+Notes that fell out of the port (the capture-point discipline is the subtle part):
 
-R1d completes R1 per the spec staging. R1a's body walk + ids + CFN skeleton, R1b's
-control-context, and R1c's operation-order are the validated substrate the
-capability extractors hang off — R1d extends, never replaces, the existing goldens.
+- **Capture point = `extractCapabilities` on PRE-RESOLVE routines, NOT the L4
+  summary.** The extractors are L2-LOGICAL (their `ExtractionContext` is just
+  `routine.features` + a variable index + declared-type `receiverTypeOf` + the
+  unreachable filter — no call graph, no L3 resolution, no summaries), but in
+  production they RUN during the L4 summary pass. R1d invokes them at the L2
+  boundary (`project_named_routine` → `extract_capabilities`), exactly as
+  al-sem's pre-resolve dump does. The Rust orchestrator
+  (`src/engine/l2/capability/mod.rs`) mirrors `extractor.ts` + the
+  `summary-runner.ts:509-513` opaque override.
+- **`publish` is L4-INJECTED — EXCLUDED at L2.** `summary-runner.ts` mints one
+  `op:"publish"` fact per published event from the RESOLVED `model.eventGraph`;
+  `extractEvents` at L2 emits SUBSCRIBE only. So a publisher routine
+  (`[IntegrationEvent]`) emits ZERO direct facts at L2; a subscriber
+  (`[EventSubscriber]`) emits exactly one `subscribe` fact. The oracle asserts
+  both, and that `op:"publish"` never appears anywhere at L2.
+- **status/reasons = the EXTRACTOR's own output, NOT L4-augmented coverage.**
+  `RoutineSummary.coverage` adds uncertainty-derived reasons (from
+  `summary.uncertainties`) and downgrades complete→partial — that augmentation is
+  L4. R1d compares the extractor's RETURN value, replicating ONLY the L2
+  opaque override (`!bodyAvailable` → `["opaque-dependency"]`; `parseIncomplete` →
+  `["parse-incomplete"]`; both clear facts + force status `unknown`).
+- **L3 identity STRIPPED — structurally, not as a post-pass.** `resourceId`
+  (TableId/EventId/ObjectId) and the nested `table-field.tableId` on every
+  `ValueSource` (reachable via `resourceArgSource`, `extra.bodyArgSource`/
+  `keyArgSource`/`valueArgSource`, and recursively through `constant-var.initializer`)
+  are NOT DECLARED on the Rust serde projection types — so they CANNOT serialize.
+  The differ + the native oracle's recursive key scan both hard-fail if either
+  appears. Resource-id-bearing facts (table) therefore stay `confidence:"unresolved"`
+  at L2 (they only become `"static"` once the id resolves in R2).
+- **Unreachable filter depends on R1b controlContext.** Capability extraction drops
+  any op/callsite whose `controlContext == "unreachable"` (effects never come from
+  unreachable code — the soundness core) and emits an index-stage `info` diagnostic
+  for each excluded site. The diagnostics are part of the compared surface. The
+  receiver-genus classification (record-op vs member-call on a Codeunit) reused from
+  R1a keys the table-vs-not distinction.
+
+**R1d's native soundness oracle is L2-DIRECT** (`tests/l2cap_oracles.rs`), NOT a
+golden diff (that is `l2cap_vectors.rs`, byte-parity with al-sem) and NOT the L4
+effect/digest/prove oracles. It asserts the L2 direct-capability CONTRACT directly on
+each emitted `CapabilityFact`: every fact is `provenance=="direct"` + `via=="self"`;
+NO fact carries `resourceId`/`tableId` anywhere (recursive scan over the serialized
+JSON, incl. nested `ValueSource`s); NO `op:"publish"` exists (publisher → zero facts,
+subscriber → one `subscribe`); an `unreachable` op produces NO fact + emits an index
+diagnostic (the same record op yields a table fact iff reachable); a table fact's
+witness op is a record op on a Record-typed receiver (a member call on a
+Codeunit-typed receiver yields none); and the SOFTENED confidence rule
+(`confidence=="static" ⇒ resourceId present`), asserted concretely as "a table fact
+is `unresolved`, never `static`, at L2". As of this gate every case passes with no
+`src/engine/l2/capability/**` change required — the extractors were correct.
+
+### Covered vs deferred (R1d / R2)
+
+- **Covered (L2 direct surface):** the direct capability facts + extraction
+  status/reasons + unreachable-filtered diagnostics, STRIPPED of L3 identity.
+- **Deferred to R2/L4:** inherited / cone capability facts + their provenance
+  (`provenance != "direct"`, composed in L4 summaries); the L4-injected
+  `op:"publish"` facts (from the resolved eventGraph); the L3-resolved
+  `resourceId`/`tableId` + the resolved `confidence` upgrade; the L4-augmented
+  coverage status/reasons.
+
+---
+
+## R1 retrospective (R1a + R1b + R1c + R1d — full L2 per-routine parity)
+
+With R1d shipped, the **entire L2 per-routine feature surface** is byte-equivalent to
+al-sem at the `indexWorkspace` (pre-resolve) boundary, 152/152 corpus fixtures, 0
+divergences. What is now at parity, layer by layer: the **structural body walk + CFN
+skeleton + ids + routine/object metadata** (R1a — operations, call-sites incl.
+`ExpressionInfo` + result-use, record-ops, loops, vars, var-assignments, condition
+refs, field accesses, `nestingDepth`/`hasBranching`/`identifierReferences`/
+`unreachableStatements`, normalized CFN); the **control-context lattice** (R1b —
+`controlContext` per op/callsite, IsHandled elevation, TryFunction guard, error-call
+post-pass); the **operation-order + scope frames** (R1c — `order`/`scopeFrames` with
+`onSuccessPath`/`dominatesSuccessReturn`); and the **direct capability facts** (R1d —
+the 13 extractors' output, L3 identity stripped, publish excluded).
+
+Three disciplines carried the gate and are worth keeping for R2:
+
+- **The capture-point discipline.** Every sub-gate captures al-sem at a PRECISE
+  boundary and replicates ONLY what is determinable there. R1a/b/c capture the
+  pre-resolve index; R1d captures `extractCapabilities` on pre-resolve routines (NOT
+  the L4 summary), replicating only the L2 opaque override and excluding the
+  L4-injected publish facts + the L4-augmented coverage. Getting the boundary wrong
+  (capturing L4 state at L2) is the single biggest source of false divergence — the
+  Rev-2 review caught exactly this for publish + status/reasons.
+- **The determinism contract.** Every derived collection has a canonical, explicit
+  sort (objects by StableObjectId, routines by StableRoutineId, capability reasons by
+  the serialized kebab string — NOT enum declaration order — diagnostics by
+  `(sourceRef, message)`); Map/Set iteration never leaks into output unsorted. The
+  byte-for-byte differential rests on this.
+- **A native L2-DIRECT oracle per sub-gate** — `l2cc_oracles.rs` (control-context
+  lattice invariants), `l2order_oracles.rs` (ordering/scope-frame invariants),
+  `l2cap_oracles.rs` (the capability contract). Each is ground-truth-free and
+  asserts the L2 invariants DIRECTLY (not the downstream L4 effects the TS soundness
+  oracles add), so it catches a class of regressions the finite corpus + the golden
+  vectors miss — and, because the corpus differential is byte-parity with al-sem, a
+  structural oracle failure would mean BOTH engines are wrong (flagged loudly in each
+  oracle).
+
+---
+
+## R2 (L3 resolve parity) — STUB
+
+R2 widens parity from the L2 index (now COMPLETE) to the **L3 `resolveModel`
+surface** — everything `resolve/` derives by binding the per-routine L2 facts across
+the workspace + `.app` symbol packages into a cross-file `SemanticModel`:
+
+- **Call graph + event graph.** Callee binding / resolution (each L2 call-site →
+  its resolved target routine across files + apps), `callsiteResolutions`,
+  `typedEdges`, the publisher↔subscriber `eventGraph` edges (incl. the
+  `parseSubscriberAttribute` binding-kind discipline).
+- **The L3-resolved fields R1 deferred.** `resourceId`/`tableId` (the stripped
+  capability identity — bound to a concrete TableId/EventId/ObjectId, with the
+  `confidence` upgrade literal/enum → `"static"` once the id resolves);
+  `calleeParameterIsVar` / `bindingResolution` / `sourceTableId` (the binding L3
+  fields R1 keeps forbidden).
+- **Inherited / cone capability facts.** Capability facts with
+  `provenance != "direct"` — composed bottom-up over the call graph (the L4 summary
+  surface), plus the **L4-injected `op:"publish"` facts** minted from the resolved
+  eventGraph (EXCLUDED at L2 by construction).
+- **Record-type unification.** Resolving each record-op / member-call receiver to a
+  concrete table identity across the workspace + symbol packages (the receiver-genus
+  classification R1 keys off declared types; R2 binds them to TableIds).
+
+R2 extends, never replaces, the R1 goldens — the validated L2 surface is the input
+the resolver binds.
