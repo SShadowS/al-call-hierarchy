@@ -186,7 +186,37 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/op2"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
@@ -255,7 +285,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

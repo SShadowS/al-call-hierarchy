@@ -564,7 +564,7 @@ fn project_file(
                 &attr_names_lc,
             );
 
-            routines.push(PRoutine {
+            let mut routine = PRoutine {
                 stable_routine_id,
                 name: rname,
                 kind: kind.to_string(),
@@ -574,9 +574,48 @@ fn project_file(
                 body_available,
                 parse_incomplete,
                 features,
-            });
+                capability_facts_direct: Vec::new(),
+                capability_status: crate::engine::l2::capability::CoverageStatus::Complete,
+                capability_reasons: Vec::new(),
+                capability_diagnostics: Vec::new(),
+            };
+
+            // R1d: direct capability facts. MUST run AFTER controlContext is set
+            // (the unreachable filter in `extract_capabilities` reads it).
+            apply_capabilities(&mut routine);
+
+            routines.push(routine);
         }
     }
+}
+
+/// R1d emitter wiring: run `extract_capabilities` on the (control-context-set)
+/// routine and populate the four sibling-of-`features` capability fields, ordered
+/// to match the al-sem golden projection (`r1a-l2-projection.ts`):
+///   - `capabilityFactsDirect`: extraction order (positional) — NO sort.
+///   - `capabilityReasons`: dedupe + LEXICOGRAPHIC sort on the kebab string
+///     (al-sem `Array.from(new Set(reasons)).sort()` — JS string sort, NOT the
+///     `CoverageReason` declaration order).
+///   - `capabilityDiagnostics`: sort by `(sourceRef, message)`.
+fn apply_capabilities(routine: &mut PRoutine) {
+    let result = crate::engine::l2::capability::extract_capabilities(routine);
+
+    let mut reasons = result.reasons;
+    // Match al-sem's `.sort()` (lexicographic on the serialized kebab string),
+    // not the enum's declaration-order `Ord`.
+    reasons.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+
+    let mut diagnostics = result.diagnostics;
+    diagnostics.sort_by(|a, b| {
+        a.source_ref
+            .cmp(&b.source_ref)
+            .then_with(|| a.message.cmp(&b.message))
+    });
+
+    routine.capability_facts_direct = result.facts;
+    routine.capability_status = result.status;
+    routine.capability_reasons = reasons;
+    routine.capability_diagnostics = diagnostics;
 }
 
 /// Build the full L2 projection for a workspace directory.
@@ -762,9 +801,12 @@ pub fn project_named_routine(
                 &attr_names_lc,
                 &parameters,
             );
-            crate::engine::l2::operation_order::apply_operation_order(&mut features, &attr_names_lc);
+            crate::engine::l2::operation_order::apply_operation_order(
+                &mut features,
+                &attr_names_lc,
+            );
 
-            return Some(PRoutine {
+            let mut routine = PRoutine {
                 stable_routine_id,
                 name: rname,
                 kind: kind.to_string(),
@@ -774,7 +816,13 @@ pub fn project_named_routine(
                 body_available,
                 parse_incomplete,
                 features,
-            });
+                capability_facts_direct: Vec::new(),
+                capability_status: crate::engine::l2::capability::CoverageStatus::Complete,
+                capability_reasons: Vec::new(),
+                capability_diagnostics: Vec::new(),
+            };
+            apply_capabilities(&mut routine);
+            return Some(routine);
         }
     }
     None

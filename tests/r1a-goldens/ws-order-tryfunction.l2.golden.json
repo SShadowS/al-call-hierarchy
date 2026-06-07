@@ -166,7 +166,37 @@
             }
           ]
         }
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op2"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -245,7 +245,37 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -146,7 +146,35 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.com/notify"
+          },
+          "witnessCallsiteId": "r0/e2d6d5fb812251f4909bf17a00c13d25fe326ee75fb753f61e15fcf391bedde2/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "response",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

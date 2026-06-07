@@ -69,7 +69,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#344ab6a84f025777e272cab490dac9b627c4c5ed3d5be7729eeecb018576fcb2",
@@ -259,7 +263,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#5507fb2ea6acdae3aa1b5434ced8b1a0be65bac85d37f782f575b3b26313c1f1",
@@ -331,7 +339,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#5d27e6c23eb9260593c90f74196bfc91445a4811733d45d362552f41a9d1785e",
@@ -396,7 +408,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
@@ -466,7 +482,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
@@ -501,7 +521,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#b8bbbce6c254b6afb72c748449457a51b2e50eb767d5294243b909739de84d7c",
@@ -556,7 +580,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#bb3118f5e6b7689a2d17b07c140c54a83aff20ea90029ea5dafff2cc99906db1",
@@ -613,7 +641,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#c7377e506cfec0cb61c02e034b0ed817a21958f0ceb0470b42fe74d83b90b878",
@@ -684,7 +716,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#ce7cd91b39519a21bcd9b62e8067063c8150d73ed197a266ce946c9539433c55",
@@ -723,7 +759,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
@@ -780,7 +820,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70000#fb03a86d7bbacf6d6292aed0f74ec3315c49e05895738470fd4c29b1f58dc058",
@@ -829,7 +873,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Codeunit:70001#3d26f4e3b748972d6459297cdc929a81e80d0e2b74043c62b26d5bc8ac291282",
@@ -924,6 +972,22 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -959,7 +1023,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
@@ -994,7 +1062,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70011#508f205f25a9da9374cc240933be5522d7af843db4d90c4b9a46dd409a748942",
@@ -1029,7 +1101,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

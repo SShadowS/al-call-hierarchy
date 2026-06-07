@@ -164,6 +164,27 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "50100"
+          },
+          "witnessCallsiteId": "r0/851f0b3261fe7185a5de5def2be730a733a621feb8a6030a505782d66249e5b1/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -321,7 +342,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
@@ -400,7 +425,20 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/bbbd3c4dea4e091b88ad6ee97d6a259a91be9f47fcd6a9cf260fc85c09ef40b6/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
@@ -475,7 +513,13 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "unknown",
+      "capabilityReasons": [
+        "parse-incomplete"
+      ],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
@@ -565,7 +609,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

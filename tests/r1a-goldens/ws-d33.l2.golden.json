@@ -119,7 +119,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/fd7b4c4fb084cb725595b8da22dd28443ebe1cb522a06df8b25faa46836992db/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/fd7b4c4fb084cb725595b8da22dd28443ebe1cb522a06df8b25faa46836992db/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "DeleteAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#79e2b83d4ddf9cdb57992152518ee6f08c550df4321e10153e300f9f200eb887",
@@ -287,7 +309,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/84a0532fcdc0fcea1d1d32f3ac8935e5461d074b0f7e497abf2ca2834262f178/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/84a0532fcdc0fcea1d1d32f3ac8935e5461d074b0f7e497abf2ca2834262f178/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "DeleteAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#b8b78e01a3c4aaa77c68f72ad1e2db6dc38611b7189de4c1ffeda9b18a910797",
@@ -396,7 +440,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/fa7aca3cc4287352d0b341676a1237041762b207865a556f332fa62c7db7482c/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/fa7aca3cc4287352d0b341676a1237041762b207865a556f332fa62c7db7482c/rv/tempcustomer",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "opSubtype": "DeleteAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
@@ -506,7 +572,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/fbff0005757b77006690859a18794929aa20b06d04e9a8ccec4cd99431db8e43/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/fbff0005757b77006690859a18794929aa20b06d04e9a8ccec4cd99431db8e43/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "ModifyAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7",
@@ -617,7 +705,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/06a9544249e1b7855fa6a6482d7fea524b486f740a3f7ca36d7e418de67bbf1a/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/06a9544249e1b7855fa6a6482d7fea524b486f740a3f7ca36d7e418de67bbf1a/rv/customer",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "DeleteAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
@@ -828,7 +938,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "delete",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/153d6c07d2d8e54f40a61af69a79dd9ab6b898bfd57be75edd9c6dadf19b9f5e/op2",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/153d6c07d2d8e54f40a61af69a79dd9ab6b898bfd57be75edd9c6dadf19b9f5e/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "DeleteAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

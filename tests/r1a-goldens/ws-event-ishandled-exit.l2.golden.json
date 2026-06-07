@@ -286,7 +286,29 @@
             "branchMayFallThrough": false
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/a0d992bb58ed408e6c531b7c5cb9624ef01bd73b0aa63df9c3d0f6348b0d8b4e/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/a0d992bb58ed408e6c531b7c5cb9624ef01bd73b0aa63df9c3d0f6348b0d8b4e/rv/rec",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Insert"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
@@ -383,7 +405,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
@@ -524,6 +550,22 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     }
   ]

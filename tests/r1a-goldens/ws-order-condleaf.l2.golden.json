@@ -231,7 +231,43 @@
             "branchMayFallThrough": true
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/e92309722d34dd13cec1e28bf9e341e98fc2c5d0d4af305af5910e72de544520/op0"
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.com/check"
+          },
+          "witnessCallsiteId": "r0/e92309722d34dd13cec1e28bf9e341e98fc2c5d0d4af305af5910e72de544520/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "response",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

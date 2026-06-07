@@ -46,6 +46,10 @@
           }
         ]
       },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -81,7 +85,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Page:50300#e300132a792d18b6e5ec381db1b017333a0e64ed140f84a7ddd7054b55ee2896",
@@ -136,6 +144,10 @@
           }
         ]
       },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     }
   ]

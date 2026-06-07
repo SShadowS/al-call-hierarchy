@@ -279,7 +279,62 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/op2"
+        },
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/ca3b15d587f4c795a8372c27d4d8246d15cff0a2298060331703b54f917e6fdb/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

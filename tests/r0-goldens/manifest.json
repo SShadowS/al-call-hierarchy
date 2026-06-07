@@ -1,6 +1,6 @@
 {
   "description": "R0 golden identity snapshots — ground truth for the al-sem → Rust differential harness. Each <fixture>.golden.json is the identity subset projected from the real v3 snapshot (stable ids + return-type-aware signatureFingerprint + canonicalSignatureText) and the model (name/kind). See r0-identity-projection.ts for per-field provenance.",
-  "alSemGitSha": "3ed9ca46455484603b7001e214134764a2793eb9",
+  "alSemGitSha": "aadb6be80f36c02ed845b9b5eddc9727b0b4225b",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "snapshotSchemaVersion": 3,

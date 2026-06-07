@@ -314,7 +314,69 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/ping"
+          },
+          "witnessCallsiteId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50201#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
@@ -366,6 +428,10 @@
           }
         ]
       },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -530,7 +596,20 @@
             "kind": "loop"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/1a896ca475f9b10066a5e490d26dcbb16b5403cfc44b36fd7aa939b19cb3c989/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50202#e873c69003694178cf7e0206071a110ef0bc7328fdac4e7d93fe4f52653ac1e2",
@@ -716,7 +795,35 @@
             "kind": "loop"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/item"
+          },
+          "witnessCallsiteId": "r0/55c818847a885bcf6041fe9252b20a14c966ae094d06c502d41c26fd32fccd02/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

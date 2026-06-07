@@ -239,7 +239,46 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50000#61814885d662e690d79deb7623541ee16f4cb20c2b60a81100e42cbdc3d4dbba",
@@ -298,7 +337,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-0000000d4721:Codeunit:50001#3b2dc15f8f24abc404aa79e9bc6250c4f1f2331c6b3f18fdd88ea7be47a5bf6a",
@@ -516,6 +559,45 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/notify"
+          },
+          "witnessCallsiteId": "r0/aecb8d1c4b22c3dd741b6aa7393109f1e9d0caea2effc9221c19b580fe096ebf/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Post",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "content",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        },
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     }
   ]

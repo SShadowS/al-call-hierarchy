@@ -315,7 +315,66 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/op2"
+        },
+        {
+          "op": "write-blob",
+          "resourceKind": "file",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "line"
+          },
+          "witnessCallsiteId": "r0/f29ebb74d1a73584164b028c23c381a827ffee92e5bd13a2cec9b404465794d6/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

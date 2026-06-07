@@ -294,7 +294,52 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/rv/temprec",
+            "tempState": {
+              "kind": "known",
+              "value": true
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/ping"
+          },
+          "witnessCallsiteId": "r0/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -24,7 +24,9 @@ const WS_D2_GOLDEN: &str = r"U:\Git\al-sem\scripts\r1a-goldens\ws-d2.l2.golden.j
 const FORBIDDEN_KEYS: &[&str] = &[
     // R1b: controlContext is now emitted + compared (no longer forbidden).
     // R1c: order + scopeFrames are now emitted + compared (no longer forbidden).
-    "capability",
+    // R1d: capabilityFactsDirect/Status/Reasons/Diagnostics now emitted + compared
+    //   (no longer forbidden). Only the L3-resolved fields remain forbidden — a
+    //   nested `tableId` (table-field ValueSource) still hard-fails.
     "resourceId",
     "tableId",
     "calleeParameterIsVar",

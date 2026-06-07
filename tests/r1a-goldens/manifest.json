@@ -1,13 +1,13 @@
 {
   "description": "R1a L2-boundary feature goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.l2.golden.json is the ALLOWLISTED structural L2 projection of `model.routines[].features` captured POST-INDEX / PRE-RESOLVE (from `indexWorkspace`, before `resolveModel`). See scripts/r1a-l2-projection.ts for per-field provenance + the forbidden-field structural-absence guarantee.",
   "capturePoint": "post-index/pre-resolve (indexWorkspace)",
-  "note": "R1c: `order` (OperationOrder {orderId,frameId,onSuccessPath,dominatesSuccessReturn}) added to each OperationSite/CallSite (key ABSENT when al-sem left it undefined — TryFunction/no-body/unknown — never null; error-call ops inherit their paired callsite's order via the routine-indexer source-range post-pass) + `scopeFrames` (ScopeFrame[]) added to the routine features (OMITTED when empty; PRESENT — a single root \"block\" frame — for a present-but-empty body; BRANCH frames carry branchAlwaysTerminates+branchMayFallThrough even when false, branchTerminatesBy only when always-terminating). R1b added controlContext to each OperationSite/CallSite (key ABSENT when undefined; error-call ops inherit via the same post-pass).",
-  "alSemGitSha": "f612c91c91332d1433d08449d07e295f3b3bfb0b",
+  "note": "R1d: per-routine DIRECT capability facts (`capabilityFactsDirect`) + the extractor's own `capabilityStatus`/`capabilityReasons` + the captured index-stage unreachable `capabilityDiagnostics`, captured by calling `extractCapabilities` directly on each PRE-RESOLVE routine (NOT analyzeWorkspace/the summary pass) and replicating ONLY the L2 opaque override (!bodyAvailable||parseIncomplete → facts=[], status=\"unknown\"). Facts are STRIPPED: `resourceId` (L3 TableId/EventId/ObjectId) + `subject` removed; `tableId` DEEP-stripped from every nested `table-field` ValueSource (resourceArgSource / extra.bodyArgSource|keyArgSource|valueArgSource / constant-var.initializer). `op:\"publish\"` facts EXCLUDED (L4-injected from the resolved eventGraph; extractEvents emits SUBSCRIBE only at L2). status/reasons are the extractor RETURN value, NOT the L4-augmented RoutineSummary.coverage (no uncertainty reasons, no complete→partial downgrade). R1c: `order` (OperationOrder {orderId,frameId,onSuccessPath,dominatesSuccessReturn}) on each OperationSite/CallSite (key ABSENT when undefined; error-call ops inherit via the routine-indexer source-range post-pass) + `scopeFrames` (ScopeFrame[]) on routine features (OMITTED when empty; PRESENT — a single root \"block\" frame — for a present-but-empty body). R1b added controlContext (key ABSENT when undefined).",
+  "alSemGitSha": "aadb6be80f36c02ed845b9b5eddc9727b0b4225b",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=31;depCache=7;resourcePolicy=1",
   "modelInstanceId": "r0",
-  "alsemVersion": "r1c",
+  "alsemVersion": "r1d",
   "callArgumentBindingAllowlist": [
     "parameterIndex",
     "sourceKind",

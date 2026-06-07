@@ -28,7 +28,7 @@ pub mod ui_events_error;
 pub mod value_source;
 
 use super::features::{PFeatures, PRoutine, PVariableSymbol};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 // ===========================================================================
@@ -38,7 +38,7 @@ use std::collections::{HashMap, HashSet};
 /// Where a value at a capability extraction site comes from (`ValueSource`,
 /// `model/capability.ts`). `table-field` carries NO `tableId` (deep-stripped:
 /// L3-resolved / `"unknown"` at L2). Internally tagged on `kind`.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind")]
 pub enum ValueSource {
     #[serde(rename = "literal")]
@@ -76,7 +76,7 @@ pub enum ValueSource {
 /// Per-resourceKind extra semantics (`CapabilityExtra`, `model/capability.ts`).
 /// Internally tagged on `kind`. Nested arg-source fields are deep-stripped (no
 /// `tableId`) by construction (they are `ValueSource`, which has none).
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum CapabilityExtra {
     Table(TableExtra),
@@ -86,9 +86,26 @@ pub enum CapabilityExtra {
     Storage(StorageExtra),
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+fn kind_table() -> &'static str {
+    "table"
+}
+fn kind_dispatch() -> &'static str {
+    "dispatch"
+}
+fn kind_http() -> &'static str {
+    "http"
+}
+fn kind_event() -> &'static str {
+    "event"
+}
+fn kind_storage() -> &'static str {
+    "storage"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TableExtra {
     /// Always "table".
+    #[serde(skip_deserializing, default = "kind_table")]
     pub kind: &'static str,
     #[serde(rename = "recordVariableId", skip_serializing_if = "Option::is_none")]
     pub record_variable_id: Option<String>,
@@ -98,9 +115,10 @@ pub struct TableExtra {
     pub op_subtype: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DispatchExtra {
     /// Always "dispatch".
+    #[serde(skip_deserializing, default = "kind_dispatch")]
     pub kind: &'static str,
     #[serde(rename = "objectType")]
     pub object_type: String,
@@ -108,18 +126,20 @@ pub struct DispatchExtra {
     pub modal: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HttpExtra {
     /// Always "http".
+    #[serde(skip_deserializing, default = "kind_http")]
     pub kind: &'static str,
     pub method: String,
     #[serde(rename = "bodyArgSource", skip_serializing_if = "Option::is_none")]
     pub body_arg_source: Option<ValueSource>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EventExtra {
     /// Always "event".
+    #[serde(skip_deserializing, default = "kind_event")]
     pub kind: &'static str,
     #[serde(rename = "eventClass")]
     pub event_class: String,
@@ -127,9 +147,10 @@ pub struct EventExtra {
     pub include_sender: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageExtra {
     /// Always "storage".
+    #[serde(skip_deserializing, default = "kind_storage")]
     pub kind: &'static str,
     #[serde(rename = "keyArgSource", skip_serializing_if = "Option::is_none")]
     pub key_arg_source: Option<ValueSource>,
@@ -144,7 +165,7 @@ pub struct StorageExtra {
 ///
 /// Field order matches the al-sem JSON projection key set; `skip_serializing_if`
 /// mirrors the TS "only emit a key when defined" convention.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapabilityFact {
     pub op: String,
     #[serde(rename = "resourceKind")]
@@ -163,7 +184,8 @@ pub struct CapabilityFact {
 }
 
 /// Coverage status lattice (`model/coverage.ts`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CoverageStatus {
     Complete,
     Partial,
@@ -182,7 +204,8 @@ impl CoverageStatus {
 
 /// Coverage reason (`model/coverage.ts`). Only the variants the L2 extractors +
 /// the opaque override can produce are modelled; serialized as the kebab string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CoverageReason {
     OpaqueDependency,
     ParseIncomplete,
@@ -202,7 +225,7 @@ impl CoverageReason {
 /// An index-stage diagnostic — emitted by the unreachable filter (`severity` =
 /// "info", `stage` = "index"). Mirrors `model/finding.ts` `Diagnostic`, projected
 /// to the 4 fields al-sem's capture captures.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapabilityDiagnostic {
     pub severity: String,
     pub stage: String,

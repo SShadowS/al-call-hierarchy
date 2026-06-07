@@ -328,7 +328,77 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op2"
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/ping"
+          },
+          "witnessCallsiteId": "r0/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

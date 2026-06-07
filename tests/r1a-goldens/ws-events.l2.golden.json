@@ -64,7 +64,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
@@ -133,7 +137,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#c3bc0da359a54bc1da8602c5641dfacc7217a117934afbb5075e2737578fc7c1",
@@ -212,6 +220,22 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -291,6 +315,22 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "subscribe",
+          "resourceKind": "event",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "extra": {
+            "kind": "event",
+            "eventClass": "Integration"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     }
   ]

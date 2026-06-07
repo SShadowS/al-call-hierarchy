@@ -201,7 +201,45 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "configDynamic",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "table-field",
+            "fieldName": "Codeunit Id"
+          },
+          "witnessCallsiteId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

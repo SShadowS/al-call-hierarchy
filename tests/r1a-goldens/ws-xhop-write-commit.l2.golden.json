@@ -76,7 +76,20 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/d5de6816fa04c2f64c4a25b9e26b8dce4e4a824f727c4f94e277400d72ce5167/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "aaaaaaaa-0000-0000-0000-000000xw0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
@@ -277,7 +290,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -148,7 +148,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#345f5e52afb366606e71a9c6a68966263b56e88128c0015c110e446850acce64",
@@ -366,6 +370,27 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/a1434beab1a91dc7f0f1dc5d9d34cdcd31d6ee7d24088a24ba1129297db860b0/cs0"
+        },
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/a1434beab1a91dc7f0f1dc5d9d34cdcd31d6ee7d24088a24ba1129297db860b0/cs1"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -509,7 +534,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#80d8480120b346ac4413e7864bc9519b1a6cd4596b8c3ced9e213d6f2f18d1ec",
@@ -599,7 +628,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#a0184139d2dd2997bf7573e6541ca95050db6dd609734f1f0d41cddd3613544f",
@@ -765,6 +798,19 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/b50a50ce5066434034b02dc21866e9bedfd748722ab2cda29ccfb8313ddd00f8/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -916,6 +962,19 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/dd639d42cd452302f255524b77b248c1443a5fa88ac71ab3e65f0b9e43958c82/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -1059,7 +1118,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61",
@@ -1210,6 +1273,19 @@
           }
         ]
       },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/e2906cbc65eb09f758c6bd08bbc420a3e53ddaf81c7d642ff19e863236182287/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     }
   ]

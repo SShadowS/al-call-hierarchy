@@ -220,7 +220,51 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://api.example.test/orders"
+          },
+          "witnessCallsiteId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        },
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/cs1"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/749ef522e8dd8316d82a4084633c8b7661abea490d3a2b86cb5afe9de1f0f4fa/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

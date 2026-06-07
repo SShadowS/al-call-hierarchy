@@ -289,7 +289,60 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op2"
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.com/notify"
+          },
+          "witnessCallsiteId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "response",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -321,7 +321,88 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/op3",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/op4",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/5c8de947831615b67b8848dfb66b0c87c1250113a0c310280a1f710e23b3b5fd/op2"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

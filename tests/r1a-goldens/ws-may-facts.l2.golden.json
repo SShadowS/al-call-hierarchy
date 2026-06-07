@@ -133,7 +133,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0918411750a46be1a1e5d08e4bf65a80c49f67db546e155cca34ade73a0afee0",
@@ -254,7 +258,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/4a3c0f88e4d8257468d38b8e2b34717fafc0202a478163e8bc765359d596170c/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/4a3c0f88e4d8257468d38b8e2b34717fafc0202a478163e8bc765359d596170c/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Get"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#2387ac7eebaec0fdb8b460c5fe1d7ca1ac1ea8da4bb7ce5642902828951cd1ff",
@@ -382,7 +408,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/ec707cad5bae24350a843ce5a6c7682a47886723f2fd6b8aa7ae889cc5fd2a48/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/ec707cad5bae24350a843ce5a6c7682a47886723f2fd6b8aa7ae889cc5fd2a48/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Validate"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#23c33fa0989f81e7701abd7c3f35b00789299d8c24cae6593b1143a593bcf26e",
@@ -510,7 +558,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#3bbd30bac6c05bf33d984f641c4c869e6600a8d0eed0af6cac698192c133e411",
@@ -621,7 +673,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7568aaf3d0417a168e8cbe54a1984a17947361f25fcb6975d401b5dda3400dd3",
@@ -748,7 +804,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#8117c68ef66cc7e5ebae698a6c91f3be983e3e848bd88f926d7c3c5b5f2a1e0e",
@@ -886,7 +946,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/af7969736681e7f9d8ae7fbbc3cc167ab7dfd62ab4abc2bfe7b93db7b6b7bdaf/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/af7969736681e7f9d8ae7fbbc3cc167ab7dfd62ab4abc2bfe7b93db7b6b7bdaf/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Copy"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#8dca4fb9954194806622318f9b429b487328db200cf264e20ccc8a5870bf1ba3",
@@ -998,7 +1080,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/723f1b2e2fe495b3b2cab2a47dd7562c8bcbd3f8dd9894ffb2119b99f93607c2/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/723f1b2e2fe495b3b2cab2a47dd7562c8bcbd3f8dd9894ffb2119b99f93607c2/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "ModifyAll"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d6ee65c4d3efc19f2babe4c903031180010f33240fe2780a6cb83ae2807afd81",
@@ -1109,7 +1213,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/cceedab4376d0129db7ef9bd1b8ac93b5911003c387412486d48e7310c6b4438/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/cceedab4376d0129db7ef9bd1b8ac93b5911003c387412486d48e7310c6b4438/rv/cust",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Modify"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e1e7e444138de3871b1d355a0a0e2aa831815f25d916712b332128232139058e",
@@ -1220,7 +1346,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

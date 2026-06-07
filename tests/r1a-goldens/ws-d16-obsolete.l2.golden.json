@@ -104,7 +104,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Codeunit",
+            "member": "D16VeryOldWay"
+          },
+          "witnessCallsiteId": "r0/24b7a433c3aa9c2f8aab7bc9fc6311d223ea3275c0f33a347a3f213c74b0d122/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
@@ -203,7 +225,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Codeunit",
+            "member": "D16OldWay"
+          },
+          "witnessCallsiteId": "r0/296a978349352f4c090f4981dd91ce3b2714d75d09c439b6169cb81c48ddfd37/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -173,7 +173,46 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

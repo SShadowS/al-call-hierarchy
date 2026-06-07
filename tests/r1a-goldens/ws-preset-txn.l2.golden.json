@@ -67,6 +67,10 @@
           }
         ]
       },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [],
       "accessModifier": "local"
     },
     {
@@ -231,7 +235,20 @@
             "kind": "loop"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/0b8d8087db04c34b4562a2c8d5ccd75dd21e515c0fae1c11a785d7ebfc79b899/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50001#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
@@ -525,7 +542,69 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "read",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Get"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "https://example.test/ping"
+          },
+          "witnessCallsiteId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Get",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "resp",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -175,7 +175,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op0",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
+            "tempState": {
+              "kind": "parameter-dependent",
+              "parameterIndex": 0
+            },
+            "opSubtype": "Validate"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#4f889b3e38f3c9db922a145b91eeacfc5b95254e1ddc8f6eb65a29e7647814bf",
@@ -331,7 +353,11 @@
             "branchMayFallThrough": true
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "aaaaaaaa-0000-0000-0000-0000000000b2:Codeunit:60101#f0bc39e194dc7d20f8b89f70003c8340feffca10f075f4614f162e48e5c93813",
@@ -382,7 +408,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

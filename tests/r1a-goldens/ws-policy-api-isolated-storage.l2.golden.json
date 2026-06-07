@@ -143,7 +143,36 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "store-write",
+          "resourceKind": "isolated-storage",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "literal",
+            "value": "secret-key"
+          },
+          "witnessCallsiteId": "r0/540f1230de4894e8ccba17d7e78d92c3528ac50fed8cf8f8fed90134b0d03c02/cs0",
+          "extra": {
+            "kind": "storage",
+            "keyArgSource": {
+              "kind": "literal",
+              "value": "secret-key"
+            },
+            "valueArgSource": {
+              "kind": "literal",
+              "value": "secret-value"
+            },
+            "scope": "Module"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

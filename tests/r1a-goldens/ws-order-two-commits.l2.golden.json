@@ -253,7 +253,62 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op1",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Insert"
+          }
+        },
+        {
+          "op": "modify",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op3",
+          "extra": {
+            "kind": "table",
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "opSubtype": "Modify"
+          }
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op2"
+        },
+        {
+          "op": "commit",
+          "resourceKind": "transaction",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op4"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

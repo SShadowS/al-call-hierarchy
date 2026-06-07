@@ -109,7 +109,27 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "insert",
+          "resourceKind": "table",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
+          "extra": {
+            "kind": "table",
+            "tempState": {
+              "kind": "unknown"
+            },
+            "opSubtype": "Insert"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

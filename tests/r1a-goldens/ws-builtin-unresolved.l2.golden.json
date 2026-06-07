@@ -492,7 +492,28 @@
             "branchMayFallThrough": false
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/cs3"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/6d0783737c80157c48e96a0710b6848de201c43a278ee52f198305f2af3ce6a1/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

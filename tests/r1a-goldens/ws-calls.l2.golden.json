@@ -45,7 +45,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#2388ba19c706d95b691743392f37735faff9c5ed44ba8f6b2520b4bd3f584ef4",
@@ -156,7 +160,31 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "constant-var",
+            "varName": "cuid",
+            "initializer": {
+              "kind": "unknown"
+            }
+          },
+          "witnessCallsiteId": "r0/d5580d9ab288c511adece53766ed2a218900f1a6588903c1787351124a361c41/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#85319dfed47d58b559a996405252ca1092ac82059f5e2ee65ddd8c9b37660f58",
@@ -243,7 +271,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:51001#9ea668d8f3ea2f69b3060163f2cbc2af9c1d900a6ffe08cad452e21f3d4bacef",
@@ -340,7 +372,29 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "execute",
+          "resourceKind": "codeunit",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "enum",
+            "enumName": "Codeunit",
+            "member": "Worker CU"
+          },
+          "witnessCallsiteId": "r0/3a7b8a26356a5f342704003742ba9d03b4df70a367b2461ddab31e18e8bb6aa2/cs0",
+          "extra": {
+            "kind": "dispatch",
+            "objectType": "Codeunit"
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

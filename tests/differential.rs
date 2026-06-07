@@ -423,13 +423,19 @@ fn differential_identity_subset_matches_goldens() {
 //     callSites / loops / fieldAccesses / statementTree.children /
 //     conditionLeaves / recordVariables / variables / …) are compared
 //     POSITIONALLY, in order, because their order is semantically meaningful.
-//   - R1b/R1c: `controlContext` + `order` + `scopeFrames` are now part of the
-//     projection — emitted by the Rust side, present in the goldens, and compared
-//     structurally (positional/by-id). They are NO LONGER forbidden. MUST FAIL if
-//     EITHER side carries a STILL-forbidden field anywhere (capability /
-//     `resourceId` / `tableId` / `calleeParameterIsVar` / `bindingResolution` /
-//     `sourceTableId`) — a recursive key scan on both parsed values,
-//     belt-and-suspenders even though the serde types omit them.
+//   - R1b/R1c/R1d: `controlContext` + `order` + `scopeFrames` +
+//     `capabilityFactsDirect`/`capabilityStatus`/`capabilityReasons`/
+//     `capabilityDiagnostics` are now part of the projection — emitted by the Rust
+//     side, present in the goldens, and compared structurally. Capability facts
+//     are compared POSITIONALLY (extraction order — al-sem pushes them in
+//     fixed family-dispatch order, never sorts); reasons are dedup+lexicographic-
+//     sorted and diagnostics are (sourceRef,message)-sorted on BOTH sides before
+//     comparison. They are NO LONGER forbidden. MUST FAIL if EITHER side carries a
+//     STILL-forbidden L3 field anywhere (`resourceId` / `tableId` /
+//     `calleeParameterIsVar` / `bindingResolution` / `sourceTableId`) — a recursive
+//     key scan on both parsed values, belt-and-suspenders even though the serde
+//     types omit them (e.g. a `tableId` leaking through a nested `table-field`
+//     ValueSource is a hard fail).
 //
 // ## Divergence record + `path` locator
 //
@@ -463,7 +469,11 @@ fn differential_identity_subset_matches_goldens() {
 const L2_FORBIDDEN_KEYS: &[&str] = &[
     // R1b: controlContext is now REQUIRED (compared, not forbidden) — removed.
     // R1c: order + scopeFrames are now EMITTED + compared (not forbidden) — removed.
-    "capability",
+    // R1d: capabilityFactsDirect / capabilityStatus / capabilityReasons /
+    //   capabilityDiagnostics are now EMITTED + compared (not forbidden). The
+    //   STILL-forbidden set is only the L3-resolved fields below (mirrors the
+    //   refreshed manifest.json `forbiddenKeys`). The scan still HARD-FAILS if a
+    //   `tableId` leaks through a nested `table-field` ValueSource.
     "resourceId",
     "tableId",
     "calleeParameterIsVar",

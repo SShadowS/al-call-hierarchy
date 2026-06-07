@@ -177,7 +177,34 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "send",
+          "resourceKind": "http",
+          "confidence": "unresolved",
+          "provenance": "direct",
+          "via": "self",
+          "resourceArgSource": {
+            "kind": "unknown"
+          },
+          "witnessCallsiteId": "r0/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049/cs0",
+          "extra": {
+            "kind": "http",
+            "method": "Send",
+            "bodyArgSource": {
+              "kind": "constant-var",
+              "varName": "req",
+              "initializer": {
+                "kind": "unknown"
+              }
+            }
+          }
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

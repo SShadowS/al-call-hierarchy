@@ -53,7 +53,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
@@ -122,7 +126,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "55555555-0000-0000-0000-000000000001:Codeunit:50501#a294f20b2d2574bb03cb1addf01aef9cf5e250904a7c8d3b8b7c30782fa63caf",
@@ -157,7 +165,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "55555555-0000-0000-0000-000000000001:Page:50502#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
@@ -192,7 +204,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

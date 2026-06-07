@@ -70,7 +70,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#5de0c5f88abf606733a002f5155c9c9b8f68ec404a94f047178082b3ef3a5546",
@@ -125,7 +129,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#73757b1d1c3be976686bce21a1113f48d6b2a56bc97049b45acca5cfd74972db",
@@ -195,7 +203,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#bab82de24afaf3c6d5b31957b674f5b46ad354578e8d9a79afbd5909351f62b4",
@@ -265,7 +277,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#da7119f1e7b20180d5c943d57e4e41260cf7f7b5fb50939fda2626b5d258df4e",
@@ -320,7 +336,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50110#dd22ee04a1fb3c72c65b872d68bd59da5645e9fec9ccc27d89f9b2795a7bc9d6",
@@ -375,7 +395,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#11251ee12bbfee8cb850f20c2b73929cbfe603618bcdf548256f3dd96f1b65e9",
@@ -502,7 +526,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#17740f7dcb2d880967c04f896ebdf6a8ed180c4ae2e1335fe80d2895348da0c0",
@@ -629,7 +657,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff:Codeunit:50111#e32bf3968403e18c91e66dfba278fd2967d5b2ebfa4fab4f053f6911ec197f45",
@@ -793,7 +825,11 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

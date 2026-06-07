@@ -370,6 +370,25 @@ pub struct PRoutine {
     #[serde(rename = "parseIncomplete")]
     pub parse_incomplete: bool,
     pub features: PFeatures,
+    // ── R1d: per-routine DIRECT capability surface ─────────────────────────
+    // Siblings of `features` (NOT nested inside it), matching the al-sem golden.
+    // ALWAYS present (even when empty / "complete") — the golden never omits a
+    // capability key, so we do NOT `skip_serializing_if`. Default fns make the
+    // golden round-trip via `Deserialize` even though the dump always emits them.
+    #[serde(rename = "capabilityFactsDirect", default)]
+    pub capability_facts_direct: Vec<super::capability::CapabilityFact>,
+    #[serde(rename = "capabilityStatus", default = "default_capability_status")]
+    pub capability_status: super::capability::CoverageStatus,
+    #[serde(rename = "capabilityReasons", default)]
+    pub capability_reasons: Vec<super::capability::CoverageReason>,
+    #[serde(rename = "capabilityDiagnostics", default)]
+    pub capability_diagnostics: Vec<super::capability::CapabilityDiagnostic>,
+}
+
+/// Default for `capability_status` on deserialize — never used in practice (the
+/// golden always emits the key) but required so `PRoutine` derives `Deserialize`.
+fn default_capability_status() -> super::capability::CoverageStatus {
+    super::capability::CoverageStatus::Complete
 }
 
 /// A projected object envelope (for the golden files; metadata prerequisite).

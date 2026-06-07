@@ -141,7 +141,20 @@
             "branchMayFallThrough": true
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-confirm",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     }
   ]
 }

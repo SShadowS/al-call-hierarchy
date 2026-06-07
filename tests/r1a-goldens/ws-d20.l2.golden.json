@@ -190,7 +190,35 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-error",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/cs0"
+        },
+        {
+          "op": "error-throw",
+          "resourceKind": "error",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessOperationId": "r0/3e9693ce19d92eee8e71a764092c53e63573e851b3b72d6c2c0717c58f76581c/op0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [
+        {
+          "severity": "info",
+          "stage": "index",
+          "message": "unreachable code: call after terminating statement",
+          "sourceRef": "ws:src/Codeunit.al:14:9"
+        }
+      ]
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#44e0fdb6d53d88a31d6e40f68c1ff5683ad26226756dcc1168ee481ab4231f7a",
@@ -283,7 +311,20 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/6d4b247c45de2cb140c7da24e6208a8e9d0948c05da22fd49b4448d9f73f894f/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#4f7f5a57a0fcb6422158b06e2964336d205f15e2dba4e4906ae677c8d1d5937c",
@@ -433,7 +474,20 @@
             "branchMayFallThrough": false
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [
+        {
+          "op": "ui-message",
+          "resourceKind": "ui",
+          "confidence": "static",
+          "provenance": "direct",
+          "via": "self",
+          "witnessCallsiteId": "r0/e42e1e0acd023b4f43762f19aefc2bc5d4ed7318e8b3c23bc4438714999b3a1d/cs0"
+        }
+      ],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
@@ -547,7 +601,18 @@
             "kind": "block"
           }
         ]
-      }
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": [
+        {
+          "severity": "info",
+          "stage": "index",
+          "message": "unreachable code: call after terminating statement",
+          "sourceRef": "ws:src/Codeunit.al:7:9"
+        }
+      ]
     }
   ]
 }
