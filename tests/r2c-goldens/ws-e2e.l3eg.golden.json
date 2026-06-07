@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101::OnAfterRunIteration::ef416bae2295a822d663d04fe57150340b961d83fed90753e0ed3c6494773c5a",
+      "publisherObjectId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101",
+      "eventName": "OnAfterRunIteration",
+      "eventKind": "integration",
+      "signatureHash": "ef416bae2295a822d663d04fe57150340b961d83fed90753e0ed3c6494773c5a",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101#ef416bae2295a822d663d04fe57150340b961d83fed90753e0ed3c6494773c5a"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66101::OnAfterRunIteration::ef416bae2295a822d663d04fe57150340b961d83fed90753e0ed3c6494773c5a",
+      "subscriberRoutineId": "ee2eee2e-0000-0000-0000-00000000e2e2:Codeunit:66102#da57b1541781f8c20c098c6e7dbd0eeb7506d4cac67358df94731723e13e06ac",
+      "subscriberAppId": "ee2eee2e-0000-0000-0000-00000000e2e2",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

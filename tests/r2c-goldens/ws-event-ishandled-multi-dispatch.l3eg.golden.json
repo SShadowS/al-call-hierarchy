@@ -1,0 +1,47 @@
+{
+  "events": [
+    {
+      "id": "99999999-9999-9999-9999-999999999999:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "publisherObjectId": "99999999-9999-9999-9999-999999999999:Codeunit:50000",
+      "eventName": "OnBeforePost",
+      "eventKind": "integration",
+      "signatureHash": "79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Rec",
+          "typeText": "Record PostingEntry",
+          "isVar": true,
+          "isRecord": true,
+          "tableName": "PostingEntry"
+        },
+        {
+          "index": 1,
+          "name": "IsHandled",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "99999999-9999-9999-9999-999999999999:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "subscriberRoutineId": "99999999-9999-9999-9999-999999999999:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "subscriberAppId": "99999999-9999-9999-9999-999999999999",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

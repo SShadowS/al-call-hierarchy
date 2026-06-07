@@ -1,0 +1,1251 @@
+{
+  "description": "R2c L3 event-graph goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.l3eg.golden.json is the ALLOWLISTED event-graph projection of a RESOLVED SemanticModel, READ post-resolve / pre-summary (`indexWorkspace` → `resolveModel` ONCE; the dump NEVER re-runs buildEventGraph — it READS model.eventGraph). EventSymbols (publishers + synthesized maybe/unknown) in stable id form (StableEventId from the EventSymbol via the rawEventId→stableEventId last-wins map; publisherObjectId stable/opaque via the dumb /→: replace; publisherRoutineId as StableRoutineId; signatureHash verbatim incl. the synthesized sha256Hex(RAW eventId)). EventEdges (subscribers, open-world: every parseable subscriber → exactly one edge) with eventId mapped THROUGH the map, subscriberRoutineId as StableRoutineId, subscriberAppId, resolution (resolved iff a REAL indexed publisher produces the eventId; maybe for an existing target with no real publisher; unknown for a target object not in indexed source). See scripts/r2c-l3eg-projection.ts.",
+  "capturePoint": "post-resolve/pre-summary (indexWorkspace → resolveModel ONCE; READ model.eventGraph, no rebuild)",
+  "note": "R2c reads the FIXED (al-sem ≥9eb9c55) event graph: `resolved` consults realPublisherEventIds (NOT eventById), so a 2nd+ subscriber to an unindexed event on an existing object stays `maybe`. EXCLUDED (later gates / separate pass): call graph (R2b), typedEdges (L4/R3), RoutineSummary (L4), coverage/gaps (R2d), publish capability facts (L4-injected — R3/L4). The 'unknown' sentinel publisherObjectId (`unknown:<type>:0:<targetRef>`) is an OPAQUE comparison id — Rust must string-replace, NOT parse. Cross-app event targets (.app deps) → R2.5.",
+  "alSemGitSha": "b3ea1a0fc6d6056d46859416d085ab62c0f44006",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=32;depCache=7;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r2c",
+  "forbiddenKeys": [
+    "callsiteId",
+    "dispatchKind",
+    "dispatchMeta",
+    "argumentBindings",
+    "groups",
+    "bindings",
+    "callsiteResolutions",
+    "typedEdges",
+    "summary",
+    "coverage",
+    "publish",
+    "capabilityFactsDirect",
+    "rootClassifications"
+  ],
+  "fixtureCount": 31,
+  "coverageMatrix": {
+    "integrationPublishers": 40,
+    "businessPublishers": 5,
+    "unknownKindSymbols": 8,
+    "isolatedPublishers": 5,
+    "symbolsWithElementName": 1,
+    "resolvedEdges": 41,
+    "maybeEdges": 7,
+    "unknownEdges": 3
+  },
+  "fixtures": [
+    {
+      "fixture": "ws-d12-dead-event",
+      "goldenFile": "ws-d12-dead-event.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 0,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 0,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d2",
+      "goldenFile": "ws-d2.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 2,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d29",
+      "goldenFile": "ws-d29.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 3,
+      "coverage": {
+        "integrationPublishers": 0,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 2,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 0,
+        "maybeEdges": 3,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d38",
+      "goldenFile": "ws-d38.l3eg.golden.json",
+      "eventCount": 4,
+      "edgeCount": 4,
+      "coverage": {
+        "integrationPublishers": 3,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 1,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 3,
+        "maybeEdges": 0,
+        "unknownEdges": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d7-event-cycle",
+      "goldenFile": "ws-d7-event-cycle.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 2,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "goldenFile": "ws-d8-commit-in-tx.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-e2e",
+      "goldenFile": "ws-e2e.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-chains",
+      "goldenFile": "ws-event-chains.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-cycle",
+      "goldenFile": "ws-event-cycle.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 2,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-d45-deep",
+      "goldenFile": "ws-event-d45-deep.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 2,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-fanout",
+      "goldenFile": "ws-event-fanout.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 6,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 6,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled",
+      "goldenFile": "ws-event-ishandled.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-conditional-set",
+      "goldenFile": "ws-event-ishandled-conditional-set.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-exit",
+      "goldenFile": "ws-event-ishandled-exit.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-helper",
+      "goldenFile": "ws-event-ishandled-helper.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-multi-dispatch",
+      "goldenFile": "ws-event-ishandled-multi-dispatch.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-nested-guard",
+      "goldenFile": "ws-event-ishandled-nested-guard.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-isolated",
+      "goldenFile": "ws-event-isolated.l3eg.golden.json",
+      "eventCount": 5,
+      "edgeCount": 0,
+      "coverage": {
+        "integrationPublishers": 3,
+        "businessPublishers": 2,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 2,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 0,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-multi-sub-overlap",
+      "goldenFile": "ws-event-multi-sub-overlap.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-read-after-write",
+      "goldenFile": "ws-event-read-after-write.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-transitive-exposure",
+      "goldenFile": "ws-event-transitive-exposure.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-events",
+      "goldenFile": "ws-events.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 1,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-subscriber",
+      "goldenFile": "ws-policy-commit-in-subscriber.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-prove",
+      "goldenFile": "ws-prove.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 0,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 0,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r0-canon-stress",
+      "goldenFile": "ws-r0-canon-stress.l3eg.golden.json",
+      "eventCount": 3,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 2,
+        "businessPublishers": 1,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-maybe-elem",
+      "goldenFile": "ws-r2c-maybe-elem.l3eg.golden.json",
+      "eventCount": 3,
+      "edgeCount": 3,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 2,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 1,
+        "resolvedEdges": 1,
+        "maybeEdges": 2,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-mixed",
+      "goldenFile": "ws-r2c-mixed.l3eg.golden.json",
+      "eventCount": 6,
+      "edgeCount": 3,
+      "coverage": {
+        "integrationPublishers": 3,
+        "businessPublishers": 2,
+        "unknownKindSymbols": 1,
+        "isolatedPublishers": 2,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-two-sub-maybe",
+      "goldenFile": "ws-r2c-two-sub-maybe.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 0,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 1,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 0,
+        "maybeEdges": 2,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-clean",
+      "goldenFile": "ws-txn-d47-event-neg-clean.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-isolated",
+      "goldenFile": "ws-txn-d47-event-neg-isolated.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 1,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-pos",
+      "goldenFile": "ws-txn-d47-event-pos.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "fixture": "ws-api-page",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-argument-bindings",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-builtin-unresolved",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-calls",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-callsite-resolutions",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-combined",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-compose",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d1",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d1-dep-terminal",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d1-multi-caller",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d1-setup-singleton",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d10-self-mod",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d11-modifyall-init",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d11-no-get",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d13-internal-call",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d13-member-call",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d14-internal-no-ivt",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d14-page-procedure",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d14-public-dead",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d16-obsolete",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d17-drift",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d18",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d19",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d20",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d21",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d22",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d3",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d3-method-stmt",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d3-temp",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d32",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d33",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d34",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d35",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d36",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d37",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d39",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d4-repeated-get",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d40",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d41",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d42",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d5-modifyall",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d50-neg",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d50-pos",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d51-jobqueue",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-diff-coverage-narrowed",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-new-capability",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-permission-expanded",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-removed-field",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-rename",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-digest-pr49388",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-implicit-trigger",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-inline-suppress",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-install-codeunit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-interface-dispatch",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-may-facts",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-member-call-codeunit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-member-call-resolution",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-multi-object",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-op-order",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-branch-error",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-branch-exit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-commit-before-io",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-conditional-exit-before-commit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-condleaf",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-io-before-commit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-loop",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-transitive-unknown",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-tryfunction",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-order-two-commits",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-arg-pos2",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-arg-type",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-callexpr-discriminator",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-char",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-enum-discriminator",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-field-discriminator",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-overload-negatives",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-paramfx",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-path-facts",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-api-dynamic-dispatch",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-api-isolated-storage",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-api-ledger-write",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-api-ui",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-clean",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-commit-in-trigger",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-install-business-write",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-policy-trigger-http",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-pr-summary-multi",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-preflight-missingdep",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-preset-txn",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-r2a-record-types",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-r2b-external",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-r2b-opaque",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-recursive",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-report-trigger",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-resolve",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-roots-config",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-statement-tree",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-test-codeunit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-triggers",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-tx-span",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-deduped",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-post-nowrite",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-crosshop-iobeforecommit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-neg-commit-between",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-neg-readonly",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-neg-temp",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-pos-file",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-commit-after",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-neg-commit-between",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-neg-no-write",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-neg-run-boundary",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-neg-temp-write",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-message",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-runmodal",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-unresolved",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-upgrade-codeunit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-with-receiver",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-callee-always-error",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-callee-error",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-conditional",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-io-before-commit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-loop",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-tryfunction-committer",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    },
+    {
+      "fixture": "ws-xhop-write-commit",
+      "reason": "no event graph (0 publishers / 0 subscribers) — no L3 event-graph signal"
+    }
+  ]
+}

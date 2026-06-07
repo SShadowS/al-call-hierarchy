@@ -7,6 +7,7 @@
 //! may diverge from the golden — that is expected pre-Task-6 (grammar
 //! convergence) and would surface as an assertion failure here.
 
+use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 use std::path::Path;
 
@@ -84,4 +85,49 @@ fn ws_d2_identity_subset_matches_golden() {
         .find(|r| r.name == "OnQuietEvent")
         .expect("missing OnQuietEvent");
     assert_eq!(on_quiet.kind, "event-publisher");
+}
+
+/// R2c smoke: the L3 event-graph emitter (`aldump --l3-event-graph`) on ws-d2
+/// must match the committed golden EXACTLY. ws-d2 has two integration-event
+/// publishers (OnProcessLine / OnQuietEvent) each with one in-workspace
+/// subscriber → two `resolved` edges. Guards both the projection shape and that
+/// the in-workspace pub+sub pair resolves rather than synthesizing a maybe.
+#[test]
+fn ws_d2_l3_event_graph_matches_golden() {
+    let ws = Path::new(WS_D2);
+    if !ws.is_dir() {
+        eprintln!("skipping: ws-d2 fixture not found at {WS_D2}");
+        return;
+    }
+    let resolved = assemble_and_resolve_workspace_default(ws)
+        .expect("ws-d2 assembles + resolves (sound single-app layout)");
+    let projection = resolved.project_event_graph();
+
+    // Two integration publishers, two resolved edges (open-world, both in-workspace).
+    assert_eq!(projection.events.len(), 2, "ws-d2 has 2 event publishers");
+    assert_eq!(projection.edges.len(), 2, "ws-d2 has 2 subscriber edges");
+    assert!(
+        projection
+            .events
+            .iter()
+            .all(|e| e.event_kind == "integration"),
+        "both ws-d2 publishers are integration events"
+    );
+    assert!(
+        projection.edges.iter().all(|e| e.resolution == "resolved"),
+        "both ws-d2 subscribers resolve to an indexed publisher"
+    );
+
+    // Byte-identical to the committed golden when present (golden is ground truth).
+    let golden_path = Path::new(r"U:\Git\al-sem\scripts\r2c-goldens\ws-d2.l3eg.golden.json");
+    if golden_path.is_file() {
+        let golden_text = std::fs::read_to_string(golden_path).expect("read ws-d2 l3eg golden");
+        let golden: serde_json::Value =
+            serde_json::from_str(&golden_text).expect("golden parses as JSON");
+        let rust = serde_json::to_value(&projection).expect("projection serializes");
+        assert_eq!(
+            rust, golden,
+            "ws-d2 L3 event-graph projection must match ws-d2.l3eg.golden.json exactly"
+        );
+    }
 }

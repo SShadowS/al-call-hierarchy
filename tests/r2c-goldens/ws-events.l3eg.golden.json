@@ -1,0 +1,56 @@
+{
+  "events": [
+    {
+      "id": "88888888-8888-8888-8888-888888888888:Codeunit:51200::OnAfterDoWork::476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6",
+      "publisherObjectId": "88888888-8888-8888-8888-888888888888:Codeunit:51200",
+      "eventName": "OnAfterDoWork",
+      "eventKind": "integration",
+      "signatureHash": "476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51200#476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6"
+    },
+    {
+      "id": "unknown:Codeunit:0:Sales-Post::OnAfterPostSalesDoc::c933e899a525980282c6d77615e4e4eaa4b61fc7c66471f8bd5703bc62460de3",
+      "publisherObjectId": "unknown:Codeunit:0:Sales-Post",
+      "eventName": "OnAfterPostSalesDoc",
+      "eventKind": "unknown",
+      "signatureHash": "c933e899a525980282c6d77615e4e4eaa4b61fc7c66471f8bd5703bc62460de3",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter",
+          "note": "target object not in indexed source"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "88888888-8888-8888-8888-888888888888:Codeunit:51200::OnAfterDoWork::476712af2598f38dc2f6d352859e11ac7681d84607ccc4af6ce6e9914c606bf6",
+      "subscriberRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#c3bc0da359a54bc1da8602c5641dfacc7217a117934afbb5075e2737578fc7c1",
+      "subscriberAppId": "88888888-8888-8888-8888-888888888888",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "unknown:Codeunit:0:Sales-Post::OnAfterPostSalesDoc::c933e899a525980282c6d77615e4e4eaa4b61fc7c66471f8bd5703bc62460de3",
+      "subscriberRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#cfd8945a4ad1fbdb2e10040effb2aff532999d8a707a507196b19d4fa9919651",
+      "subscriberAppId": "88888888-8888-8888-8888-888888888888",
+      "resolution": "unknown",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

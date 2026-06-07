@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000::OnAfterNotify::d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "publisherObjectId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000",
+      "eventName": "OnAfterNotify",
+      "eventKind": "integration",
+      "signatureHash": "d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000#d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50000::OnAfterNotify::d9f5b633ab1ee7c22b9fb8e25535f7c29e31b8872a723ce4849a527d9ee7f1f6",
+      "subscriberRoutineId": "11111111-0000-0000-0000-0000000d4722:Codeunit:50001#8d7dd2d296ce1acbf5f1df52cdfdb49f32dd6aad54cc639c7031aef6f95d21df",
+      "subscriberAppId": "11111111-0000-0000-0000-0000000d4722",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

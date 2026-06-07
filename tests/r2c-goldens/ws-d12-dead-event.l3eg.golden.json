@@ -1,0 +1,27 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112::OnAfterDoStuff::fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112",
+      "eventName": "OnAfterDoStuff",
+      "eventKind": "integration",
+      "signatureHash": "fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "SomeArg",
+          "typeText": "Integer",
+          "isVar": false,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6"
+    }
+  ],
+  "edges": []
+}

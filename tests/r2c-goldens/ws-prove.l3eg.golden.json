@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "id": "44444444-4444-4444-4444-444444444444:Codeunit:50312::OnBeforeProvePost::f8a2fe8f30655a2917f1f136850d37bc48ef7f1f1834fe61b4c7b5f7f991197c",
+      "publisherObjectId": "44444444-4444-4444-4444-444444444444:Codeunit:50312",
+      "eventName": "OnBeforeProvePost",
+      "eventKind": "integration",
+      "signatureHash": "f8a2fe8f30655a2917f1f136850d37bc48ef7f1f1834fe61b4c7b5f7f991197c",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50312#f8a2fe8f30655a2917f1f136850d37bc48ef7f1f1834fe61b4c7b5f7f991197c"
+    }
+  ],
+  "edges": []
+}

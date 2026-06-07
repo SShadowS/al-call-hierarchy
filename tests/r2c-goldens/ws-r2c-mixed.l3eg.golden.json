@@ -1,0 +1,125 @@
+{
+  "events": [
+    {
+      "id": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnIsolatedBiz::8305919d8f56e027033d5a88c6e1349d53089296782edaa3782b1a680a231229",
+      "publisherObjectId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100",
+      "eventName": "OnIsolatedBiz",
+      "eventKind": "business",
+      "signatureHash": "8305919d8f56e027033d5a88c6e1349d53089296782edaa3782b1a680a231229",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#8305919d8f56e027033d5a88c6e1349d53089296782edaa3782b1a680a231229",
+      "isolated": true
+    },
+    {
+      "id": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnIsolatedInt::4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
+      "publisherObjectId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100",
+      "eventName": "OnIsolatedInt",
+      "eventKind": "integration",
+      "signatureHash": "4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
+      "isolated": true
+    },
+    {
+      "id": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnMixedCaseEvent::5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+      "publisherObjectId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100",
+      "eventName": "OnMixedCaseEvent",
+      "eventKind": "integration",
+      "signatureHash": "5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d"
+    },
+    {
+      "id": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnPlainBiz::30ad95b3a926d0ea496ac87e3692e61e4e4f53a9cb260009e6a61f2746967324",
+      "publisherObjectId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100",
+      "eventName": "OnPlainBiz",
+      "eventKind": "business",
+      "signatureHash": "30ad95b3a926d0ea496ac87e3692e61e4e4f53a9cb260009e6a61f2746967324",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#30ad95b3a926d0ea496ac87e3692e61e4e4f53a9cb260009e6a61f2746967324"
+    },
+    {
+      "id": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnPlainInt::953e33682c621cabc1238855fb8dfad2716ca44cf1ab37387f45aa8dcc7e6d8b",
+      "publisherObjectId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100",
+      "eventName": "OnPlainInt",
+      "eventKind": "integration",
+      "signatureHash": "953e33682c621cabc1238855fb8dfad2716ca44cf1ab37387f45aa8dcc7e6d8b",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#953e33682c621cabc1238855fb8dfad2716ca44cf1ab37387f45aa8dcc7e6d8b"
+    },
+    {
+      "id": "unknown:Codeunit:0:Out Of World::OnGone::4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+      "publisherObjectId": "unknown:Codeunit:0:Out Of World",
+      "eventName": "OnGone",
+      "eventKind": "unknown",
+      "signatureHash": "4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter",
+          "note": "target object not in indexed source"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnIsolatedInt::4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
+      "subscriberRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50101#5285b7d236572c1b52ae29c00b5e18e583c829f2f72470236efe7e2c9830c496",
+      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnMixedCaseEvent::5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
+      "subscriberRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50101#35d8450a746d67271ca6d6c2dbe94029d62b55ed632fb1ab15d0a99483673254",
+      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "unknown:Codeunit:0:Out Of World::OnGone::4031a84266fe5a2e03b0ca902f2b51407923ac191e96639cdeb159be1c0d848c",
+      "subscriberRoutineId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50101#59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003",
+      "resolution": "unknown",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

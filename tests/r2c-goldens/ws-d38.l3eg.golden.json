@@ -1,0 +1,130 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterDoStuffPending::db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+      "eventName": "OnAfterDoStuffPending",
+      "eventKind": "integration",
+      "signatureHash": "db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Arg",
+          "typeText": "Integer",
+          "isVar": false,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterDoStuffRemoved::7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+      "eventName": "OnAfterDoStuffRemoved",
+      "eventKind": "integration",
+      "signatureHash": "7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Arg",
+          "typeText": "Integer",
+          "isVar": false,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterFresh::ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+      "eventName": "OnAfterFresh",
+      "eventKind": "integration",
+      "signatureHash": "ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Arg",
+          "typeText": "Integer",
+          "isVar": false,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90"
+    },
+    {
+      "id": "unknown:Codeunit:0:D38 NonExistent::OnSomethingUnknown::1ae2147da318c0ee89ad1a407ebd68d1a1d0fab22c6d2c3aa3fc8c8c4d5a6245",
+      "publisherObjectId": "unknown:Codeunit:0:D38 NonExistent",
+      "eventName": "OnSomethingUnknown",
+      "eventKind": "unknown",
+      "signatureHash": "1ae2147da318c0ee89ad1a407ebd68d1a1d0fab22c6d2c3aa3fc8c8c4d5a6245",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter",
+          "note": "target object not in indexed source"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterDoStuffPending::db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d380",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterDoStuffRemoved::7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d380",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400::OnAfterFresh::ef7acd964c2b00ebbbab85e58e47f1c3d4336039ebb80edba46d82640cf12c90",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d380",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "unknown:Codeunit:0:D38 NonExistent::OnSomethingUnknown::1ae2147da318c0ee89ad1a407ebd68d1a1d0fab22c6d2c3aa3fc8c8c4d5a6245",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d380",
+      "resolution": "unknown",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

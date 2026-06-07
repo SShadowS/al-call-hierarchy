@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "id": "33333333-3333-3333-3333-333333333333:Codeunit:50000::OnExport::5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+      "publisherObjectId": "33333333-3333-3333-3333-333333333333:Codeunit:50000",
+      "eventName": "OnExport",
+      "eventKind": "integration",
+      "signatureHash": "5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Doc",
+          "typeText": "Record \"Sales Header\"",
+          "isVar": true,
+          "isRecord": true,
+          "tableName": "Sales Header"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "33333333-3333-3333-3333-333333333333:Codeunit:50000::OnExport::5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+      "subscriberRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50001#cac320d2ba49755e20d89b2940f64618c1e09d953b7b86c28677381a030daed4",
+      "subscriberAppId": "33333333-3333-3333-3333-333333333333",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "events": [
+    {
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "publisherObjectId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000",
+      "eventName": "OnAfterAdjust",
+      "eventKind": "integration",
+      "signatureHash": "ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Inv",
+          "typeText": "Record Inventory",
+          "isVar": true,
+          "isRecord": true,
+          "tableName": "Inventory"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "subscriberRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "subscriberAppId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "subscriberRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "subscriberAppId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

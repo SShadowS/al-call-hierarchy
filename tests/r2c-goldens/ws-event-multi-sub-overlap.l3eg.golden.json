@@ -1,0 +1,51 @@
+{
+  "events": [
+    {
+      "id": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "publisherObjectId": "22222222-2222-2222-2222-222222222222:Codeunit:50000",
+      "eventName": "OnAfterPost",
+      "eventKind": "integration",
+      "signatureHash": "fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "W",
+          "typeText": "Record Widget",
+          "isVar": true,
+          "isRecord": true,
+          "tableName": "Widget"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "subscriberRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "subscriberAppId": "22222222-2222-2222-2222-222222222222",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "subscriberRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "subscriberAppId": "22222222-2222-2222-2222-222222222222",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

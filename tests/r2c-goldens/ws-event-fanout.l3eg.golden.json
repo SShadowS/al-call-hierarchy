@@ -1,0 +1,95 @@
+{
+  "events": [
+    {
+      "id": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "publisherObjectId": "66666666-6666-6666-6666-666666666666:Codeunit:50000",
+      "eventName": "OnE",
+      "eventKind": "integration",
+      "signatureHash": "7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "C",
+          "typeText": "Record Customer",
+          "isVar": true,
+          "isRecord": true,
+          "tableName": "Customer"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50000#7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50001#f8970453778aeb87d5fb9e1cd7f42cbf938fad2c693960c6fe15b68691c9e002",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50003#27a952fec22d577406d1daeaa7f6a7d6d24aca264734f953feddf8cbbc21ad6d",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50004#1c9bfb33d47fd86246b038e49a2998c6a24217b2e7c1bd16f5087dd08d1fa0ee",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50005#5aa0cca8f7d3429d724a861ded561eee7cd017f756b05fd600467cdfa0e42cb9",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "66666666-6666-6666-6666-666666666666:Codeunit:50000::OnE::7d2467af0ac36f49f50d4d1c3910f242cf90d0fac214f5c66716a0c8fe4d4cee",
+      "subscriberRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50006#9f3987afc31b61bfde14caea8909c75986ae9579c51e3bfad0d18707758ef940",
+      "subscriberAppId": "66666666-6666-6666-6666-666666666666",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

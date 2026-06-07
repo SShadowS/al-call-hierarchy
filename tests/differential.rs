@@ -53,6 +53,7 @@ use std::path::{Path, PathBuf};
 use al_call_hierarchy::engine::l2::features::L2Projection;
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection;
+use al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection;
 use al_call_hierarchy::engine::l3::l3_workspace::{
     assemble_and_resolve_workspace_default, L3RecordTypeProjection,
 };
@@ -1814,6 +1815,556 @@ fn l3cg_coverage_matrix_matches_manifest_oracle() {
     );
 }
 
+// ===========================================================================
+// R2c — L3 EVENT-GRAPH differential pass + the anti-degenerate coverage matrix.
+//
+// For each `tests/r2c-goldens/*.l3eg.golden.json`, run the Rust disk-backed
+// assemble→resolve→build_event_graph→project_event_graph and compare. EventSymbols
+// are keyed by their stable `id`; EventEdges by `(eventId, subscriberRoutineId)` —
+// both already deterministically sorted by the projection, so the compare is
+// positional/structural after keying. HARD-FAILS on any forbidden later-gate / L4
+// field (callGraph / typedEdges / summary / coverage / publish / capability*).
+// KNOWN_DIVERGENCES-gated (empty).
+//
+// ## The 31-event-fixtures-vs-corpus inclusion rule
+//
+// al-sem's dump EXCLUDES event-less fixtures: it emitted goldens ONLY for the 31
+// fixtures whose RESOLVED event graph is non-empty (>=1 publisher or subscriber),
+// listing the other 132 under `manifest.exclusions` ("no event graph"). The Rust
+// emitter produces an EMPTY `{events:[], edges:[]}` for every event-less fixture,
+// so the inclusion rule is reproduced as: compare the 31 fixtures WITH a golden
+// structurally, AND additionally enforce that EVERY corpus fixture WITHOUT a golden
+// projects to an empty event graph (a non-empty event graph for a non-golden
+// fixture would be an inclusion divergence — the Rust port inventing events al-sem
+// did not). This guards both directions of the 31-vs-163 mismatch.
+//
+// ## COVERAGE MATRIX (anti-degenerate, plan Task 3 / Rev 2 §6)
+//
+// Across the 31 goldens the pass computes + ENFORCES nonzero counts of the 8 al-sem
+// `CoverageCounts` axes (`scripts/dump-l3-event-graph.ts`):
+//   integrationPublishers / businessPublishers / unknownKindSymbols (synthesized
+//   maybe+unknown symbols) / isolatedPublishers / symbolsWithElementName /
+//   resolvedEdges / maybeEdges / unknownEdges.
+// Driven by the RUST projection (proves the port actually CLASSIFIES, not
+// "empty==empty"); fail-on-zero per axis; an oracle cross-check asserts the totals
+// equal BOTH the per-golden recomputation AND the al-sem manifest `coverageMatrix`.
+
+/// Forbidden later-gate / L4 keys that must NEVER appear in the L3 event-graph
+/// comparison surface (golden OR rust). The event graph is R2c's surface; the call
+/// graph (R2b) is a SEPARATE pass, and summaries/coverage/publish/typedEdges are
+/// later gates. Mirrors the manifest `forbiddenKeys`.
+const L3EG_FORBIDDEN_KEYS: &[&str] = &[
+    // call-graph surface (R2b — a separate pass)
+    "callsiteId",
+    "dispatchKind",
+    "dispatchMeta",
+    "argumentBindings",
+    "groups",
+    "bindings",
+    "callsiteResolutions",
+    // later-gate / L4
+    "typedEdges",
+    "summary",
+    "coverage",
+    "publish",
+    "capabilityFactsDirect",
+    "rootClassifications",
+];
+
+const L3EG_TEST_NAME: &str = "differential_l3_event_graph_match_goldens";
+
+/// The 8 al-sem event-graph coverage axes (`CoverageCounts`). Driven by Rust;
+/// oracle-cross-checked against the al-sem manifest's `coverageMatrix`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct EventGraphCoverage {
+    integration_publishers: usize,
+    business_publishers: usize,
+    /// Synthesized maybe/unknown symbols (eventKind neither integration nor business).
+    unknown_kind_symbols: usize,
+    isolated_publishers: usize,
+    symbols_with_element_name: usize,
+    resolved_edges: usize,
+    maybe_edges: usize,
+    unknown_edges: usize,
+}
+
+impl EventGraphCoverage {
+    fn add(&mut self, o: &EventGraphCoverage) {
+        self.integration_publishers += o.integration_publishers;
+        self.business_publishers += o.business_publishers;
+        self.unknown_kind_symbols += o.unknown_kind_symbols;
+        self.isolated_publishers += o.isolated_publishers;
+        self.symbols_with_element_name += o.symbols_with_element_name;
+        self.resolved_edges += o.resolved_edges;
+        self.maybe_edges += o.maybe_edges;
+        self.unknown_edges += o.unknown_edges;
+    }
+}
+
+/// Count the 8 coverage axes from ONE projection `Value` (golden OR rust — same
+/// shape). Faithful port of al-sem `countCoverage` (`scripts/dump-l3-event-graph.ts`).
+fn event_graph_coverage_of(proj: &serde_json::Value) -> EventGraphCoverage {
+    let mut c = EventGraphCoverage::default();
+    let str_of = |v: &serde_json::Value, k: &str| -> String {
+        v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+    };
+    if let Some(events) = proj.get("events").and_then(|e| e.as_array()) {
+        for s in events {
+            match str_of(s, "eventKind").as_str() {
+                "integration" => c.integration_publishers += 1,
+                "business" => c.business_publishers += 1,
+                _ => c.unknown_kind_symbols += 1,
+            }
+            if s.get("isolated").and_then(|v| v.as_bool()) == Some(true) {
+                c.isolated_publishers += 1;
+            }
+            if s.get("elementName").is_some() {
+                c.symbols_with_element_name += 1;
+            }
+        }
+    }
+    if let Some(edges) = proj.get("edges").and_then(|e| e.as_array()) {
+        for e in edges {
+            match str_of(e, "resolution").as_str() {
+                "resolved" => c.resolved_edges += 1,
+                "maybe" => c.maybe_edges += 1,
+                _ => c.unknown_edges += 1,
+            }
+        }
+    }
+    c
+}
+
+/// Discover every `tests/r2c-goldens/*.l3eg.golden.json`, sorted by fixture name.
+fn discover_l3eg_goldens() -> Vec<(String, PathBuf)> {
+    let dir = repo_root().join("tests").join("r2c-goldens");
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read L3eg goldens dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3eg.golden.json") {
+            continue; // skips manifest.json
+        }
+        let fixture = name.trim_end_matches(".l3eg.golden.json").to_string();
+        out.push((fixture, entry.path()));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Rust-side L3 event-graph projection for a fixture dir (fail-closed → empty).
+fn rust_event_graph_projection(fixture_dir: &Path) -> L3EventGraphProjection {
+    match assemble_and_resolve_workspace_default(fixture_dir) {
+        Some(resolved) => resolved.project_event_graph(),
+        None => L3EventGraphProjection {
+            events: vec![],
+            edges: vec![],
+        },
+    }
+}
+
+/// Structural diff of two L3 event-graph projection `Value`s. EventSymbols keyed by
+/// `id`, EventEdges keyed by `(eventId, subscriberRoutineId)`. Each side's arrays
+/// are already deterministically sorted by the projection, so keying detects
+/// MISSING / EXTRA cleanly and the per-key structural compare catches field drift.
+fn diff_l3eg(
+    fixture: &str,
+    golden: &serde_json::Value,
+    rust: &serde_json::Value,
+    out: &mut Vec<Divergence>,
+) {
+    // --- events: keyed by stable id. ---
+    let emap = |v: &serde_json::Value| -> BTreeMap<String, serde_json::Value> {
+        let mut m = BTreeMap::new();
+        if let Some(arr) = v.get("events").and_then(|e| e.as_array()) {
+            for s in arr {
+                let id = s
+                    .get("id")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                m.insert(id, s.clone());
+            }
+        }
+        m
+    };
+    let ge = emap(golden);
+    let re = emap(rust);
+    for (id, g) in &ge {
+        match re.get(id) {
+            None => out.push(Divergence {
+                fixture: fixture.to_string(),
+                path: format!("events[{id:?}]:MISSING_IN_RUST"),
+                golden_value: compact(g),
+                rust_value: "<absent>".to_string(),
+            }),
+            Some(r) => diff_l2_value(fixture, &format!("events[{id:?}]"), g, r, out),
+        }
+    }
+    for id in re.keys() {
+        if !ge.contains_key(id) {
+            out.push(Divergence {
+                fixture: fixture.to_string(),
+                path: format!("events[{id:?}]:EXTRA_IN_RUST"),
+                golden_value: "<absent>".to_string(),
+                rust_value: compact(&re[id]),
+            });
+        }
+    }
+
+    // --- edges: keyed by (eventId, subscriberRoutineId). ---
+    let dmap = |v: &serde_json::Value| -> BTreeMap<String, serde_json::Value> {
+        let mut m = BTreeMap::new();
+        if let Some(arr) = v.get("edges").and_then(|e| e.as_array()) {
+            for e in arr {
+                let ev = e
+                    .get("eventId")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let sub = e
+                    .get("subscriberRoutineId")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                m.insert(format!("{ev}\u{1f}{sub}"), e.clone());
+            }
+        }
+        m
+    };
+    let gd = dmap(golden);
+    let rd = dmap(rust);
+    for (key, g) in &gd {
+        match rd.get(key) {
+            None => out.push(Divergence {
+                fixture: fixture.to_string(),
+                path: format!("edges[{key:?}]:MISSING_IN_RUST"),
+                golden_value: compact(g),
+                rust_value: "<absent>".to_string(),
+            }),
+            Some(r) => diff_l2_value(fixture, &format!("edges[{key:?}]"), g, r, out),
+        }
+    }
+    for key in rd.keys() {
+        if !gd.contains_key(key) {
+            out.push(Divergence {
+                fixture: fixture.to_string(),
+                path: format!("edges[{key:?}]:EXTRA_IN_RUST"),
+                golden_value: "<absent>".to_string(),
+                rust_value: compact(&rd[key]),
+            });
+        }
+    }
+}
+
+/// Recursively collect every forbidden later-gate object-key in `value` (L3eg set).
+fn scan_l3eg_forbidden(value: &serde_json::Value, path: &str, hits: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let child = format!("{path}.{k}");
+                if L3EG_FORBIDDEN_KEYS.contains(&k.as_str()) {
+                    hits.push(child.clone());
+                }
+                scan_l3eg_forbidden(v, &child, hits);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                scan_l3eg_forbidden(v, &format!("{path}[{i}]"), hits);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The R2c L3 event-graph differential pass + the 8-axis coverage matrix. Gated by
+/// `R2C_L3EG_SET` (committed default `full`: all 31 event-bearing goldens — the R2c
+/// EXIT GATE; `small` = ws-d2 + ws-r2c-mixed for dev iteration). On the FULL set it
+/// ALSO enforces the inclusion rule: every corpus fixture WITHOUT a golden must
+/// project to an empty event graph.
+#[test]
+fn differential_l3_event_graph_match_goldens() {
+    let all_goldens = discover_l3eg_goldens();
+    assert!(
+        !all_goldens.is_empty(),
+        "no L3eg goldens discovered under tests/r2c-goldens — corpus missing?"
+    );
+
+    let set = std::env::var("R2C_L3EG_SET").unwrap_or_else(|_| "full".to_string());
+    let small_set = ["ws-d2", "ws-r2c-mixed"];
+    let goldens: Vec<(String, PathBuf)> = match set.as_str() {
+        "full" | "" => all_goldens,
+        "small" => all_goldens
+            .into_iter()
+            .filter(|(f, _)| small_set.contains(&f.as_str()))
+            .collect(),
+        other => panic!("R2C_L3EG_SET={other:?} not recognized (expected `small` or `full`)"),
+    };
+    assert!(
+        !goldens.is_empty(),
+        "R2C_L3EG_SET={set:?} selected zero fixtures (small set = {small_set:?})"
+    );
+
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == L3EG_TEST_NAME)
+        .collect();
+
+    let mut all_divergences: Vec<Divergence> = Vec::new();
+    let mut forbidden_hits: Vec<String> = Vec::new();
+    let mut rust_cov = EventGraphCoverage::default();
+    let mut golden_cov = EventGraphCoverage::default();
+
+    for (fixture, golden_path) in &goldens {
+        let fixture_dir = corpus_dir().join(fixture);
+        assert!(
+            fixture_dir.is_dir(),
+            "L3eg golden {} has no matching in-repo fixture at {} (offline corpus incomplete)",
+            golden_path.display(),
+            fixture_dir.display()
+        );
+
+        // Golden side: parse as JSON (for the diff) AND validate it parses as the
+        // allowlisted L3EventGraphProjection serde type (shape guard).
+        let golden_text = std::fs::read_to_string(golden_path)
+            .unwrap_or_else(|e| panic!("read L3eg golden {}: {e}", golden_path.display()));
+        let golden_json: serde_json::Value =
+            serde_json::from_str(&golden_text).unwrap_or_else(|e| {
+                panic!(
+                    "L3eg golden {} is not valid JSON: {e}",
+                    golden_path.display()
+                )
+            });
+        let _: L3EventGraphProjection =
+            serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
+                panic!(
+                    "L3eg golden {} does not parse as L3EventGraphProjection: {e}",
+                    golden_path.display()
+                )
+            });
+
+        // Rust side: disk-backed assemble+resolve → project_event_graph → JSON.
+        let projection = rust_event_graph_projection(&fixture_dir);
+        let rust_json = serde_json::to_value(&projection)
+            .unwrap_or_else(|e| panic!("serialize Rust L3eg projection for {fixture}: {e}"));
+
+        // Forbidden later-gate / L4 field scan on BOTH sides (hard fail).
+        scan_l3eg_forbidden(
+            &golden_json,
+            &format!("{fixture}:golden"),
+            &mut forbidden_hits,
+        );
+        scan_l3eg_forbidden(&rust_json, &format!("{fixture}:rust"), &mut forbidden_hits);
+
+        // Coverage (Rust drives the anti-degenerate gate; golden is the oracle).
+        rust_cov.add(&event_graph_coverage_of(&rust_json));
+        golden_cov.add(&event_graph_coverage_of(&golden_json));
+
+        // Keyed structural compare (events by id, edges by (eventId, subscriber)).
+        diff_l3eg(fixture, &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    // --- Inclusion-rule guard (FULL set only): every corpus fixture WITHOUT a
+    //     golden must project to an EMPTY event graph (al-sem excluded the 132
+    //     event-less fixtures; a non-empty graph here would be an invented event). -
+    if set == "full" || set.is_empty() {
+        let golden_set: std::collections::HashSet<&str> =
+            goldens.iter().map(|(f, _)| f.as_str()).collect();
+        let entries = std::fs::read_dir(corpus_dir()).expect("read corpus dir");
+        let mut corpus: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        corpus.sort();
+        for fixture in &corpus {
+            if golden_set.contains(fixture.as_str()) {
+                continue;
+            }
+            let proj = rust_event_graph_projection(&corpus_dir().join(fixture));
+            if !proj.events.is_empty() || !proj.edges.is_empty() {
+                all_divergences.push(Divergence {
+                    fixture: fixture.clone(),
+                    path: "NON_GOLDEN_FIXTURE_PRODUCED_EVENTS".to_string(),
+                    golden_value: "<empty event graph (excluded by al-sem)>".to_string(),
+                    rust_value: format!("events={} edges={}", proj.events.len(), proj.edges.len()),
+                });
+            }
+        }
+    }
+
+    all_divergences
+        .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
+
+    // --- Forbidden-field guard (hard fail, never allowlistable) -------------
+    assert!(
+        forbidden_hits.is_empty(),
+        "FORBIDDEN later-gate/L4 field(s) leaked into the L3 event-graph comparison \
+         (golden or rust):\n  {}",
+        forbidden_hits.join("\n  ")
+    );
+
+    // --- COVERAGE MATRIX gate (anti-degenerate, fail-on-zero) ---------------
+    eprintln!(
+        "R2c L3eg coverage matrix (set={set:?}, {} fixture(s)):\n  \
+         integrationPublishers={} businessPublishers={} unknownKindSymbols={} \
+         isolatedPublishers={} symbolsWithElementName={} resolvedEdges={} \
+         maybeEdges={} unknownEdges={}",
+        goldens.len(),
+        rust_cov.integration_publishers,
+        rust_cov.business_publishers,
+        rust_cov.unknown_kind_symbols,
+        rust_cov.isolated_publishers,
+        rust_cov.symbols_with_element_name,
+        rust_cov.resolved_edges,
+        rust_cov.maybe_edges,
+        rust_cov.unknown_edges,
+    );
+    // Fail-on-zero per axis ONLY for the full corpus (the small dev set cannot
+    // populate every axis — e.g. business publishers / element names are rare).
+    if set == "full" || set.is_empty() {
+        let axes: [(&str, usize); 8] = [
+            ("integrationPublishers", rust_cov.integration_publishers),
+            ("businessPublishers", rust_cov.business_publishers),
+            ("unknownKindSymbols", rust_cov.unknown_kind_symbols),
+            ("isolatedPublishers", rust_cov.isolated_publishers),
+            ("symbolsWithElementName", rust_cov.symbols_with_element_name),
+            ("resolvedEdges", rust_cov.resolved_edges),
+            ("maybeEdges", rust_cov.maybe_edges),
+            ("unknownEdges", rust_cov.unknown_edges),
+        ];
+        let zero_axes: Vec<&str> = axes
+            .iter()
+            .filter(|(_, n)| *n == 0)
+            .map(|(name, _)| *name)
+            .collect();
+        assert!(
+            zero_axes.is_empty(),
+            "DEGENERATE L3eg coverage matrix (set={set:?}): axis/axes {zero_axes:?} are ZERO — \
+             the R2c port is not actually CLASSIFYING that case (empty==empty would pass a pure \
+             equality diff). The matrix must prove the event-graph build fires.",
+        );
+    }
+
+    // Oracle cross-check: Rust coverage MUST equal the golden coverage (al-sem
+    // ground truth) for the SAME fixture set.
+    assert_eq!(
+        rust_cov, golden_cov,
+        "L3eg coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
+    );
+
+    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b) -----------------
+    let mut entry_used = vec![false; allowlist.len()];
+    let mut undocumented: Vec<&Divergence> = Vec::new();
+    for div in &all_divergences {
+        let mut covered = false;
+        for (i, entry) in allowlist.iter().enumerate() {
+            if entry.fixture == div.fixture && entry.path == div.path {
+                entry_used[i] = true;
+                covered = true;
+            }
+        }
+        if !covered {
+            undocumented.push(div);
+        }
+    }
+    let unused: Vec<&AllowEntry> = allowlist
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !entry_used[*i])
+        .map(|(_, e)| e)
+        .collect();
+
+    let mut failure = String::new();
+    if !undocumented.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNDOCUMENTED L3eg divergence(s) (not in KNOWN_DIVERGENCES.json, \
+             test={L3EG_TEST_NAME}):\n",
+            undocumented.len()
+        ));
+        for d in &undocumented {
+            failure.push_str(&format!(
+                "  [{}] {}\n      golden = {}\n      rust   = {}\n",
+                d.fixture, d.path, d.golden_value, d.rust_value
+            ));
+        }
+    }
+    if !unused.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNUSED L3eg allowlist entr(y/ies) (no matching divergence this run):\n",
+            unused.len()
+        ));
+        for e in &unused {
+            failure.push_str(&format!(
+                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
+                e.fixture, e.path, e.reason, e.expires
+            ));
+        }
+    }
+
+    assert!(
+        failure.is_empty(),
+        "R2c L3 event-graph differential FAILED (set={set:?}):{failure}"
+    );
+
+    eprintln!(
+        "R2c L3eg differential: set={set:?}, {} fixture(s), 0 divergences, \
+         allowlist fully consumed ({} L3eg entr(y/ies)).",
+        goldens.len(),
+        allowlist.len()
+    );
+}
+
+/// Oracle cross-check: the FULL-corpus Rust event-graph coverage matrix must equal
+/// the al-sem manifest's published `coverageMatrix` (the ground-truth totals). This
+/// is independent of the per-fixture golden compare — it guards the matrix counters
+/// themselves against drift.
+#[test]
+fn l3eg_coverage_matrix_matches_manifest_oracle() {
+    let goldens = discover_l3eg_goldens();
+    assert!(!goldens.is_empty(), "no L3eg goldens — corpus missing?");
+
+    let mut rust_cov = EventGraphCoverage::default();
+    for (fixture, _) in &goldens {
+        let proj = rust_event_graph_projection(&corpus_dir().join(fixture));
+        let rust_json = serde_json::to_value(&proj).expect("serialize");
+        rust_cov.add(&event_graph_coverage_of(&rust_json));
+    }
+
+    let manifest_path = repo_root()
+        .join("tests")
+        .join("r2c-goldens")
+        .join("manifest.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("read r2c manifest"))
+            .expect("parse r2c manifest");
+    let m = manifest
+        .get("coverageMatrix")
+        .expect("manifest has coverageMatrix");
+    let mget =
+        |k: &str| -> usize { m.get(k).and_then(|v| v.as_u64()).unwrap_or(u64::MAX) as usize };
+    let manifest_cov = EventGraphCoverage {
+        integration_publishers: mget("integrationPublishers"),
+        business_publishers: mget("businessPublishers"),
+        unknown_kind_symbols: mget("unknownKindSymbols"),
+        isolated_publishers: mget("isolatedPublishers"),
+        symbols_with_element_name: mget("symbolsWithElementName"),
+        resolved_edges: mget("resolvedEdges"),
+        maybe_edges: mget("maybeEdges"),
+        unknown_edges: mget("unknownEdges"),
+    };
+    assert_eq!(
+        rust_cov, manifest_cov,
+        "R2c coverage matrix MISMATCH vs al-sem manifest oracle\n  rust     = {rust_cov:?}\n  manifest = {manifest_cov:?}",
+    );
+    eprintln!(
+        "R2c coverage matrix oracle: Rust full-corpus totals == al-sem manifest coverageMatrix."
+    );
+}
+
 /// LIVE / REFRESH mode — NOT part of the default loop.
 ///
 /// Gated behind `AL_SEM_DIR`. Run explicitly with:
@@ -2046,6 +2597,59 @@ fn refresh_goldens_from_al_sem() {
             .expect("copy r2b-goldens/manifest.json");
     }
     eprintln!("refresh: copied {l3cg_copied} L3 call-graph golden(s) into tests/r2b-goldens/.");
+
+    // (b5) Regenerate + copy the R2c L3 EVENT-GRAPH goldens. A fifth dump script
+    //      (`scripts/dump-l3-event-graph.ts`) writes `scripts/r2c-goldens/
+    //      *.l3eg.golden.json` + `manifest.json`; copy them into
+    //      `tests/r2c-goldens/`. Only the 31 event-BEARING fixtures get a golden
+    //      (al-sem excludes event-less fixtures); their source `ws-*` trees are the
+    //      SAME ones copied to `tests/r0-corpus/` above, with the event-only
+    //      fixtures (ws-r2c-maybe-elem / ws-r2c-mixed / ws-r2c-two-sub-maybe) copied
+    //      explicitly here when missing.
+    eprintln!("refresh: running `bun run scripts/dump-l3-event-graph.ts` in {al_sem_dir} ...");
+    let l3eg_status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-l3-event-graph.ts"])
+        .current_dir(&al_sem)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 event-graph dump: {e}"));
+    assert!(
+        l3eg_status.success(),
+        "`bun run scripts/dump-l3-event-graph.ts` failed with status {l3eg_status}"
+    );
+
+    let src_l3eg_goldens = al_sem.join("scripts").join("r2c-goldens");
+    let dst_l3eg_goldens = repo_root().join("tests").join("r2c-goldens");
+    std::fs::create_dir_all(&dst_l3eg_goldens).expect("create tests/r2c-goldens");
+    let mut l3eg_copied = 0usize;
+    for entry in std::fs::read_dir(&src_l3eg_goldens).expect("read al-sem r2c-goldens") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".l3eg.golden.json") {
+            continue; // skips manifest.json + l3eg-vectors.json (vectors are separate).
+        }
+        // Ensure the source fixture is present in the offline corpus.
+        let fixture = name.trim_end_matches(".l3eg.golden.json").to_string();
+        let fixture_dst = dst_corpus.join(&fixture);
+        if !fixture_dst.is_dir() {
+            let fixture_src = src_fixtures.join(&fixture);
+            if fixture_src.is_dir() {
+                copy_source_fixture(&fixture_src, &fixture_dst);
+                eprintln!(
+                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
+                );
+            }
+        }
+        std::fs::copy(entry.path(), dst_l3eg_goldens.join(&name))
+            .unwrap_or_else(|e| panic!("copy L3eg golden {name}: {e}"));
+        l3eg_copied += 1;
+    }
+    let l3eg_manifest_src = src_l3eg_goldens.join("manifest.json");
+    if l3eg_manifest_src.is_file() {
+        std::fs::copy(&l3eg_manifest_src, dst_l3eg_goldens.join("manifest.json"))
+            .expect("copy r2c-goldens/manifest.json");
+    }
+    eprintln!("refresh: copied {l3eg_copied} L3 event-graph golden(s) into tests/r2c-goldens/.");
 
     // (c) Provenance.
     let al_sem_sha = git_sha(&al_sem);
