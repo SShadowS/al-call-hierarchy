@@ -24,14 +24,24 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use al_call_hierarchy::engine::deps::merged_index::{
+    build_merged_index_from_path, serialize_projection,
+};
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 
+/// modelInstanceId for the R2.5a merged-index emit. The emitted StableObjectId /
+/// StableRoutineId are modelInstanceId-INDEPENDENT (R0), so this value never
+/// reaches the output — it only feeds the internal routine id. Pinned to match the
+/// al-sem dump's `MODEL_INSTANCE_ID` so any future internal-id surfacing stays
+/// aligned.
+const R2_5A_MODEL_INSTANCE_ID: &str = "r2.5a";
+
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
-         --l3-coverage] <workspace>"
+         --l3-coverage | --r2.5a-merged-index] <workspace-or-.app>"
     );
     ExitCode::FAILURE
 }
@@ -42,11 +52,13 @@ fn main() -> ExitCode {
     let mut l3_call_graph = false;
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
+    let mut r2_5a_merged_index = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
         // `--l2` / `--l3-record-types` / `--l3-call-graph` / `--l3-event-graph` /
-        // `--l3-coverage` flags (anywhere); else the single positional.
+        // `--l3-coverage` / `--r2.5a-merged-index` flags (anywhere); else the
+        // single positional.
         if arg == "--l2" {
             l2 = true;
             continue;
@@ -67,6 +79,10 @@ fn main() -> ExitCode {
             l3_coverage = true;
             continue;
         }
+        if arg == "--r2.5a-merged-index" {
+            r2_5a_merged_index = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -80,6 +96,7 @@ fn main() -> ExitCode {
         l3_call_graph,
         l3_event_graph,
         l3_coverage,
+        r2_5a_merged_index,
     ]
     .iter()
     .filter(|f| **f)
@@ -88,7 +105,7 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
-             --l3-coverage are mutually exclusive"
+             --l3-coverage / --r2.5a-merged-index are mutually exclusive"
         );
         return usage();
     }
@@ -97,6 +114,20 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if r2_5a_merged_index {
+        // R2.5a merged-index projection: read the `.app`(s) at `workspace` (a single
+        // `.app` OR a dir/`.alpackages` of them), project + merge (incl. the
+        // extension-field merge — the post-resolveModel capture-point invariant),
+        // and emit the dependency-entity subset in the SAME stable JSON shape as the
+        // al-sem `*.r2.5a.golden.json`. NO cross-app L3 resolution (that is R2.5b).
+        // Fail-closed: an unreadable / empty path yields an all-empty projection
+        // (never throws). Output is byte-stable (serialize_projection appends the
+        // trailing newline to match the TS goldens).
+        let projection = build_merged_index_from_path(&workspace, R2_5A_MODEL_INSTANCE_ID);
+        print!("{}", serialize_projection(&projection));
+        return ExitCode::SUCCESS;
+    }
 
     if l3_coverage {
         // L3 coverage projection (R2d): the resolved model's AnalysisCoverage —

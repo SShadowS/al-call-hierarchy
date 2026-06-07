@@ -19,5 +19,6 @@
 
 pub mod app_manifest;
 pub mod app_package_zip;
+pub mod merged_index;
 pub mod projection;
 pub mod symbol_reference;
