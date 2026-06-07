@@ -384,15 +384,21 @@ fn cmp_stable(a: &str, b: &str) -> std::cmp::Ordering {
 // ===========================================================================
 // The extension-field merge over PROJECTED tables (capture-point invariant).
 //
-// Port of al-sem's `mergeExtensionFields` / the engine `extension_fields.rs`,
-// specialized to the projected entity shape: walk objects for TableExtensions IN
-// ASSEMBLED ORDER, resolve the base table by the extension's extends-target name
-// (case-insensitive, LAST-wins), find the extension's own table by encoded id
-// (LAST-wins), and append each not-yet-present field (FIRST-wins on fieldNumber)
-// onto the base table — physically rekeyed (id / physicalTableId / stableFieldId →
-// base table) but provenance (declaringObjectId / declaringAppId) kept on the
-// extension. Recomputes the merged field's StableFieldId from the BASE table so it
-// matches the golden (base table number, extension field number).
+// TWIN of `crate::engine::l3::extension_fields::merge_extension_fields` (and the
+// al-sem original `src/resolve/extension-fields.ts` `mergeExtensionFields`). This
+// is the SAME algorithm specialized to the projected entity shape — the three
+// copies MUST stay in lockstep: change one, change all (no extra guards / no
+// behavioral drift). If you touch the resolution/dedup semantics here, mirror them
+// in `l3/extension_fields.rs` and vice-versa.
+//
+// Walk objects for TableExtensions IN ASSEMBLED ORDER, resolve the base table by
+// the extension's extends-target name (case-insensitive, LAST-wins), find the
+// extension's own table by encoded id (LAST-wins), and append each not-yet-present
+// field (FIRST-wins on fieldNumber, via the dedup `existing` set seeded from the
+// base table) onto the base table — physically rekeyed (id / physicalTableId /
+// stableFieldId → base table) but provenance (declaringObjectId / declaringAppId)
+// kept on the extension. Recomputes the merged field's StableFieldId from the BASE
+// table so it matches the golden (base table number, extension field number).
 // ===========================================================================
 
 fn merge_extension_fields_projected(objects: &[ProjectedObject], tables: &mut [ProjectedTable]) {
@@ -410,10 +416,6 @@ fn merge_extension_fields_projected(objects: &[ProjectedObject], tables: &mut [P
         let Some(ext_idx) = table_index_by_id(tables, &extension_table_id) else {
             continue;
         };
-        if base_idx == ext_idx {
-            // An extension extending its own table id is degenerate; skip.
-            continue;
-        }
 
         let base_table_id = tables[base_idx].id.clone();
         let base_app_guid = tables[base_idx].app_guid.clone();
@@ -454,7 +456,8 @@ fn merge_extension_fields_projected(objects: &[ProjectedObject], tables: &mut [P
     }
 }
 
-/// `tableByName`: case-insensitive, LAST-wins on collision.
+/// `tableByName`: case-insensitive, LAST-wins on collision. TWIN of
+/// `l3::extension_fields::table_index_by_name` — keep in lockstep.
 fn table_index_by_name(tables: &[ProjectedTable], name: &str) -> Option<usize> {
     let want = name.to_lowercase();
     let mut found = None;
@@ -466,7 +469,8 @@ fn table_index_by_name(tables: &[ProjectedTable], name: &str) -> Option<usize> {
     found
 }
 
-/// `tableById`: LAST-wins on collision.
+/// `tableById`: LAST-wins on collision. TWIN of
+/// `l3::extension_fields::table_index_by_id` — keep in lockstep.
 fn table_index_by_id(tables: &[ProjectedTable], id: &str) -> Option<usize> {
     let mut found = None;
     for (i, t) in tables.iter().enumerate() {
