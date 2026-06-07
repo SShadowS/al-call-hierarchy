@@ -18,6 +18,7 @@ and `docs/`.
 | **R1c** | L2 operation-order + scope frames (`orderId`/`frameId`/`onSuccessPath`/`dominatesSuccessReturn` per op/callsite; routine `scopeFrames[]`; error-call order post-pass) | **SHIPPED** — 152/152 fixtures WITH `order`+`scopeFrames` compared, 0 divergences, native L2-direct structural ordering oracle green |
 | **R1d** | L2 direct capability facts (the 13 `extractCapabilities` family extractors run on PRE-RESOLVE routines: `op`/`resourceKind`/`confidence`/`provenance`=direct/`via`=self/`resourceArgSource`/`extra`/witness ids; STRIPPED of L3 `resourceId` + nested `table-field.tableId`; `op:"publish"` excluded — L4-injected) + extraction `status`/`reasons` + unreachable-filtered index diagnostics | **SHIPPED** — 152/152 fixtures WITH capability facts compared, 0 divergences, native L2-direct capability oracle green |
 | **R1 (= R1a+R1b+R1c+R1d)** | Full L2 per-routine feature parity at the `indexWorkspace` (pre-resolve) boundary | **COMPLETE** — all four sub-gates SHIPPED; 152/152 corpus differential green across the entire L2 surface + a native L2-direct oracle per sub-gate |
+| **R2a** | L3 record-type resolution (source-only): resolved `recordVariable.tableId` / `recordOperation.tableId` (declared vars → ops → implicit `Rec`/`xRec` in Table/Page/Extension triggers) + merged TableExtension fields, captured POST-RESOLVE / PRE-SUMMARY in StableTableId form | **SHIPPED** — 153/153 fixtures with resolved tableIds + merged extension fields compared, 0 divergences, the anti-degenerate coverage matrix healthy (rv=228, op=281, implicitRec=76, extFields=9), native L3-direct record-type oracle green |
 
 ---
 
@@ -525,28 +526,134 @@ Three disciplines carried the gate and are worth keeping for R2:
 
 ---
 
-## R2 (L3 resolve parity) — STUB
+## R2a parity status (SHIPPED — L3 record-type resolution, source-only) — R2's FIRST sub-gate
 
-R2 widens parity from the L2 index (now COMPLETE) to the **L3 `resolveModel`
-surface** — everything `resolve/` derives by binding the per-routine L2 facts across
-the workspace + `.app` symbol packages into a cross-file `SemanticModel`:
+R2a is the FIRST sub-gate of R2: it establishes the **L3 foundation** (the
+workspace symbol table + the post-resolve capture boundary) and ports
+**record-type unification** — the resolved `tableId` R1 deliberately stripped.
+The full source-only `ws-*` corpus differential is **153/153 green** with the
+resolved record-var/op `tableId` + merged TableExtension fields compared;
+`KNOWN_DIVERGENCES.json` is empty; the anti-degenerate coverage matrix is healthy.
 
-- **Call graph + event graph.** Callee binding / resolution (each L2 call-site →
-  its resolved target routine across files + apps), `callsiteResolutions`,
-  `typedEdges`, the publisher↔subscriber `eventGraph` edges (incl. the
-  `parseSubscriberAttribute` binding-kind discipline).
-- **The L3-resolved fields R1 deferred.** `resourceId`/`tableId` (the stripped
-  capability identity — bound to a concrete TableId/EventId/ObjectId, with the
-  `confidence` upgrade literal/enum → `"static"` once the id resolves);
-  `calleeParameterIsVar` / `bindingResolution` / `sourceTableId` (the binding L3
-  fields R1 keeps forbidden).
-- **Inherited / cone capability facts.** Capability facts with
-  `provenance != "direct"` — composed bottom-up over the call graph (the L4 summary
-  surface), plus the **L4-injected `op:"publish"` facts** minted from the resolved
-  eventGraph (EXCLUDED at L2 by construction).
-- **Record-type unification.** Resolving each record-op / member-call receiver to a
-  concrete table identity across the workspace + symbol packages (the receiver-genus
-  classification R1 keys off declared types; R2 binds them to TableIds).
+Key facts of the port (all at parity with the TS oracle):
 
-R2 extends, never replaces, the R1 goldens — the validated L2 surface is the input
-the resolver binds.
+- **Capture point = POST-RESOLVE / PRE-SUMMARY.** The dump runs `indexWorkspace`
+  (L2) → `resolveModel` (L3) and captures the RESOLVED model BEFORE any L4 summary
+  / combined-graph / `composeSnapshot`. `tableId` is set by `resolveRecordTypes`
+  and never re-touched by `mergeExtensionFields` or later steps, so the capture is
+  clean. The Rust side runs ONLY the first three resolve sub-steps
+  (`build_symbol_table → resolve_record_types → merge_extension_fields`); calls /
+  events / coverage are LATER gates (R2b/R2c/R2d) and OUT of R2a. The differ
+  HARD-FAILS if any later-gate / L4 field (`callGraph` / `eventGraph` / `coverage`
+  / `typedEdges` / `resourceId` / `bindingResolution` / `argumentBindings` /
+  `summary` / `capabilityFactsDirect`) appears on either side.
+- **Comparison surface = StableTableId.** Per record var/op, the resolved `tableId`
+  is projected as a **StableTableId** (`${appGuid}:Table:${number}`) — never the
+  internal `/` form, never the raw modelInstanceId-bearing id. An UNRESOLVED
+  tableId (table not in the workspace symbol table) is **ABSENT** (omitted),
+  matching al-sem (never guessed). Per Table object, the **merged extension fields**
+  (TableExtension fields merged into the base table: field number/name/dataType/
+  fieldClass + StableObjectId declaring provenance) are also compared.
+- **DETERMINISTIC INGESTION ORDER is load-bearing.** Collision resolution is
+  order-dependent: the symbol table's name/number indexes are LAST-wins, the
+  record-op lexical-scope fallback (`variablesByName`) is LAST-wins, and
+  `mergeExtensionFields` is FIRST-wins. The Rust side assembles the workspace L3
+  model in al-sem's EXACT ingestion order — POSIX-path-sorted files → per-file
+  document order — so every collision resolves identically. The
+  `ws-r2a-record-types` fixture pins this (two TableExtensions colliding on field
+  50000 → the first-ingested wins).
+- **Implicit `Rec`/`xRec` via the effective own table.** A still-unset implicit
+  `Rec`/`xRec` op resolves to its object's effective own table: a Table → itself; a
+  Page → its `SourceTable`; a TableExtension → its `extends` target; a PageExtension
+  → the base page's `SourceTable` (via the extends chain). An explicit local `Rec`
+  variable is NEVER overridden by this pass.
+- **The anti-degenerate COVERAGE MATRIX.** The differential computes + ENFORCES
+  nonzero counts of resolved record-var tableIds, resolved record-op tableIds,
+  implicit-Rec resolutions, and merged extension fields across the corpus (computed
+  from the RUST output, so it proves resolution actually FIRES — a degenerate
+  all-unresolved port would otherwise pass a pure equality diff), and cross-checks
+  them against the GOLDEN (al-sem ground-truth) counts. Current full-corpus matrix:
+  **resolvedRecordVarTableIds=228, resolvedRecordOpTableIds=281,
+  implicitRecResolutions=76, mergedExtensionFields=9**.
+
+**R2a's native soundness oracle is L3-DIRECT** (`tests/l3rt_oracles.rs`), NOT a
+golden diff (that is `l3rt_vectors.rs` + the differential's `*.l3rt.golden.json`,
+byte-parity with al-sem). It drives small inline single-app workspaces through the
+real `assemble_and_resolve_default` and asserts the record-type CONTRACT directly
+on the resolved model: a record var/op's `tableId` is present IFF the table name
+resolves in the workspace symbol table (`Record "NoSuchTable"` → absent, `Record
+Customer` in-workspace → present); an implicit `Rec` in a Table trigger resolves to
+THAT table; an implicit `Rec` in a Page resolves via `SourceTable`; a TableExtension
+implicit `Rec` resolves via the `extends` chain; an explicit local `Rec` is never
+overridden by implicit resolution; a `temporary` record still resolves its table;
+the extension-merge collision is FIRST-wins; and resolution is case-insensitive
+(`record customer` ≡ `Record CUSTOMER`). 8 tests, all green, **no
+`src/engine/l3/**` change required** — the resolution was correct. Because the
+corpus differential is byte-parity, a structural oracle failure would mean BOTH
+engines are wrong (flagged loudly in the oracle).
+
+### Covered vs deferred (R2a — honest)
+
+- **Covered (source-only intra-workspace record-types):** the resolved record-var /
+  record-op `tableId` (declared vars → ops → lexical-scope fallback → implicit
+  `Rec`/`xRec` via the effective own table) + the merged TableExtension fields, in
+  StableTableId/StableObjectId form, captured post-resolve / pre-summary.
+- **Deferred to R2.5 / later gates:**
+  - **CROSS-APP record-types** — a `Record` whose table lives in a `.app` symbol
+    package, not the source workspace. The R2a corpus is source-only (no `.app`
+    ingestion), so a table absent from the source resolves to ABSENT; binding it to
+    the dependency's TableId needs `.app` projection → **R2.5**.
+  - **CALL graph + EVENT graph resolution** (callee binding, dispatch,
+    `callsiteResolutions`, `typedEdges`, publisher↔subscriber edges) — **R2b /
+    R2c**. R2a runs only the first three resolve sub-steps.
+  - The L3-resolved capability `resourceId` upgrade + `confidence` literal/enum →
+    `"static"` (R2d), and the L4 summary / inherited-cone facts.
+
+---
+
+## R2b (L3 call graph) — STUB
+
+R2b is the next sub-gate after R2a: the **call graph** — `resolveCalls` binding
+each L2 call-site to its resolved target routine(s) across the workspace. It
+**reuses the R2a workspace symbol table** verbatim (the symbol table keys routines
+by `${objectId}::${name.toLowerCase()}` and pre-sorts overload lists by id — locked
+in R2a precisely so R2b's overload resolution rests on a stable key + sort), and
+DEPENDS on R2a's resolved `tableId` (overload disambiguation /
+`inferRecordFieldType` needs the receiver's resolved table). Scope:
+
+- **Overload disambiguation.** Pick the target overload from the call-site's
+  argument types — keyed off R2a's resolved record-var / field types (strict
+  prereq).
+- **Dispatch kinds.** Member / interface / object-run (`Codeunit.Run`) dispatch;
+  per-callsite `dispatchKind` + `resolution`. **Interface dispatch is MULTI-edge**
+  — one call-site fans out to EVERY implementer (don't collapse by `callsiteId`).
+- **The resolved binding fields R1/R2a keep forbidden.** `upgradeBindings`
+  (`argumentBindings` upgraded by the resolver), `callsiteResolutions`,
+  `calleeParameterIsVar` / `bindingResolution` / `sourceTableId`.
+- **Port the scalar type machinery as exact tested units FIRST.** The
+  `type-relation` / `normalizeAlType` regexes (scalar type normalization +
+  assignability) must be ported as standalone, vector-tested units BEFORE the call
+  graph consumes them — the same discipline that carried R1's encoders.
+- Pin opaque-vs-external dispatch with the declared-dep-no-`.app` fixture.
+
+R2b extends, never replaces, the R1/R2a goldens — the validated L2 surface + the
+resolved record-type identity are the inputs the call-graph resolver binds.
+
+---
+
+## Running migration status
+
+| Layer | Gate(s) | Status |
+| --- | --- | --- |
+| L0 (identity) | R0 | **DONE** — 157/157 source-only corpus, allowlist empty |
+| L2 (index) | R1 (R1a+R1b+R1c+R1d) | **DONE** — 152/152, full per-routine feature surface |
+| L3 (resolve) | **R2a** (record-types, source-only) | **DONE** — 153/153 + coverage matrix + native oracle |
+| L3 (resolve) | R2b (call graph), R2c (event graph), R2d (coverage/gaps) | remaining |
+| L3 (resolve) | R2.5 (`.app` ingestion + cross-app resolution) | remaining |
+| L4 (summaries) | R3 | not started |
+| L5 (detectors) | R4 | not started |
+| product | — | not started |
+
+With R2a shipped, **R0 + R1 + R2a are done**. R2b / R2c / R2d + R2.5 (`.app` /
+cross-app) remain for the L3 resolve layer; then R3 (L4 summaries), R4 (L5
+detectors), and the product surface.

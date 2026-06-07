@@ -848,10 +848,12 @@ fn differential_l2_features_match_goldens() {
 //
 // Reuses `KNOWN_DIVERGENCES.json` with `test == L3_TEST_NAME`; target empty.
 // `R2A_L3_SET` selects the asserted fixtures:
-//   - "small" (committed default for THIS task): ws-d2 + ws-r2a-record-types —
-//     proven green.
-//   - "full": every `tests/r2a-goldens/*.l3rt.golden.json` (the 153-fixture
-//     corpus; Task 4 promotes the default to full at the R2a exit gate).
+//   - "full" (committed default since R2a Task 4 / the EXIT GATE): every
+//     `tests/r2a-goldens/*.l3rt.golden.json` (the 153-fixture corpus). The
+//     committed `cargo test --test differential` asserts FULL-corpus L3
+//     record-type parity + the coverage matrix by default.
+//   - "small": ws-d2 + ws-r2a-record-types — the proven-green dev subset, kept
+//     for fast localized iteration.
 
 /// Keys that must NEVER appear on either side of the L3 record-type comparison —
 /// later-gate / L4 surfaces. Mirrors the manifest `forbiddenKeys` + the
@@ -956,7 +958,8 @@ fn discover_l3_goldens() -> Vec<(String, PathBuf)> {
 }
 
 /// The L3 record-types differential pass + coverage matrix. Gated by
-/// `R2A_L3_SET` (committed default `small`: ws-d2 + ws-r2a-record-types).
+/// `R2A_L3_SET` (committed default `full`: the whole 153-fixture corpus — the
+/// R2a exit gate; `small` = ws-d2 + ws-r2a-record-types for dev iteration).
 #[test]
 fn differential_l3_record_types_match_goldens() {
     let all_goldens = discover_l3_goldens();
@@ -965,12 +968,13 @@ fn differential_l3_record_types_match_goldens() {
         "no L3 goldens discovered under tests/r2a-goldens — corpus missing?"
     );
 
-    // Scope gate. Committed default for THIS task is the proven-green small set.
-    let set = std::env::var("R2A_L3_SET").unwrap_or_else(|_| "small".to_string());
+    // Scope gate. Committed default since R2a Task 4 (the EXIT GATE) is the FULL
+    // 153-fixture corpus; `small` is the proven-green dev subset.
+    let set = std::env::var("R2A_L3_SET").unwrap_or_else(|_| "full".to_string());
     let small_set = ["ws-d2", "ws-r2a-record-types"];
     let goldens: Vec<(String, PathBuf)> = match set.as_str() {
-        "full" => all_goldens,
-        "small" | "" => all_goldens
+        "full" | "" => all_goldens,
+        "small" => all_goldens
             .into_iter()
             .filter(|(f, _)| small_set.contains(&f.as_str()))
             .collect(),
