@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use super::combined_graph::{build_combined_graph, CombinedGraph, TypedEdge};
 use super::scc::{tarjan_scc, Scc, SccInputGraph, SccResult};
 use crate::engine::ids::to_stable_object_id;
-use crate::engine::l2::features::{PCallee, PExpressionInfo};
+use crate::engine::l2::features::{PCallSite, PCallee, PExpressionInfo, POperationSite};
 use crate::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
 use crate::engine::l3::event_graph::{build_event_graph, EventGraph, EventSymbol};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Workspace};
@@ -89,6 +89,18 @@ pub enum CapabilityExtra {
     Event {
         event_class: String,
         include_sender: Option<bool>,
+    },
+    /// HttpExtra (al-sem `model/capability.ts`). `method` + optional `bodyArgSource`.
+    Http {
+        method: String,
+        body_arg_source: Option<ValueSource>,
+    },
+    /// StorageExtra (al-sem `model/capability.ts`). Optional key/value sources +
+    /// scope (`User` | `Company` | `Module` | `unknown`).
+    Storage {
+        key_arg_source: Option<ValueSource>,
+        value_arg_source: Option<ValueSource>,
+        scope: Option<String>,
     },
 }
 
@@ -152,15 +164,73 @@ fn object_type_to_resource_kind(object_type: &str) -> &'static str {
     }
 }
 
-/// Map an event kind to its CapabilityExtra event class (al-sem
-/// `mapEventKindToClass`).
+/// Map an EventSymbol.eventKind to its CapabilityExtra event class. Faithful port
+/// of al-sem `summary-runner.ts` `mapEventKindToClass`: business→Business,
+/// internal→Internal, trigger→Trigger, EVERYTHING else (incl. "integration" /
+/// "unknown") → Integration. The Rust event graph emits lowercase kinds
+/// ("integration" / "business" / "unknown").
 fn map_event_kind_to_class(event_kind: &str) -> &'static str {
     match event_kind {
-        "IntegrationEvent" => "Integration",
-        "BusinessEvent" => "Business",
-        "InternalEvent" => "Internal",
-        _ => "Trigger",
+        "business" => "Business",
+        "internal" => "Internal",
+        "trigger" => "Trigger",
+        _ => "Integration",
     }
+}
+
+/// Map an HttpClient method name to its `HttpExtra.method` literal, or `None`
+/// when the method isn't an HTTP verb (al-sem `http.ts` HTTP_METHOD_SET).
+fn http_method(method: &str) -> Option<&'static str> {
+    match method {
+        "Send" => Some("Send"),
+        "Get" => Some("Get"),
+        "Post" => Some("Post"),
+        "Put" => Some("Put"),
+        "Delete" => Some("Delete"),
+        "Patch" => Some("Patch"),
+        _ => None,
+    }
+}
+
+/// Map a lowercased IsolatedStorage method to its capability op (al-sem
+/// `isolated-storage.ts` ISOLATED_STORAGE_OPS), or `None`.
+fn isolated_storage_op(method_lc: &str) -> Option<&'static str> {
+    match method_lc {
+        "get" | "getencrypted" | "contains" => Some("store-read"),
+        "set" | "setencrypted" => Some("store-write"),
+        "delete" => Some("store-delete"),
+        _ => None,
+    }
+}
+
+/// Parse a DataScope enum text → `StorageExtra.scope` (al-sem `parseDataScope`).
+fn parse_data_scope(text: &str) -> String {
+    let lower = text.to_lowercase();
+    if lower.contains("::company") {
+        "Company".to_string()
+    } else if lower.contains("::user") {
+        "User".to_string()
+    } else if lower.contains("::module") {
+        "Module".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// True when a declared type names a TempBlob (al-sem `isTempBlobType`).
+fn is_temp_blob_type(t: &str) -> bool {
+    let lc = t.to_lowercase();
+    lc.contains("temp blob") || lc == "tempblob"
+}
+
+/// True when a declared type names a Page or Report (al-sem
+/// `ui-window-open.ts` `isPageOrReportType`).
+fn is_page_or_report_type(declared_type: &str) -> bool {
+    let lower = declared_type.to_lowercase();
+    lower == "page"
+        || lower == "report"
+        || lower.starts_with("page ")
+        || lower.starts_with("report ")
 }
 
 /// Confidence derivation from a `ValueSource` (al-sem `confidenceFromSource`).
@@ -180,11 +250,16 @@ fn confidence_from_source(vs: &ValueSource) -> &'static str {
 struct VarInfo {
     is_parameter: bool,
     parameter_index: u32,
-    /// Declared type — needed by the member-expression (table-field) value-source
-    /// branch the other IO/dispatch families use (Task 3); kept here so the
-    /// classifier stays a faithful seam for that extension.
-    #[allow(dead_code)]
+    /// Declared type — `receiverTypeOf` (http/file-blob/ui-window-open receiver
+    /// classification) + the member-expression (table-field) record check read it.
     declared_type: String,
+    /// Resolved internal TableId when this var is a record variable — feeds the
+    /// member-expression (table-field) value-source branch (`classifyMemberExpression`).
+    table_id: Option<String>,
+    /// The L2-captured one-hop initializer as a `ValueSource` (al-sem
+    /// `VariableSymbol.initializer`). Feeds `classifyIdentifier`'s constant-var
+    /// resolution + the one-hop var-to-var alias chase.
+    initializer: Option<ValueSource>,
 }
 
 /// Classify a call-argument `PExpressionInfo` into a `ValueSource`. A focused
@@ -231,23 +306,170 @@ fn classify_value_source(
                 .clone()
                 .unwrap_or_else(|| info.text.clone())
                 .to_lowercase();
-            match variables.get(&name) {
-                Some(v) if v.is_parameter => ValueSource::Parameter {
-                    index: v.parameter_index,
-                    var_name: name,
-                },
-                Some(_) => ValueSource::ConstantVar {
-                    var_name: name,
-                    initializer: Box::new(ValueSource::Unknown),
-                },
-                None => ValueSource::Expression,
-            }
+            classify_identifier(&name, variables, 0)
         }
+        "member_expression" => classify_member_expression(&info.text, variables),
         "unary_expression" => match &info.value {
             Some(v) => ValueSource::Literal { value: v.clone() },
             None => ValueSource::Expression,
         },
         _ => ValueSource::Expression,
+    }
+}
+
+const MAX_CHASE_DEPTH: u32 = 3;
+
+/// Resolve an identifier name to a `ValueSource`. Faithful port of al-sem
+/// `value-source.ts` `classifyIdentifier`: a parameter → `parameter`; a local
+/// with a resolved initializer → that initializer (one-hop var-to-var alias
+/// chase, capped at `MAX_CHASE_DEPTH`); a local with no / opaque initializer →
+/// `constant-var`. Unknown name → `expression`.
+fn classify_identifier(
+    name_lower: &str,
+    variables: &HashMap<String, VarInfo>,
+    depth: u32,
+) -> ValueSource {
+    let Some(sym) = variables.get(name_lower) else {
+        return ValueSource::Expression;
+    };
+    if sym.is_parameter {
+        return ValueSource::Parameter {
+            index: sym.parameter_index,
+            var_name: name_lower.to_string(),
+        };
+    }
+    let init = sym.initializer.clone();
+    match &init {
+        None | Some(ValueSource::Unknown) | Some(ValueSource::Expression) => {
+            // No initializer captured or it's already opaque — emit constant-var.
+            ValueSource::ConstantVar {
+                var_name: name_lower.to_string(),
+                initializer: Box::new(init.unwrap_or(ValueSource::Unknown)),
+            }
+        }
+        Some(init_vs) => {
+            if depth >= MAX_CHASE_DEPTH {
+                // Depth cap — keep the raw initializer, don't recurse.
+                return ValueSource::ConstantVar {
+                    var_name: name_lower.to_string(),
+                    initializer: Box::new(init_vs.clone()),
+                };
+            }
+            if let ValueSource::ConstantVar {
+                var_name: inner, ..
+            } = init_vs
+            {
+                let deeper = classify_identifier(inner, variables, depth + 1);
+                if matches!(
+                    deeper,
+                    ValueSource::Literal { .. }
+                        | ValueSource::Enum { .. }
+                        | ValueSource::Parameter { .. }
+                ) {
+                    return deeper;
+                }
+                return ValueSource::ConstantVar {
+                    var_name: name_lower.to_string(),
+                    initializer: Box::new(deeper),
+                };
+            }
+            // Initializer already a resolved kind (literal / enum / parameter / table-field).
+            init_vs.clone()
+        }
+    }
+}
+
+/// Classify a `member_expression` text (`Receiver.Field`) as a `table-field`
+/// ValueSource when the receiver resolves to a record-typed variable; else
+/// `expression`. Faithful port of al-sem `value-source.ts`
+/// `classifyMemberExpression`. The first `.` separates receiver from field.
+fn classify_member_expression(text: &str, variables: &HashMap<String, VarInfo>) -> ValueSource {
+    let Some(dot_idx) = text.find('.') else {
+        return ValueSource::Expression;
+    };
+    let receiver_raw = text[..dot_idx].trim();
+    let field_raw = text[dot_idx + 1..].trim();
+    let receiver_lower = receiver_raw.to_lowercase();
+    let Some(sym) = variables.get(&receiver_lower) else {
+        return ValueSource::Expression;
+    };
+    let decl = sym.declared_type.to_lowercase();
+    let is_record =
+        decl.starts_with("record ") || decl == "record" || decl.starts_with("recordref");
+    if !is_record {
+        return ValueSource::Expression;
+    }
+    let field_name = strip_double_quotes(field_raw).to_string();
+    let table_id = sym
+        .table_id
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    ValueSource::TableField {
+        table_id,
+        field_name,
+    }
+}
+
+/// Parse an L2-captured `VariableSymbol.initializer` JSON value into a
+/// `ValueSource`. Mirrors al-sem's `ValueSource` JSON shape. Unknown / malformed
+/// shapes degrade to `ValueSource::Unknown` (engine-never-throws).
+fn value_source_from_json(v: &serde_json::Value) -> ValueSource {
+    let Some(kind) = v.get("kind").and_then(|k| k.as_str()) else {
+        return ValueSource::Unknown;
+    };
+    match kind {
+        "literal" => ValueSource::Literal {
+            value: v
+                .get("value")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        },
+        "enum" => ValueSource::Enum {
+            enum_name: v
+                .get("enumName")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            member: v
+                .get("member")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
+        },
+        "constant-var" => ValueSource::ConstantVar {
+            var_name: v
+                .get("varName")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            initializer: Box::new(
+                v.get("initializer")
+                    .map(value_source_from_json)
+                    .unwrap_or(ValueSource::Unknown),
+            ),
+        },
+        "parameter" => ValueSource::Parameter {
+            index: v.get("index").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+            var_name: v
+                .get("varName")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        },
+        "table-field" => ValueSource::TableField {
+            table_id: v
+                .get("tableId")
+                .and_then(|x| x.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            field_name: v
+                .get("fieldName")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        },
+        "expression" => ValueSource::Expression,
+        _ => ValueSource::Unknown,
     }
 }
 
@@ -296,33 +518,74 @@ fn direct_facts_for_routine(
         );
     }
 
-    // Variable index for value-source classification.
+    // Variable index for value-source classification + receiverTypeOf. Built from
+    // the L3 lexical variables ALONE (which already include the parameters as
+    // VariableSymbols with isParameter=true), LAST-wins per lowercased name —
+    // mirroring al-sem's orchestrator `for (v of features.variables)
+    // variables.set(v.name, v)`. Record-var TableIds are folded in afterwards so
+    // the member-expression (table-field) value-source branch can resolve.
+    //
+    // NOTE: al-sem reads `sym.tableId` off the VariableSymbol, which is NOT
+    // populated for source-only routines (the VariableSymbol carries no resolved
+    // tableId — only the RecordVariable does), so a `Receiver.Field` member-expr
+    // resolves to `table-field` with `tableId: "unknown"`. We therefore DO NOT
+    // fold the resolved record-var tableId here: doing so would over-resolve vs
+    // al-sem (confirmed by the ws-policy-api-dynamic-dispatch golden, which carries
+    // `tableId: "unknown"`).
     let mut variables: HashMap<String, VarInfo> = HashMap::new();
     for v in &routine.variables {
-        variables
-            .entry(v.name.to_lowercase())
-            .or_insert_with(|| VarInfo {
-                is_parameter: false,
-                parameter_index: 0,
-                declared_type: v.declared_type.clone(),
-            });
-    }
-    for p in &routine.parameters {
         variables.insert(
-            p.name.to_lowercase(),
+            v.name.to_lowercase(),
             VarInfo {
-                is_parameter: true,
-                parameter_index: p.index,
-                declared_type: p.type_text.clone(),
+                is_parameter: v.is_parameter,
+                parameter_index: v.parameter_index.unwrap_or(0),
+                declared_type: v.declared_type.clone(),
+                table_id: None,
+                initializer: v.initializer.as_ref().map(value_source_from_json),
             },
         );
     }
 
+    // ── Unreachable exclusion (extractor.ts:100-142) ───────────────────────
+    // Operation sites / call sites with controlContext === "unreachable" never
+    // produce capability facts. recordOperations share IDs with operationSites,
+    // so exclude record ops whose id is in the unreachable-op-id set.
+    let mut unreachable_op_ids: BTreeSet<String> = BTreeSet::new();
+    for op in &routine.operation_sites {
+        if op.control_context.as_deref() == Some("unreachable") {
+            unreachable_op_ids.insert(op.id.clone());
+        }
+    }
+    let record_ops: Vec<&crate::engine::l3::l3_workspace::L3RecordOperation> = routine
+        .record_operations
+        .iter()
+        .filter(|op| !unreachable_op_ids.contains(&op.id))
+        .collect();
+    let call_sites: Vec<&PCallSite> = routine
+        .call_sites
+        .iter()
+        .filter(|cs| cs.control_context.as_deref() != Some("unreachable"))
+        .collect();
+    let operation_sites: Vec<&POperationSite> = routine
+        .operation_sites
+        .iter()
+        .filter(|op| op.control_context.as_deref() != Some("unreachable"))
+        .collect();
+
     let mut facts: Vec<CapabilityFact> = Vec::new();
     let reasons: Vec<String> = Vec::new();
 
+    // `receiverTypeOf` — declared type of a named receiver, else "unknown"
+    // (extractor.ts:147). Used by http / file-blob / ui-window-open families.
+    let receiver_type_of = |name: &str| -> String {
+        variables
+            .get(&name.to_lowercase())
+            .map(|v| v.declared_type.clone())
+            .unwrap_or_else(|| "unknown".to_string())
+    };
+
     // ── table family (al-sem table.ts) ─────────────────────────────────────
-    for op in &routine.record_operations {
+    for op in &record_ops {
         let Some(cap_op) = map_table_op(&op.op) else {
             continue;
         };
@@ -351,8 +614,28 @@ fn direct_facts_for_routine(
         });
     }
 
+    // ── commit family (al-sem commit.ts) ───────────────────────────────────
+    // One fact per operationSite with kind === "commit".
+    for op in &operation_sites {
+        if op.kind == "commit" {
+            facts.push(CapabilityFact {
+                subject: routine.id.clone(),
+                op: "commit".to_string(),
+                resource_kind: "transaction".to_string(),
+                resource_id: None,
+                resource_arg_source: None,
+                confidence: "static".to_string(),
+                provenance: "direct".to_string(),
+                via: "self".to_string(),
+                witness_operation_id: Some(op.id.clone()),
+                witness_callsite_id: None,
+                extra: None,
+            });
+        }
+    }
+
     // ── dispatch family (al-sem dispatch.ts) ───────────────────────────────
-    for cs in &routine.call_sites {
+    for cs in &call_sites {
         match &cs.callee {
             PCallee::ObjectRun { object_kind, .. } => {
                 let object_type = object_kind.clone();
@@ -402,6 +685,354 @@ fn direct_facts_for_routine(
                 });
             }
             _ => {}
+        }
+    }
+
+    // ── http family (al-sem http.ts) ───────────────────────────────────────
+    // HttpClient member calls. receiverTypeOf(receiver) === "HttpClient".
+    for cs in &call_sites {
+        let PCallee::Member { receiver, method } = &cs.callee else {
+            continue;
+        };
+        if receiver_type_of(receiver) != "HttpClient" {
+            continue;
+        }
+        let Some(http_method) = http_method(method) else {
+            continue;
+        };
+        let is_send = http_method == "Send";
+        // .Send(Request, Response): arg[0] is the body, no URL.
+        // .Post/.Put/.Patch(Url, Request, Response): arg[0] URL, arg[1] body.
+        let (url_info, body_info) = if is_send {
+            (None, cs.argument_infos.first())
+        } else {
+            (cs.argument_infos.first(), cs.argument_infos.get(1))
+        };
+        let url_source = match url_info {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let body_arg_source = body_info.map(|i| classify_value_source(Some(i), &variables));
+        let confidence = confidence_from_source(&url_source).to_string();
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "send".to_string(),
+            resource_kind: "http".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(url_source),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: Some(CapabilityExtra::Http {
+                method: http_method.to_string(),
+                body_arg_source,
+            }),
+        });
+    }
+
+    // ── telemetry family (al-sem telemetry.ts) ─────────────────────────────
+    // Session.LogMessage(...) member OR bare LogMessage(...).
+    for cs in &call_sites {
+        let matches = match &cs.callee {
+            PCallee::Member { receiver, method } => {
+                receiver.to_lowercase() == "session" && method.to_lowercase() == "logmessage"
+            }
+            PCallee::Bare { name } => name.to_lowercase() == "logmessage",
+            _ => false,
+        };
+        if !matches {
+            continue;
+        }
+        let event_id_source = match cs.argument_infos.first() {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let confidence = confidence_from_source(&event_id_source).to_string();
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "log".to_string(),
+            resource_kind: "telemetry".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(event_id_source),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── isolated-storage family (al-sem isolated-storage.ts) ───────────────
+    for cs in &call_sites {
+        let PCallee::Member { receiver, method } = &cs.callee else {
+            continue;
+        };
+        if receiver.to_lowercase() != "isolatedstorage" {
+            continue;
+        }
+        let Some(op) = isolated_storage_op(&method.to_lowercase()) else {
+            continue;
+        };
+        let key_source = match cs.argument_infos.first() {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let confidence = confidence_from_source(&key_source).to_string();
+        // store-write: capture value arg (arg[1]) + scope (arg[2]).
+        let (value_arg_source, scope) = if op == "store-write" {
+            let value = cs
+                .argument_infos
+                .get(1)
+                .map(|i| classify_value_source(Some(i), &variables));
+            let scope = cs.argument_infos.get(2).map(|i| parse_data_scope(&i.text));
+            (value, scope)
+        } else {
+            (None, None)
+        };
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: op.to_string(),
+            resource_kind: "isolated-storage".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(key_source.clone()),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: Some(CapabilityExtra::Storage {
+                key_arg_source: Some(key_source),
+                value_arg_source,
+                scope,
+            }),
+        });
+    }
+
+    // ── hyperlink family (al-sem hyperlink.ts) ─────────────────────────────
+    // Bare Hyperlink(url) → op=open, resourceKind=ui.
+    for cs in &call_sites {
+        let PCallee::Bare { name } = &cs.callee else {
+            continue;
+        };
+        if name.to_lowercase() != "hyperlink" {
+            continue;
+        }
+        let url_source = match cs.argument_infos.first() {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let confidence = confidence_from_source(&url_source).to_string();
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "open".to_string(),
+            resource_kind: "ui".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(url_source),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── file-blob family (al-sem file-blob.ts) ─────────────────────────────
+    // Write-side File / TempBlob member methods. op=write-blob, resourceKind=file.
+    for cs in &call_sites {
+        let PCallee::Member { receiver, method } = &cs.callee else {
+            continue;
+        };
+        let method_lc = method.to_lowercase();
+        let receiver_type = receiver_type_of(receiver);
+        let is_file = receiver_type == "File"
+            && matches!(method_lc.as_str(), "create" | "writealltext" | "copy");
+        let is_temp_blob = is_temp_blob_type(&receiver_type) && method_lc == "createoutstream";
+        if !is_file && !is_temp_blob {
+            continue;
+        }
+        let arg_source = match cs.argument_infos.first() {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let confidence = confidence_from_source(&arg_source).to_string();
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "write-blob".to_string(),
+            resource_kind: "file".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(arg_source),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── background family (al-sem background.ts) ───────────────────────────
+    // TaskScheduler.CreateTask(arg0) / Session.StartSession(_, arg1) / bare
+    // StartSession(_, arg1). op=start, resourceKind=background.
+    for cs in &call_sites {
+        let codeunit_arg_idx: Option<usize> = match &cs.callee {
+            PCallee::Member { receiver, method } => {
+                let r = receiver.to_lowercase();
+                let m = method.to_lowercase();
+                if r == "taskscheduler" && m == "createtask" {
+                    Some(0)
+                } else if r == "session" && m == "startsession" {
+                    Some(1)
+                } else {
+                    None
+                }
+            }
+            PCallee::Bare { name } => {
+                if name.to_lowercase() == "startsession" {
+                    Some(1)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let Some(idx) = codeunit_arg_idx else {
+            continue;
+        };
+        let codeunit_source = match cs.argument_infos.get(idx) {
+            Some(i) => classify_value_source(Some(i), &variables),
+            None => ValueSource::Unknown,
+        };
+        let confidence = confidence_from_source(&codeunit_source).to_string();
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "start".to_string(),
+            resource_kind: "background".to_string(),
+            resource_id: None,
+            resource_arg_source: Some(codeunit_source),
+            confidence,
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── ui family (al-sem ui.ts) ───────────────────────────────────────────
+    // Bare Confirm / Message / Error → ui-confirm / ui-message / ui-error.
+    for cs in &call_sites {
+        let PCallee::Bare { name } = &cs.callee else {
+            continue;
+        };
+        let op = match name.to_lowercase().as_str() {
+            "confirm" => "ui-confirm",
+            "message" => "ui-message",
+            "error" => "ui-error",
+            _ => continue,
+        };
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: op.to_string(),
+            resource_kind: "ui".to_string(),
+            resource_id: None,
+            resource_arg_source: None,
+            confidence: "static".to_string(),
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── ui-window-open family (al-sem ui-window-open.ts) ───────────────────
+    // Bare StrMenu; Page.Run / Report.Run (object-run); Page/Report.RunModal
+    // (static keyword receiver OR a Page/Report-typed variable receiver).
+    for cs in &call_sites {
+        let matched = match &cs.callee {
+            PCallee::Bare { name } => name.to_lowercase() == "strmenu",
+            PCallee::ObjectRun { object_kind, .. } => {
+                object_kind == "Page" || object_kind == "Report"
+            }
+            PCallee::Member { receiver, method } => {
+                if method.to_lowercase() != "runmodal" {
+                    false
+                } else {
+                    let r = receiver.to_lowercase();
+                    if r == "page" || r == "report" {
+                        true
+                    } else {
+                        let declared = receiver_type_of(&r);
+                        declared != "unknown" && is_page_or_report_type(&declared)
+                    }
+                }
+            }
+            _ => false,
+        };
+        if !matched {
+            continue;
+        }
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "ui-window-open".to_string(),
+            resource_kind: "ui".to_string(),
+            resource_id: None,
+            resource_arg_source: None,
+            confidence: "static".to_string(),
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: Some(cs.id.clone()),
+            extra: None,
+        });
+    }
+
+    // ── events family — SUBSCRIBE side (al-sem events.ts) ──────────────────
+    // A routine with an [EventSubscriber(...)] attribute emits one subscribe fact.
+    if routine
+        .attributes_parsed
+        .iter()
+        .any(|a| a.name.eq_ignore_ascii_case("EventSubscriber"))
+    {
+        facts.push(CapabilityFact {
+            subject: routine.id.clone(),
+            op: "subscribe".to_string(),
+            resource_kind: "event".to_string(),
+            resource_id: None,
+            resource_arg_source: None,
+            confidence: "static".to_string(),
+            provenance: "direct".to_string(),
+            via: "self".to_string(),
+            witness_operation_id: None,
+            witness_callsite_id: None,
+            extra: Some(CapabilityExtra::Event {
+                event_class: "Integration".to_string(),
+                include_sender: None,
+            }),
+        });
+    }
+
+    // ── error family (al-sem error.ts) ─────────────────────────────────────
+    // One fact per operationSite with kind === "error-call".
+    for op in &operation_sites {
+        if op.kind == "error-call" {
+            facts.push(CapabilityFact {
+                subject: routine.id.clone(),
+                op: "error-throw".to_string(),
+                resource_kind: "error".to_string(),
+                resource_id: None,
+                resource_arg_source: None,
+                confidence: "static".to_string(),
+                provenance: "direct".to_string(),
+                via: "self".to_string(),
+                witness_operation_id: Some(op.id.clone()),
+                witness_callsite_id: None,
+                extra: None,
+            });
         }
     }
 
@@ -626,6 +1257,36 @@ fn extra_to_json(e: &CapabilityExtra) -> serde_json::Value {
             m.insert("eventClass".into(), json!(event_class));
             if let Some(is) = include_sender {
                 m.insert("includeSender".into(), json!(is));
+            }
+            serde_json::Value::Object(m)
+        }
+        CapabilityExtra::Http {
+            method,
+            body_arg_source,
+        } => {
+            let mut m = serde_json::Map::new();
+            m.insert("kind".into(), json!("http"));
+            m.insert("method".into(), json!(method));
+            if let Some(bs) = body_arg_source {
+                m.insert("bodyArgSource".into(), value_source_to_json(bs));
+            }
+            serde_json::Value::Object(m)
+        }
+        CapabilityExtra::Storage {
+            key_arg_source,
+            value_arg_source,
+            scope,
+        } => {
+            let mut m = serde_json::Map::new();
+            m.insert("kind".into(), json!("storage"));
+            if let Some(ks) = key_arg_source {
+                m.insert("keyArgSource".into(), value_source_to_json(ks));
+            }
+            if let Some(vs) = value_arg_source {
+                m.insert("valueArgSource".into(), value_source_to_json(vs));
+            }
+            if let Some(sc) = scope {
+                m.insert("scope".into(), json!(sc));
             }
             serde_json::Value::Object(m)
         }
@@ -1298,6 +1959,83 @@ fn capability_fact_sort_key(f: &PCapabilityFact) -> String {
     .join("|")
 }
 
+/// Map a routine's L4 fixed-point `uncertainties` to coverage reasons, faithful
+/// to summary-runner.ts:565-596. Only the four call-resolution uncertainty kinds
+/// that imply incomplete call resolution map to reasons:
+///   ambiguous-overload → "ambiguous-overload"
+///   member-not-found   → "member-not-found"
+///   external-target    → "external-target"
+///   interface-open-world → "interface-open-world"
+/// (Source-only: `interfaceImplsKnowledgePartial` is false, so the coarser
+/// `interface-impls-unknown-in-deps` reason never co-fires.)
+///
+/// Runs the L4 JACOBI fixed point over the COMBINED-graph SCC (the same inputs
+/// `project_r3a2` uses) — the cone reads only the typed-edge SCC, but the
+/// uncertainties are a property of the call-resolution fixed point.
+fn compute_uncertainty_coverage_reasons(
+    ws: &L3Workspace,
+    graph: &CombinedGraph,
+    calls: &crate::engine::l3::call_resolver::ResolvedCalls,
+) -> HashMap<String, BTreeSet<String>> {
+    use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
+
+    // Tarjan SCC over the COMBINED graph (summary substrate — distinct from the
+    // typed-edge SCC the cone walks).
+    let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &graph.edges_by_from {
+        adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let scc = tarjan_scc(&SccInputGraph {
+        nodes: &graph.nodes,
+        edges_by_from: &adjacency,
+    });
+
+    // Field-resolution index (parameterRoles need it; harmless here).
+    let mut field_index: FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+
+    let (summaries, _) = compute_summaries(
+        &ws.routines,
+        graph,
+        &scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        false,
+    );
+
+    let mut out: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for (rid, summary) in &summaries {
+        let mut reasons: BTreeSet<String> = BTreeSet::new();
+        for u in &summary.uncertainties {
+            match u.kind.as_str() {
+                "ambiguous-overload" => {
+                    reasons.insert("ambiguous-overload".to_string());
+                }
+                "member-not-found" => {
+                    reasons.insert("member-not-found".to_string());
+                }
+                "external-target" => {
+                    reasons.insert("external-target".to_string());
+                }
+                "interface-open-world" => {
+                    reasons.insert("interface-open-world".to_string());
+                }
+                _ => {}
+            }
+        }
+        if !reasons.is_empty() {
+            out.insert(rid.clone(), reasons);
+        }
+    }
+    out
+}
+
 // ===========================================================================
 // project_r3a3 — the L3Resolved entry point.
 // ===========================================================================
@@ -1339,6 +2077,16 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         }
     }
 
+    // Per-routine UNCERTAINTY-DERIVED coverage reasons (summary-runner.ts:565-596).
+    // Run the L4 fixed-point summary (over the COMBINED-graph SCC) to obtain each
+    // routine's `uncertainties`, then map the four call-resolution uncertainty kinds
+    // (ambiguous-overload / member-not-found / external-target / interface-open-world)
+    // to coverage reasons. A routine carrying any of these has its directStatus
+    // downgraded complete→partial so the coverage cone forwards the reason (+ adds
+    // the routine to unknownTargets). Source-only `interfaceImplsKnowledgePartial`
+    // is false, so the `interface-impls-unknown-in-deps` add-on never fires.
+    let uncertainty_reasons = compute_uncertainty_coverage_reasons(ws, &graph, &calls);
+
     // Per-routine direct facts (full) + direct coverage + the dedup-keyed map.
     let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
     let mut direct: RoutineDirectFacts = HashMap::new();
@@ -1349,7 +2097,7 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
     for r in &ws.routines {
         routine_ids.insert(r.id.clone());
         let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
-        let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
+        let (facts, mut status, reasons) = direct_facts_for_routine(r, pubs);
 
         // Canonical rep per dedup key (min repKey wins) — mirrors the
         // composeInheritedCones direct-fact dedup.
@@ -1366,11 +2114,30 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         if !byk.is_empty() {
             direct.insert(r.id.clone(), byk);
         }
+
+        // Fold uncertainty-derived coverage reasons (summary-runner.ts:565-596).
+        let mut reason_set: BTreeSet<String> = reasons.iter().cloned().collect();
+        let base_len = reason_set.len();
+        if let Some(extra_reasons) = uncertainty_reasons.get(&r.id) {
+            for rr in extra_reasons {
+                reason_set.insert(rr.clone());
+            }
+        }
+        let final_reasons: Vec<String> = if reason_set.len() > base_len {
+            // Uncertainty-derived reasons imply incomplete resolution → downgrade.
+            if status == "complete" {
+                status = "partial".to_string();
+            }
+            reason_set.into_iter().collect()
+        } else {
+            reasons.clone()
+        };
+
         cov.insert(
             r.id.clone(),
             DirectCoverage {
                 direct_status: status,
-                reasons,
+                reasons: final_reasons,
             },
         );
         direct_full.insert(r.id.clone(), facts);
@@ -1438,4 +2205,190 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
     summaries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
 
     R3a3Projection { summaries }
+}
+
+// ===========================================================================
+// REAL anti-degenerate matrix counts (review note 1). An INDEPENDENT oracle:
+// re-derives the typed-edge graph + per-routine direct-fact keys, then runs a
+// clean multi-source BFS over the typed edges to compute, per routine + per
+// inheritedFactKey, the GENUINE shortest call-distance witness and whether ≥2
+// DISTINCT first-hop edges reach that key at the same shortest distance (an
+// equal-distance tie). It does NOT reuse the production singleton/BFS retag
+// path, so it cross-validates the cone rather than echoing it.
+// ===========================================================================
+
+/// Real BFS-derived matrix counts for one workspace.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct R3a3RealMatrix {
+    /// Routines emitting ≥1 inherited capability fact (genuine, distance ≥ 1).
+    pub routines_with_inherited_facts: usize,
+    /// Inherited facts whose GENUINE shortest witness distance is ≥ 2 hops.
+    pub facts_with_more_than_1_hop_witness: usize,
+    /// Inherited facts reached at their shortest distance by ≥2 DISTINCT first-hop
+    /// edges (the equal-distance tie-breaker genuinely fired).
+    pub equal_distance_ties: usize,
+}
+
+/// Compute the REAL (BFS-derived) anti-degenerate counts over a resolved
+/// source-only workspace. Independent of `project_r3a3`'s cone path.
+pub fn compute_r3a3_real_matrix(resolved: &L3Resolved) -> R3a3RealMatrix {
+    let ws: &L3Workspace = &resolved.workspace;
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let event_graph: EventGraph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
+    let g = build_typed_edge_graph(&graph, &nodes);
+
+    // Publisher events for the direct-fact key set.
+    let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
+    for evt in &event_graph.events {
+        if let Some(pr) = &evt.publisher_routine_id {
+            publisher_events_by_routine
+                .entry(pr.clone())
+                .or_default()
+                .push(evt);
+        }
+    }
+
+    // Per-routine SET of direct-fact dedup keys (inheritedFactKey).
+    let empty_pub: Vec<&EventSymbol> = Vec::new();
+    let mut direct_keys: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for r in &ws.routines {
+        let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
+        let (facts, _, _) = direct_facts_for_routine(r, pubs);
+        let mut keys: BTreeSet<String> = BTreeSet::new();
+        for f in &facts {
+            keys.insert(inherited_fact_key(f));
+        }
+        if !keys.is_empty() {
+            direct_keys.insert(r.id.clone(), keys);
+        }
+    }
+
+    let empty_edges: Vec<TypedOutEdge> = Vec::new();
+    let mut m = R3a3RealMatrix::default();
+
+    for r in &ws.routines {
+        let subject = &r.id;
+        // Multi-source BFS over the typed-edge graph from `subject`. For each
+        // reachable node we record its BFS distance from subject. We then, per
+        // inheritedFactKey, find the MIN distance at which it first becomes
+        // available (a callee at BFS distance d contributes its direct keys at
+        // call-distance d+... — but the inheritedFactKey witness distance is the
+        // shortest path on which the key appears). We compute, per key, the set of
+        // FIRST-HOP edges that reach it at the genuine minimum total distance.
+
+        // node -> shortest BFS distance from subject (excluding subject itself).
+        let mut node_dist: HashMap<String, usize> = HashMap::new();
+        // (firstHopKey, node) used to attribute first-hop edges.
+        let mut queue: std::collections::VecDeque<(String, usize)> =
+            std::collections::VecDeque::new();
+        let mut visited: BTreeSet<String> = BTreeSet::new();
+        visited.insert(subject.clone());
+        for e in g.outgoing.get(subject).unwrap_or(&empty_edges) {
+            if visited.insert(e.to.clone()) {
+                node_dist.insert(e.to.clone(), 0);
+                queue.push_back((e.to.clone(), 0));
+            }
+        }
+        while let Some((id, d)) = queue.pop_front() {
+            for e in g.outgoing.get(&id).unwrap_or(&empty_edges) {
+                if visited.insert(e.to.clone()) {
+                    node_dist.insert(e.to.clone(), d + 1);
+                    queue.push_back((e.to.clone(), d + 1));
+                }
+            }
+        }
+
+        // For each inheritedFactKey reachable through any callee, the witness
+        // distance is `min over nodes carrying that key of (node_dist + 1)`. The
+        // first-hop edges achieving that min are those whose target node lies on a
+        // shortest path of that length. We approximate the first-hop SET by: for
+        // each DIRECT successor edge `e`, run the key's reachable min-distance
+        // *through that edge's subtree* — but the simplest sound tie test is: a
+        // key is a tie iff ≥2 distinct first-hop edges each reach a key-carrying
+        // node at the SAME minimal total distance.
+        // Min witness distance per key:
+        let mut key_min: BTreeMap<String, usize> = BTreeMap::new();
+        for (node, nd) in &node_dist {
+            if let Some(keys) = direct_keys.get(node) {
+                for k in keys {
+                    let cand = nd + 1;
+                    key_min
+                        .entry(k.clone())
+                        .and_modify(|cur| {
+                            if cand < *cur {
+                                *cur = cand;
+                            }
+                        })
+                        .or_insert(cand);
+                }
+            }
+        }
+
+        if key_min.is_empty() {
+            continue;
+        }
+        m.routines_with_inherited_facts += 1;
+
+        // Per first-hop edge: BFS within that edge's reachable subtree to find the
+        // distance at which each key first appears VIA that first hop.
+        // firstHopId -> (key -> minDistViaThisHop).
+        let mut per_hop_key_dist: Vec<BTreeMap<String, usize>> = Vec::new();
+        for fe in g.outgoing.get(subject).unwrap_or(&empty_edges) {
+            let mut hop_node_dist: HashMap<String, usize> = HashMap::new();
+            let mut hop_visited: BTreeSet<String> = BTreeSet::new();
+            hop_visited.insert(subject.clone());
+            let mut hq: std::collections::VecDeque<(String, usize)> =
+                std::collections::VecDeque::new();
+            if hop_visited.insert(fe.to.clone()) {
+                hop_node_dist.insert(fe.to.clone(), 0);
+                hq.push_back((fe.to.clone(), 0));
+            }
+            while let Some((id, d)) = hq.pop_front() {
+                for e in g.outgoing.get(&id).unwrap_or(&empty_edges) {
+                    if hop_visited.insert(e.to.clone()) {
+                        hop_node_dist.insert(e.to.clone(), d + 1);
+                        hq.push_back((e.to.clone(), d + 1));
+                    }
+                }
+            }
+            let mut hk: BTreeMap<String, usize> = BTreeMap::new();
+            for (node, nd) in &hop_node_dist {
+                if let Some(keys) = direct_keys.get(node) {
+                    for k in keys {
+                        let cand = nd + 1;
+                        hk.entry(k.clone())
+                            .and_modify(|cur| {
+                                if cand < *cur {
+                                    *cur = cand;
+                                }
+                            })
+                            .or_insert(cand);
+                    }
+                }
+            }
+            per_hop_key_dist.push(hk);
+        }
+
+        for (k, &min_d) in &key_min {
+            if min_d >= 2 {
+                m.facts_with_more_than_1_hop_witness += 1;
+            }
+            // Tie: ≥2 distinct first-hop edges reach this key at the global min.
+            let hop_count = per_hop_key_dist
+                .iter()
+                .filter(|hk| hk.get(k).copied() == Some(min_d))
+                .count();
+            if hop_count >= 2 {
+                m.equal_distance_ties += 1;
+            }
+        }
+    }
+
+    m
 }

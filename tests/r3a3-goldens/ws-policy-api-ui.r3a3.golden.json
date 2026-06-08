@@ -1,0 +1,25 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+			"capabilityFactsDirect": [
+				{
+					"op": "ui-confirm",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

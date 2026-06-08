@@ -1,0 +1,16 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000001-0000-0000-0000-000000000000:Codeunit:50000#3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000001-0000-0000-0000-000000000000:Codeunit:50000#3878651d4c389823bbd94ff12981bc90d27e193529263c5e5b2cf4b83f3eb97b",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

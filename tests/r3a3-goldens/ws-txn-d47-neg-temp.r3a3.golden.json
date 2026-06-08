@@ -1,0 +1,58 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+			"capabilityFactsDirect": [
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4705:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/rv/temprec",
+						"tempState": {
+							"kind": "known",
+							"value": true
+						}
+					}
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/ping"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "resp",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

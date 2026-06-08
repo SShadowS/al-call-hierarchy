@@ -1,0 +1,84 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op2"
+				},
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4709:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"recordVariableId": "r0/fce356a56bd713ec3f24756083c02df1bc3225bca206b09526c69f3b0e2da3fe/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4709:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/fce356a56bd713ec3f24756083c02df1bc3225bca206b09526c69f3b0e2da3fe/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/events"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

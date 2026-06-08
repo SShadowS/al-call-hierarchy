@@ -1,0 +1,33 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+			"capabilityFactsDirect": [
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "10000009-0000-0000-0000-000000000000:Table:50106",
+					"witnessOperationId": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"tempState": {
+							"kind": "unknown"
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000009-0000-0000-0000-000000000000:Page:50106#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

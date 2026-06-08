@@ -1,0 +1,48 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d/op0"
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/events"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

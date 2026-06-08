@@ -1,0 +1,66 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0/op0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50102#564f36f7d14874ad277d7d0804651a7acf423a857a4b9918203f9df3898ae158",
+			"capabilityFactsDirect": [
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "aaaaaaaa-0000-0000-0000-000000xc0001:Table:50100",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50102#564f36f7d14874ad277d7d0804651a7acf423a857a4b9918203f9df3898ae158/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/38c2f38c2b0799edeab6a84c3ced6181b855384e878b2639e5d338e194d2b551/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50101#6bf80111aebf6d3c40772006086d325f1752159652b265cb97fbb581f8023fb0/op0",
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50102#564f36f7d14874ad277d7d0804651a7acf423a857a4b9918203f9df3898ae158/cs0"
+				}
+			],
+			"coverage": {
+				"subject": "aaaaaaaa-0000-0000-0000-000000xc0001:Codeunit:50102#564f36f7d14874ad277d7d0804651a7acf423a857a4b9918203f9df3898ae158",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

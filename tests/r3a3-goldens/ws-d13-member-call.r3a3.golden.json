@@ -1,0 +1,18 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+				"directStatus": "partial",
+				"inheritedStatus": "partial",
+				"reasons": ["external-target"],
+				"unknownTargets": [
+					"11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc"
+				]
+			}
+		}
+	]
+}

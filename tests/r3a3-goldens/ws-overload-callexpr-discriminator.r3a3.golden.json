@@ -1,0 +1,108 @@
+{
+	"summaries": [
+		{
+			"routineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op2"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "cccccccc-1111-2222-3333-444444444444:Table:50121",
+					"witnessOperationId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op2",
+					"witnessCallsiteId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "cccccccc-1111-2222-3333-444444444444:Table:50121",
+					"witnessOperationId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50120#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op1",
+					"witnessCallsiteId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"coverage": {
+				"subject": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#92cff6d6e03f88c2443ee3aed57332dcc51be2e3548ae89a7395387446a9158e",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "cccccccc-1111-2222-3333-444444444444:Codeunit:50122#92cff6d6e03f88c2443ee3aed57332dcc51be2e3548ae89a7395387446a9158e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

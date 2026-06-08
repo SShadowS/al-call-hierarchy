@@ -1,0 +1,25 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000003-0000-0000-0000-000000000000:Table:50100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "10000003-0000-0000-0000-000000000000:Table:50100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000003-0000-0000-0000-000000000000:Table:50100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

@@ -1,0 +1,40 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000006-0000-0000-0000-000000000000:Table:50103#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+			"capabilityFactsDirect": [
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.com/notify"
+					},
+					"witnessCallsiteId": "10000006-0000-0000-0000-000000000000:Table:50103#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "response",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000006-0000-0000-0000-000000000000:Table:50103#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

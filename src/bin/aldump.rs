@@ -47,7 +47,7 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
-         --r3a2-summary-core | --r3a2-trace] \
+         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -64,6 +64,7 @@ fn main() -> ExitCode {
     let mut r3a1_combined_graph = false;
     let mut r3a2_summary_core = false;
     let mut r3a2_trace = false;
+    let mut r3a3_cone_coverage = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -110,6 +111,10 @@ fn main() -> ExitCode {
             r3a2_trace = true;
             continue;
         }
+        if arg == "--r3a3-cone-coverage" {
+            r3a3_cone_coverage = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -128,6 +133,7 @@ fn main() -> ExitCode {
         r3a1_combined_graph,
         r3a2_summary_core,
         r3a2_trace,
+        r3a3_cone_coverage,
     ]
     .iter()
     .filter(|f| **f)
@@ -137,7 +143,7 @@ fn main() -> ExitCode {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
              --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph / \
-             --r3a2-summary-core / --r3a2-trace are mutually exclusive"
+             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage are mutually exclusive"
         );
         return usage();
     }
@@ -172,6 +178,38 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize R3a-2 summary-core projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if r3a3_cone_coverage {
+        // R3a-3 CAPABILITY CONE + COVERAGE: run the SOURCE-ONLY L0→L3 pipeline, then
+        // the cone/coverage pass (direct capability extraction over the resolved
+        // features + the publisher-fact injection → composeInheritedCones), and emit
+        // the stable projection (capabilityFactsDirect / capabilityFactsInherited /
+        // coverage per routine) in the SAME shape/key-order as the al-sem
+        // `<fixture>.r3a3.golden.json`. CAPTURE POINT: POST-computeSummaries cone pass;
+        // NO dep hooks (R3a-4). Fail-closed/empty layouts → an empty projection.
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                al_call_hierarchy::engine::l4::capability_cone::project_r3a3(&resolved)
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-3 projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l4::capability_cone::R3a3Projection { summaries: vec![] }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R3a-3 cone+coverage projection: {e}");
                 ExitCode::FAILURE
             }
         };

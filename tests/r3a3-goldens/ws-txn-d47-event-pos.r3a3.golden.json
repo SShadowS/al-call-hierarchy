@@ -1,0 +1,208 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+			"capabilityFactsDirect": [
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4720:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"recordVariableId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4720:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "publish",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000::OnAfterProcess::d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/cs0",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/notify"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				},
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/cs0",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+			"capabilityFactsDirect": [
+				{
+					"op": "publish",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000::OnAfterProcess::d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "event-dispatch",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/notify"
+					},
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				},
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "event-dispatch",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+			"capabilityFactsDirect": [
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/notify"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				},
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

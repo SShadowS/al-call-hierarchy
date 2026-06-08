@@ -1,0 +1,571 @@
+//! R3a-3 — CAPABILITY CONE + COVERAGE differential (the LAST two RoutineSummary
+//! fields) over the SOURCE-ONLY corpus + the anti-degenerate matrix.
+//!
+//! For each committed al-sem golden under `tests/r3a3-goldens/<fixture>.r3a3.golden.json`,
+//! run the Rust source-only L0→L3→cone/coverage pass
+//! (`assemble_and_resolve_workspace_default(...)` → `project_r3a3(...)`) over the matching
+//! `tests/r0-corpus/<fixture>` workspace and assert it BYTE-MATCHES the golden (structural
+//! positional diff over the already-canonically-sorted projection). The SAME `ws-*`
+//! SOURCE-ONLY corpus the al-sem dump read.
+//!
+//! ## Capture point (R3a-3)
+//!
+//! POST-`computeSummaries` cone pass — the final mutated `routine.summary`
+//! `capabilityFactsDirect` / `capabilityFactsInherited` / `coverage`. NO dep hooks
+//! (R3a-4); the R3a-2 CORE (dbEffects/uncertainties/parameterRoles) is NOT projected here.
+//! modelInstanceId is `r0` on BOTH sides; the projection keys by stable ids.
+//!
+//! ## ANTI-DEGENERATE matrix (fail-on-zero) — REAL BFS counts (review note 1)
+//!
+//! The distribution / status counts (routinesWithInheritedFacts,
+//! coveragesWithNonTrivialInheritedStatus, provenance/confidence/op/via/directStatus/
+//! inheritedStatus distributions) are computed from the RUST projection and CROSS-CHECKED
+//! against the al-sem `manifest.json` (ground truth) where comparable. The two PROXY
+//! fields the al-sem manifest carries (`factsWithMoreThan1HopWitness` = every inherited
+//! fact; `equalDistanceTies` = the tie fixture's inherited-fact routines) are NOT
+//! recomputed against the manifest — instead the Rust side computes the GENUINE
+//! BFS-distance counts (`compute_r3a3_real_matrix`): real >1-hop shortest witnesses + real
+//! equal-distance ties (≥2 distinct first-hop edges reaching a key at the same minimum
+//! distance). Both must be > 0 (the cone genuinely propagated multi-hop + a real tie fired).
+//!
+//! ## KNOWN_DIVERGENCES gating
+//!
+//! Reuses the repo-root `KNOWN_DIVERGENCES.json` with exact `(test, fixture, path)`
+//! matching, scoped to `test == R3A3_TEST_NAME`. Target: empty.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_call_hierarchy::engine::l4::capability_cone::{
+    compute_r3a3_real_matrix, project_r3a3, R3a3Projection,
+};
+use serde::Deserialize;
+use serde_json::Value;
+
+const R3A3_TEST_NAME: &str = "differential_r3a3_cone_coverage_match_goldens";
+
+/// Keys that must NEVER appear on either side of the R3a-3 comparison — the R3a-2
+/// CORE fields + later-gate (R3a-4) dep-hook surfaces. Mirrors the al-sem manifest's
+/// `forbiddenKeys`.
+const R3A3_FORBIDDEN_KEYS: &[&str] = &[
+    "dbEffects",
+    "uncertainties",
+    "parameterRoles",
+    "inRecursiveCycle",
+    "hasUnresolvedCalls",
+    "fieldEffects",
+    "citedDepEvidence",
+    "depOrderIndex",
+    "intraAppCallEdges",
+];
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn goldens_dir() -> PathBuf {
+    repo_root().join("tests").join("r3a3-goldens")
+}
+
+fn corpus_dir() -> PathBuf {
+    repo_root().join("tests").join("r0-corpus")
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AllowEntry {
+    #[serde(default = "default_allow_test")]
+    test: String,
+    fixture: String,
+    path: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    reason: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    expires: String,
+}
+
+fn default_allow_test() -> String {
+    "differential_identity_subset_matches_goldens".to_string()
+}
+
+fn load_allowlist() -> Vec<AllowEntry> {
+    let path = repo_root().join("KNOWN_DIVERGENCES.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
+}
+
+#[derive(Debug, Clone)]
+struct Divergence {
+    fixture: String,
+    path: String,
+    golden_value: String,
+    rust_value: String,
+}
+
+/// Discover every `tests/r3a3-goldens/*.r3a3.golden.json`, sorted by fixture name.
+fn discover_goldens() -> Vec<(String, PathBuf)> {
+    let dir = goldens_dir();
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read R3a-3 goldens dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".r3a3.golden.json") {
+            continue;
+        }
+        let fixture = name.trim_end_matches(".r3a3.golden.json").to_string();
+        out.push((fixture, entry.path()));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// The R3a-3 distribution / status matrix (the al-sem manifest fields that are
+/// computed IDENTICALLY on both sides → directly cross-checkable).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct R3a3DistMatrix {
+    routine_count: usize,
+    routines_with_inherited_facts: usize,
+    coverages_with_non_trivial_inherited_status: usize,
+    provenance: BTreeMap<String, usize>,
+    confidence: BTreeMap<String, usize>,
+    op: BTreeMap<String, usize>,
+    via: BTreeMap<String, usize>,
+    direct_status: BTreeMap<String, usize>,
+    inherited_status: BTreeMap<String, usize>,
+}
+
+impl R3a3DistMatrix {
+    fn add(&mut self, o: &R3a3DistMatrix) {
+        self.routine_count += o.routine_count;
+        self.routines_with_inherited_facts += o.routines_with_inherited_facts;
+        self.coverages_with_non_trivial_inherited_status +=
+            o.coverages_with_non_trivial_inherited_status;
+        for (m, om) in [
+            (&mut self.provenance, &o.provenance),
+            (&mut self.confidence, &o.confidence),
+            (&mut self.op, &o.op),
+            (&mut self.via, &o.via),
+            (&mut self.direct_status, &o.direct_status),
+            (&mut self.inherited_status, &o.inherited_status),
+        ] {
+            for (k, v) in om {
+                *m.entry(k.clone()).or_insert(0) += v;
+            }
+        }
+    }
+}
+
+/// Compute the distribution matrix for ONE projection `Value` (golden OR rust).
+fn dist_matrix_of(proj: &Value) -> R3a3DistMatrix {
+    let mut m = R3a3DistMatrix::default();
+    let Some(summaries) = proj.get("summaries").and_then(|s| s.as_array()) else {
+        return m;
+    };
+    for s in summaries {
+        m.routine_count += 1;
+        let direct = s
+            .get("capabilityFactsDirect")
+            .and_then(|f| f.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let inherited = s
+            .get("capabilityFactsInherited")
+            .and_then(|f| f.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if !inherited.is_empty() {
+            m.routines_with_inherited_facts += 1;
+        }
+        for f in direct.iter().chain(inherited.iter()) {
+            let g = |k: &str| f.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            *m.provenance.entry(g("provenance")).or_insert(0) += 1;
+            *m.confidence.entry(g("confidence")).or_insert(0) += 1;
+            *m.op.entry(g("op")).or_insert(0) += 1;
+            *m.via.entry(g("via")).or_insert(0) += 1;
+        }
+        let cov = s.get("coverage");
+        let ds = cov
+            .and_then(|c| c.get("directStatus"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let is = cov
+            .and_then(|c| c.get("inheritedStatus"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if is != "complete" {
+            m.coverages_with_non_trivial_inherited_status += 1;
+        }
+        *m.direct_status.entry(ds).or_insert(0) += 1;
+        *m.inherited_status.entry(is).or_insert(0) += 1;
+    }
+    m
+}
+
+/// Read the comparable subset of the al-sem manifest's corpus-wide `matrix`.
+fn manifest_dist_matrix() -> R3a3DistMatrix {
+    let path = goldens_dir().join("manifest.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read R3a-3 manifest {}: {e}", path.display()));
+    let json: Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("R3a-3 manifest {} not valid JSON: {e}", path.display()));
+    let mat = json
+        .get("matrix")
+        .unwrap_or_else(|| panic!("R3a-3 manifest carries no `matrix` block"));
+    let u = |k: &str| mat.get(k).and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let dist = |k: &str| -> BTreeMap<String, usize> {
+        let mut out = BTreeMap::new();
+        if let Some(o) = mat.get(k).and_then(|v| v.as_object()) {
+            for (kk, vv) in o {
+                out.insert(kk.clone(), vv.as_u64().unwrap_or(0) as usize);
+            }
+        }
+        out
+    };
+    R3a3DistMatrix {
+        routine_count: u("routineCount"),
+        routines_with_inherited_facts: u("routinesWithInheritedFacts"),
+        coverages_with_non_trivial_inherited_status: u("coveragesWithNonTrivialInheritedStatus"),
+        provenance: dist("provenanceDistribution"),
+        confidence: dist("confidenceDistribution"),
+        op: dist("opDistribution"),
+        via: dist("viaDistribution"),
+        direct_status: dist("directStatusDistribution"),
+        inherited_status: dist("inheritedStatusDistribution"),
+    }
+}
+
+/// Recursively collect every forbidden object-key in `value`.
+fn scan_forbidden(value: &Value, path: &str, hits: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (k, v) in map {
+                let child = format!("{path}.{k}");
+                if R3A3_FORBIDDEN_KEYS.contains(&k.as_str()) {
+                    hits.push(child.clone());
+                }
+                scan_forbidden(v, &child, hits);
+            }
+        }
+        Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                scan_forbidden(v, &format!("{path}[{i}]"), hits);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Recursively diff two projection values POSITIONALLY (both sides already sorted).
+fn diff_value(fixture: &str, path: &str, golden: &Value, rust: &Value, out: &mut Vec<Divergence>) {
+    match (golden, rust) {
+        (Value::Object(g), Value::Object(r)) => {
+            for (k, gv) in g {
+                let child = format!("{path}.{k}");
+                match r.get(k) {
+                    Some(rv) => diff_value(fixture, &child, gv, rv, out),
+                    None => out.push(Divergence {
+                        fixture: fixture.to_string(),
+                        path: format!("{child}:MISSING_IN_RUST"),
+                        golden_value: compact(gv),
+                        rust_value: "<absent>".to_string(),
+                    }),
+                }
+            }
+            for (k, rv) in r {
+                if !g.contains_key(k) {
+                    out.push(Divergence {
+                        fixture: fixture.to_string(),
+                        path: format!("{path}.{k}:EXTRA_IN_RUST"),
+                        golden_value: "<absent>".to_string(),
+                        rust_value: compact(rv),
+                    });
+                }
+            }
+        }
+        (Value::Array(g), Value::Array(r)) => {
+            if g.len() != r.len() {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}:LENGTH"),
+                    golden_value: g.len().to_string(),
+                    rust_value: r.len().to_string(),
+                });
+            }
+            let n = g.len().min(r.len());
+            for i in 0..n {
+                diff_value(fixture, &format!("{path}[{i}]"), &g[i], &r[i], out);
+            }
+            for (i, gv) in g.iter().enumerate().skip(n) {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}[{i}]:MISSING_IN_RUST"),
+                    golden_value: compact(gv),
+                    rust_value: "<absent>".to_string(),
+                });
+            }
+            for (i, rv) in r.iter().enumerate().skip(n) {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: format!("{path}[{i}]:EXTRA_IN_RUST"),
+                    golden_value: "<absent>".to_string(),
+                    rust_value: compact(rv),
+                });
+            }
+        }
+        _ => {
+            if golden != rust {
+                out.push(Divergence {
+                    fixture: fixture.to_string(),
+                    path: path.to_string(),
+                    golden_value: compact(golden),
+                    rust_value: compact(rust),
+                });
+            }
+        }
+    }
+}
+
+fn compact(v: &Value) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| format!("{v:?}"))
+}
+
+#[test]
+fn differential_r3a3_cone_coverage_match_goldens() {
+    let goldens = discover_goldens();
+    assert!(
+        !goldens.is_empty(),
+        "no R3a-3 goldens discovered under {} — corpus missing?",
+        goldens_dir().display()
+    );
+
+    let allowlist: Vec<AllowEntry> = load_allowlist()
+        .into_iter()
+        .filter(|e| e.test == R3A3_TEST_NAME)
+        .collect();
+
+    let mut all_divergences: Vec<Divergence> = Vec::new();
+    let mut forbidden_hits: Vec<String> = Vec::new();
+    let mut rust_dist = R3a3DistMatrix::default();
+    let mut golden_dist = R3a3DistMatrix::default();
+    // REAL (BFS-derived) counts — the self-validating proxies (review note 1).
+    let mut real_routines_with_inherited = 0usize;
+    let mut real_more_than_1_hop = 0usize;
+    let mut real_equal_distance_ties = 0usize;
+
+    for (fixture, golden_path) in &goldens {
+        let fixture_dir = corpus_dir().join(fixture);
+        assert!(
+            fixture_dir.is_dir(),
+            "R3a-3 golden {} has no matching in-repo fixture at {} (offline corpus incomplete)",
+            golden_path.display(),
+            fixture_dir.display()
+        );
+
+        let golden_text = std::fs::read_to_string(golden_path)
+            .unwrap_or_else(|e| panic!("read R3a-3 golden {}: {e}", golden_path.display()));
+        let golden_json: Value = serde_json::from_str(&golden_text).unwrap_or_else(|e| {
+            panic!(
+                "R3a-3 golden {} is not valid JSON: {e}",
+                golden_path.display()
+            )
+        });
+        // Shape guard — the golden must parse as the R3a3Projection serde type.
+        let _: R3a3Projection = serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
+            panic!(
+                "R3a-3 golden {} does not parse as R3a3Projection: {e}",
+                golden_path.display()
+            )
+        });
+
+        let resolved = assemble_and_resolve_workspace_default(&fixture_dir);
+        let projection = match &resolved {
+            Some(r) => project_r3a3(r),
+            None => R3a3Projection { summaries: vec![] },
+        };
+        let rust_json = serde_json::to_value(&projection)
+            .unwrap_or_else(|e| panic!("serialize Rust R3a-3 projection for {fixture}: {e}"));
+
+        scan_forbidden(
+            &golden_json,
+            &format!("{fixture}:golden"),
+            &mut forbidden_hits,
+        );
+        scan_forbidden(&rust_json, &format!("{fixture}:rust"), &mut forbidden_hits);
+
+        rust_dist.add(&dist_matrix_of(&rust_json));
+        golden_dist.add(&dist_matrix_of(&golden_json));
+
+        if let Some(r) = &resolved {
+            let real = compute_r3a3_real_matrix(r);
+            real_routines_with_inherited += real.routines_with_inherited_facts;
+            real_more_than_1_hop += real.facts_with_more_than_1_hop_witness;
+            real_equal_distance_ties += real.equal_distance_ties;
+        }
+
+        diff_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    all_divergences
+        .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
+
+    // --- Forbidden-field guard (hard fail, never allowlistable) -------------
+    assert!(
+        forbidden_hits.is_empty(),
+        "FORBIDDEN R3a-2-core / dep-hook field(s) leaked into the R3a-3 comparison \
+         (golden or rust):\n  {}",
+        forbidden_hits.join("\n  ")
+    );
+
+    // --- ANTI-DEGENERATE matrix gate (fail-on-zero) -------------------------
+    eprintln!(
+        "R3a-3 matrix ({} fixture(s)): routines={} withInheritedFacts(dist)={} \
+         nonTrivialInheritedCov={} prov={:?} conf={:?} via={:?} \
+         REAL: routinesWithInherited={} >1hop={} ties={}",
+        goldens.len(),
+        rust_dist.routine_count,
+        rust_dist.routines_with_inherited_facts,
+        rust_dist.coverages_with_non_trivial_inherited_status,
+        rust_dist.provenance,
+        rust_dist.confidence,
+        rust_dist.via,
+        real_routines_with_inherited,
+        real_more_than_1_hop,
+        real_equal_distance_ties,
+    );
+
+    let mut degenerate: Vec<String> = Vec::new();
+    if rust_dist.routines_with_inherited_facts == 0 {
+        degenerate.push(
+            "routinesWithInheritedFacts=0 — need ≥1 routine with inherited capability facts \
+             (the cone propagated)"
+                .to_string(),
+        );
+    }
+    if real_more_than_1_hop == 0 {
+        degenerate.push(
+            "REAL factsWithMoreThan1HopWitness=0 — need ≥1 inherited fact with a GENUINE \
+             >1-hop shortest witness (BFS-derived)"
+                .to_string(),
+        );
+    }
+    if real_equal_distance_ties == 0 {
+        degenerate.push(
+            "REAL equalDistanceTies=0 — need ≥1 GENUINE equal-distance tie (≥2 distinct \
+             first-hop edges reaching a key at the same minimum distance)"
+                .to_string(),
+        );
+    }
+    if rust_dist.coverages_with_non_trivial_inherited_status == 0 {
+        degenerate.push(
+            "coveragesWithNonTrivialInheritedStatus=0 — need ≥1 non-trivial inheritedStatus"
+                .to_string(),
+        );
+    }
+    // Each provenance/confidence/op/via kind family present.
+    for kind in ["direct", "inherited"] {
+        if rust_dist.provenance.get(kind).copied().unwrap_or(0) == 0 {
+            degenerate.push(format!("provenance '{kind}' absent (need ≥1)"));
+        }
+    }
+    for kind in ["static", "unresolved"] {
+        if rust_dist.confidence.get(kind).copied().unwrap_or(0) == 0 {
+            degenerate.push(format!("confidence '{kind}' absent (need ≥1)"));
+        }
+    }
+    for kind in ["self", "call", "event-dispatch"] {
+        if rust_dist.via.get(kind).copied().unwrap_or(0) == 0 {
+            degenerate.push(format!("via '{kind}' absent (need ≥1)"));
+        }
+    }
+    assert!(
+        degenerate.is_empty(),
+        "DEGENERATE R3a-3 matrix — the cone/coverage is NOT exercising the full surface:\n  {}",
+        degenerate.join("\n  "),
+    );
+
+    // Oracle cross-check #1: the Rust corpus DIST matrix == the GOLDEN corpus DIST
+    // matrix (recomputed from the goldens — independent of the manifest).
+    assert_eq!(
+        rust_dist, golden_dist,
+        "R3a-3 distribution matrix MISMATCH: Rust corpus matrix != recomputed-from-goldens \
+         matrix\n  rust   = {rust_dist:?}\n  golden = {golden_dist:?}",
+    );
+    // Oracle cross-check #2: the Rust corpus DIST matrix == the al-sem manifest's
+    // comparable subset (al-sem ground truth, captured at dump time). The two PROXY
+    // fields (factsWithMoreThan1HopWitness / equalDistanceTies) are intentionally NOT
+    // cross-checked here — the Rust REAL counts above supersede them.
+    let manifest = manifest_dist_matrix();
+    assert_eq!(
+        rust_dist, manifest,
+        "R3a-3 distribution matrix MISMATCH vs al-sem manifest.json oracle\n  rust     = \
+         {rust_dist:?}\n  manifest = {manifest:?}",
+    );
+
+    // --- Allowlist gating ---------------------------------------------------
+    let mut entry_used = vec![false; allowlist.len()];
+    let mut undocumented: Vec<&Divergence> = Vec::new();
+    for div in &all_divergences {
+        let mut covered = false;
+        for (i, entry) in allowlist.iter().enumerate() {
+            if entry.fixture == div.fixture && entry.path == div.path {
+                entry_used[i] = true;
+                covered = true;
+            }
+        }
+        if !covered {
+            undocumented.push(div);
+        }
+    }
+    let unused: Vec<&AllowEntry> = allowlist
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !entry_used[*i])
+        .map(|(_, e)| e)
+        .collect();
+
+    let mut failure = String::new();
+    if !undocumented.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNDOCUMENTED R3a-3 divergence(s) (not in KNOWN_DIVERGENCES.json, \
+             test={R3A3_TEST_NAME}):\n",
+            undocumented.len()
+        ));
+        for d in &undocumented {
+            failure.push_str(&format!(
+                "  [{}] {}\n      golden = {}\n      rust   = {}\n",
+                d.fixture, d.path, d.golden_value, d.rust_value
+            ));
+        }
+    }
+    if !unused.is_empty() {
+        failure.push_str(&format!(
+            "\n{} UNUSED R3a-3 allowlist entr(y/ies) (no matching divergence this run):\n",
+            unused.len()
+        ));
+        for e in &unused {
+            failure.push_str(&format!(
+                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
+                e.fixture, e.path, e.reason, e.expires
+            ));
+        }
+    }
+
+    assert!(
+        failure.is_empty(),
+        "R3a-3 cone-coverage differential FAILED:{failure}"
+    );
+
+    eprintln!(
+        "R3a-3 differential: {} fixture(s), 0 divergences, allowlist fully consumed ({} entr(y/ies)).",
+        goldens.len(),
+        allowlist.len()
+    );
+}

@@ -1,0 +1,64 @@
+{
+	"summaries": [
+		{
+			"routineId": "c2c00002-0000-0000-0000-000000000002:Codeunit:50100#409ff116cbe4d047c08b8546f116f2dfd9982b95e6e59a651ee618b9fd805da1",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "c2c00002-0000-0000-0000-000000000002:Codeunit:50100#409ff116cbe4d047c08b8546f116f2dfd9982b95e6e59a651ee618b9fd805da1",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "c2c00002-0000-0000-0000-000000000002:Codeunit:50101#766598f78e48b70cf7ed5539472faa2ebd32e808eaff2ede74c5d34ee4225877",
+			"capabilityFactsDirect": [
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "c2c00002-0000-0000-0000-000000000002:Codeunit:50101#766598f78e48b70cf7ed5539472faa2ebd32e808eaff2ede74c5d34ee4225877",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "c2c00002-0000-0000-0000-000000000002:Codeunit:50102#026d0afc0c6e41d6d9cc0f3cfd984d76d2473fcc3a103695f5b513b5904dd40a",
+			"capabilityFactsDirect": [
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "c2c00002-0000-0000-0000-000000000002:Codeunit:50102#026d0afc0c6e41d6d9cc0f3cfd984d76d2473fcc3a103695f5b513b5904dd40a",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

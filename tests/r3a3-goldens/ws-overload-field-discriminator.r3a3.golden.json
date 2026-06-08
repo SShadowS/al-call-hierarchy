@@ -1,0 +1,59 @@
+{
+	"summaries": [
+		{
+			"routineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50132#d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50130#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c/op0",
+					"witnessCallsiteId": "dddddddd-1111-2222-3333-555555555555:Codeunit:50132#d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2/cs0"
+				}
+			],
+			"coverage": {
+				"subject": "dddddddd-1111-2222-3333-555555555555:Codeunit:50132#d40cac052db69e3093fbcf7a3d1372717e45d1a6b10096737d2172b62af375d2",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

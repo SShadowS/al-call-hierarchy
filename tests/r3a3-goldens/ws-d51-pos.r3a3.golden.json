@@ -1,0 +1,56 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+			"capabilityFactsDirect": [
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed/op0"
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://api.example.test/orders"
+					},
+					"witnessCallsiteId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Post",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "content",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed/cs1"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

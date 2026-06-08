@@ -1,0 +1,79 @@
+{
+	"summaries": [
+		{
+			"routineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "55555555-5555-5555-5555-555555555555:Table:50900",
+					"witnessOperationId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f/op0",
+					"witnessCallsiteId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"coverage": {
+				"subject": "55555555-5555-5555-5555-555555555555:Codeunit:50901#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "55555555-5555-5555-5555-555555555555:Table:50900",
+					"witnessOperationId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "55555555-5555-5555-5555-555555555555:Codeunit:50901#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "55555555-5555-5555-5555-555555555555:Codeunit:50901#f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "55555555-5555-5555-5555-555555555555:Codeunit:50901#f04a218325b329b6c07ec901786e4259ddfadabfec48b28e55b6f06034e337e5",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

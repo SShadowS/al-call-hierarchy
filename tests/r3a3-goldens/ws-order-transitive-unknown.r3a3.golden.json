@@ -1,0 +1,84 @@
+{
+	"summaries": [
+		{
+			"routineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f/op2"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "22222222-0000-0000-0000-000000tu0001:Table:50100",
+					"witnessOperationId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f/op2",
+					"witnessCallsiteId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c/cs0"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "22222222-0000-0000-0000-000000tu0001:Table:50100",
+					"witnessOperationId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#c8b995140afe02472e2c3d35b47d2a2ff54a3bb867bbb25da3f7abec01b5b72f/op1",
+					"witnessCallsiteId": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c/cs0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/ba457ffd987470a9da134bbaf4693877fa7dc1c5f822e3c27e317d9057608f5a/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"coverage": {
+				"subject": "22222222-0000-0000-0000-000000tu0001:Codeunit:50101#e3c6bd5ee03b1092db345d1341c5fcd1fb61ba7e289c90413ad039c4446bcc9c",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

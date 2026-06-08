@@ -1,0 +1,66 @@
+{
+	"summaries": [
+		{
+			"routineId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/op2"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100",
+					"witnessOperationId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.com/notify"
+					},
+					"witnessCallsiteId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "response",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

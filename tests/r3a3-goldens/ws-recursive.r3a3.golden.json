@@ -1,0 +1,67 @@
+{
+	"summaries": [
+		{
+			"routineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+					"witnessOperationId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+					"witnessOperationId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0",
+					"witnessCallsiteId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3/cs0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"coverage": {
+				"subject": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

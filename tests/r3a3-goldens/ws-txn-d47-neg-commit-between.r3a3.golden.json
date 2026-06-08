@@ -1,0 +1,84 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01/op2"
+				},
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4704:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"recordVariableId": "r0/e78563a8d158a66a1a0e6bf88c6dd9d8afb1e9b338e4d4c7463da5745d83cae3/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000d4704:Table:50100",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/e78563a8d158a66a1a0e6bf88c6dd9d8afb1e9b338e4d4c7463da5745d83cae3/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.test/ping"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "resp",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4704:Codeunit:50000#226b4a363a54af6515b6d1e081f77cd8360b094cf05d6bb7b1a349f33795da01",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

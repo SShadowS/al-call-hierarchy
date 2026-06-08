@@ -1,0 +1,128 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+			"capabilityFactsDirect": [
+				{
+					"op": "execute",
+					"resourceKind": "codeunit",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "50100"
+					},
+					"witnessCallsiteId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed/cs0",
+					"extra": {
+						"kind": "dispatch",
+						"objectType": "Codeunit"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+				"directStatus": "complete",
+				"inheritedStatus": "partial",
+				"reasons": ["object-run-unresolved"],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81/op0",
+					"witnessCallsiteId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs0"
+				},
+				{
+					"op": "execute",
+					"resourceKind": "codeunit",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "50100"
+					},
+					"witnessCallsiteId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs2",
+					"extra": {
+						"kind": "dispatch",
+						"objectType": "Codeunit"
+					}
+				}
+			],
+			"coverage": {
+				"subject": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+				"directStatus": "complete",
+				"inheritedStatus": "partial",
+				"reasons": ["object-run-unresolved"],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81/op0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+				"directStatus": "unknown",
+				"inheritedStatus": "partial",
+				"reasons": ["parse-incomplete"],
+				"unknownTargets": [
+					"11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80"
+				]
+			}
+		},
+		{
+			"routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81/op0",
+					"witnessCallsiteId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200/cs0"
+				}
+			],
+			"coverage": {
+				"subject": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

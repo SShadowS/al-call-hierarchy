@@ -1,0 +1,5864 @@
+{
+	"description": "R3a-3 capability-cone + coverage goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.r3a3.golden.json is the ALLOWLISTED projection of the per-routine capabilityFactsDirect / capabilityFactsInherited / coverage, captured POST-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the dump NEVER runs the dep hooks). All ids in stable form. See scripts/r3a3-projection.ts.",
+	"capturePoint": "post-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the final mutated routine.summary cone+coverage; NO dep hooks)",
+	"note": "R3a-3 is the cone+coverage ONLY. EXCLUDED (later gates): dbEffects/uncertainties/parameterRoles (R3a-2 core), fieldEffects (lazy/detector), the dep hooks (R3a-4), full cross-app (R3a-5). Source-only: .app-bearing fixtures are EXCLUDED.",
+	"alSemGitSha": "e63944e02119f78ede43de5174965742f5548ad0",
+	"treeSitterAlTag": "v2.5.2-shim",
+	"treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+	"cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+	"modelInstanceId": "r0",
+	"alsemVersion": "r3a3",
+	"forbiddenKeys": [
+		"dbEffects",
+		"uncertainties",
+		"parameterRoles",
+		"inRecursiveCycle",
+		"hasUnresolvedCalls",
+		"fieldEffects",
+		"citedDepEvidence",
+		"depOrderIndex",
+		"intraAppCallEdges"
+	],
+	"fixtureCount": 159,
+	"matrix": {
+		"routineCount": 573,
+		"routinesWithInheritedFacts": 142,
+		"factsWithMoreThan1HopWitness": 246,
+		"equalDistanceTies": 5,
+		"coveragesWithNonTrivialInheritedStatus": 22,
+		"provenanceDistribution": {
+			"direct": 556,
+			"inherited": 246
+		},
+		"confidenceDistribution": {
+			"configDynamic": 1,
+			"static": 708,
+			"unresolved": 93
+		},
+		"opDistribution": {
+			"commit": 90,
+			"delete": 6,
+			"error-throw": 16,
+			"execute": 15,
+			"insert": 71,
+			"modify": 116,
+			"publish": 95,
+			"read": 175,
+			"send": 38,
+			"store-write": 1,
+			"subscribe": 122,
+			"ui-confirm": 1,
+			"ui-error": 16,
+			"ui-message": 37,
+			"ui-window-open": 1,
+			"write-blob": 2
+		},
+		"viaDistribution": {
+			"call": 192,
+			"event-dispatch": 54,
+			"self": 556
+		},
+		"directStatusDistribution": {
+			"complete": 560,
+			"partial": 12,
+			"unknown": 1
+		},
+		"inheritedStatusDistribution": {
+			"complete": 551,
+			"partial": 22
+		}
+	},
+	"fixtures": [
+		{
+			"fixture": "ws-api-page",
+			"goldenFile": "ws-api-page.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-argument-bindings",
+			"goldenFile": "ws-argument-bindings.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 7,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 7
+				},
+				"inheritedStatusDistribution": {
+					"complete": 7
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-builtin-unresolved",
+			"goldenFile": "ws-builtin-unresolved.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-calls",
+			"goldenFile": "ws-calls.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 2,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 1,
+					"unresolved": 1
+				},
+				"opDistribution": {
+					"execute": 2
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 3,
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2,
+					"partial": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-callsite-resolutions",
+			"goldenFile": "ws-callsite-resolutions.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 3,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 3,
+					"execute": 2
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 4,
+					"unknown": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2,
+					"partial": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-combined",
+			"goldenFile": "ws-combined.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-compose",
+			"goldenFile": "ws-compose.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"read": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d1",
+			"goldenFile": "ws-d1.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"read": 5
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d1-dep-terminal",
+			"goldenFile": "ws-d1-dep-terminal.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"execute": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d1-multi-caller",
+			"goldenFile": "ws-d1-multi-caller.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 3,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"modify": 4,
+					"read": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d1-setup-singleton",
+			"goldenFile": "ws-d1-setup-singleton.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"read": 3
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d10-self-mod",
+			"goldenFile": "ws-d10-self-mod.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"modify": 2,
+					"read": 5
+				},
+				"viaDistribution": {
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d11-modifyall-init",
+			"goldenFile": "ws-d11-modifyall-init.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 3
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d11-no-get",
+			"goldenFile": "ws-d11-no-get.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"modify": 3,
+					"read": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d12-dead-event",
+			"goldenFile": "ws-d12-dead-event.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"publish": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d13-internal-call",
+			"goldenFile": "ws-d13-internal-call.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"execute": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d13-member-call",
+			"goldenFile": "ws-d13-member-call.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d14-dead-routine",
+			"goldenFile": "ws-d14-dead-routine.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d14-internal-no-ivt",
+			"goldenFile": "ws-d14-internal-no-ivt.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 7,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 7
+				},
+				"inheritedStatusDistribution": {
+					"complete": 7
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d14-page-procedure",
+			"goldenFile": "ws-d14-page-procedure.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d14-public-dead",
+			"goldenFile": "ws-d14-public-dead.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d16-obsolete",
+			"goldenFile": "ws-d16-obsolete.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 2,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"execute": 2
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"partial": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d17-drift",
+			"goldenFile": "ws-d17-drift.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"execute": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d18",
+			"goldenFile": "ws-d18.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"read": 4
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d19",
+			"goldenFile": "ws-d19.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"read": 3,
+					"subscribe": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d2",
+			"goldenFile": "ws-d2.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 7,
+				"routinesWithInheritedFacts": 5,
+				"factsWithMoreThan1HopWitness": 11,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 11
+				},
+				"confidenceDistribution": {
+					"static": 16
+				},
+				"opDistribution": {
+					"publish": 5,
+					"read": 4,
+					"subscribe": 7
+				},
+				"viaDistribution": {
+					"call": 8,
+					"event-dispatch": 3,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 7
+				},
+				"inheritedStatusDistribution": {
+					"complete": 7
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d20",
+			"goldenFile": "ws-d20.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"ui-error": 1,
+					"ui-message": 2
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d21",
+			"goldenFile": "ws-d21.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"read": 5
+				},
+				"viaDistribution": {
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d22",
+			"goldenFile": "ws-d22.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"read": 4
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d29",
+			"goldenFile": "ws-d29.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 8
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"delete": 1,
+					"modify": 2,
+					"read": 1,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"self": 8
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d3",
+			"goldenFile": "ws-d3.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"read": 7
+				},
+				"viaDistribution": {
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d3-method-stmt",
+			"goldenFile": "ws-d3-method-stmt.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"read": 4
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d3-temp",
+			"goldenFile": "ws-d3-temp.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"read": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d32",
+			"goldenFile": "ws-d32.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 4,
+				"factsWithMoreThan1HopWitness": 4,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 4
+				},
+				"confidenceDistribution": {
+					"static": 9
+				},
+				"opDistribution": {
+					"ui-message": 9
+				},
+				"viaDistribution": {
+					"call": 4,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d33",
+			"goldenFile": "ws-d33.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 6
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"delete": 5,
+					"modify": 1
+				},
+				"viaDistribution": {
+					"self": 6
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d34",
+			"goldenFile": "ws-d34.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 5
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d35",
+			"goldenFile": "ws-d35.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"commit": 4,
+					"subscribe": 3,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d36",
+			"goldenFile": "ws-d36.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"read": 4
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d37",
+			"goldenFile": "ws-d37.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 10,
+				"routinesWithInheritedFacts": 3,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 19,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 22
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 12,
+					"read": 7,
+					"ui-message": 2
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 19
+				},
+				"directStatusDistribution": {
+					"complete": 10
+				},
+				"inheritedStatusDistribution": {
+					"complete": 10
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d38",
+			"goldenFile": "ws-d38.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 4,
+				"factsWithMoreThan1HopWitness": 7,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7,
+					"inherited": 7
+				},
+				"confidenceDistribution": {
+					"static": 14
+				},
+				"opDistribution": {
+					"publish": 6,
+					"subscribe": 8
+				},
+				"viaDistribution": {
+					"call": 4,
+					"event-dispatch": 3,
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d39",
+			"goldenFile": "ws-d39.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 3,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"unresolved": 10
+				},
+				"opDistribution": {
+					"modify": 7,
+					"read": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d4-repeated-get",
+			"goldenFile": "ws-d4-repeated-get.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"read": 7
+				},
+				"viaDistribution": {
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d40",
+			"goldenFile": "ws-d40.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 10,
+				"routinesWithInheritedFacts": 6,
+				"factsWithMoreThan1HopWitness": 7,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 6,
+					"inherited": 7
+				},
+				"confidenceDistribution": {
+					"static": 2,
+					"unresolved": 11
+				},
+				"opDistribution": {
+					"modify": 8,
+					"read": 3,
+					"ui-message": 2
+				},
+				"viaDistribution": {
+					"call": 7,
+					"self": 6
+				},
+				"directStatusDistribution": {
+					"complete": 10
+				},
+				"inheritedStatusDistribution": {
+					"complete": 10
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d41",
+			"goldenFile": "ws-d41.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"unresolved": 3
+				},
+				"opDistribution": {
+					"read": 3
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d42",
+			"goldenFile": "ws-d42.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 4,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 6,
+					"unresolved": 6
+				},
+				"opDistribution": {
+					"read": 6,
+					"ui-message": 6
+				},
+				"viaDistribution": {
+					"call": 5,
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d5-modifyall",
+			"goldenFile": "ws-d5-modifyall.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"modify": 2,
+					"read": 5
+				},
+				"viaDistribution": {
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d50-neg",
+			"goldenFile": "ws-d50-neg.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"execute": 2,
+					"insert": 1,
+					"modify": 2,
+					"read": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d50-pos",
+			"goldenFile": "ws-d50-pos.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"execute": 2,
+					"insert": 1,
+					"modify": 2,
+					"read": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d51-jobqueue",
+			"goldenFile": "ws-d51-jobqueue.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"send": 1,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d51-neg",
+			"goldenFile": "ws-d51-neg.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"send": 1,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d51-pos",
+			"goldenFile": "ws-d51-pos.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"send": 1,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d7-event-cycle",
+			"goldenFile": "ws-d7-event-cycle.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 6,
+				"factsWithMoreThan1HopWitness": 16,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 16
+				},
+				"confidenceDistribution": {
+					"static": 20
+				},
+				"opDistribution": {
+					"publish": 12,
+					"subscribe": 8
+				},
+				"viaDistribution": {
+					"call": 12,
+					"event-dispatch": 4,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-d8-commit-in-tx",
+			"goldenFile": "ws-d8-commit-in-tx.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 7,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 8,
+					"inherited": 7
+				},
+				"confidenceDistribution": {
+					"static": 15
+				},
+				"opDistribution": {
+					"commit": 3,
+					"insert": 3,
+					"modify": 3,
+					"publish": 2,
+					"read": 1,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 4,
+					"event-dispatch": 3,
+					"self": 8
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-digest-pr49388",
+			"goldenFile": "ws-digest-pr49388.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 4,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 4
+				},
+				"confidenceDistribution": {
+					"static": 6,
+					"unresolved": 2
+				},
+				"opDistribution": {
+					"commit": 2,
+					"error-throw": 2,
+					"insert": 2,
+					"ui-error": 2
+				},
+				"viaDistribution": {
+					"call": 4,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4,
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4,
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-e2e",
+			"goldenFile": "ws-e2e.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 10,
+				"routinesWithInheritedFacts": 6,
+				"factsWithMoreThan1HopWitness": 11,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 6,
+					"inherited": 11
+				},
+				"confidenceDistribution": {
+					"static": 17
+				},
+				"opDistribution": {
+					"modify": 4,
+					"publish": 3,
+					"read": 6,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 9,
+					"event-dispatch": 2,
+					"self": 6
+				},
+				"directStatusDistribution": {
+					"complete": 10
+				},
+				"inheritedStatusDistribution": {
+					"complete": 10
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-chains",
+			"goldenFile": "ws-event-chains.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 7,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 7
+				},
+				"confidenceDistribution": {
+					"static": 12
+				},
+				"opDistribution": {
+					"insert": 3,
+					"modify": 3,
+					"publish": 2,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 4,
+					"event-dispatch": 3,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-cycle",
+			"goldenFile": "ws-event-cycle.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 5,
+				"factsWithMoreThan1HopWitness": 13,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 13
+				},
+				"confidenceDistribution": {
+					"static": 17
+				},
+				"opDistribution": {
+					"publish": 10,
+					"subscribe": 7
+				},
+				"viaDistribution": {
+					"call": 9,
+					"event-dispatch": 4,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-d45-deep",
+			"goldenFile": "ws-event-d45-deep.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 4,
+				"factsWithMoreThan1HopWitness": 12,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 12
+				},
+				"confidenceDistribution": {
+					"static": 17
+				},
+				"opDistribution": {
+					"insert": 5,
+					"publish": 6,
+					"subscribe": 6
+				},
+				"viaDistribution": {
+					"call": 7,
+					"event-dispatch": 5,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-fanout",
+			"goldenFile": "ws-event-fanout.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 7,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 10
+				},
+				"opDistribution": {
+					"publish": 2,
+					"subscribe": 8
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 7
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled",
+			"goldenFile": "ws-event-ishandled.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"insert": 1,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled-conditional-set",
+			"goldenFile": "ws-event-ishandled-conditional-set.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"insert": 1,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled-exit",
+			"goldenFile": "ws-event-ishandled-exit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"insert": 1,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled-helper",
+			"goldenFile": "ws-event-ishandled-helper.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 4,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 4
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"insert": 2,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled-multi-dispatch",
+			"goldenFile": "ws-event-ishandled-multi-dispatch.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 3,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 9
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 1,
+					"publish": 3,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 4,
+					"event-dispatch": 1,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-ishandled-nested-guard",
+			"goldenFile": "ws-event-ishandled-nested-guard.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"insert": 1,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-isolated",
+			"goldenFile": "ws-event-isolated.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"publish": 5
+				},
+				"viaDistribution": {
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-multi-sub-overlap",
+			"goldenFile": "ws-event-multi-sub-overlap.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 10
+				},
+				"opDistribution": {
+					"modify": 4,
+					"publish": 2,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-read-after-write",
+			"goldenFile": "ws-event-read-after-write.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 7,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 7
+				},
+				"confidenceDistribution": {
+					"static": 12
+				},
+				"opDistribution": {
+					"modify": 3,
+					"publish": 2,
+					"read": 3,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 4,
+					"event-dispatch": 3,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-event-transitive-exposure",
+			"goldenFile": "ws-event-transitive-exposure.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"insert": 3,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-events",
+			"goldenFile": "ws-events.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"publish": 2,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"call": 2,
+					"event-dispatch": 1,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-implicit-trigger",
+			"goldenFile": "ws-implicit-trigger.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"modify": 2,
+					"read": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-inline-suppress",
+			"goldenFile": "ws-inline-suppress.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 9
+				},
+				"confidenceDistribution": {
+					"static": 9
+				},
+				"opDistribution": {
+					"modify": 2,
+					"read": 5,
+					"send": 2
+				},
+				"viaDistribution": {
+					"self": 9
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-install-codeunit",
+			"goldenFile": "ws-install-codeunit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-interface-dispatch",
+			"goldenFile": "ws-interface-dispatch.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 2,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 2,
+					"partial": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2,
+					"partial": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-may-facts",
+			"goldenFile": "ws-may-facts.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 10,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"unresolved": 7
+				},
+				"opDistribution": {
+					"modify": 6,
+					"read": 1
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 10
+				},
+				"inheritedStatusDistribution": {
+					"complete": 10
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-member-call-codeunit",
+			"goldenFile": "ws-member-call-codeunit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 4,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 4
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"commit": 3,
+					"insert": 4,
+					"read": 1
+				},
+				"viaDistribution": {
+					"call": 4,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-member-call-resolution",
+			"goldenFile": "ws-member-call-resolution.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-multi-object",
+			"goldenFile": "ws-multi-object.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"read": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-op-order",
+			"goldenFile": "ws-op-order.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-branch-error",
+			"goldenFile": "ws-order-branch-error.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"error-throw": 1,
+					"send": 1,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-branch-exit",
+			"goldenFile": "ws-order-branch-exit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-commit-before-io",
+			"goldenFile": "ws-order-commit-before-io.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-conditional-exit-before-commit",
+			"goldenFile": "ws-order-conditional-exit-before-commit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 8
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"commit": 3,
+					"error-throw": 1,
+					"insert": 3,
+					"ui-error": 1
+				},
+				"viaDistribution": {
+					"self": 8
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-condleaf",
+			"goldenFile": "ws-order-condleaf.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-io-before-commit",
+			"goldenFile": "ws-order-io-before-commit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"commit": 1,
+					"insert": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-loop",
+			"goldenFile": "ws-order-loop.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-transitive-unknown",
+			"goldenFile": "ws-order-transitive-unknown.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 2
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-tryfunction",
+			"goldenFile": "ws-order-tryfunction.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-order-two-commits",
+			"goldenFile": "ws-order-two-commits.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 1,
+					"modify": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-arg-pos2",
+			"goldenFile": "ws-overload-arg-pos2.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"commit": 4,
+					"insert": 2
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-arg-type",
+			"goldenFile": "ws-overload-arg-type.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 2,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 4,
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4,
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-callexpr-discriminator",
+			"goldenFile": "ws-overload-callexpr-discriminator.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 2
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-char",
+			"goldenFile": "ws-overload-char.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 2,
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2,
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-enum-discriminator",
+			"goldenFile": "ws-overload-enum-discriminator.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-field-discriminator",
+			"goldenFile": "ws-overload-field-discriminator.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-overload-negatives",
+			"goldenFile": "ws-overload-negatives.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 9,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 2,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 7,
+					"partial": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 7,
+					"partial": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-paramfx",
+			"goldenFile": "ws-paramfx.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"modify": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-path-facts",
+			"goldenFile": "ws-path-facts.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 12,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 21,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 4,
+					"unresolved": 19
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 11,
+					"read": 7,
+					"ui-message": 4
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 21
+				},
+				"directStatusDistribution": {
+					"complete": 12
+				},
+				"inheritedStatusDistribution": {
+					"complete": 12
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-api-dynamic-dispatch",
+			"goldenFile": "ws-policy-api-dynamic-dispatch.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"configDynamic": 1,
+					"static": 1
+				},
+				"opDistribution": {
+					"execute": 1,
+					"read": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-api-isolated-storage",
+			"goldenFile": "ws-policy-api-isolated-storage.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"store-write": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-api-ledger-write",
+			"goldenFile": "ws-policy-api-ledger-write.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"insert": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-api-ui",
+			"goldenFile": "ws-policy-api-ui.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"ui-confirm": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-clean",
+			"goldenFile": "ws-policy-clean.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-commit-in-subscriber",
+			"goldenFile": "ws-policy-commit-in-subscriber.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"commit": 3,
+					"publish": 2,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-commit-in-trigger",
+			"goldenFile": "ws-policy-commit-in-trigger.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"commit": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-install-business-write",
+			"goldenFile": "ws-policy-install-business-write.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"insert": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-policy-trigger-http",
+			"goldenFile": "ws-policy-trigger-http.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-pr-summary-multi",
+			"goldenFile": "ws-pr-summary-multi.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 2
+				},
+				"viaDistribution": {
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-preflight-missingdep",
+			"goldenFile": "ws-preflight-missingdep.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-preset-txn",
+			"goldenFile": "ws-preset-txn.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-prove",
+			"goldenFile": "ws-prove.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 17,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {
+					"direct": 15,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 17
+				},
+				"opDistribution": {
+					"commit": 9,
+					"error-throw": 2,
+					"insert": 1,
+					"publish": 2,
+					"ui-error": 2,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 15
+				},
+				"directStatusDistribution": {
+					"complete": 16,
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 16,
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r0-canon-stress",
+			"goldenFile": "ws-r0-canon-stress.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 16,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"publish": 3,
+					"subscribe": 2
+				},
+				"viaDistribution": {
+					"event-dispatch": 1,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 16
+				},
+				"inheritedStatusDistribution": {
+					"complete": 16
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2a-record-types",
+			"goldenFile": "ws-r2a-record-types.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 8
+				},
+				"confidenceDistribution": {
+					"static": 7,
+					"unresolved": 1
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 4,
+					"read": 3
+				},
+				"viaDistribution": {
+					"self": 8
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2b-external",
+			"goldenFile": "ws-r2b-external.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2b-opaque",
+			"goldenFile": "ws-r2b-opaque.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 1,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"partial": 1
+				},
+				"inheritedStatusDistribution": {
+					"partial": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2c-maybe-elem",
+			"goldenFile": "ws-r2c-maybe-elem.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"publish": 1,
+					"subscribe": 4
+				},
+				"viaDistribution": {
+					"event-dispatch": 1,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2c-mixed",
+			"goldenFile": "ws-r2c-mixed.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 8,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 8,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 10
+				},
+				"opDistribution": {
+					"publish": 5,
+					"subscribe": 5
+				},
+				"viaDistribution": {
+					"event-dispatch": 2,
+					"self": 8
+				},
+				"directStatusDistribution": {
+					"complete": 8
+				},
+				"inheritedStatusDistribution": {
+					"complete": 8
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r2c-two-sub-maybe",
+			"goldenFile": "ws-r2c-two-sub-maybe.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"subscribe": 2
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-r3a3-equal-distance-tie",
+			"goldenFile": "ws-r3a3-equal-distance-tie.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 5,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 5,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"insert": 6
+				},
+				"viaDistribution": {
+					"call": 5,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-recursive",
+			"goldenFile": "ws-recursive.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"read": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-report-trigger",
+			"goldenFile": "ws-report-trigger.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-resolve",
+			"goldenFile": "ws-resolve.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"read": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-roots-config",
+			"goldenFile": "ws-roots-config.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-statement-tree",
+			"goldenFile": "ws-statement-tree.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 26,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 33
+				},
+				"confidenceDistribution": {
+					"static": 6,
+					"unresolved": 27
+				},
+				"opDistribution": {
+					"error-throw": 1,
+					"read": 27,
+					"ui-error": 1,
+					"ui-message": 4
+				},
+				"viaDistribution": {
+					"self": 33
+				},
+				"directStatusDistribution": {
+					"complete": 26
+				},
+				"inheritedStatusDistribution": {
+					"complete": 26
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-test-codeunit",
+			"goldenFile": "ws-test-codeunit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-triggers",
+			"goldenFile": "ws-triggers.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 6,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 2,
+					"unresolved": 1
+				},
+				"opDistribution": {
+					"modify": 3
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 6
+				},
+				"inheritedStatusDistribution": {
+					"complete": 6
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-tx-span",
+			"goldenFile": "ws-tx-span.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 2,
+					"read": 2
+				},
+				"viaDistribution": {
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d46-neg",
+			"goldenFile": "ws-txn-d46-neg.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 6
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 2,
+					"read": 2
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d46-pos",
+			"goldenFile": "ws-txn-d46-pos.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 4,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 6,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 6,
+					"inherited": 6
+				},
+				"confidenceDistribution": {
+					"static": 12
+				},
+				"opDistribution": {
+					"commit": 4,
+					"insert": 2,
+					"modify": 2,
+					"read": 4
+				},
+				"viaDistribution": {
+					"call": 6,
+					"self": 6
+				},
+				"directStatusDistribution": {
+					"complete": 4
+				},
+				"inheritedStatusDistribution": {
+					"complete": 4
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-advisory-deduped",
+			"goldenFile": "ws-txn-d47-advisory-deduped.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-advisory-post-nowrite",
+			"goldenFile": "ws-txn-d47-advisory-post-nowrite.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"commit": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-crosshop-iobeforecommit",
+			"goldenFile": "ws-txn-d47-crosshop-iobeforecommit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 2
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-event-neg-clean",
+			"goldenFile": "ws-txn-d47-event-neg-clean.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 8
+				},
+				"opDistribution": {
+					"publish": 2,
+					"send": 3,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-event-neg-isolated",
+			"goldenFile": "ws-txn-d47-event-neg-isolated.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 10
+				},
+				"opDistribution": {
+					"modify": 1,
+					"publish": 2,
+					"read": 1,
+					"send": 3,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-event-pos",
+			"goldenFile": "ws-txn-d47-event-pos.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 3,
+				"routinesWithInheritedFacts": 2,
+				"factsWithMoreThan1HopWitness": 5,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 5,
+					"inherited": 5
+				},
+				"confidenceDistribution": {
+					"static": 10
+				},
+				"opDistribution": {
+					"modify": 1,
+					"publish": 2,
+					"read": 1,
+					"send": 3,
+					"subscribe": 3
+				},
+				"viaDistribution": {
+					"call": 3,
+					"event-dispatch": 2,
+					"self": 5
+				},
+				"directStatusDistribution": {
+					"complete": 3
+				},
+				"inheritedStatusDistribution": {
+					"complete": 3
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-neg-commit-between",
+			"goldenFile": "ws-txn-d47-neg-commit-between.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-neg-readonly",
+			"goldenFile": "ws-txn-d47-neg-readonly.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-neg-temp",
+			"goldenFile": "ws-txn-d47-neg-temp.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"insert": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-pos-file",
+			"goldenFile": "ws-txn-d47-pos-file.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"write-blob": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-pos-http-commit-after",
+			"goldenFile": "ws-txn-d47-pos-http-commit-after.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d47-pos-http-nocommit",
+			"goldenFile": "ws-txn-d47-pos-http-nocommit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"modify": 1,
+					"read": 1,
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d48-neg",
+			"goldenFile": "ws-txn-d48-neg.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"unresolved": 1
+				},
+				"opDistribution": {
+					"send": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d48-pos",
+			"goldenFile": "ws-txn-d48-pos.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 5,
+				"routinesWithInheritedFacts": 3,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 1,
+					"unresolved": 4
+				},
+				"opDistribution": {
+					"send": 4,
+					"write-blob": 1
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 5
+				},
+				"inheritedStatusDistribution": {
+					"complete": 5
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-neg-commit-between",
+			"goldenFile": "ws-txn-d49-neg-commit-between.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 1,
+					"modify": 1,
+					"read": 1,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-neg-no-write",
+			"goldenFile": "ws-txn-d49-neg-no-write.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 1
+				},
+				"confidenceDistribution": {
+					"static": 1
+				},
+				"opDistribution": {
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"self": 1
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-neg-run-boundary",
+			"goldenFile": "ws-txn-d49-neg-run-boundary.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"modify": 1,
+					"read": 1,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-neg-temp-write",
+			"goldenFile": "ws-txn-d49-neg-temp-write.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"insert": 1,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-pos-modify-message",
+			"goldenFile": "ws-txn-d49-pos-modify-message.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"modify": 1,
+					"read": 1,
+					"ui-message": 1
+				},
+				"viaDistribution": {
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-txn-d49-pos-modify-runmodal",
+			"goldenFile": "ws-txn-d49-pos-modify-runmodal.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"execute": 1,
+					"modify": 1,
+					"read": 1,
+					"ui-window-open": 1
+				},
+				"viaDistribution": {
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-unresolved",
+			"goldenFile": "ws-unresolved.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-upgrade-codeunit",
+			"goldenFile": "ws-upgrade-codeunit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {},
+				"confidenceDistribution": {},
+				"opDistribution": {},
+				"viaDistribution": {},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-with-receiver",
+			"goldenFile": "ws-with-receiver.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 1,
+				"routinesWithInheritedFacts": 0,
+				"factsWithMoreThan1HopWitness": 0,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2
+				},
+				"confidenceDistribution": {
+					"static": 2
+				},
+				"opDistribution": {
+					"insert": 1,
+					"modify": 1
+				},
+				"viaDistribution": {
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 1
+				},
+				"inheritedStatusDistribution": {
+					"complete": 1
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-callee-always-error",
+			"goldenFile": "ws-xhop-callee-always-error.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 3,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 5
+				},
+				"opDistribution": {
+					"commit": 1,
+					"error-throw": 2,
+					"ui-error": 2
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 3
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-callee-error",
+			"goldenFile": "ws-xhop-callee-error.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 3,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 4,
+					"inherited": 3
+				},
+				"confidenceDistribution": {
+					"static": 7
+				},
+				"opDistribution": {
+					"commit": 2,
+					"error-throw": 2,
+					"send": 1,
+					"ui-error": 2
+				},
+				"viaDistribution": {
+					"call": 3,
+					"self": 4
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-conditional",
+			"goldenFile": "ws-xhop-conditional.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-io-before-commit",
+			"goldenFile": "ws-xhop-io-before-commit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"commit": 2,
+					"send": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-loop",
+			"goldenFile": "ws-xhop-loop.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-tryfunction-committer",
+			"goldenFile": "ws-xhop-tryfunction-committer.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 2,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 2
+				},
+				"confidenceDistribution": {
+					"static": 4
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 2
+				},
+				"viaDistribution": {
+					"call": 2,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		},
+		{
+			"fixture": "ws-xhop-write-commit",
+			"goldenFile": "ws-xhop-write-commit.r3a3.golden.json",
+			"matrix": {
+				"routineCount": 2,
+				"routinesWithInheritedFacts": 1,
+				"factsWithMoreThan1HopWitness": 1,
+				"equalDistanceTies": 0,
+				"coveragesWithNonTrivialInheritedStatus": 0,
+				"provenanceDistribution": {
+					"direct": 2,
+					"inherited": 1
+				},
+				"confidenceDistribution": {
+					"static": 3
+				},
+				"opDistribution": {
+					"commit": 2,
+					"insert": 1
+				},
+				"viaDistribution": {
+					"call": 1,
+					"self": 2
+				},
+				"directStatusDistribution": {
+					"complete": 2
+				},
+				"inheritedStatusDistribution": {
+					"complete": 2
+				}
+			},
+			"diagnostics": {
+				"total": 0,
+				"error": 0,
+				"warning": 0,
+				"info": 0
+			}
+		}
+	],
+	"exclusions": [
+		{
+			"fixture": "ws-diff-coverage-narrowed",
+			"reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+		},
+		{
+			"fixture": "ws-diff-new-capability",
+			"reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+		},
+		{
+			"fixture": "ws-diff-permission-expanded",
+			"reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+		},
+		{
+			"fixture": "ws-diff-removed-field",
+			"reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+		},
+		{
+			"fixture": "ws-diff-rename",
+			"reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+		}
+	]
+}

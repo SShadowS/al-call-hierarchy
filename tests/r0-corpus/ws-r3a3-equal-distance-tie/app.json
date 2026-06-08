@@ -1,0 +1,8 @@
+{
+	"id": "3a3e4400-0000-0000-0000-00000000003a",
+	"name": "R3a3EqualDistanceTie",
+	"publisher": "Test",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50000, "to": 59999 }]
+}

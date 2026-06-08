@@ -1,0 +1,122 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+			"capabilityFactsDirect": [
+				{
+					"op": "publish",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "event-dispatch",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"coverage": {
+				"subject": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+			"capabilityFactsDirect": [
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Table:50100",
+					"witnessOperationId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/3387e005534b7a91a88eb00d9b14a7c969ca7096dc1927a2a1be62fa41139f10/rv/rec",
+						"tempState": {
+							"kind": "parameter-dependent",
+							"parameterIndex": 0
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "publish",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+					"witnessCallsiteId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0/cs0",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				},
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessCallsiteId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0/cs0",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"coverage": {
+				"subject": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50000#96425754e5e43afe040f3ce4e0f55d252bd94cca7ab36deb8051595315b0e7d0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+			"capabilityFactsDirect": [
+				{
+					"op": "subscribe",
+					"resourceKind": "event",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"extra": {
+						"kind": "event",
+						"eventClass": "Integration"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

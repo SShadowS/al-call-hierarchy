@@ -1,0 +1,39 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+			"capabilityFactsDirect": [
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "unknown"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Send",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "req",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

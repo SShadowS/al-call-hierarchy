@@ -1,0 +1,33 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+			"capabilityFactsDirect": [
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d/op0"
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d/cs3"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

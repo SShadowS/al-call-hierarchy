@@ -1,0 +1,64 @@
+{
+	"summaries": [
+		{
+			"routineId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14/op1"
+				},
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14/op0"
+				},
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.com/notify"
+					},
+					"witnessCallsiteId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14/cs0",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "response",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14/cs1"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "cccccccc-0000-0000-0000-000000be0001:Codeunit:50101#926901def365c28cc6e57c6d30f59760865c2530257a07b86498e79a7d5b3a14",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

@@ -1,0 +1,67 @@
+{
+	"summaries": [
+		{
+			"routineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"resourceId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100",
+					"witnessOperationId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9/op0",
+					"witnessCallsiteId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716/cs0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"coverage": {
+				"subject": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#24ec26f0b72a60e717106d118ed38904d83aa68f63ca2f4cb2faab2c61498716",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "cccccccc-0000-0000-0000-0000000000c1:Table:61100",
+					"witnessOperationId": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "cccccccc-0000-0000-0000-0000000000c1:Codeunit:61101#e983915dc9c87868712ab6b2a536cdb946d35586f669452ac194739e551a19a9",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

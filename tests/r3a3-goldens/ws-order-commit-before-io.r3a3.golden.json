@@ -1,0 +1,43 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de/op2"
+				},
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/38416d920733d82a02a0c35a350e06a1cbe7bfaaa635ab42d2d9d3e80a5a1fe0/rv/rec",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

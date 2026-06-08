@@ -1,0 +1,52 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+			"capabilityFactsDirect": [
+				{
+					"op": "execute",
+					"resourceKind": "codeunit",
+					"confidence": "configDynamic",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "table-field",
+						"tableId": "unknown",
+						"fieldName": "Codeunit Id"
+					},
+					"witnessCallsiteId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0",
+					"extra": {
+						"kind": "dispatch",
+						"objectType": "Codeunit"
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "10000005-0000-0000-0000-000000000000:Table:50102",
+					"witnessOperationId": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000005-0000-0000-0000-000000000000:Page:50102#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+				"directStatus": "complete",
+				"inheritedStatus": "partial",
+				"reasons": ["object-run-unresolved"],
+				"unknownTargets": []
+			}
+		}
+	]
+}

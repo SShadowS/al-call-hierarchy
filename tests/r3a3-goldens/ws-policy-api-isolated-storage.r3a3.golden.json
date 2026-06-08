@@ -1,0 +1,41 @@
+{
+	"summaries": [
+		{
+			"routineId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+			"capabilityFactsDirect": [
+				{
+					"op": "store-write",
+					"resourceKind": "isolated-storage",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "secret-key"
+					},
+					"witnessCallsiteId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0",
+					"extra": {
+						"kind": "storage",
+						"keyArgSource": {
+							"kind": "literal",
+							"value": "secret-key"
+						},
+						"valueArgSource": {
+							"kind": "literal",
+							"value": "secret-value"
+						},
+						"scope": "Module"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

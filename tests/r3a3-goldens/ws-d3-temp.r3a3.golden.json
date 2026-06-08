@@ -1,0 +1,35 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "11111111-0000-0000-0000-0000000033d3:Table:50200",
+					"witnessOperationId": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/0119c54aa1f80f1d796136436d2901efb1208b0af7e7bff12726ff02dd6c4982/rv/tempcustomer",
+						"tempState": {
+							"kind": "known",
+							"value": true
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000033d3:Codeunit:50100#30c4072149e2af5070fe216fb0e353c6249664ccc5830b81f1c5b54109078d9f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

@@ -1,0 +1,34 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-00000000d13a:Codeunit:50113#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+			"capabilityFactsDirect": [
+				{
+					"op": "execute",
+					"resourceKind": "codeunit",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "enum",
+						"enumName": "Codeunit",
+						"member": "D13DepInternal"
+					},
+					"witnessCallsiteId": "11111111-0000-0000-0000-00000000d13a:Codeunit:50113#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/cs0",
+					"extra": {
+						"kind": "dispatch",
+						"objectType": "Codeunit"
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-00000000d13a:Codeunit:50113#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+				"directStatus": "complete",
+				"inheritedStatus": "partial",
+				"reasons": ["object-run-unresolved"],
+				"unknownTargets": []
+			}
+		}
+	]
+}

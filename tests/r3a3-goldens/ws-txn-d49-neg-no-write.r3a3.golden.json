@@ -1,0 +1,25 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000#840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+			"capabilityFactsDirect": [
+				{
+					"op": "ui-message",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000#840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-0000000d4904:Codeunit:50000#840a858e760822ba41f6398bfd0574cb2a2aa32f3b8b06ede6c8c3c9a5250cb5",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

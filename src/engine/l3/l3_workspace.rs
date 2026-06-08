@@ -123,6 +123,17 @@ pub struct L3RecordOperation {
 pub struct L3Variable {
     pub name: String,
     pub declared_type: String,
+    /// True when this variable is a routine parameter. Required by the R3a-3 L4
+    /// value-source classifier (`classifyIdentifier`: a parameter resolves to a
+    /// `parameter` ValueSource, a local to its initializer / `constant-var`).
+    pub is_parameter: bool,
+    /// 0-based parameter index when `is_parameter`.
+    pub parameter_index: Option<u32>,
+    /// The L2-captured one-hop initializer (`VariableSymbol.initializer`) as raw
+    /// ValueSource JSON. Required by the R3a-3 value-source classifier so local
+    /// dispatch / IO targets resolve to their literal/enum source (e.g.
+    /// `CodeunitId := 50100; Codeunit.Run(CodeunitId)` → literal 50100).
+    pub initializer: Option<serde_json::Value>,
 }
 
 /// A routine parameter (the L3-relevant subset of al-sem's `ParameterSymbol`) —
@@ -188,6 +199,12 @@ pub struct L3Routine {
     pub return_type: Option<String>,
     /// The routine's call sites (L2 body-walk output), the resolver input.
     pub call_sites: Vec<crate::engine::l2::features::PCallSite>,
+    /// The routine's operation sites (L2 body-walk output). Required by the R3a-3
+    /// L4 capability extraction (commit family reads `kind === "commit"`, error
+    /// family reads `kind === "error-call"`), and the unreachable-exclusion pass
+    /// (sites with `controlContext === "unreachable"` are dropped before family
+    /// dispatch — mirrors al-sem `extractCapabilities`).
+    pub operation_sites: Vec<crate::engine::l2::features::POperationSite>,
     /// The CFN statement-tree skeleton (L2 body-walk output). Required by the
     /// R3a-2 branch-aware CFG walker (`walkCFG` port) to join role state-sets at
     /// if/case/loop. `None` for opaque / TryFunction / bodyless routines (the
@@ -522,7 +539,7 @@ fn project_file(
                 continue;
             }
 
-            let Some((routine_id, features)) = project_routine_features(
+            let Some((routine_id, mut features)) = project_routine_features(
                 decl,
                 routine,
                 object_type,
@@ -536,6 +553,28 @@ fn project_file(
             ) else {
                 continue;
             };
+
+            // R1b control-context lattice (the SAME pass `aldump --l2` applies):
+            // populate `controlContext` on each callsite/operation site, including the
+            // error-call source-range post-pass. Required by the R3a-3 L4 capability
+            // extraction's UNREACHABLE EXCLUSION (sites with controlContext ===
+            // "unreachable" emit no facts — mirrors al-sem `extractCapabilities`).
+            // R3a-2's projection never reads control_context, so this is additive.
+            {
+                let cc_params = crate::engine::l2::scope::extract_parameters(routine, source);
+                let (_, attrs_json) =
+                    crate::engine::l2::l2_workspace::collect_attributes(routine, source);
+                let attr_names_lc: Vec<String> = attrs_json
+                    .iter()
+                    .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                    .map(|n| n.to_lowercase())
+                    .collect();
+                crate::engine::l2::control_context::apply_control_contexts(
+                    &mut features,
+                    &attr_names_lc,
+                    &cc_params,
+                );
+            }
 
             let record_variables = features
                 .record_variables
@@ -570,6 +609,9 @@ fn project_file(
                 .map(|v| L3Variable {
                     name: v.name.clone(),
                     declared_type: v.declared_type.clone(),
+                    is_parameter: v.is_parameter,
+                    parameter_index: v.parameter_index,
+                    initializer: v.initializer.clone(),
                 })
                 .collect();
 
@@ -590,6 +632,7 @@ fn project_file(
                 .collect();
             let return_type = crate::engine::l2::get_return_type_text(routine, source);
             let call_sites = features.call_sites.clone();
+            let operation_sites = features.operation_sites.clone();
             let statement_tree = features.statement_tree.clone();
 
             // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
@@ -638,6 +681,7 @@ fn project_file(
                 parameters,
                 return_type,
                 call_sites,
+                operation_sites,
                 statement_tree,
             });
         }

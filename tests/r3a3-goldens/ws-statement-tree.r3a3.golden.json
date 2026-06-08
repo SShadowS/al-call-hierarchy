@@ -1,0 +1,845 @@
+{
+	"summaries": [
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#057ddc568888c282d11a0fa3308a1e11d265afab574c2591a1b477f694ad196f",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#057ddc568888c282d11a0fa3308a1e11d265afab574c2591a1b477f694ad196f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/98a9e60fd8d73a85f3e28c7e362f073120ce7b0cf7be33572a2da5567cffb75c/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#057ddc568888c282d11a0fa3308a1e11d265afab574c2591a1b477f694ad196f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Next",
+						"recordVariableId": "r0/a59a5f9814cdb3045f174055892ff95a2d1dcf64af14e19da0000c0ffa039f9f/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "ui-message",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#28abe2002c9b18eddc2e656f4162b0aba245419901fc3c344437fa08732cfa94",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#28abe2002c9b18eddc2e656f4162b0aba245419901fc3c344437fa08732cfa94/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/0b796737518d5c974c33d8ecd2f304051e5dc15a3f64d65a3b95a34128e2ddf4/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#28abe2002c9b18eddc2e656f4162b0aba245419901fc3c344437fa08732cfa94",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#29e70724afc061be760d2d5f9264a6d3e0c52e8ed9169a6559541919b4c4d6aa",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#29e70724afc061be760d2d5f9264a6d3e0c52e8ed9169a6559541919b4c4d6aa",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#38a30ff3b2b7ebfc6540e4582fb05a08a05fd28a1236efaf13980234c75a75b9",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#38a30ff3b2b7ebfc6540e4582fb05a08a05fd28a1236efaf13980234c75a75b9/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/6df71008e3361a4f3369ad1680197ffba74c8413dc0f0d04eda11b1a0b7267e9/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#38a30ff3b2b7ebfc6540e4582fb05a08a05fd28a1236efaf13980234c75a75b9",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#466ecf481453b5be43eba5bff88de8de51020a47a20aae6fd133d8940bc7e9e2",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#466ecf481453b5be43eba5bff88de8de51020a47a20aae6fd133d8940bc7e9e2/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/454fc77236fa78a634bd65015ec88972537b2676e368793cef37b14874973253/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#466ecf481453b5be43eba5bff88de8de51020a47a20aae6fd133d8940bc7e9e2",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#49cf0070be191014c14748e89f66f4408ad3dcc2ac6cb36ffe28529dd2a1a76e",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#49cf0070be191014c14748e89f66f4408ad3dcc2ac6cb36ffe28529dd2a1a76e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4c6f79ff18c0476f491543a9b50405fcf01d36710d7cdc93b88fe7c0d168c45f",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4c6f79ff18c0476f491543a9b50405fcf01d36710d7cdc93b88fe7c0d168c45f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/ff7424c79f0dca91a0e095617cb21ed63d3c8154d29af5c1e8610a9e43510b52/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4c6f79ff18c0476f491543a9b50405fcf01d36710d7cdc93b88fe7c0d168c45f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6a3a9d62e28a00fe92f7082263b23d7af707f2d02018568632dc49b95eb8206a",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6a3a9d62e28a00fe92f7082263b23d7af707f2d02018568632dc49b95eb8206a/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/d8b647fe5c81191c6c5c63361fbc2cd455d92aa0891a6bd02c64d38ef68c7590/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6a3a9d62e28a00fe92f7082263b23d7af707f2d02018568632dc49b95eb8206a",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6e53577fbea0129ef6c61edc2f8346ce94b1dc0327d579dd01ce81e385b81af3",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6e53577fbea0129ef6c61edc2f8346ce94b1dc0327d579dd01ce81e385b81af3/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/dbfa4e5470e304c58abeab604932d5d85edb420a9d4c062f9154df23c6b8b0e8/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6e53577fbea0129ef6c61edc2f8346ce94b1dc0327d579dd01ce81e385b81af3",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/2ae37d3ada086f6c5dcbbbc49baef42f95fb65719ac83f81034f8ca73b75d9d2/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Count",
+						"recordVariableId": "r0/d5ed750183a3931b8dfd3ae04a24ede246517bd5c0db81f4520f46675b473ff7/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "ui-message",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/2e7f832b44ab07c6cad34813ec68d52fa926f9a1f80341d6d0e5761ff6cbe44a/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/2e7f832b44ab07c6cad34813ec68d52fa926f9a1f80341d6d0e5761ff6cbe44a/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c/op2",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindLast",
+						"recordVariableId": "r0/2e7f832b44ab07c6cad34813ec68d52fa926f9a1f80341d6d0e5761ff6cbe44a/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#a89590b0f08d1d86083af73151eb2a29bd0bf23a5f56319482084df28cd76462",
+			"capabilityFactsDirect": [],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#a89590b0f08d1d86083af73151eb2a29bd0bf23a5f56319482084df28cd76462",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Find",
+						"recordVariableId": "r0/7bd916c7e73f906ba2e1aa8dba6606855cef968f425882313cc32438fd7425be/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "ui-message",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b39767a172f44b59a40309c5157343c9d5bc490f46505f2d96c78c58f4ea6869",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b39767a172f44b59a40309c5157343c9d5bc490f46505f2d96c78c58f4ea6869/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/f27a249e3af068fcd14b9c3c0247649cd9a1eac660e425824ae1b2e86518ee27/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b39767a172f44b59a40309c5157343c9d5bc490f46505f2d96c78c58f4ea6869",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b9ecd2d5ed5471cd9fcc8a5c02aedcdb8f8980f03a77796c1260676b5d7c5d19",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b9ecd2d5ed5471cd9fcc8a5c02aedcdb8f8980f03a77796c1260676b5d7c5d19/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/f046bb370877ba85248b3cdbc1254c878c430e9415fc3dbbf80bf07eb52d4270/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b9ecd2d5ed5471cd9fcc8a5c02aedcdb8f8980f03a77796c1260676b5d7c5d19/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/f046bb370877ba85248b3cdbc1254c878c430e9415fc3dbbf80bf07eb52d4270/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b9ecd2d5ed5471cd9fcc8a5c02aedcdb8f8980f03a77796c1260676b5d7c5d19",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#bf5007b3a2cf8bf36d36a9935b57030d797fe2db9d231e34c614eff6cbfe5e8c",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#bf5007b3a2cf8bf36d36a9935b57030d797fe2db9d231e34c614eff6cbfe5e8c/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/ff2f3a950d5e92cd06d3ed4536e6fbffff785857e16fef5226fa80a21a339f8a/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#bf5007b3a2cf8bf36d36a9935b57030d797fe2db9d231e34c614eff6cbfe5e8c",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#c1640b5c880e53bdf2da6d5501c300bb289dd54a6ea8476c456109df1719ef7b",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#c1640b5c880e53bdf2da6d5501c300bb289dd54a6ea8476c456109df1719ef7b/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/06172624f27452aad94fefe6d51ef60d9c2ed3658b172aa1dfc82370a28b25d9/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#c1640b5c880e53bdf2da6d5501c300bb289dd54a6ea8476c456109df1719ef7b",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d22979066e687ea4d42c20b5f6cef952882bb84fbba89444bf3a745ac6ee047d",
+			"capabilityFactsDirect": [
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d22979066e687ea4d42c20b5f6cef952882bb84fbba89444bf3a745ac6ee047d/op0"
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d22979066e687ea4d42c20b5f6cef952882bb84fbba89444bf3a745ac6ee047d/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d22979066e687ea4d42c20b5f6cef952882bb84fbba89444bf3a745ac6ee047d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d71050efbff50c8c24c7bf3a2e3068701074c9250423cc4b889dd44d9afd3347",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d71050efbff50c8c24c7bf3a2e3068701074c9250423cc4b889dd44d9afd3347/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/719cccf29fb3894b71bed6c01ab756466861f7904ba71da07ba92946a9667e30/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d71050efbff50c8c24c7bf3a2e3068701074c9250423cc4b889dd44d9afd3347/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/719cccf29fb3894b71bed6c01ab756466861f7904ba71da07ba92946a9667e30/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d71050efbff50c8c24c7bf3a2e3068701074c9250423cc4b889dd44d9afd3347",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d95a4a221d6ee9492c64ad9e1f063bd4797cfae190755b516af9baba79f3d1eb",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d95a4a221d6ee9492c64ad9e1f063bd4797cfae190755b516af9baba79f3d1eb/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/75210636c226a8cf3ee495ff06e0a7d780aff5dee5f624a5c1b887e2a8eb3d07/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d95a4a221d6ee9492c64ad9e1f063bd4797cfae190755b516af9baba79f3d1eb/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/75210636c226a8cf3ee495ff06e0a7d780aff5dee5f624a5c1b887e2a8eb3d07/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d95a4a221d6ee9492c64ad9e1f063bd4797cfae190755b516af9baba79f3d1eb",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#dbb7437bb44005fbb6ce7835db4818062d2438989eabb3f19d64408544e7278d",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#dbb7437bb44005fbb6ce7835db4818062d2438989eabb3f19d64408544e7278d/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/59d1080a4678dd4cffeee65af7797524db4e1bbb9e2ed1ee3efa86ab0e11c45c/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#dbb7437bb44005fbb6ce7835db4818062d2438989eabb3f19d64408544e7278d",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e7321c1f20a04a5c8da9f509833e52ca80e3ea7bfe7c8867fac80dfe7bc5d02e",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e7321c1f20a04a5c8da9f509833e52ca80e3ea7bfe7c8867fac80dfe7bc5d02e/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/8318677c84a347623b640bf2759bf3400e51b40cbed8c6cec3ff939daed25f2e/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e7321c1f20a04a5c8da9f509833e52ca80e3ea7bfe7c8867fac80dfe7bc5d02e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096",
+			"capabilityFactsDirect": [
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/a9c05de7b13240233e8d74ea707310f78536cb724ef708dada0facb5e5c78b82/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096/op2",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Next",
+						"recordVariableId": "r0/a9c05de7b13240233e8d74ea707310f78536cb724ef708dada0facb5e5c78b82/rv/customer",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "ui-message",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

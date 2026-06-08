@@ -1,0 +1,104 @@
+{
+	"summaries": [
+		{
+			"routineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+			"capabilityFactsDirect": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/op0"
+				},
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/op1"
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/cs0"
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+			"capabilityFactsDirect": [
+				{
+					"op": "send",
+					"resourceKind": "http",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceArgSource": {
+						"kind": "literal",
+						"value": "https://example.com/notify"
+					},
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs1",
+					"extra": {
+						"kind": "http",
+						"method": "Get",
+						"bodyArgSource": {
+							"kind": "constant-var",
+							"varName": "response",
+							"initializer": {
+								"kind": "unknown"
+							}
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [
+				{
+					"op": "commit",
+					"resourceKind": "transaction",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/op0",
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+				},
+				{
+					"op": "error-throw",
+					"resourceKind": "error",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessOperationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36/op1",
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+				},
+				{
+					"op": "ui-error",
+					"resourceKind": "ui",
+					"confidence": "static",
+					"provenance": "inherited",
+					"via": "call",
+					"witnessCallsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+				}
+			],
+			"coverage": {
+				"subject": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}

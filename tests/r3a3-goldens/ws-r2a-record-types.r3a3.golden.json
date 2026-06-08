@@ -1,0 +1,191 @@
+{
+	"summaries": [
+		{
+			"routineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#02305e3c6fe826baede8c365e9290e47e29fd5c76542b5581cde894972f5b58f",
+			"capabilityFactsDirect": [
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#02305e3c6fe826baede8c365e9290e47e29fd5c76542b5581cde894972f5b58f/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"tempState": {
+							"kind": "unknown"
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#02305e3c6fe826baede8c365e9290e47e29fd5c76542b5581cde894972f5b58f",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e",
+			"capabilityFactsDirect": [
+				{
+					"op": "insert",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e/op2",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Insert",
+						"recordVariableId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/rv/tempcust",
+						"tempState": {
+							"kind": "known",
+							"value": true
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindSet",
+						"recordVariableId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/rv/cust",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50901",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "FindFirst",
+						"recordVariableId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/rv/sales",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				},
+				{
+					"op": "read",
+					"resourceKind": "table",
+					"confidence": "unresolved",
+					"provenance": "direct",
+					"via": "self",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e/op3",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Get",
+						"recordVariableId": "r0/2678d0c8a24b9998e299b622476daa2c736e056269327bd183211233733752e8/rv/missing",
+						"tempState": {
+							"kind": "known",
+							"value": false
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "2a000000-0000-0000-0000-0000000002aa:Page:50900#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+			"capabilityFactsDirect": [
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Page:50900#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"tempState": {
+							"kind": "unknown"
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "2a000000-0000-0000-0000-0000000002aa:Page:50900#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		},
+		{
+			"routineId": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+			"capabilityFactsDirect": [
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"tempState": {
+							"kind": "unknown"
+						}
+					}
+				},
+				{
+					"op": "modify",
+					"resourceKind": "table",
+					"confidence": "static",
+					"provenance": "direct",
+					"via": "self",
+					"resourceId": "2a000000-0000-0000-0000-0000000002aa:Table:50900",
+					"witnessOperationId": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op1",
+					"extra": {
+						"kind": "table",
+						"opSubtype": "Modify",
+						"tempState": {
+							"kind": "unknown"
+						}
+					}
+				}
+			],
+			"capabilityFactsInherited": [],
+			"coverage": {
+				"subject": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+				"directStatus": "complete",
+				"inheritedStatus": "complete",
+				"reasons": [],
+				"unknownTargets": []
+			}
+		}
+	]
+}
