@@ -472,6 +472,17 @@ fn project_record_role(r: &RecordRoleSummary) -> PRecordRoleSummary {
     }
 }
 
+/// Public projector for one internal RoutineSummary CORE → the stable R3a-2 shape.
+/// Used by the R3a-5 cross-app full-summary projection (which composes the R3a-2
+/// core with the R3a-3 cone over the MERGED model). The `map` covers BOTH primary
+/// and dep routine ids (every merged L3Routine carries `stable_routine_id`).
+pub fn project_routine_summary_core_pub(
+    s: &RoutineSummary,
+    map: &std::collections::HashMap<String, String>,
+) -> PRoutineSummaryCore {
+    project_routine_summary_core(s, map)
+}
+
 /// Public alias used by `summary_runner` to project an internal summary to
 /// stable form for the JACOBI trace oracle.  The `routine_id` arg is ignored
 /// (the id comes from `s.routine_id`); it exists only for call-site symmetry

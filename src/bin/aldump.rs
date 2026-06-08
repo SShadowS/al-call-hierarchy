@@ -47,7 +47,8 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
-         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks] \
+         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
+         --r3a5-cross-app-summary] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -66,6 +67,7 @@ fn main() -> ExitCode {
     let mut r3a2_trace = false;
     let mut r3a3_cone_coverage = false;
     let mut r3a4_dep_hooks = false;
+    let mut r3a5_cross_app_summary = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -120,6 +122,10 @@ fn main() -> ExitCode {
             r3a4_dep_hooks = true;
             continue;
         }
+        if arg == "--r3a5-cross-app-summary" {
+            r3a5_cross_app_summary = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -140,6 +146,7 @@ fn main() -> ExitCode {
         r3a2_trace,
         r3a3_cone_coverage,
         r3a4_dep_hooks,
+        r3a5_cross_app_summary,
     ]
     .iter()
     .filter(|f| **f)
@@ -149,8 +156,8 @@ fn main() -> ExitCode {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
              --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph / \
-             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / --r3a4-dep-hooks \
-             are mutually exclusive"
+             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / --r3a4-dep-hooks / \
+             --r3a5-cross-app-summary are mutually exclusive"
         );
         return usage();
     }
@@ -183,6 +190,36 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize R3a-4 dep-hook projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if r3a5_cross_app_summary {
+        // R3a-5 CROSS-APP FULL SUMMARY (the final R3a sub-gate): run the FULL
+        // cross-app L4 path over the workspace + its `.alpackages` dep `.app`(s) WITH
+        // the R3a-4 dep hooks — merged index → buildCombinedGraph →
+        // injectIntraAppCallEdges → computeSummaries → the cone — and project EVERY
+        // routine's FULL RoutineSummary (R3a-2 core + R3a-3 cone/coverage) in the SAME
+        // stable shape/key-order as the al-sem `cross-app-full-summary.r3a5.golden.json`.
+        // The dep routines arrive EMPTY-featured with a RETAINED summary + direct facts;
+        // the injected intra-app typed edges let the cone propagate the dep's Insert
+        // capabilityFactsDirect to the PRIMARY caller's capabilityFactsInherited.
+        // CAPTURE POINT: post-computeSummaries WITH dep hooks. Fail-closed → empty.
+        let projection = al_call_hierarchy::engine::l4::capability_cone::project_r3a5_cross_app(
+            &workspace,
+            "r0",
+            "cross-app-full-summary",
+        );
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!(
+                    "aldump: error: failed to serialize R3a-5 cross-app summary projection: {e}"
+                );
                 ExitCode::FAILURE
             }
         };

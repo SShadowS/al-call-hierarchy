@@ -1,0 +1,45 @@
+{
+  "description": "R3a-5 cross-app full-summary vectors. Covers: (1) dep-fact propagation (a primary routine inheriting a dep Insert capability fact via the injected typedEdges + cone), (2) cross-app dbEffect composition (primary caller's dbEffects includes dep-originated Insert), (3) opaque-dependency coverage (symbol-only dep produces partial inheritedStatus). Hand-authored invariants were asserted against live pipeline output before emit.",
+  "modelInstanceId": "r0",
+  "fixtureName": "cross-app-full-summary",
+  "vectorCount": 3,
+  "vectors": [
+    {
+      "name": "cross-app-full-summary",
+      "description": "Full R3a-5 fixture projection — the chain dep (source-bearing, DoIt→DoWrite→Insert) + a symbol-only dep (no embedded source). Counts for round-trip verification in the contract test.",
+      "primaryRoutinesWithInheritedDepFacts": 1,
+      "primaryRoutinesWithDepDbEffects": 1,
+      "coveragesWithOpaqueAppsReason": 2,
+      "totalCrossAppInheritedFacts": 1
+    }
+  ],
+  "depFactPropagationVector": {
+    "name": "dep_fact_propagation",
+    "description": "dep-fact propagation: a primary routine calling a source-bearing dep routine (DoIt/DoWrite) inherits the dep's Insert capabilityFact via the injected typedEdges + the cone. The inherited fact has provenance=inherited (not direct).",
+    "invariants": [
+      "≥1 primary routine with inherited dep facts (cone fired cross-app)",
+      "the inherited fact has provenance=inherited (not direct)",
+      "no primary routine has inherited facts with provenance=direct"
+    ],
+    "primaryRoutinesWithInheritedDepFacts": 1,
+    "totalCrossAppInheritedFacts": 1
+  },
+  "crossAppDbEffectVector": {
+    "name": "cross_app_dbeffect_composition",
+    "description": "cross-app dbEffect composition: the primary caller UseChain() has dbEffects that include an 'insert' effect originated in the dep DoWrite() routine via cross-app composition.",
+    "invariants": [
+      "≥1 primary routine with a dep-originated dbEffect",
+      "the primary routine's dbEffect is an Insert (from dep DoWrite)"
+    ],
+    "primaryRoutinesWithDepDbEffects": 1
+  },
+  "opaqueDependencyCoverageVector": {
+    "name": "opaque_dependency_coverage",
+    "description": "opaque-dependency coverage: UseSymbolOnly() calls a symbol-only dep routine (DoSomething()) with no parseable body → opaque-dependency coverage reason + partial inheritedStatus for the primary caller.",
+    "invariants": [
+      "≥1 coverage with opaque-dependency reason (cross-app, symbol-only dep)",
+      "the opaque-dependency routine has partial or unknown inheritedStatus"
+    ],
+    "coveragesWithOpaqueAppsReason": 2
+  }
+}

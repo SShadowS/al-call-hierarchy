@@ -2037,6 +2037,545 @@ fn compute_uncertainty_coverage_reasons(
 }
 
 // ===========================================================================
+// R3a-5 — the FULL cross-app RoutineSummary projection (core + cone/coverage).
+//
+// Ports al-sem's `analyzeWorkspace` order over the cross-app corpus WITH the dep
+// hooks (`scripts/r3a5-projection.ts` `projectR3a5FullSummary`):
+//   indexWorkspace(+deps) → withDependencyArtifacts → resolveModel
+//   → buildCombinedGraph → injectIntraAppCallEdges → computeSummaries → cone
+//
+// What's new vs R3a-3 (source-only):
+//   - The MERGED model carries dep routines (EMPTY merged features, like al-sem's
+//     `EMPTY_FEATURES`) plus their RETAINED summary (the dep's own `via:"direct"`
+//     dbEffects) + RETAINED direct capability facts (the dep's own intrinsic
+//     facts), recovered from each dep's embedded-source analysis (the R3a-4
+//     producer path). Dep routines are LEAVES (compute_summaries_with_leaves).
+//   - injectIntraAppCallEdges adds the dep intra-app `direct-call` edges to the
+//     typed-edge graph so the cone propagates the dep's `capabilityFactsDirect`
+//     through intra-dep chains AND to primary callers.
+// ===========================================================================
+
+/// One projected FULL RoutineSummary (R3a-2 core + R3a-3 cone/coverage + the
+/// `isDepRoutine` flag). Field order + key names mirror al-sem
+/// `PRoutineFullSummary` (`scripts/r3a5-projection.ts`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PRoutineFullSummary {
+    #[serde(rename = "routineId")]
+    pub routine_id: String,
+    #[serde(rename = "isDepRoutine")]
+    pub is_dep_routine: bool,
+    #[serde(rename = "dbEffects")]
+    pub db_effects: Vec<crate::engine::l4::summary::PDbEffect>,
+    pub uncertainties: Vec<crate::engine::l4::summary::PUncertainty>,
+    #[serde(rename = "parameterRoles")]
+    pub parameter_roles: Vec<crate::engine::l4::summary::PRecordRoleSummary>,
+    #[serde(rename = "inRecursiveCycle")]
+    pub in_recursive_cycle: bool,
+    #[serde(rename = "hasUnresolvedCalls")]
+    pub has_unresolved_calls: bool,
+    #[serde(rename = "capabilityFactsDirect")]
+    pub capability_facts_direct: Vec<PCapabilityFact>,
+    #[serde(rename = "capabilityFactsInherited")]
+    pub capability_facts_inherited: Vec<PCapabilityFact>,
+    pub coverage: PCoverageRecord,
+}
+
+/// The full R3a-5 cross-app projection — per-routine full summary + the
+/// anti-degenerate matrix counts. Mirrors al-sem `R3a5FullSummaryProjection`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct R3a5FullSummaryProjection {
+    #[serde(rename = "fixtureName")]
+    pub fixture_name: String,
+    pub summaries: Vec<PRoutineFullSummary>,
+    #[serde(rename = "primaryRoutinesWithInheritedDepFacts")]
+    pub primary_routines_with_inherited_dep_facts: usize,
+    #[serde(rename = "primaryRoutinesWithDepDbEffects")]
+    pub primary_routines_with_dep_db_effects: usize,
+    #[serde(rename = "coveragesWithOpaqueAppsReason")]
+    pub coverages_with_opaque_apps_reason: usize,
+    #[serde(rename = "totalCrossAppInheritedFacts")]
+    pub total_cross_app_inherited_facts: usize,
+}
+
+/// Per-dep-routine RETAINED L4 facts, recovered from a dep `.app`'s embedded
+/// source (the R3a-4 producer path). The dep routine arrives in the merged model
+/// EMPTY-featured; these are folded back so the cone + dbEffect compose can
+/// propagate them, exactly as al-sem retains `summary.dbEffects(via:"direct")` +
+/// `summary.capabilityFactsDirect` on the dep artifact's routines.
+struct DepRetained {
+    /// internal dep routine id → its retained summary (direct dbEffects only).
+    summaries: HashMap<String, crate::engine::l4::summary::RoutineSummary>,
+    /// internal dep routine id → its retained direct capability facts.
+    direct_facts: HashMap<String, Vec<CapabilityFact>>,
+    /// internal dep routine id → (direct_status, reasons) for the coverage cone.
+    direct_coverage: HashMap<String, (String, Vec<String>)>,
+}
+
+/// Recover the per-dep-routine retained L4 facts from a dep `.app`'s embedded
+/// source. Re-runs the dep's isolated assemble+resolve (the R3a-4 producer path)
+/// so the dep routine carries its REAL features, then derives:
+///   - the RETAINED summary (`base_intraprocedural_summary` → direct dbEffects),
+///   - the RETAINED direct capability facts (`direct_facts_for_routine`),
+///   - the RETAINED direct coverage (status + reasons).
+///
+/// The internal routine ids are content+modelInstanceId-derived, so they MATCH
+/// the merged cross-app model's dep routine ids (verified for the corpus).
+fn recover_dep_retained(app_bytes: &[u8], model_instance_id: &str) -> DepRetained {
+    use crate::engine::deps::app_manifest::parse_app_manifest_xml;
+    use crate::engine::deps::app_package_zip::extract_navx_manifest_xml;
+    use crate::engine::deps::dep_artifact_l4::iterate_embedded_source;
+    use crate::engine::l3::l3_workspace::assemble_workspace_units;
+    use crate::engine::l4::summary_runner::base_intraprocedural_summary;
+
+    let mut retained = DepRetained {
+        summaries: HashMap::new(),
+        direct_facts: HashMap::new(),
+        direct_coverage: HashMap::new(),
+    };
+
+    let Some(manifest_xml) = extract_navx_manifest_xml(app_bytes) else {
+        return retained;
+    };
+    let manifest = parse_app_manifest_xml(&manifest_xml);
+    if manifest.error.is_some() || manifest.identity.app_guid.is_empty() {
+        return retained;
+    }
+    let app_guid = manifest.identity.app_guid.clone();
+    let embedded = iterate_embedded_source(app_bytes);
+    if embedded.is_empty() {
+        // Symbol-only / no embedded source → no retained facts. The merged model's
+        // bodyless dep routine yields its own opaque coverage via the cone path.
+        return retained;
+    }
+    let units: Vec<(String, String)> = embedded
+        .iter()
+        .map(|f| {
+            (
+                format!("dep:{app_guid}:{}", f.relative_path),
+                f.content.clone(),
+            )
+        })
+        .collect();
+    let mut ws: L3Workspace = assemble_workspace_units(&units, &app_guid, model_instance_id);
+    crate::engine::l3::l3_workspace::resolve(&mut ws);
+
+    // Publisher events (for the publisher-fact injection in direct_facts_for_routine).
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let event_graph: EventGraph = build_event_graph(&ws.routines, &symbols);
+    let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
+    for evt in &event_graph.events {
+        if let Some(pr) = &evt.publisher_routine_id {
+            publisher_events_by_routine
+                .entry(pr.clone())
+                .or_default()
+                .push(evt);
+        }
+    }
+
+    // Field index for the base summary's parameterRoles (harmless for the corpus).
+    let mut field_index: crate::engine::l4::summary_runner::FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+    let routines_by_id: HashMap<String, &L3Routine> =
+        ws.routines.iter().map(|r| (r.id.clone(), r)).collect();
+
+    let empty_pub: Vec<&EventSymbol> = Vec::new();
+    for r in &ws.routines {
+        if r.app_guid != app_guid {
+            continue;
+        }
+        // RETAINED summary: the dep's OWN intraprocedural facts. al-sem keeps only
+        // `via:"direct"` dbEffects (`dependency-pipeline.ts:632`); base_intraprocedural
+        // emits exactly those (every base dbEffect is via:"direct").
+        let base = base_intraprocedural_summary(r, &routines_by_id, &field_index);
+        retained.summaries.insert(r.id.clone(), base);
+
+        // RETAINED direct capability facts + direct coverage (status + reasons).
+        let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
+        let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
+        retained.direct_facts.insert(r.id.clone(), facts);
+        retained
+            .direct_coverage
+            .insert(r.id.clone(), (status, reasons));
+    }
+
+    retained
+}
+
+/// Run the FULL cross-app L4 summary pipeline (merged model + dep hooks + cone)
+/// and project every routine's full RoutineSummary in stable form. The R3a-5
+/// EXIT-GATE differential surface. Engine-never-throws: a fail-closed / dep-less
+/// workspace yields an empty projection.
+pub fn project_r3a5_cross_app(
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+    fixture_name: &str,
+) -> R3a5FullSummaryProjection {
+    use crate::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+    use crate::engine::deps::dep_artifact_l4::{
+        build_dep_artifact_l4, inject_intra_app_call_edges, ConsumerModel,
+    };
+    use crate::engine::deps::merged_index::collect_app_paths;
+    use crate::engine::l4::summary::project_routine_summary_core_pub;
+    use crate::engine::l4::summary_runner::{compute_summaries_with_leaves, FieldIndex};
+
+    let empty = R3a5FullSummaryProjection {
+        fixture_name: fixture_name.to_string(),
+        summaries: Vec::new(),
+        primary_routines_with_inherited_dep_facts: 0,
+        primary_routines_with_dep_db_effects: 0,
+        coverages_with_opaque_apps_reason: 0,
+        total_cross_app_inherited_facts: 0,
+    };
+
+    // --- 1. Merged cross-app L3 (workspace native routines + EMPTY-feature dep
+    //        routines; cross-app member calls resolved; the apps ledger). ---
+    let Some(mut cross) = build_cross_app_l3_from_workspace(workspace, model_instance_id) else {
+        return empty;
+    };
+
+    // --- 2. Dep artifacts (the injected intra-app edges) + recovered retained
+    //        dep facts (summaries / direct facts / direct coverage). ---
+    let alpackages = workspace.join(".alpackages");
+    let app_paths = collect_app_paths(&alpackages);
+    let mut artifacts = Vec::new();
+    let mut dep_retained = DepRetained {
+        summaries: HashMap::new(),
+        direct_facts: HashMap::new(),
+        direct_coverage: HashMap::new(),
+    };
+    for p in &app_paths {
+        let Ok(bytes) = std::fs::read(p) else {
+            continue;
+        };
+        if let Some(a) = build_dep_artifact_l4(&bytes, model_instance_id) {
+            artifacts.push(a);
+        }
+        let r = recover_dep_retained(&bytes, model_instance_id);
+        dep_retained.summaries.extend(r.summaries);
+        dep_retained.direct_facts.extend(r.direct_facts);
+        dep_retained.direct_coverage.extend(r.direct_coverage);
+    }
+
+    // PARITY: a SOURCE-BEARING dep routine retains `bodyAvailable === true` in
+    // al-sem (the dep artifact spreads the embedded-source routine, only swapping
+    // `features → EMPTY_FEATURES`). The cross-app L3 merge derives dep routines from
+    // the symbol-reference projection (`body_available = false`); restore the
+    // source-bearing truth so the `calleeOpaque` check (summary-runner.ts:159) does
+    // NOT spuriously flag a primary caller of a source-bearing dep routine.
+    // Symbol-only dep routines (not recovered) stay `body_available = false`.
+    for r in &mut cross.resolved.workspace.routines {
+        if dep_retained.summaries.contains_key(&r.id) {
+            r.body_available = true;
+        }
+    }
+    let ws: &L3Workspace = &cross.resolved.workspace;
+    // Dep routines = routines whose app guid is a FETCHED dep app (the merged model
+    // appends dep entities after the workspace natives). al-sem's `isDepRoutine` is
+    // `analysisRole === "dependency"`, which is exactly the fetched-dep membership.
+    let fetched_lc: BTreeSet<String> = cross
+        .fetched_app_guids
+        .iter()
+        .map(|g| g.to_lowercase())
+        .collect();
+    let dep_routine_ids: BTreeSet<String> = ws
+        .routines
+        .iter()
+        .filter(|r| fetched_lc.contains(&r.app_guid.to_lowercase()))
+        .map(|r| r.id.clone())
+        .collect();
+
+    // --- 3. Call resolution + combined graph over the MERGED model (cross-app
+    //        edges with the declared/fetched ledger so member misses split
+    //        opaque vs external-target). ---
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let declared: Vec<DeclaredDependency> = cross
+        .declared_dep_app_guids
+        .iter()
+        .map(|g| DeclaredDependency {
+            app_guid: g.clone(),
+        })
+        .collect();
+    let calls = resolve_calls(ws, &symbols, &declared, &cross.fetched_app_guids);
+    let event_graph: EventGraph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    // --- 4. dbEffect compose: dep routines are LEAVES carrying their RETAINED
+    //        summary; primary callers fold them via the cross-app combined edges
+    //        (UseChain → DoWrite ⇒ Insert via inherited). ---
+    let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
+    let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &graph.edges_by_from {
+        adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let combined_scc = tarjan_scc(&SccInputGraph {
+        nodes: &graph.nodes,
+        edges_by_from: &adjacency,
+    });
+    let mut field_index: FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+    let (core_summaries, _) = compute_summaries_with_leaves(
+        &ws.routines,
+        &graph,
+        &combined_scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        false,
+        &dep_retained.summaries,
+    );
+
+    // --- 5. The cone: typed-edge graph + the INJECTED dep intra-app edges. The
+    //        cone propagates each dep routine's RETAINED direct facts through the
+    //        injected edges (intra-dep) AND through cross-app resolved member-call
+    //        typed edges to primary callers. ---
+    let mut consumer = ConsumerModel::with_routine_ids(nodes.clone());
+    inject_intra_app_call_edges(&mut consumer, &artifacts);
+    // Fold the injected synthetic edges into the typed-edge graph (al-sem
+    // `model.typedEdges = [...typedEdges, ...injected]`).
+    let mut graph_with_injected = graph;
+    for e in &consumer.injected_typed_edges {
+        graph_with_injected.typed_edges.push(TypedEdge {
+            kind: e.kind.clone(),
+            from: e.from.clone(),
+            to: Some(e.to.clone()),
+            callsite_id: Some(e.callsite_id.clone()),
+            operation_id: None,
+            event_id: None,
+            receiver_type: None,
+            interface_name: None,
+            candidate_count: None,
+            target_object: None,
+            object_type: None,
+            target_id_source: None,
+        });
+    }
+    let g = build_typed_edge_graph(&graph_with_injected, &nodes);
+    let mut typed_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &g.outgoing {
+        typed_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let typed_scc = tarjan_scc(&SccInputGraph {
+        nodes: &g.nodes,
+        edges_by_from: &typed_adjacency,
+    });
+
+    // Publisher events (for the workspace direct facts).
+    let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
+    for evt in &event_graph.events {
+        if let Some(pr) = &evt.publisher_routine_id {
+            publisher_events_by_routine
+                .entry(pr.clone())
+                .or_default()
+                .push(evt);
+        }
+    }
+
+    // Per-routine direct facts (full) + dedup-keyed map + direct coverage.
+    // Workspace routines: derive from real features. Dep routines: use the
+    // RETAINED facts/coverage (their merged features are EMPTY).
+    let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+    let mut direct: RoutineDirectFacts = HashMap::new();
+    let mut cov: RoutineDirectCoverage = HashMap::new();
+    let mut routine_ids: BTreeSet<String> = BTreeSet::new();
+    let empty_pub: Vec<&EventSymbol> = Vec::new();
+
+    for r in &ws.routines {
+        routine_ids.insert(r.id.clone());
+        let is_dep = dep_routine_ids.contains(&r.id);
+
+        let (facts, status, reasons) = if is_dep {
+            let facts = dep_retained
+                .direct_facts
+                .get(&r.id)
+                .cloned()
+                .unwrap_or_default();
+            let (status, reasons) = dep_retained
+                .direct_coverage
+                .get(&r.id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    // Symbol-only / bodyless dep routine (no retained facts): the
+                    // cone path treats it as opaque, exactly as direct_facts_for_routine
+                    // would (body_available == false).
+                    ("unknown".to_string(), vec!["opaque-dependency".to_string()])
+                });
+            (facts, status, reasons)
+        } else {
+            let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
+            direct_facts_for_routine(r, pubs)
+        };
+
+        let mut byk: BTreeMap<String, CapabilityFact> = BTreeMap::new();
+        for f in &facts {
+            let k = inherited_fact_key(f);
+            match byk.get(&k) {
+                Some(cur) if rep_key(f) >= rep_key(cur) => {}
+                _ => {
+                    byk.insert(k, f.clone());
+                }
+            }
+        }
+        if !byk.is_empty() {
+            direct.insert(r.id.clone(), byk);
+        }
+
+        cov.insert(
+            r.id.clone(),
+            DirectCoverage {
+                direct_status: status,
+                reasons,
+            },
+        );
+        direct_full.insert(r.id.clone(), facts);
+    }
+
+    let cones = compose_inherited_cones(&g, &typed_scc, &direct, &cov, &routine_ids);
+
+    // --- 6. Project: combined stable map (every merged routine carries
+    //        stable_routine_id). ---
+    let map: HashMap<String, String> = ws
+        .routines
+        .iter()
+        .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
+        .collect();
+    let event_by_id: HashMap<String, &EventSymbol> = event_graph
+        .events
+        .iter()
+        .map(|e| (e.id.clone(), e))
+        .collect();
+
+    let mut summaries: Vec<PRoutineFullSummary> = Vec::new();
+    for r in &ws.routines {
+        let is_dep = dep_routine_ids.contains(&r.id);
+
+        // R3a-2 core (dbEffects / uncertainties / parameterRoles / cycle / unresolved).
+        let core = core_summaries
+            .get(&r.id)
+            .map(|s| project_routine_summary_core_pub(s, &map));
+
+        let (db_effects, uncertainties, parameter_roles, in_recursive_cycle, has_unresolved_calls) =
+            match core {
+                Some(c) => (
+                    c.db_effects,
+                    c.uncertainties,
+                    c.parameter_roles,
+                    c.in_recursive_cycle,
+                    c.has_unresolved_calls,
+                ),
+                None => (Vec::new(), Vec::new(), Vec::new(), false, false),
+            };
+
+        // R3a-3 cone + coverage.
+        let empty_facts: Vec<CapabilityFact> = Vec::new();
+        let mut direct_facts: Vec<PCapabilityFact> = direct_full
+            .get(&r.id)
+            .unwrap_or(&empty_facts)
+            .iter()
+            .map(|f| project_capability_fact(f, &map, &event_by_id))
+            .collect();
+        direct_facts.sort_by_key(capability_fact_sort_key);
+
+        let (inherited_facts, coverage) = match cones.get(&r.id) {
+            Some(cone) => {
+                let mut inh: Vec<PCapabilityFact> = cone
+                    .inherited
+                    .iter()
+                    .map(|f| project_capability_fact(f, &map, &event_by_id))
+                    .collect();
+                inh.sort_by_key(capability_fact_sort_key);
+
+                let mut reasons = cone.coverage.reasons.clone();
+                reasons.sort();
+                let mut unknown_targets: Vec<String> = cone
+                    .coverage
+                    .unknown_targets
+                    .iter()
+                    .map(|t| stable_routine_id(t, &map))
+                    .collect();
+                unknown_targets.sort();
+
+                (
+                    inh,
+                    PCoverageRecord {
+                        subject: stable_routine_id(&cone.coverage.subject, &map),
+                        direct_status: cone.coverage.direct_status.clone(),
+                        inherited_status: cone.coverage.inherited_status.clone(),
+                        reasons,
+                        unknown_targets,
+                    },
+                )
+            }
+            None => (
+                Vec::new(),
+                PCoverageRecord {
+                    subject: stable_routine_id(&r.id, &map),
+                    direct_status: "unknown".to_string(),
+                    inherited_status: "unknown".to_string(),
+                    reasons: Vec::new(),
+                    unknown_targets: Vec::new(),
+                },
+            ),
+        };
+
+        summaries.push(PRoutineFullSummary {
+            routine_id: stable_routine_id(&r.id, &map),
+            is_dep_routine: is_dep,
+            db_effects,
+            uncertainties,
+            parameter_roles,
+            in_recursive_cycle,
+            has_unresolved_calls,
+            capability_facts_direct: direct_facts,
+            capability_facts_inherited: inherited_facts,
+            coverage,
+        });
+    }
+    summaries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
+
+    // --- 7. Anti-degenerate matrix counts (over the PRIMARY routines). ---
+    let primary: Vec<&PRoutineFullSummary> =
+        summaries.iter().filter(|s| !s.is_dep_routine).collect();
+    let primary_routines_with_inherited_dep_facts = primary
+        .iter()
+        .filter(|s| !s.capability_facts_inherited.is_empty())
+        .count();
+    let primary_routines_with_dep_db_effects =
+        primary.iter().filter(|s| !s.db_effects.is_empty()).count();
+    let coverages_with_opaque_apps_reason = summaries
+        .iter()
+        .filter(|s| {
+            s.coverage.reasons.iter().any(|r| {
+                r == "opaque-dependency" || r == "external-target" || r == "missing-dep-package"
+            })
+        })
+        .count();
+    let total_cross_app_inherited_facts: usize = primary
+        .iter()
+        .map(|s| s.capability_facts_inherited.len())
+        .sum();
+
+    R3a5FullSummaryProjection {
+        fixture_name: fixture_name.to_string(),
+        summaries,
+        primary_routines_with_inherited_dep_facts,
+        primary_routines_with_dep_db_effects,
+        coverages_with_opaque_apps_reason,
+        total_cross_app_inherited_facts,
+    }
+}
+
+// ===========================================================================
 // project_r3a3 — the L3Resolved entry point.
 // ===========================================================================
 

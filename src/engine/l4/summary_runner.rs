@@ -703,6 +703,35 @@ pub fn compute_summaries(
     fields: &FieldIndex,
     collect_trace: bool,
 ) -> (HashMap<String, RoutineSummary>, Vec<RawSccTrace>) {
+    let no_leaves: HashMap<String, RoutineSummary> = HashMap::new();
+    compute_summaries_with_leaves(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        collect_trace,
+        &no_leaves,
+    )
+}
+
+/// Like [`compute_summaries`], but treats every routine id present in
+/// `leaf_summaries` as a FIXED LEAF carrying that pre-computed summary (al-sem's
+/// `isLeaf(r) = r.summary !== undefined` default). Leaves are pre-seeded into the
+/// final map and NEVER recomputed; non-leaf callers fold the leaf summaries in via
+/// the combined graph. This is the R3a-5 seam: dependency routines arrive with a
+/// RETAINED summary (their own `via:"direct"` dbEffects) and must propagate to
+/// primary callers without being re-derived from their EMPTY merged features.
+/// Mirrors al-sem `computeSummaries` (`src/engine/summary-runner.ts:400-505`).
+pub fn compute_summaries_with_leaves(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+    collect_trace: bool,
+    leaf_summaries: &HashMap<String, RoutineSummary>,
+) -> (HashMap<String, RoutineSummary>, Vec<RawSccTrace>) {
     // Build O(1) lookup indexes.
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
@@ -714,9 +743,13 @@ pub fn compute_summaries(
         .map(|r| (r.id.clone(), r.body_available))
         .collect();
 
-    // Precompute base intraprocedural summaries ONCE per routine.
+    // Precompute base intraprocedural summaries ONCE per NON-LEAF routine. A leaf
+    // already carries its summary; al-sem skips `baseIntraproceduralSummaryCtx` for
+    // it (summary-runner.ts:400-403). We skip it too so a leaf's EMPTY merged
+    // features never overwrite its retained summary.
     let base_summaries: HashMap<String, RoutineSummary> = routines
         .iter()
+        .filter(|r| !leaf_summaries.contains_key(&r.id))
         .map(|r| {
             (
                 r.id.clone(),
@@ -735,6 +768,13 @@ pub fn compute_summaries(
     let mut final_map: HashMap<String, RoutineSummary> = HashMap::new();
     let mut raw_traces: Vec<RawSccTrace> = Vec::new();
 
+    // Pre-seed FIXED LEAVES (routines that arrive with a retained summary) so
+    // composition can look them up; they are never recomputed. (al-sem
+    // summary-runner.ts:408-410.)
+    for (id, summary) in leaf_summaries {
+        final_map.insert(id.clone(), summary.clone());
+    }
+
     // Use an empty snapshot for non-recursive SCCs (reads fall through to final_map).
     let empty_snapshot: HashMap<String, RoutineSummary> = HashMap::new();
 
@@ -745,6 +785,10 @@ pub fn compute_summaries(
                 Some(id) => id,
                 None => continue,
             };
+            // Fixed leaf — already in final_map, never recomputed.
+            if leaf_summaries.contains_key(id) {
+                continue;
+            }
             let routine = match routines_by_id.get(id) {
                 Some(r) => r,
                 None => continue,
@@ -763,9 +807,13 @@ pub fn compute_summaries(
         }
 
         // Recursive SCC — JACOBI fixed-point.
-        // Seed in_progress with base summaries.
+        // Seed in_progress with base summaries (leaves are excluded: they have no
+        // base entry and are read from final_map).
         let mut in_progress: HashMap<String, RoutineSummary> = HashMap::new();
         for id in &scc_entry.members {
+            if leaf_summaries.contains_key(id) {
+                continue;
+            }
             if let Some(base) = base_summaries.get(id) {
                 in_progress.insert(id.clone(), base.clone());
             }
@@ -787,6 +835,9 @@ pub fn compute_summaries(
             let mut next_pass: HashMap<String, RoutineSummary> = HashMap::new();
 
             for id in &scc_entry.members {
+                if leaf_summaries.contains_key(id) {
+                    continue;
+                }
                 let routine = match routines_by_id.get(id) {
                     Some(r) => r,
                     None => continue,

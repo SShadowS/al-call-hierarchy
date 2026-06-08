@@ -1,0 +1,246 @@
+//! R3a-5 NATIVE L4-DIRECT ORACLES — properties asserted against the RUST output
+//! itself (NOT the al-sem golden), so a co-evolving al-sem bug cannot mask a Rust
+//! regression. These are the cross-app dep-fact-propagation invariants that make
+//! R3a-5 the EXIT GATE for R3a:
+//!
+//!   O1. A PRIMARY routine calling a source-bearing dep routine with a capability
+//!       fact HAS that fact in `capabilityFactsInherited` (provenance "inherited",
+//!       NOT "direct") — the cross-app cone fired.
+//!   O2. The inherited fact's WITNESS traces through the cross-app/injected dep
+//!       edge: the `witnessCallsiteId` is a callsite on the PRIMARY routine, and
+//!       the `witnessOperationId` is the DEP routine's own operation (the fact
+//!       originated in the dep).
+//!   O3. COVERAGE reflects the cross-app opaque surface: a primary calling a
+//!       symbol-only (bodyless) dep routine carries an `opaque-dependency` reason
+//!       + the dep routine in `unknownTargets`.
+//!   O4. The dep routine's OWN `capabilityFactsDirect` (the propagated fact's
+//!       origin) is UNCHANGED from its standalone (R3a-3-style) direct extraction —
+//!       the merge/propagation does not perturb the source-of-truth fact.
+//!   O5. A primary folds the dep-originated dbEffect as `via:"inherited"` (the
+//!       cross-app dbEffect composition), while the dep routine keeps it `direct`.
+
+use std::path::PathBuf;
+
+use al_call_hierarchy::engine::l4::capability_cone::{
+    project_r3a5_cross_app, PRoutineFullSummary, R3a5FullSummaryProjection,
+};
+
+const FIXTURE: &str = "cross-app-full-summary";
+const MODEL_INSTANCE_ID: &str = "r0";
+
+// Stable ids (from the committed fixture — appGuid:Type:Num#sigHash).
+const PRIMARY_USECHAIN: &str =
+    "33333333-0005-0000-0000-000000000003:Codeunit:71000#cd29682292055c2a9dfd1a910cc9281bbc9e7bb136e230bd4ee9577061070f74";
+const PRIMARY_USESYMBOL: &str =
+    "33333333-0005-0000-0000-000000000003:Codeunit:71001#0248ed06c571be25bd3963f79fc18689e74807aebe0c397abe96e8a45e9dd0bd";
+const DEP_DOWRITE: &str =
+    "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0";
+const DEP_DOSOMETHING: &str =
+    "55555555-0005-0000-0000-000000000001:Codeunit:55300#ddc256ff3ee6e5336bafb4fefca8c26bf703619ff54aac40bf4caeed3a6be15f";
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn ws_fixture_dir() -> PathBuf {
+    repo_root().join("tests").join("r3a5-fixtures").join("ws")
+}
+
+fn projection() -> R3a5FullSummaryProjection {
+    project_r3a5_cross_app(&ws_fixture_dir(), MODEL_INSTANCE_ID, FIXTURE)
+}
+
+fn by_id<'a>(p: &'a R3a5FullSummaryProjection, id: &str) -> &'a PRoutineFullSummary {
+    p.summaries
+        .iter()
+        .find(|s| s.routine_id == id)
+        .unwrap_or_else(|| panic!("routine {id} not in R3a-5 projection"))
+}
+
+/// O1 — the cross-app cone fired: the primary UseChain INHERITS the dep DoWrite's
+/// Insert capability fact, with provenance "inherited" (not "direct").
+#[test]
+fn o1_primary_inherits_dep_capability_fact() {
+    let p = projection();
+    let use_chain = by_id(&p, PRIMARY_USECHAIN);
+    assert!(!use_chain.is_dep_routine, "UseChain is a PRIMARY routine");
+
+    let insert: Vec<_> = use_chain
+        .capability_facts_inherited
+        .iter()
+        .filter(|f| f.op == "insert" && f.resource_kind == "table")
+        .collect();
+    assert_eq!(
+        insert.len(),
+        1,
+        "UseChain inherits exactly one Insert capability fact (the dep DoWrite's), got {:?}",
+        use_chain.capability_facts_inherited
+    );
+    let fact = insert[0];
+    assert_eq!(
+        fact.provenance, "inherited",
+        "the inherited dep fact has provenance=inherited, NOT direct"
+    );
+    assert_eq!(
+        fact.via, "call",
+        "the inherited fact propagated via a call edge"
+    );
+    // No primary inherited fact may have provenance=direct (a leaked dep direct).
+    assert!(
+        use_chain
+            .capability_facts_inherited
+            .iter()
+            .all(|f| f.provenance == "inherited"),
+        "every primary inherited fact has provenance=inherited"
+    );
+    // The primary has NO direct capability facts of its own (it only calls deps).
+    assert!(
+        use_chain.capability_facts_direct.is_empty(),
+        "UseChain has no direct capability facts (it only calls the dep)"
+    );
+}
+
+/// O2 — the inherited fact's witness traces through the cross-app dep edge: the
+/// witnessCallsiteId is on the PRIMARY routine, the witnessOperationId is the DEP
+/// routine's own op (the fact originated in the dep, reached via the call edge).
+#[test]
+fn o2_inherited_fact_witness_traces_through_injected_edge() {
+    let p = projection();
+    let use_chain = by_id(&p, PRIMARY_USECHAIN);
+    let fact = use_chain
+        .capability_facts_inherited
+        .iter()
+        .find(|f| f.op == "insert")
+        .expect("UseChain inherits the Insert fact");
+
+    let witness_cs = fact
+        .witness_callsite_id
+        .as_deref()
+        .expect("inherited fact carries a witnessCallsiteId (the first-hop call edge)");
+    assert!(
+        witness_cs.starts_with(PRIMARY_USECHAIN),
+        "the witness callsite is on the PRIMARY UseChain routine (the first hop), got {witness_cs}"
+    );
+
+    let witness_op = fact
+        .witness_operation_id
+        .as_deref()
+        .expect("inherited fact carries a witnessOperationId (the dep's own op)");
+    assert!(
+        witness_op.starts_with(DEP_DOWRITE),
+        "the witness operation is the DEP DoWrite's own Insert op (the fact origin), got {witness_op}"
+    );
+}
+
+/// O3 — coverage reflects the cross-app opaque surface: UseSymbolOnly calls the
+/// bodyless symbol-only dep routine → opaque-dependency reason + the dep routine
+/// in unknownTargets; UseChain (all source-bearing deps) is complete.
+#[test]
+fn o3_coverage_reflects_cross_app_opaque_apps() {
+    let p = projection();
+
+    let use_symbol = by_id(&p, PRIMARY_USESYMBOL);
+    assert_eq!(
+        use_symbol.coverage.inherited_status, "partial",
+        "UseSymbolOnly has partial inherited coverage (opaque dep)"
+    );
+    assert!(
+        use_symbol
+            .coverage
+            .reasons
+            .iter()
+            .any(|r| r == "opaque-dependency"),
+        "UseSymbolOnly coverage carries an opaque-dependency reason, got {:?}",
+        use_symbol.coverage.reasons
+    );
+    assert!(
+        use_symbol
+            .coverage
+            .unknown_targets
+            .iter()
+            .any(|t| t == DEP_DOSOMETHING),
+        "the symbol-only dep routine is an unknownTarget, got {:?}",
+        use_symbol.coverage.unknown_targets
+    );
+
+    let use_chain = by_id(&p, PRIMARY_USECHAIN);
+    assert_eq!(
+        use_chain.coverage.inherited_status, "complete",
+        "UseChain (source-bearing dep) has complete coverage"
+    );
+    assert!(
+        use_chain.coverage.reasons.is_empty(),
+        "UseChain coverage carries no opaque reasons, got {:?}",
+        use_chain.coverage.reasons
+    );
+}
+
+/// O4 — the dep routine's OWN capabilityFactsDirect (the origin of the propagated
+/// fact) is its intrinsic Insert fact: provenance=direct, via=self. The cross-app
+/// merge does not perturb the source-of-truth fact.
+#[test]
+fn o4_dep_routine_direct_fact_unchanged() {
+    let p = projection();
+    let do_write = by_id(&p, DEP_DOWRITE);
+    assert!(do_write.is_dep_routine, "DoWrite is a DEP routine");
+
+    let direct: Vec<_> = do_write
+        .capability_facts_direct
+        .iter()
+        .filter(|f| f.op == "insert" && f.resource_kind == "table")
+        .collect();
+    assert_eq!(
+        direct.len(),
+        1,
+        "DoWrite has exactly one direct Insert fact (its intrinsic op), got {:?}",
+        do_write.capability_facts_direct
+    );
+    assert_eq!(direct[0].provenance, "direct", "DoWrite's fact is direct");
+    assert_eq!(direct[0].via, "self", "DoWrite's fact is via=self");
+    // The dep routine does NOT inherit any fact of its own (it is a leaf origin).
+    assert!(
+        do_write.capability_facts_inherited.is_empty(),
+        "DoWrite (the leaf origin) inherits nothing"
+    );
+}
+
+/// O5 — the dep-originated dbEffect composes cross-app: the primary UseChain folds
+/// it as via="inherited" while the dep DoWrite keeps it via="direct".
+#[test]
+fn o5_dbeffect_composes_cross_app() {
+    let p = projection();
+
+    let do_write = by_id(&p, DEP_DOWRITE);
+    let dep_insert: Vec<_> = do_write
+        .db_effects
+        .iter()
+        .filter(|e| e.op == "Insert")
+        .collect();
+    assert_eq!(dep_insert.len(), 1, "DoWrite has one Insert dbEffect");
+    assert_eq!(
+        dep_insert[0].via, "direct",
+        "the dep's own Insert dbEffect is via=direct"
+    );
+
+    let use_chain = by_id(&p, PRIMARY_USECHAIN);
+    let primary_insert: Vec<_> = use_chain
+        .db_effects
+        .iter()
+        .filter(|e| e.op == "Insert")
+        .collect();
+    assert_eq!(
+        primary_insert.len(),
+        1,
+        "UseChain folds exactly one Insert dbEffect from the dep"
+    );
+    assert_eq!(
+        primary_insert[0].via, "inherited",
+        "the primary's folded dbEffect is via=inherited (cross-app composition)"
+    );
+    // The folded effect's operationId is the DEP DoWrite's own op (the origin).
+    assert!(
+        primary_insert[0].operation_id.starts_with(DEP_DOWRITE),
+        "the folded dbEffect's operationId is the dep DoWrite's own op, got {}",
+        primary_insert[0].operation_id
+    );
+}

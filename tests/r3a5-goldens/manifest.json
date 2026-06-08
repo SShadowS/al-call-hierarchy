@@ -1,0 +1,28 @@
+{
+  "description": "R3a-5 cross-app full-summary golden — ground truth for the al-sem → Rust differential harness. Captures the FULL per-routine RoutineSummary (R3a-2 core + R3a-3 cone/coverage) over the cross-app corpus WITH the dep hooks. The key test: a PRIMARY routine calling a source-bearing dep routine INHERITS the dep's capability facts in capabilityFactsInherited (the cone fires cross-app via the injected typedEdges). See scripts/r3a5-projection.ts.",
+  "capturePoint": "post-computeSummaries WITH dep hooks (indexWorkspace → resolveDependencyArtifacts(noDepSummaries:false) → withDependencyArtifacts → resolveModel → buildCombinedGraph → injectIntraAppCallEdges → collectCitedDepEvidence → collectDepOrderIndex → computeSummaries)",
+  "note": "R3a-5 is the FULL cross-app L4 summary (core + cone/coverage) WITH dep fact propagation. This is the final R3a sub-gate — after R3a-5, R3a is COMPLETE (L4 RoutineSummary at byte-parity, source-only + cross-app). The fixture reuses the R3a-4 chain dep (cccccccc-0001-0000-0000-000000000001, DoIt→DoWrite→Insert) with a workspace caller that exercises cross-app cone propagation.",
+  "alSemGitSha": "6038f16010ccbcd8fb696e1293e7db16c9d46a31",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r3a5",
+  "fixtureCount": 1,
+  "fixtures": [
+    {
+      "fixture": "cross-app-full-summary",
+      "goldenFile": "cross-app-full-summary.r3a5.golden.json",
+      "summaryCount": 5,
+      "primarySummaryCount": 2,
+      "depSummaryCount": 3
+    }
+  ],
+  "matrix": {
+    "primaryRoutinesWithInheritedDepFacts": 1,
+    "primaryRoutinesWithDepDbEffects": 1,
+    "coveragesWithOpaqueAppsReason": 2,
+    "totalCrossAppInheritedFacts": 1,
+    "note": "primaryRoutinesWithInheritedDepFacts ≥ 1 is the anti-degenerate invariant: the cone fired cross-app (dep fact propagated to primary caller). This is the core of R3a-5. coveragesWithOpaqueAppsReason ≥ 1 covers the R3a-0 cross-app surface (symbol-only deps / unfetched deps produce opaque/external-target coverage reasons)."
+  }
+}
