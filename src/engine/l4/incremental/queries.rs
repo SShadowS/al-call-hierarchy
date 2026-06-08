@@ -23,29 +23,45 @@ use crate::engine::l4::summary_runner::{run_one_scc, FieldIndex, SccComputeCtx};
 
 // ---------------------------------------------------------------------------
 // Tracked-return CARRIERS. Salsa 0.27 requires a tracked fn's return value to be
-// `PartialEq` (for backdating: old == new ⇒ dependents are NOT re-fired). The
-// heavyweight R3a payloads behind these carriers are not structurally `PartialEq`,
-// and Stage 1 has NO incrementality (every query recomputes on a fresh DB), so we
-// give each carrier a CONSERVATIVE `Arc::ptr_eq` identity: two distinct recomputes
-// mint distinct `Arc`s ⇒ "changed" ⇒ always propagate. This is sound for Stage 1
-// (never falsely backdates). Stage 2 may introduce value-equality for tighter
-// early-cutoff where it matters.
-macro_rules! arc_ptr_eq_carrier {
+// `PartialEq` (for backdating: old == new ⇒ dependents are NOT re-fired). For
+// STAGE 2 (Task 2) the carriers carry VALUE EQUALITY so an unchanged query output
+// BACKDATES and does NOT propagate (the Rev-2 #3 early-cutoff). The R3a payloads
+// behind these carriers are now structurally `PartialEq` (the derive was added on
+// `CombinedGraph`/`SccResult`/`RoutineSummary`/`ConeResultPub` + their inner
+// types), so comparing the `Arc`-pointed VALUES is exact. The compare is fast-
+// pathed by `Arc::ptr_eq` (same allocation ⇒ trivially equal), then falls back to
+// the byte-faithful structural compare — so a recompute that produces a
+// byte-identical value backdates (no propagation), while any real change is
+// detected. This is what makes Stage 3 minimality achievable; it is sound because
+// the value-eq compares the exact output the from-scratch path would emit.
+//
+// (The carrier `PartialEq` cannot be `derive`d: the inner `Arc<T>`'s derived
+// `PartialEq` compares the pointed VALUE already, but we add the `ptr_eq` fast
+// path explicitly for the common same-`Arc` case and to document intent.)
+macro_rules! value_eq_carrier {
     ($ty:ident, $field:ident) => {
         impl PartialEq for $ty {
             fn eq(&self, other: &Self) -> bool {
-                Arc::ptr_eq(&self.$field, &other.$field)
+                // Fast path: the same allocation is trivially value-equal.
+                Arc::ptr_eq(&self.$field, &other.$field) || *self.$field == *other.$field
             }
         }
-        impl Eq for $ty {}
     };
 }
 
-arc_ptr_eq_carrier!(CombinedGraphValue, graph);
-arc_ptr_eq_carrier!(CondensationValue, result);
-arc_ptr_eq_carrier!(SccSummaries, summaries);
-arc_ptr_eq_carrier!(SummaryValue, summary);
-arc_ptr_eq_carrier!(ConeValue, cones);
+// VALUE equality (with an `Arc::ptr_eq` fast path). `Eq` only where the inner
+// value is `Eq` (CapabilityFact carries a non-`Eq` field, so the cone/summary
+// carriers that transitively hold it are `PartialEq`-only — Salsa only requires
+// `PartialEq` for backdating).
+value_eq_carrier!(CombinedGraphValue, graph);
+impl Eq for CombinedGraphValue {}
+value_eq_carrier!(CondensationValue, result);
+impl Eq for CondensationValue {}
+value_eq_carrier!(SccSummaries, summaries);
+impl Eq for SccSummaries {}
+value_eq_carrier!(SummaryValue, summary);
+impl Eq for SummaryValue {}
+value_eq_carrier!(ConeValue, cones);
 
 // ===========================================================================
 // Interned SccKey — semantic identity = the SORTED member StableRoutineId set.
@@ -235,6 +251,37 @@ pub fn scc_members<'db>(
     Vec::new()
 }
 
+/// `scc_is_recursive(scc_key) -> bool` — the SCC's `recursive` flag (size > 1 OR a
+/// self-edge), exposed as a VALUE-EQUAL `bool` projection. This is the PRECONDITION
+/// fix (Task-1 review HIGH): `scc_summaries` reads the recursive flag from HERE, not
+/// from the monolithic `scc_condensation` carrier. Because the return is a plain
+/// `bool`, an SCC whose recursiveness is unchanged BACKDATES — even though this
+/// query scans the (re-derived) condensation internally, its OUTPUT is value-equal,
+/// so `scc_summaries` does NOT re-fire on an unrelated edit. (The condensation
+/// recompute itself is a Stage-3 minimality concern; the point here is that the
+/// recursive flag no longer routes the always-changed condensation VALUE into
+/// `scc_summaries`.)
+#[salsa::tracked]
+pub fn scc_is_recursive<'db>(
+    db: &'db dyn L4Db,
+    universe: RoutineUniverse,
+    registry: RoutineRegistry,
+    ctx: AppContext,
+    scc_key: SccKey<'db>,
+) -> bool {
+    let cond = scc_condensation(db, universe, registry);
+    let stable_map = ctx.stable_map(db);
+    let want = scc_key.members(db);
+    for scc in &cond.result.sccs {
+        if &stable_members(scc, stable_map) == want {
+            return scc.recursive;
+        }
+    }
+    // No matching SCC (should not happen for a demanded key): fall back to the
+    // structural default the from-scratch path uses (size > 1 ⇒ recursive).
+    want.len() > 1
+}
+
 /// `scc_successors(scc_key)` — the SORTED-by-StableRoutineId-members SccKeys of
 /// the condensation-DAG successors (callees) of this SCC. EARLY-CUTS. The
 /// inter-SCC deps are a clean DAG (no Salsa cycle-detection trip).
@@ -374,19 +421,21 @@ pub fn scc_summaries<'db>(
 
     let upgraded = ctx.upgraded_bindings(db);
 
-    // Find the matching from-scratch `Scc` entry (members + recursive flag).
-    let cond = scc_condensation(db, universe, registry);
+    // Build the from-scratch `Scc` entry ENTIRELY from the VALUE-EQUAL projection
+    // queries: `scc_members` (the sorted internal member ids) + `scc_is_recursive`
+    // (the value-equal `bool` flag). The PRECONDITION fix (Task-1 review HIGH):
+    // `scc_summaries` no longer reads the monolithic `scc_condensation` carrier —
+    // its SCC deps are `scc_members` / `scc_is_recursive` / `scc_successors` / the
+    // members' per-routine inputs / successor `scc_summaries`. An edit that does not
+    // touch THIS SCC's members / recursiveness / successors / inputs leaves all of
+    // those value-equal, so this query BACKDATES (no re-fire) even though the
+    // condensation always recomputes.
     let want = scc_key.members(db);
-    let scc_entry: Scc = cond
-        .result
-        .sccs
-        .iter()
-        .find(|scc| &stable_members(scc, stable_map_arc) == want)
-        .cloned()
-        .unwrap_or(Scc {
-            members: members.clone(),
-            recursive: members.len() > 1,
-        });
+    let recursive = scc_is_recursive(db, universe, registry, ctx, scc_key);
+    let scc_entry = Scc {
+        members: members.clone(),
+        recursive,
+    };
 
     // ASSERTION (Rev 2 #4): the SCC member iteration order is the SORTED
     // StableRoutineId set — the JACOBI loop iterates members canonically. The R3a

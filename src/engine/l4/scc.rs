@@ -36,7 +36,7 @@ pub struct Scc {
 }
 
 /// The SCC result: the reverse-topological SCC list + a member→index map.
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub struct SccResult {
     /// SCCs in reverse-topological order: callees before callers. ORDER IS PART OF
     /// THE SURFACE.

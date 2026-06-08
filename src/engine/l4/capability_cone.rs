@@ -1728,7 +1728,7 @@ fn compose_inherited_cones(
 
 /// One routine's cone result in PUBLIC (internal-id) form. Field-for-field the
 /// private `InheritedConeResult`.
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, salsa::Update)]
 pub struct ConeResultPub {
     pub inherited: Vec<CapabilityFact>,
     pub coverage: CoverageRecord,
@@ -2463,9 +2463,7 @@ pub(crate) fn build_r3a5_cross_app_base(
                 .direct_coverage
                 .get(&r.id)
                 .cloned()
-                .unwrap_or_else(|| {
-                    ("unknown".to_string(), vec!["opaque-dependency".to_string()])
-                });
+                .unwrap_or_else(|| ("unknown".to_string(), vec!["opaque-dependency".to_string()]));
             (facts, status, reasons)
         } else {
             let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
@@ -2546,12 +2544,8 @@ pub fn project_r3a5_cross_app(
         false,
         &base.leaf_summaries,
     );
-    let cones = compose_cone_over_graph(
-        graph,
-        &base.nodes,
-        &base.direct_full,
-        &base.direct_coverage,
-    );
+    let cones =
+        compose_cone_over_graph(graph, &base.nodes, &base.direct_full, &base.direct_coverage);
 
     project_r3a5_from_parts(
         ws_routines,

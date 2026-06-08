@@ -35,7 +35,7 @@ use crate::engine::l3::symbol_table::SymbolTable;
 // ---------------------------------------------------------------------------
 
 /// A resolved routine → routine combined edge (internal-id form).
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub struct CombinedEdge {
     pub from: String,
     pub to: String,
@@ -50,7 +50,7 @@ pub struct CombinedEdge {
 }
 
 /// An uncertainty attached to a routine whose call site had no resolved target.
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub struct UncertaintyEdge {
     pub from: String,
     pub uncertainty: Uncertainty,
@@ -58,7 +58,7 @@ pub struct UncertaintyEdge {
 
 /// The discriminated Uncertainty — kind + its single id reference (+ interfaceName
 /// for interface-open-world). Only the R3a-1-reachable variants are modelled.
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub struct Uncertainty {
     pub kind: String,
     pub callsite_id: Option<String>,
@@ -69,7 +69,7 @@ pub struct Uncertainty {
 
 /// A typed `GraphEdge` (internal-id form). One flat struct over the discriminated
 /// union — only the fields legal for `kind` are populated (mirrors the TS union).
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub struct TypedEdge {
     pub kind: String,
     pub from: String,
@@ -86,7 +86,7 @@ pub struct TypedEdge {
 }
 
 /// A ValueSource (internal form — table-field tableId is INTERNAL until projected).
-#[derive(Debug, Clone, salsa::Update)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub enum ValueSource {
     Literal {
         value: String,
@@ -106,7 +106,7 @@ pub enum ValueSource {
 /// The internal combined graph: the assembled edges + uncertainty edges + the
 /// typed edges + the sorted node list. `edges` flattened (already per-`from`
 /// sorted via `edges_by_from` at assembly).
-#[derive(Clone, salsa::Update)]
+#[derive(Clone, PartialEq, Eq, salsa::Update)]
 pub struct CombinedGraph {
     /// Sorted internal routine ids.
     pub nodes: Vec<String>,
