@@ -1,0 +1,80 @@
+{
+  "description": "R3a-4 dep-artifact payload + consumer-hook vectors. Covers: (1) intraAppCallEdge dedup (from|to first-wins), (2) freshness-stamp barrier (stale/fresh cases), (3) injection (intraAppCallEdge → synthetic typedEdge, both-ends-in-model guard). Hand-authored invariants were asserted against live pipeline output before emit.",
+  "modelInstanceId": "r0",
+  "fixtureName": "cross-app-dep-hooks",
+  "vectorCount": 3,
+  "vectors": [
+    {
+      "name": "cross-app-dep-hooks",
+      "description": "Full R3a-4 fixture projection — the chain dep (includesSource:true, DoIt→DoWrite→Insert). Counts for round-trip verification in the contract test.",
+      "intraAppCallEdgesCount": 1,
+      "injectedTypedEdgesCount": 1,
+      "citedEvidenceCount": 1,
+      "orderEntriesCount": 2,
+      "returnSummariesCount": 2,
+      "depOrderIndexPresent": true,
+      "freshnessStampFresh": true
+    }
+  ],
+  "edgeDedupVector": {
+    "name": "intra_app_call_edge_dedup",
+    "description": "A source-bearing dep codeunit DoIt() calls DoWrite() twice (two call sites). The intraAppCallEdges projection deduplicates by from|to (first-wins), yielding ONE edge for the DoIt→DoWrite pair, not two. The callsiteId is from the first occurrence.",
+    "invariants": [
+      "≥1 intraAppCallEdge is present (non-hollow fixture)",
+      "no two edges share the same (from, to) — dedup invariant",
+      "≥1 injected typedEdge (injection works)"
+    ],
+    "intraAppCallEdgesCount": 1,
+    "injectedTypedEdgesCount": 1
+  },
+  "freshnessVector": {
+    "name": "freshness_stamp_barrier",
+    "description": "The freshness-stamp barrier: isDepOrderIndexStampFresh returns true when all fields match (appId, version, sourceContentHash, orderIndexSchemaVersion), and false for any mismatch. Special case: empty packageSemanticHash is conservatively fresh (orchestrator not yet filled).",
+    "invariants": [
+      "all-match → fresh: expected fresh=true",
+      "wrong appId → stale: expected fresh=false",
+      "wrong version → stale: expected fresh=false",
+      "wrong sourceContentHash → stale: expected fresh=false",
+      "wrong schemaVersion → stale: expected fresh=false",
+      "empty packageSemanticHash → conservatively fresh: expected fresh=true"
+    ],
+    "freshCases": [
+      {
+        "label": "all-match → fresh",
+        "fresh": true
+      },
+      {
+        "label": "wrong appId → stale",
+        "fresh": false
+      },
+      {
+        "label": "wrong version → stale",
+        "fresh": false
+      },
+      {
+        "label": "wrong sourceContentHash → stale",
+        "fresh": false
+      },
+      {
+        "label": "wrong schemaVersion → stale",
+        "fresh": false
+      },
+      {
+        "label": "empty packageSemanticHash → conservatively fresh",
+        "fresh": true
+      }
+    ]
+  },
+  "injectionVector": {
+    "name": "injection_intra_app_call_edge",
+    "description": "injectIntraAppCallEdges converts each intraAppCallEdge (whose both ends are present in the merged model) into a synthetic direct-call typedEdge. The callsiteId is the stored real callsiteId from the dep artifact (populated for source-parsed artifacts). An edge whose ends are absent from the model is silently skipped.",
+    "invariants": [
+      "≥1 intraAppCallEdge with both ends in model",
+      "injected edge count equals intraAppCallEdges with both ends in model",
+      "all injected edges have syntaxKind=synthetic"
+    ],
+    "intraAppCallEdgesCount": 1,
+    "injectedTypedEdgesCount": 1,
+    "bothEndsInModel": true
+  }
+}

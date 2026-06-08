@@ -499,7 +499,7 @@ fn strip_double_quotes(s: &str) -> &str {
 ///
 /// Opaque / parse-incomplete routines yield `([], "unknown", reasons)` mirroring
 /// the summary-runner.ts:553-559 override.
-fn direct_facts_for_routine(
+pub(crate) fn direct_facts_for_routine(
     routine: &L3Routine,
     publisher_events: &[&EventSymbol],
 ) -> (Vec<CapabilityFact>, String, Vec<String>) {

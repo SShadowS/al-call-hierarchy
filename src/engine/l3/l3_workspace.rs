@@ -753,6 +753,55 @@ pub fn assemble_workspace(
     workspace
 }
 
+/// Assemble the workspace L3 model from inline `(source_unit_id, source)` units,
+/// using the GIVEN `source_unit_id` verbatim for each file's anchors (instead of
+/// the `ws:<name>` form `assemble_workspace` hardcodes). The R3a-4 dependency
+/// producer needs this so each embedded `.al` file's op/callsite anchors carry the
+/// al-sem `dep:<appGuid>:<relativePath>` source-unit id (the cited-evidence
+/// `sourceFile` field), matching `ingestDependencyApp`'s embedded-source path.
+///
+/// Units are sorted by `source_unit_id` (the same total order
+/// `iterateEmbeddedSource` yields: sorted-by-relative-path → here the unit ids are
+/// `dep:<appGuid>:<sorted relativePath>`), then walked in document order. NOT
+/// resolved — the caller runs `resolve`.
+pub fn assemble_workspace_units(
+    units: &[(String, String)],
+    app_guid: &str,
+    model_instance_id: &str,
+) -> L3Workspace {
+    let mut sorted: Vec<&(String, String)> = units.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut parser = Parser::new();
+    parser
+        .set_language(&crate::language::language())
+        .expect("set tree-sitter language");
+
+    let mut workspace = L3Workspace {
+        objects: Vec::new(),
+        tables: Vec::new(),
+        routines: Vec::new(),
+    };
+
+    for (source_unit_id, source) in sorted {
+        let Some(tree) = parser.parse(source, None) else {
+            continue;
+        };
+        let cols = Utf16Cols::new(source);
+        project_file(
+            tree.root_node(),
+            source,
+            app_guid,
+            model_instance_id,
+            source_unit_id,
+            &cols,
+            &mut workspace,
+        );
+    }
+
+    workspace
+}
+
 /// Convenience: assemble + resolve with the default model-instance id (`r0`).
 pub fn assemble_and_resolve_default(files: &[(String, String)], app_guid: &str) -> L3Resolved {
     assemble_and_resolve(files, app_guid, MODEL_INSTANCE_ID_DEFAULT)
