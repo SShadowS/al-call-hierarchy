@@ -344,6 +344,8 @@ fn walk_loop_node(node: &PCFNNode, ambient: ControlContext, result: &mut WalkRes
             condition_leaves: None,
             children: node.children.clone(),
             else_children: None,
+            is_case_else: false,
+            source_range: None,
         };
         walk_block(&synthetic, body_ctx, result);
         return;

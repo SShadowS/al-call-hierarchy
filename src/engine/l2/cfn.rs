@@ -7,7 +7,7 @@
 //! ordered conditionLeaves only).
 
 use super::features::{PCFNNode, PConditionGuard};
-use super::node_util::{child_of_kind, named_children, node_text};
+use super::node_util::{child_of_kind, named_children, node_text, Utf16Cols};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -15,6 +15,10 @@ pub struct CfnCtx<'a> {
     pub source: &'a str,
     pub op_id_by_node_id: &'a HashMap<usize, String>,
     pub cs_id_by_node_id: &'a HashMap<usize, String>,
+    /// utf16-column converter — used to stamp each CFN node's TRUE source range
+    /// (in PAnchor basis) so the L4 branch-aware walker can attribute field
+    /// accesses to the right block level. The range never serializes (L2 parity).
+    pub cols: &'a Utf16Cols<'a>,
 }
 
 fn node(kind: &str) -> PCFNNode {
@@ -26,10 +30,25 @@ fn node(kind: &str) -> PCFNNode {
         condition_leaves: None,
         children: None,
         else_children: None,
+        is_case_else: false,
+        source_range: None,
     }
 }
 
 impl<'a> CfnCtx<'a> {
+    /// The (startLine, startColumn, endLine, endColumn) of a tree-sitter node in
+    /// PAnchor basis (0-based row, utf16 column).
+    fn range_of(&self, node: Node) -> (u32, u32, u32, u32) {
+        let sp = node.start_position();
+        let ep = node.end_position();
+        (
+            sp.row as u32,
+            self.cols.col(sp.row, sp.column),
+            ep.row as u32,
+            self.cols.col(ep.row, ep.column),
+        )
+    }
+
     /// Build the root block CFN for a code_block.
     pub fn build_block(&self, block_node: Node) -> PCFNNode {
         let mut children = Vec::new();
@@ -44,6 +63,7 @@ impl<'a> CfnCtx<'a> {
         }
         let mut n = node("block");
         n.children = Some(children);
+        n.source_range = Some(self.range_of(block_node));
         n
     }
 
@@ -54,6 +74,7 @@ impl<'a> CfnCtx<'a> {
         let stmt = self.build_statement(node_in);
         let mut n = node("block");
         n.children = Some(stmt.into_iter().collect());
+        n.source_range = Some(self.range_of(node_in));
         n
     }
 
@@ -213,11 +234,25 @@ impl<'a> CfnCtx<'a> {
             .unwrap_or_default();
         let mut n = node("case-branch");
         n.children = Some(children);
+        n.source_range = Some(self.range_of(node_in));
+        // In-memory marker (never serialized) so the L4 branch-aware walker can
+        // apply al-sem's "case WITHOUT else joins the pre-state" rule. Mirrors
+        // al-sem's `sourceAnchor.syntaxKind === "case_else_branch"` check.
+        n.is_case_else = node_in.kind() == "case_else_branch";
         Some(n)
     }
 
     /// Build a CFN node for a single statement node. None for skipped nodes.
+    /// Stamps the node's TRUE source range (for L4 FA attribution).
     pub fn build_statement(&self, node_in: Node) -> Option<PCFNNode> {
+        let mut cfn = self.build_statement_inner(node_in)?;
+        if cfn.source_range.is_none() {
+            cfn.source_range = Some(self.range_of(node_in));
+        }
+        Some(cfn)
+    }
+
+    fn build_statement_inner(&self, node_in: Node) -> Option<PCFNNode> {
         let t = node_in.kind();
 
         if t == "if_statement" {

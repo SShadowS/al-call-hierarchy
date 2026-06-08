@@ -78,7 +78,7 @@ fn is_db_touching(op: &str) -> bool {
     )
 }
 
-fn record_flow_role(op: &str) -> &'static str {
+pub(crate) fn record_flow_role(op: &str) -> &'static str {
     match op {
         "Get" | "FindFirst" | "FindLast" | "FindSet" | "Find" | "Next" => "loadsFromDb",
         "Init" => "initialises",
@@ -319,264 +319,6 @@ fn resolve_field(_table_id: &str, _field_name: &str, _routine: &L3Routine) -> Op
 }
 
 // ---------------------------------------------------------------------------
-// Flat path-aware walker (ports control-flow-walker.ts `walkFlat`).
-// ---------------------------------------------------------------------------
-
-/// Flat-walker per-parameter state (no control-flow branching — straight-line
-/// pass over ops in source/declaration order).
-struct FlatState {
-    loaded: &'static str,             // "no" | "yes" | "unknown"
-    dirty: &'static str,              // "pristine" | "dirty" | "persisted" | "unknown"
-    current_loaded_fields: FieldList, // "full" | Unknown | Known([])
-    requires_loaded_at_entry: EffectPresence,
-    mutates_before_load: EffectPresence,
-}
-
-impl FlatState {
-    fn initial() -> Self {
-        FlatState {
-            loaded: "no",
-            dirty: "pristine",
-            current_loaded_fields: FieldList::Full,
-            requires_loaded_at_entry: EffectPresence::No,
-            mutates_before_load: EffectPresence::No,
-        }
-    }
-
-    fn apply_op(&mut self, role: &str) {
-        match role {
-            "loadsFromDb" => {
-                self.loaded = "yes";
-                // (We don't track pendingNarrow in this simplified walker —
-                // SetLoadFields/AddLoadFields are rare and field resolution
-                // is deferred to R3a-3. Conservative: treat as "full".)
-                self.current_loaded_fields = FieldList::Full;
-                self.dirty = "pristine";
-            }
-            "initialises" => {
-                self.loaded = "yes";
-                self.current_loaded_fields = FieldList::Full;
-                self.dirty = "pristine";
-            }
-            "copiesInto" => {
-                self.loaded = "yes";
-                // Loaded but loaded-fields state is conservatively unknown
-                // (depends on source record).
-                self.dirty = "pristine";
-            }
-            "persistsCurrent" => {
-                if self.loaded != "yes" {
-                    self.requires_loaded_at_entry = EffectPresence::Yes;
-                    self.mutates_before_load = EffectPresence::Yes;
-                }
-                self.dirty = "persisted";
-            }
-            "validates" => {
-                if self.loaded != "yes" {
-                    self.requires_loaded_at_entry = EffectPresence::Yes;
-                    self.mutates_before_load = EffectPresence::Yes;
-                }
-                if self.dirty == "pristine" || self.dirty == "unknown" {
-                    self.dirty = "dirty";
-                }
-                // "persisted" stays "persisted".
-            }
-            "setBasedWrite" | "resetsFilter" | "neutral" => {
-                // setBasedWrite (ModifyAll/DeleteAll) — no dirty state change.
-                // resetsFilter (Reset) — pendingNarrow cleared; currentLoadedFields unchanged.
-            }
-            _ => {}
-        }
-    }
-
-    fn apply_field_access(&mut self) {
-        // A field access on a non-loaded record requires the record to be loaded
-        // at entry (mirrors walkFlat's field-access handling).
-        if self.loaded != "yes" {
-            self.requires_loaded_at_entry = EffectPresence::Yes;
-        }
-    }
-
-    fn dirty_at_exit(&self) -> EffectPresence {
-        match self.dirty {
-            "dirty" => EffectPresence::Yes,
-            "unknown" => EffectPresence::Unknown,
-            _ => EffectPresence::No, // "pristine" | "persisted"
-        }
-    }
-
-    fn current_loaded_fields_at_exit(&self) -> FieldList {
-        self.current_loaded_fields.clone()
-    }
-}
-
-/// Run the flat (no-branch) path-aware walker for a single record parameter.
-/// Processes record ops and field accesses for this param in declaration order
-/// (the L2 parser emits them in source order).
-///
-/// Also composes callee `requiresLoadedAtEntry`/`mutatesBeforeLoad` through
-/// call-forwarding bindings (c1a in al-sem spec), mirroring `walkFlat`.
-///
-/// `snapshot` / `final_map` are the JACOBI maps for callee lookup.
-///
-/// Returns the path-aware facts for the parameter, or None if opaque.
-#[allow(clippy::too_many_arguments)]
-fn walk_flat_param(
-    routine: &L3Routine,
-    rec_var_name_lc: &str,
-    rec_var_id: Option<&str>,
-    has_body: bool,
-    snapshot: &HashMap<String, RoutineSummary>,
-    final_map: &HashMap<String, RoutineSummary>,
-    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
-    graph: &CombinedGraph,
-) -> Option<FlatState> {
-    let lookup =
-        |id: &str| -> Option<&RoutineSummary> { snapshot.get(id).or_else(|| final_map.get(id)) };
-    if !has_body {
-        return None; // opaque/parse-incomplete — stay "unknown"
-    }
-    let mut state = FlatState::initial();
-
-    // Process record ops on this param.
-    for op in &routine.record_operations {
-        if op.record_variable_name.to_lowercase() != rec_var_name_lc {
-            continue;
-        }
-        let role = record_flow_role(&op.op);
-        state.apply_op(role);
-    }
-
-    // Field accesses: any field access on a non-loaded record sets
-    // requiresLoadedAtEntry="yes". (c0 — spec §field-access entry req.)
-    for fa in &routine.field_accesses {
-        if fa.record_variable_name.to_lowercase() != rec_var_name_lc {
-            continue;
-        }
-        state.apply_field_access();
-    }
-
-    // Call-forwarding composition (c1a): walk call sites that forward this
-    // param to a callee (as a var arg), and compose the callee's
-    // requiresLoadedAtEntry / mutatesBeforeLoad into the walker state.
-    //
-    // This mirrors `applyCall` in control-flow-walker.ts (lines 1007-1022):
-    // when the caller hasn't loaded the record yet AND there's a resolved
-    // forwarding binding, join the callee role's entry-req facts in.
-    for cs in &routine.call_sites {
-        // Find a binding that forwards this param.
-        let binding_idx = cs.argument_bindings.iter().enumerate().find_map(|(i, b)| {
-            // Match by record variable id (preferred) or name.
-            let matches_by_id = rec_var_id
-                .map(|id| b.source_record_variable_id.as_deref() == Some(id))
-                .unwrap_or(false);
-            let matches_by_name = b
-                .source_variable_name
-                .as_deref()
-                .map(|n| n.to_lowercase() == rec_var_name_lc)
-                .unwrap_or(false);
-            if matches_by_id || matches_by_name {
-                Some(i)
-            } else {
-                None
-            }
-        });
-        let binding_idx = match binding_idx {
-            Some(i) => i,
-            None => continue,
-        };
-
-        // Resolve the upgraded binding state.
-        let upgraded = upgraded_bindings.get(&cs.id);
-        let upgraded_b = upgraded.and_then(|ub| ub.get(binding_idx));
-        let resolution = upgraded_b
-            .map(|ub| ub.binding_resolution.as_str())
-            .unwrap_or("unresolved-callee");
-        if resolution != "resolved" {
-            // Opaque: if not yet loaded, join "unknown".
-            if state.loaded != "yes" {
-                state.requires_loaded_at_entry =
-                    join_presence(state.requires_loaded_at_entry, EffectPresence::Unknown);
-                state.mutates_before_load =
-                    join_presence(state.mutates_before_load, EffectPresence::Unknown);
-            }
-            continue;
-        }
-
-        // Find the callee edge for this callsite.
-        let callee_id = graph
-            .edges_by_from
-            .get(&routine.id)
-            .and_then(|edges| {
-                edges
-                    .iter()
-                    .find(|e| e.callsite_id.as_deref() == Some(&cs.id))
-            })
-            .map(|e| e.to.as_str());
-        let callee_id = match callee_id {
-            Some(id) => id,
-            None => {
-                // No edge (unresolved) — opaque treatment.
-                if state.loaded != "yes" {
-                    state.requires_loaded_at_entry =
-                        join_presence(state.requires_loaded_at_entry, EffectPresence::Unknown);
-                    state.mutates_before_load =
-                        join_presence(state.mutates_before_load, EffectPresence::Unknown);
-                }
-                continue;
-            }
-        };
-
-        let callee_summary = lookup(callee_id);
-        let binding = &cs.argument_bindings[binding_idx];
-        let callee_role = callee_summary.and_then(|s| {
-            s.parameter_roles
-                .iter()
-                .find(|r| r.parameter_index == binding.parameter_index)
-        });
-
-        match callee_role {
-            None => {
-                // Callee has no role for this param — opaque.
-                if state.loaded != "yes" {
-                    state.requires_loaded_at_entry =
-                        join_presence(state.requires_loaded_at_entry, EffectPresence::Unknown);
-                    state.mutates_before_load =
-                        join_presence(state.mutates_before_load, EffectPresence::Unknown);
-                }
-            }
-            Some(cr) => {
-                // c1a: compose callee entry-requirement facts into caller state.
-                if state.loaded != "yes" {
-                    state.requires_loaded_at_entry =
-                        join_presence(state.requires_loaded_at_entry, cr.requires_loaded_at_entry);
-                    state.mutates_before_load =
-                        join_presence(state.mutates_before_load, cr.mutates_before_load);
-                }
-
-                // c1b: if both caller and callee sides are var, compose exit effects.
-                let caller_is_var = binding.caller_source_parameter_is_var == Some(true);
-                let callee_is_var = upgraded_b
-                    .map(|ub| ub.callee_parameter_is_var)
-                    .unwrap_or(false);
-                if caller_is_var && callee_is_var {
-                    // If callee loads the record, mark it as loaded in caller state too.
-                    if cr.loads_from_db_param == EffectPresence::Yes
-                        || cr.initialises_param == EffectPresence::Yes
-                        || cr.copies_into_param == EffectPresence::Yes
-                    {
-                        state.loaded = "yes";
-                        state.current_loaded_fields = cr.current_loaded_fields_at_exit.clone();
-                    }
-                }
-            }
-        }
-    }
-
-    Some(state)
-}
-
-// ---------------------------------------------------------------------------
 // compose_routine — compose one routine's summary (mirrors composeRoutineCtx).
 // ---------------------------------------------------------------------------
 
@@ -588,6 +330,7 @@ fn walk_flat_param(
 /// `final_map` is the settled summaries for already-processed SCCs.
 /// `base_summaries` provides the intraprocedural-only base for each routine.
 /// `upgraded_bindings` is the per-callsite side table from the call resolver.
+#[allow(clippy::too_many_arguments)]
 fn compose_routine(
     routine: &L3Routine,
     snapshot: &HashMap<String, RoutineSummary>,
@@ -595,6 +338,7 @@ fn compose_routine(
     base_summaries: &HashMap<String, RoutineSummary>,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     graph: &CombinedGraph,
+    body_avail_by_id: &HashMap<String, bool>,
 ) -> RoutineSummary {
     // For non-recursive SCCs `snapshot` is empty; reads fall through to `final_map`.
     let lookup =
@@ -673,10 +417,15 @@ fn compose_routine(
             has_unresolved_calls = true;
         }
 
-        // Interface / dynamic edges → add opaque-callee uncertainty.
-        // (al-sem also checks calleeOpaque but dynamic/interface edges are
-        // the structurally reachable cases in source-only L4.)
-        let add_opaque = edge.kind == "interface" || edge.kind == "dynamic";
+        // Interface / dynamic edges, AND opaque (bodyless) callees → add an
+        // opaque-callee uncertainty (al-sem summary-runner.ts:213:
+        // `edge.kind === "interface" || edge.kind === "dynamic" ||
+        // calleeOpaque(edge.to)`). FIX 3: the `calleeOpaque` disjunct was dropped
+        // as "unreachable source-only"; it IS reachable (a body-available caller
+        // with a resolved DIRECT edge to a bodyless callee), so restore it for
+        // faithfulness. `calleeOpaque(id)` === `bodyAvailable === false`.
+        let callee_opaque = !body_avail_by_id.get(&edge.to).copied().unwrap_or(false);
+        let add_opaque = edge.kind == "interface" || edge.kind == "dynamic" || callee_opaque;
         if add_opaque {
             if let Some(cs_id) = &edge.callsite_id {
                 let u = Uncertainty {
@@ -774,36 +523,20 @@ fn compose_routine(
                 Some(id) => id,
                 None => continue,
             };
-            let callee_summary = match lookup(callee_id) {
-                Some(s) => s,
-                None => {
-                    // Opaque path — join with "unknown".
-                    if let Some(p) = parameter_roles
-                        .iter_mut()
-                        .find(|r| r.parameter_index == source_param_idx)
-                    {
-                        p.persists_current_record =
-                            join_presence(p.persists_current_record, EffectPresence::Unknown);
-                        p.set_based_db_writes =
-                            join_presence(p.set_based_db_writes, EffectPresence::Unknown);
-                        p.validates_param =
-                            join_presence(p.validates_param, EffectPresence::Unknown);
-                        p.copies_into_param =
-                            join_presence(p.copies_into_param, EffectPresence::Unknown);
-                        p.resets_filters_on_param =
-                            join_presence(p.resets_filters_on_param, EffectPresence::Unknown);
-                        p.mutates_param = join_presence(
-                            join_presence(p.persists_current_record, p.validates_param),
-                            p.copies_into_param,
-                        );
-                    }
-                    continue;
-                }
-            };
-            let callee_role = callee_summary
-                .parameter_roles
-                .iter()
-                .find(|r| r.parameter_index == binding.parameter_index);
+            let callee_summary = lookup(callee_id);
+            // FIX 2: the opaque guard takes the "unknown" branch on ANY of the three
+            // al-sem reasons (summary-runner.ts:267-270): no callee summary/role, OR
+            // `callee.bodyAvailable === false`. A bodyless callee carries a role with
+            // all-`No` facts; without this guard we would join "no" (an unsound flip).
+            let callee_body_available = body_avail_by_id.get(callee_id).copied().unwrap_or(false);
+            let callee_role = callee_summary.and_then(|s| {
+                s.parameter_roles
+                    .iter()
+                    .find(|r| r.parameter_index == binding.parameter_index)
+            });
+            let opaque =
+                callee_summary.is_none() || callee_role.is_none() || !callee_body_available;
+
             let p = parameter_roles
                 .iter_mut()
                 .find(|r| r.parameter_index == source_param_idx);
@@ -811,29 +544,25 @@ fn compose_routine(
                 Some(p) => p,
                 None => continue,
             };
-            match callee_role {
-                None => {
-                    // Opaque — unknown.
-                    p.persists_current_record =
-                        join_presence(p.persists_current_record, EffectPresence::Unknown);
-                    p.set_based_db_writes =
-                        join_presence(p.set_based_db_writes, EffectPresence::Unknown);
-                    p.validates_param = join_presence(p.validates_param, EffectPresence::Unknown);
-                    p.copies_into_param =
-                        join_presence(p.copies_into_param, EffectPresence::Unknown);
-                    p.resets_filters_on_param =
-                        join_presence(p.resets_filters_on_param, EffectPresence::Unknown);
-                }
-                Some(cr) => {
-                    p.persists_current_record =
-                        join_presence(p.persists_current_record, cr.persists_current_record);
-                    p.set_based_db_writes =
-                        join_presence(p.set_based_db_writes, cr.set_based_db_writes);
-                    p.validates_param = join_presence(p.validates_param, cr.validates_param);
-                    p.copies_into_param = join_presence(p.copies_into_param, cr.copies_into_param);
-                    p.resets_filters_on_param =
-                        join_presence(p.resets_filters_on_param, cr.resets_filters_on_param);
-                }
+            if opaque {
+                p.persists_current_record =
+                    join_presence(p.persists_current_record, EffectPresence::Unknown);
+                p.set_based_db_writes =
+                    join_presence(p.set_based_db_writes, EffectPresence::Unknown);
+                p.validates_param = join_presence(p.validates_param, EffectPresence::Unknown);
+                p.copies_into_param = join_presence(p.copies_into_param, EffectPresence::Unknown);
+                p.resets_filters_on_param =
+                    join_presence(p.resets_filters_on_param, EffectPresence::Unknown);
+            } else {
+                let cr = callee_role.unwrap();
+                p.persists_current_record =
+                    join_presence(p.persists_current_record, cr.persists_current_record);
+                p.set_based_db_writes =
+                    join_presence(p.set_based_db_writes, cr.set_based_db_writes);
+                p.validates_param = join_presence(p.validates_param, cr.validates_param);
+                p.copies_into_param = join_presence(p.copies_into_param, cr.copies_into_param);
+                p.resets_filters_on_param =
+                    join_presence(p.resets_filters_on_param, cr.resets_filters_on_param);
             }
             p.mutates_param = join_presence(
                 join_presence(p.persists_current_record, p.validates_param),
@@ -842,11 +571,16 @@ fn compose_routine(
         }
     }
 
-    // Path-aware entry-requirement + exit-effect composition (spec §(c1a)).
-    // Mirrors al-sem summary-runner.ts lines 310-325: after cross-call c1b,
-    // run the flat walker with the current `lookup` to overwrite the "unknown"
-    // entry-req + exit-effect placeholders from the base summary.
-    // Only runs when the body is available + parsed (opaque/parse-incomplete stay "unknown").
+    // Path-aware entry-requirement + exit-effect composition (spec §(c1a)/(c1b)).
+    // Mirrors al-sem summary-runner.ts lines 310-325: after cross-call c1b, run
+    // the BRANCH-AWARE walker (`cfg_walker::walk_param`, the port of `walkRoutine`
+    // → `walkCFG`) with the current JACOBI `lookup` so callee summaries are from
+    // the current iteration. The walker overwrites the "unknown" entry-req +
+    // exit-effect placeholders from the base summary with PATH-PROVEN facts:
+    // a Validate/Modify/field-access INSIDE a conditional yields a branch-joined
+    // (often "unknown") result, not the straight-line "yes"/"no".
+    // Only runs when the body is available + parsed (opaque/parse-incomplete stay
+    // "unknown" as set by the base summary).
     if routine.body_available && !routine.parse_incomplete {
         for param_role in &mut parameter_roles {
             let rec_var = routine.record_variables.iter().find(|rv| {
@@ -856,25 +590,21 @@ fn compose_routine(
                 Some(rv) => (rv.name.to_lowercase(), Some(rv.id.as_str())),
                 None => continue,
             };
-            let flat = walk_flat_param(
+            let f = crate::engine::l4::cfg_walker::walk_param(
                 routine,
                 &rec_var_name_lc,
                 rec_var_id,
-                true,
                 snapshot,
                 final_map,
                 upgraded_bindings,
                 graph,
+                body_avail_by_id,
             );
-            if let Some(f) = flat {
-                param_role.requires_loaded_at_entry = f.requires_loaded_at_entry;
-                param_role.mutates_before_load = f.mutates_before_load;
-                param_role.dirty_at_exit = f.dirty_at_exit();
-                param_role.current_loaded_fields_at_exit = f.current_loaded_fields_at_exit();
-                // requiredLoadedFieldsAtEntry: empty known list (field-name
-                // resolution deferred to R3a-3).
-                param_role.required_loaded_fields_at_entry = FieldList::Known(Vec::new());
-            }
+            param_role.requires_loaded_at_entry = f.requires_loaded_at_entry;
+            param_role.mutates_before_load = f.mutates_before_load;
+            param_role.dirty_at_exit = f.dirty_at_exit;
+            param_role.current_loaded_fields_at_exit = f.current_loaded_fields_at_exit;
+            param_role.required_loaded_fields_at_entry = f.required_loaded_fields_at_entry;
         }
     }
 
@@ -961,6 +691,13 @@ pub fn compute_summaries(
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
 
+    // internal RoutineId → bodyAvailable, for the opaque-callee guards (FIX 2 / FIX 3
+    // / the branch-aware walker's `callee.bodyAvailable === false` check).
+    let body_avail_by_id: HashMap<String, bool> = routines
+        .iter()
+        .map(|r| (r.id.clone(), r.body_available))
+        .collect();
+
     // Precompute base intraprocedural summaries ONCE per routine.
     let base_summaries: HashMap<String, RoutineSummary> = routines
         .iter()
@@ -1003,6 +740,7 @@ pub fn compute_summaries(
                 &base_summaries,
                 upgraded_bindings,
                 graph,
+                &body_avail_by_id,
             );
             final_map.insert(id.clone(), summary);
             continue;
@@ -1044,6 +782,7 @@ pub fn compute_summaries(
                     &base_summaries,
                     upgraded_bindings,
                     graph,
+                    &body_avail_by_id,
                 );
 
                 let prev_proj = snapshot
@@ -1082,7 +821,20 @@ pub fn compute_summaries(
             }
 
             if iterations >= MAX_FIXED_POINT_ITERATIONS {
-                // Diagnostic: convergence cap hit. Continue gracefully.
+                // FIX 4: cap-hit diagnostic — mirrors al-sem summary-runner.ts:486-490
+                // (`severity: "warning", stage: "summarize"`). The engine never throws;
+                // surface as a warning and continue gracefully. Stable-id members for a
+                // deterministic, modelInstanceId-independent message.
+                let mut members: Vec<&str> = scc_entry
+                    .members
+                    .iter()
+                    .map(|m| stable_map.get(m).map(|s| s.as_str()).unwrap_or(m.as_str()))
+                    .collect();
+                members.sort_unstable();
+                eprintln!(
+                    "warning: summarize: Summary fixed-point did not converge for SCC [{}]",
+                    members.join(", ")
+                );
                 break;
             }
         }

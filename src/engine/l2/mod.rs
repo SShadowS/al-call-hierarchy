@@ -366,6 +366,7 @@ fn extract_body_features(
         source,
         op_id_by_node_id: &result.op_id_by_node_id,
         cs_id_by_node_id: &result.cs_id_by_node_id,
+        cols,
     };
     let statement_tree: Option<PCFNNode> = Some(cfn_ctx.build_block(body));
 

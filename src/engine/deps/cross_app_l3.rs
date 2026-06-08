@@ -166,6 +166,7 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         parameters,
         return_type: r.return_type.clone(),
         call_sites: Vec::new(),
+        statement_tree: None,
     }
 }
 

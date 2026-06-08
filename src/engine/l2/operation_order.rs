@@ -526,6 +526,8 @@ fn walk_loop_node(
             condition_leaves: None,
             children: node.children.clone(),
             else_children: None,
+            is_case_else: false,
+            source_range: None,
         };
         walk_block(&synthetic, loop_frame_id, on_success_path, false, result);
         return;

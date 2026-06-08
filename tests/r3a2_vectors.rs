@@ -15,8 +15,8 @@
 //! and the fix is in the Rust code (NEVER the vector).
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
+use al_call_hierarchy::engine::l4::effect_lattice::{effect_key_of, merge_via, TempStateKind};
 use al_call_hierarchy::engine::l4::summary::project_r3a2;
-use al_call_hierarchy::engine::l4::effect_lattice::{effect_key_of, merge_via, EffectPresence, TempStateKind};
 use serde_json::Value;
 
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -42,18 +42,13 @@ struct PipelineVector {
     name: String,
     files: Vec<Vec<String>>,
     expected: PipelineExpected,
-    #[serde(rename = "expectedTrace")]
-    expected_trace: TraceExpected,
+    // `expectedTrace` is intentionally NOT deserialized here — the JACOBI trace is
+    // validated in r3a2_trace_vectors.rs. serde ignores the unmatched key.
 }
 
 #[derive(serde::Deserialize)]
 struct PipelineExpected {
     summaries: Vec<Value>,
-}
-
-#[derive(serde::Deserialize)]
-struct TraceExpected {
-    traces: Vec<Value>,
 }
 
 #[derive(serde::Deserialize)]
@@ -109,7 +104,12 @@ fn effect_key_vectors_match() {
     for vec in &doc.effect_key_vectors {
         // Parse tempState from the JSON shape used in the vector.
         let ts = parse_temp_state_json(&vec.input.temp_state);
-        let actual = effect_key_of(&vec.input.op, &vec.input.table_id, &vec.input.operation_id, &ts);
+        let actual = effect_key_of(
+            &vec.input.op,
+            &vec.input.table_id,
+            &vec.input.operation_id,
+            &ts,
+        );
         if actual != vec.expected_key {
             failures.push(format!(
                 "[{}] effectKey mismatch\n  expected: {}\n  actual:   {}",
@@ -196,7 +196,10 @@ fn parse_temp_state_json(v: &Value) -> TempStateKind {
             TempStateKind::Known(value)
         }
         "parameter-dependent" => {
-            let idx = v.get("parameterIndex").and_then(|i| i.as_u64()).unwrap_or(0) as u32;
+            let idx = v
+                .get("parameterIndex")
+                .and_then(|i| i.as_u64())
+                .unwrap_or(0) as u32;
             TempStateKind::ParameterDependent(idx)
         }
         _ => TempStateKind::Unknown,

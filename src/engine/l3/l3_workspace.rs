@@ -110,6 +110,11 @@ pub struct L3RecordOperation {
     /// Field arguments for ops like Validate (from L2 body walk). Required
     /// by the R3a-2 summary engine for RecordRoleSummary.writesFields.
     pub field_arguments: Option<Vec<String>>,
+    /// Source anchor (from L2 body walk). Required by the R3a-2 branch-aware
+    /// CFG walker to interleave record ops with field accesses by source
+    /// position inside a block (mirrors al-sem `op.sourceAnchor.range`). L2 data
+    /// that the L3 record-type projection drops, forwarded here for L4 only.
+    pub source_anchor: crate::engine::l2::features::PAnchor,
 }
 
 /// A lexical variable (params → locals → globals) carrying its declared type, for
@@ -183,6 +188,11 @@ pub struct L3Routine {
     pub return_type: Option<String>,
     /// The routine's call sites (L2 body-walk output), the resolver input.
     pub call_sites: Vec<crate::engine::l2::features::PCallSite>,
+    /// The CFN statement-tree skeleton (L2 body-walk output). Required by the
+    /// R3a-2 branch-aware CFG walker (`walkCFG` port) to join role state-sets at
+    /// if/case/loop. `None` for opaque / TryFunction / bodyless routines (the
+    /// walker then falls back to the straight-line pass, mirroring al-sem).
+    pub statement_tree: Option<crate::engine::l2::features::PCFNNode>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -550,6 +560,7 @@ fn project_file(
                     table_id: None,
                     temp_state: Some(op.temp_state.clone()),
                     field_arguments: op.field_arguments.clone(),
+                    source_anchor: op.source_anchor.clone(),
                 })
                 .collect();
             let field_accesses = features.field_accesses.clone();
@@ -579,6 +590,7 @@ fn project_file(
                 .collect();
             let return_type = crate::engine::l2::get_return_type_text(routine, source);
             let call_sites = features.call_sites.clone();
+            let statement_tree = features.statement_tree.clone();
 
             // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
             // projection does (routine-indexer.ts parity): a code_block body is
@@ -626,6 +638,7 @@ fn project_file(
                 parameters,
                 return_type,
                 call_sites,
+                statement_tree,
             });
         }
     }

@@ -300,7 +300,13 @@ pub struct PConditionGuard {
 
 /// Normalized CFN skeleton node — kind, child/else structure, op/callsite refs,
 /// conditionGuard, ordered conditionLeaves. sourceAnchor DROPPED.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// `PartialEq`/`Eq` are implemented MANUALLY (not derived) so the in-memory-only
+/// `is_case_else` marker is EXCLUDED from equality — it never serializes, so a
+/// freshly-built node (marker set) must still compare equal to a golden node
+/// deserialized without it (marker defaulted false). Keeping it out of `==`
+/// preserves L2 vector parity (the vectors compare via `PartialEq`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PCFNNode {
     pub kind: String,
     #[serde(rename = "operationId", skip_serializing_if = "Option::is_none")]
@@ -315,7 +321,39 @@ pub struct PCFNNode {
     pub children: Option<Vec<PCFNNode>>,
     #[serde(rename = "elseChildren", skip_serializing_if = "Option::is_none")]
     pub else_children: Option<Vec<PCFNNode>>,
+    /// In-memory ONLY (never serialized — `#[serde(skip)]`, so L2 golden parity is
+    /// unchanged): marks a `case-branch` node that is the `else`/default branch of
+    /// a `case`. al-sem distinguishes it via `sourceAnchor.syntaxKind ===
+    /// "case_else_branch"`; the L2 projection drops sourceAnchor, so we carry this
+    /// flag for the L4 branch-aware walker's "case without else joins pre" rule.
+    /// EXCLUDED from `PartialEq` (see the manual impl below).
+    #[serde(skip, default)]
+    pub is_case_else: bool,
+    /// In-memory ONLY (never serialized — `#[serde(skip)]`): the node's TRUE source
+    /// range `(startLine, startColumn, endLine, endColumn)` in the SAME basis as
+    /// `PAnchor` (0-based row, utf16 column). al-sem reads `node.sourceAnchor.range`
+    /// to attribute field-accesses to the right block level in the branch-aware
+    /// walker (`collectFieldAccessesInBlock`); the L2 projection drops sourceAnchor,
+    /// so we carry just the range for L4. `None` when unavailable (synthetic nodes).
+    /// EXCLUDED from `PartialEq`.
+    #[serde(skip, default)]
+    pub source_range: Option<(u32, u32, u32, u32)>,
 }
+
+impl PartialEq for PCFNNode {
+    fn eq(&self, other: &Self) -> bool {
+        // `is_case_else` is deliberately omitted — it is an in-memory-only marker.
+        self.kind == other.kind
+            && self.operation_id == other.operation_id
+            && self.callsite_id == other.callsite_id
+            && self.condition_guard == other.condition_guard
+            && self.condition_leaves == other.condition_leaves
+            && self.children == other.children
+            && self.else_children == other.else_children
+    }
+}
+
+impl Eq for PCFNNode {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PFeatures {
