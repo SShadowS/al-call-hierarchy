@@ -13,6 +13,8 @@ pub mod capability_cone;
 pub mod cfg_walker;
 pub mod combined_graph;
 pub mod effect_lattice;
+/// R3b — the Salsa-backed INCREMENTAL L4 query graph (wraps the from-scratch L4).
+pub mod incremental;
 pub mod scc;
 pub mod summary;
 pub mod summary_runner;

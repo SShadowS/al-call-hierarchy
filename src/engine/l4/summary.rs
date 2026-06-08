@@ -26,7 +26,7 @@ use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
 
 /// The temp-state of a record operation (internal form — NOT the serde
 /// projection shape). Mirrors al-sem `TempState`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub enum TempState {
     Known(bool),
     ParameterDependent(u32),
@@ -52,7 +52,7 @@ impl TempState {
 }
 
 /// One de-duplicated DB effect (internal form). Mirrors al-sem `DbEffect`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, salsa::Update)]
 pub struct DbEffect {
     /// `effectKeyOf(op, tableId, operationId, tempState)` — EXCLUDES via.
     pub effect_key: String,
@@ -66,7 +66,7 @@ pub struct DbEffect {
 }
 
 /// One uncertainty (internal form). Mirrors al-sem `Uncertainty`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, salsa::Update)]
 pub struct Uncertainty {
     pub kind: String,
     pub callsite_id: Option<String>,
@@ -88,7 +88,7 @@ pub fn uncertainty_key(u: &Uncertainty) -> String {
 
 /// Per-record-parameter role summary (internal form). Mirrors al-sem
 /// `RecordRoleSummary`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, salsa::Update)]
 pub struct RecordRoleSummary {
     pub parameter_index: u32,
     pub table_id: String,
@@ -117,7 +117,7 @@ pub struct RecordRoleSummary {
 }
 
 /// A field list value: a sorted list of field ids, or a sentinel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
 pub enum FieldList {
     Known(Vec<String>),
     Unknown,
@@ -126,7 +126,7 @@ pub enum FieldList {
 
 /// One routine summary core (internal form). Mirrors al-sem `RoutineSummary`
 /// (CORE fields only — capabilityFacts/coverage/fieldEffects excluded).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, salsa::Update)]
 pub struct RoutineSummary {
     pub routine_id: String,
     pub db_effects: Vec<DbEffect>,

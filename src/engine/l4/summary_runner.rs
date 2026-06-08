@@ -775,159 +775,244 @@ pub fn compute_summaries_with_leaves(
         final_map.insert(id.clone(), summary.clone());
     }
 
-    // Use an empty snapshot for non-recursive SCCs (reads fall through to final_map).
-    let empty_snapshot: HashMap<String, RoutineSummary> = HashMap::new();
-
     for scc_entry in &scc.sccs {
-        if !scc_entry.recursive {
-            // Non-recursive SCC: single pass.
-            let id = match scc_entry.members.first() {
-                Some(id) => id,
-                None => continue,
-            };
-            // Fixed leaf — already in final_map, never recomputed.
-            if leaf_summaries.contains_key(id) {
-                continue;
-            }
-            let routine = match routines_by_id.get(id) {
-                Some(r) => r,
-                None => continue,
-            };
-            let summary = compose_routine(
-                routine,
-                &empty_snapshot,
-                &final_map,
-                &base_summaries,
+        let out = run_one_scc(
+            scc_entry,
+            &final_map,
+            &SccComputeCtx {
+                routines_by_id: &routines_by_id,
+                base_summaries: &base_summaries,
                 upgraded_bindings,
                 graph,
-                &body_avail_by_id,
-            );
-            final_map.insert(id.clone(), summary);
-            continue;
+                body_avail_by_id: &body_avail_by_id,
+                stable_map: &stable_map,
+                leaf_summaries,
+            },
+            collect_trace,
+        );
+        for (id, s) in out.summaries {
+            final_map.insert(id, s);
         }
-
-        // Recursive SCC — JACOBI fixed-point.
-        // Seed in_progress with base summaries (leaves are excluded: they have no
-        // base entry and are read from final_map).
-        let mut in_progress: HashMap<String, RoutineSummary> = HashMap::new();
-        for id in &scc_entry.members {
-            if leaf_summaries.contains_key(id) {
-                continue;
-            }
-            if let Some(base) = base_summaries.get(id) {
-                in_progress.insert(id.clone(), base.clone());
-            }
-        }
-
-        let mut iterations = 0usize;
-        let mut changed = true;
-        let mut scc_passes: Vec<RawSccTracePass> = Vec::new();
-
-        while changed {
-            changed = false;
-            iterations += 1;
-
-            // JACOBI: freeze the prior-pass snapshot (deep copy).
-            let snapshot: HashMap<String, RoutineSummary> = in_progress.clone();
-
-            // Accumulate this pass's new summaries separately so we don't read
-            // our own writes during this pass (JACOBI, not Gauss-Seidel).
-            let mut next_pass: HashMap<String, RoutineSummary> = HashMap::new();
-
-            for id in &scc_entry.members {
-                if leaf_summaries.contains_key(id) {
-                    continue;
-                }
-                let routine = match routines_by_id.get(id) {
-                    Some(r) => r,
-                    None => continue,
-                };
-                let next = compose_routine(
-                    routine,
-                    &snapshot,  // FROZEN: all reads from the prior pass
-                    &final_map, // settled summaries for already-processed SCCs
-                    &base_summaries,
-                    upgraded_bindings,
-                    graph,
-                    &body_avail_by_id,
-                );
-
-                let prev_proj = snapshot
-                    .get(id)
-                    .map(|s| project_summary_to_stable(id, s, &stable_map));
-                let next_proj = project_summary_to_stable(id, &next, &stable_map);
-
-                let fp_prev = prev_proj.as_ref().map(summary_fingerprint);
-                let fp_next = summary_fingerprint(&next_proj);
-
-                if fp_prev.as_deref() != Some(&fp_next) {
-                    changed = true;
-                }
-                next_pass.insert(id.clone(), next);
-            }
-
-            // Swap: in_progress becomes the new-pass map.
-            in_progress = next_pass;
-
-            // Trace hook (opt-in).
-            if collect_trace {
-                let pass_members: Vec<PRoutineSummaryCore> = scc_entry
-                    .members
-                    .iter()
-                    .filter_map(|id| {
-                        in_progress
-                            .get(id)
-                            .map(|s| project_summary_to_stable(id, s, &stable_map))
-                    })
-                    .collect();
-                scc_passes.push(RawSccTracePass {
-                    iteration: iterations,
-                    changed,
-                    member_summaries: pass_members,
-                });
-            }
-
-            if iterations >= MAX_FIXED_POINT_ITERATIONS {
-                // FIX 4: cap-hit diagnostic — mirrors al-sem summary-runner.ts:486-490
-                // (`severity: "warning", stage: "summarize"`). The engine never throws;
-                // surface as a warning and continue gracefully. Stable-id members for a
-                // deterministic, modelInstanceId-independent message.
-                let mut members: Vec<&str> = scc_entry
-                    .members
-                    .iter()
-                    .map(|m| stable_map.get(m).map(|s| s.as_str()).unwrap_or(m.as_str()))
-                    .collect();
-                members.sort_unstable();
-                eprintln!(
-                    "warning: summarize: Summary fixed-point did not converge for SCC [{}]",
-                    members.join(", ")
-                );
-                break;
-            }
-        }
-
-        // Mark all SCC members as inRecursiveCycle=true.
-        for id in &scc_entry.members {
-            if let Some(s) = in_progress.remove(id) {
-                final_map.insert(
-                    id.clone(),
-                    RoutineSummary {
-                        in_recursive_cycle: true,
-                        ..s
-                    },
-                );
-            }
-        }
-
-        if collect_trace && !scc_passes.is_empty() {
-            raw_traces.push(RawSccTrace {
-                members: scc_entry.members.clone(),
-                passes: scc_passes,
-            });
+        if let Some(trace) = out.trace {
+            raw_traces.push(trace);
         }
     }
 
     (final_map, raw_traces)
+}
+
+/// The SHARED per-SCC compute context — the workspace-wide lookup structures the
+/// JACOBI loop reads (all keyed by internal RoutineId, so a single SCC's loop
+/// reads only the entries it needs). Both the from-scratch
+/// [`compute_summaries_with_leaves`] AND the R3b Salsa `scc_summaries` query call
+/// `run_one_scc` with this context, so the JACOBI fixed point is the SAME proven
+/// code on both paths (no re-port).
+pub struct SccComputeCtx<'a> {
+    pub routines_by_id: &'a HashMap<String, &'a L3Routine>,
+    pub base_summaries: &'a HashMap<String, RoutineSummary>,
+    pub upgraded_bindings: &'a HashMap<String, Vec<UpgradedBinding>>,
+    pub graph: &'a CombinedGraph,
+    pub body_avail_by_id: &'a HashMap<String, bool>,
+    pub stable_map: &'a HashMap<String, String>,
+    pub leaf_summaries: &'a HashMap<String, RoutineSummary>,
+}
+
+/// The result of computing one SCC: its members' settled summaries (to fold into
+/// the caller's `final_map`) + the optional per-recursive-SCC fingerprint trace.
+pub struct SccComputeOut {
+    pub summaries: Vec<(String, RoutineSummary)>,
+    pub trace: Option<RawSccTrace>,
+}
+
+/// Compute ONE SCC's settled summaries, given `predecessor_final_map` = the
+/// already-settled summaries of every SCC topologically AFTER this one (the
+/// condensation successors / callees, which Tarjan emits FIRST) plus any fixed
+/// leaves. Runs the PROVEN JACOBI fixed point for a recursive SCC, or a single
+/// `compose_routine` pass for a non-recursive one — the EXACT logic the
+/// from-scratch loop ran (extracted verbatim so the golden is untouched).
+///
+/// This is the R3b incrementality seam: the Salsa `scc_summaries(scc_key)` query
+/// builds `predecessor_final_map` from its successor SCCs' `scc_summaries` and
+/// calls this — so the intra-SCC fixed point depends only on `scc_members` +
+/// successor summaries + the members' inputs, NOT on a monolithic condensation.
+pub fn run_one_scc(
+    scc_entry: &super::scc::Scc,
+    predecessor_final_map: &HashMap<String, RoutineSummary>,
+    ctx: &SccComputeCtx,
+    collect_trace: bool,
+) -> SccComputeOut {
+    let leaf_summaries = ctx.leaf_summaries;
+
+    if !scc_entry.recursive {
+        // Non-recursive SCC: single pass.
+        let id = match scc_entry.members.first() {
+            Some(id) => id,
+            None => {
+                return SccComputeOut {
+                    summaries: Vec::new(),
+                    trace: None,
+                }
+            }
+        };
+        // Fixed leaf — already in the predecessor map, never recomputed.
+        if leaf_summaries.contains_key(id) {
+            return SccComputeOut {
+                summaries: Vec::new(),
+                trace: None,
+            };
+        }
+        let routine = match ctx.routines_by_id.get(id) {
+            Some(r) => r,
+            None => {
+                return SccComputeOut {
+                    summaries: Vec::new(),
+                    trace: None,
+                }
+            }
+        };
+        let empty_snapshot: HashMap<String, RoutineSummary> = HashMap::new();
+        let summary = compose_routine(
+            routine,
+            &empty_snapshot,
+            predecessor_final_map,
+            ctx.base_summaries,
+            ctx.upgraded_bindings,
+            ctx.graph,
+            ctx.body_avail_by_id,
+        );
+        return SccComputeOut {
+            summaries: vec![(id.clone(), summary)],
+            trace: None,
+        };
+    }
+
+    // Recursive SCC — JACOBI fixed-point.
+    // Seed in_progress with base summaries (leaves are excluded: they have no
+    // base entry and are read from the predecessor map).
+    let mut in_progress: HashMap<String, RoutineSummary> = HashMap::new();
+    for id in &scc_entry.members {
+        if leaf_summaries.contains_key(id) {
+            continue;
+        }
+        if let Some(base) = ctx.base_summaries.get(id) {
+            in_progress.insert(id.clone(), base.clone());
+        }
+    }
+
+    let mut iterations = 0usize;
+    let mut changed = true;
+    let mut scc_passes: Vec<RawSccTracePass> = Vec::new();
+
+    while changed {
+        changed = false;
+        iterations += 1;
+
+        // JACOBI: freeze the prior-pass snapshot (deep copy).
+        let snapshot: HashMap<String, RoutineSummary> = in_progress.clone();
+
+        // Accumulate this pass's new summaries separately so we don't read
+        // our own writes during this pass (JACOBI, not Gauss-Seidel).
+        let mut next_pass: HashMap<String, RoutineSummary> = HashMap::new();
+
+        for id in &scc_entry.members {
+            if leaf_summaries.contains_key(id) {
+                continue;
+            }
+            let routine = match ctx.routines_by_id.get(id) {
+                Some(r) => r,
+                None => continue,
+            };
+            let next = compose_routine(
+                routine,
+                &snapshot,             // FROZEN: all reads from the prior pass
+                predecessor_final_map, // settled summaries for already-processed SCCs
+                ctx.base_summaries,
+                ctx.upgraded_bindings,
+                ctx.graph,
+                ctx.body_avail_by_id,
+            );
+
+            let prev_proj = snapshot
+                .get(id)
+                .map(|s| project_summary_to_stable(id, s, ctx.stable_map));
+            let next_proj = project_summary_to_stable(id, &next, ctx.stable_map);
+
+            let fp_prev = prev_proj.as_ref().map(summary_fingerprint);
+            let fp_next = summary_fingerprint(&next_proj);
+
+            if fp_prev.as_deref() != Some(&fp_next) {
+                changed = true;
+            }
+            next_pass.insert(id.clone(), next);
+        }
+
+        // Swap: in_progress becomes the new-pass map.
+        in_progress = next_pass;
+
+        // Trace hook (opt-in).
+        if collect_trace {
+            let pass_members: Vec<PRoutineSummaryCore> = scc_entry
+                .members
+                .iter()
+                .filter_map(|id| {
+                    in_progress
+                        .get(id)
+                        .map(|s| project_summary_to_stable(id, s, ctx.stable_map))
+                })
+                .collect();
+            scc_passes.push(RawSccTracePass {
+                iteration: iterations,
+                changed,
+                member_summaries: pass_members,
+            });
+        }
+
+        if iterations >= MAX_FIXED_POINT_ITERATIONS {
+            // FIX 4: cap-hit diagnostic — mirrors al-sem summary-runner.ts:486-490
+            // (`severity: "warning", stage: "summarize"`). The engine never throws;
+            // surface as a warning and continue gracefully. Stable-id members for a
+            // deterministic, modelInstanceId-independent message.
+            let mut members: Vec<&str> = scc_entry
+                .members
+                .iter()
+                .map(|m| ctx.stable_map.get(m).map(|s| s.as_str()).unwrap_or(m.as_str()))
+                .collect();
+            members.sort_unstable();
+            eprintln!(
+                "warning: summarize: Summary fixed-point did not converge for SCC [{}]",
+                members.join(", ")
+            );
+            break;
+        }
+    }
+
+    // Mark all SCC members as inRecursiveCycle=true.
+    let mut out_summaries: Vec<(String, RoutineSummary)> = Vec::new();
+    for id in &scc_entry.members {
+        if let Some(s) = in_progress.remove(id) {
+            out_summaries.push((
+                id.clone(),
+                RoutineSummary {
+                    in_recursive_cycle: true,
+                    ..s
+                },
+            ));
+        }
+    }
+
+    let trace = if collect_trace && !scc_passes.is_empty() {
+        Some(RawSccTrace {
+            members: scc_entry.members.clone(),
+            passes: scc_passes,
+        })
+    } else {
+        None
+    };
+
+    SccComputeOut {
+        summaries: out_summaries,
+        trace,
+    }
 }
 
 // ---------------------------------------------------------------------------

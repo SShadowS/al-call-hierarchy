@@ -1264,11 +1264,24 @@ fn collect_field_accesses_in_block<'a>(
 
 /// All field accesses on `param` (used by the block-attribution scan).
 fn param_field_accesses<'a>(idx: &'a WalkIndexes, param: &ParamCtx) -> Vec<&'a PFieldAccess> {
+    // R3b nondeterminism audit: `fa_by_pos` is a `HashMap<(line,col), …>`, so
+    // `.values()` yields a hash-random order. The downstream consumer
+    // (`collect_field_accesses_in_block`) interleaves these with child CFN nodes
+    // and SORTS by (line, col) with a STABLE sort — so two field accesses sharing
+    // the exact same start position would retain this hash-random relative order,
+    // a latent incremental nondeterminism. Iterate the position keys in sorted
+    // order so the pre-sort input order is canonical. Output-neutral for the R3a
+    // goldens (distinct FAs never share an identical start position there); the
+    // canonical order only ever differs from hash order on an exact-position tie.
+    let mut keys: Vec<&(u32, u32)> = idx.fa_by_pos.keys().collect();
+    keys.sort_unstable();
     let mut out: Vec<&PFieldAccess> = Vec::new();
-    for list in idx.fa_by_pos.values() {
-        for fa in list {
-            if fa.record_variable_name.to_lowercase() == param.name_lc {
-                out.push(fa);
+    for key in keys {
+        if let Some(list) = idx.fa_by_pos.get(key) {
+            for fa in list {
+                if fa.record_variable_name.to_lowercase() == param.name_lc {
+                    out.push(fa);
+                }
             }
         }
     }

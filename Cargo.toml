@@ -51,6 +51,12 @@ percent-encoding = "2"
 # Error handling
 anyhow = "1"
 
+# Incremental query framework (L4 incrementality, Phase R3b). PINNED to the
+# current stable crates.io release (the new-Salsa `#[salsa::db]` / `#[salsa::input]`
+# / `#[salsa::tracked]` / `#[salsa::interned]` API). The interning + cycle-handling
+# behavior differs materially across Salsa versions — keep this pinned.
+salsa = "=0.27.0"
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 
