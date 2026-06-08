@@ -10,4 +10,7 @@
 //! The fixed-point summary core (R3a-2+) layers on this SCC condensation.
 
 pub mod combined_graph;
+pub mod effect_lattice;
 pub mod scc;
+pub mod summary;
+pub mod summary_runner;

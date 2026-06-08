@@ -87,6 +87,13 @@ pub struct L3RecordVariable {
     pub table_name: Option<String>,
     /// Resolved internal TableId, set by `resolve_record_types`. None = unresolved.
     pub table_id: Option<String>,
+    /// True when this is a parameter record variable (from L2 body walk).
+    /// Required by the R3a-2 summary engine to derive RecordRoleSummary per
+    /// record parameter (mirrors al-sem `recVar.isParameter`).
+    pub is_parameter: bool,
+    /// The 0-based parameter index when `is_parameter` is true.
+    /// Required by the R3a-2 summary engine (`recVar.parameterIndex`).
+    pub parameter_index: Option<u32>,
 }
 
 /// A record operation with its (post-resolve) resolved internal table id.
@@ -97,6 +104,12 @@ pub struct L3RecordOperation {
     pub record_variable_name: String,
     pub record_variable_id: Option<String>,
     pub table_id: Option<String>,
+    /// Temp-state of this operation (from L2 body walk). Required by the
+    /// R3a-2 summary engine to derive DbEffect.tempState for base summaries.
+    pub temp_state: Option<crate::engine::l2::features::PTempState>,
+    /// Field arguments for ops like Validate (from L2 body walk). Required
+    /// by the R3a-2 summary engine for RecordRoleSummary.writesFields.
+    pub field_arguments: Option<Vec<String>>,
 }
 
 /// A lexical variable (params → locals → globals) carrying its declared type, for
@@ -158,6 +171,9 @@ pub struct L3Routine {
     pub parse_incomplete: bool,
     pub record_variables: Vec<L3RecordVariable>,
     pub record_operations: Vec<L3RecordOperation>,
+    /// Field accesses (from L2 body walk). Required by the R3a-2 summary
+    /// engine to derive RecordRoleSummary.readsFields per record parameter.
+    pub field_accesses: Vec<crate::engine::l2::features::PFieldAccess>,
     pub variables: Vec<L3Variable>,
     /// Declared parameters (in order) — drives arity + var-ness + arg-type
     /// disambiguation. Empty for trigger routines with no parameter list.
@@ -519,6 +535,8 @@ fn project_file(
                     name: rv.name.clone(),
                     table_name: rv.table_name.clone(),
                     table_id: None,
+                    is_parameter: rv.is_parameter,
+                    parameter_index: rv.parameter_index,
                 })
                 .collect();
             let record_operations = features
@@ -530,8 +548,11 @@ fn project_file(
                     record_variable_name: op.record_variable_name.clone(),
                     record_variable_id: op.record_variable_id.clone(),
                     table_id: None,
+                    temp_state: Some(op.temp_state.clone()),
+                    field_arguments: op.field_arguments.clone(),
                 })
                 .collect();
+            let field_accesses = features.field_accesses.clone();
             let variables = features
                 .variables
                 .iter()
@@ -600,6 +621,7 @@ fn project_file(
                 parse_incomplete,
                 record_variables,
                 record_operations,
+                field_accesses,
                 variables,
                 parameters,
                 return_type,

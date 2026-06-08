@@ -1,0 +1,644 @@
+{
+  "description": "R3a-2 summary-core vectors. PIPELINE vectors are small inline AL workspaces run through the REAL pipeline (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries via runSummaries with the onSccPass trace hook → projectR3a2/projectR3a2Trace; captured POST-computeSummaries, no dep hooks). They cover the effectKeyOf diamond dedup, the reachable via-kind enumeration (direct/inherited/event-subscriber/implicit-trigger), the parameterRoles cross-call exit-effect composition, and a 3-cycle recursive SCC whose DB effect propagates over multiple JACOBI passes (the fingerprint TRACE). LATTICE vectors are direct input→output tables for effectKeyOf (EXCLUDES via — two effects differing only in via share a key) and mergeVia (the full 5×5 precedence matrix incl. the same-rank tie-breaker: equal rank ⇒ keep the FIRST arg; order direct > implicit-trigger > event-subscriber > dynamic > inherited). Hand-authored invariants were asserted against the live projection before emit. NOTE: `dynamic` via is structurally unreachable on inherited DbEffects in source-only L4 — al-sem only ever sets dispatchKind 'dynamic' with resolution 'unknown' and to===undefined (call-resolver.ts:589), so a dynamic-kind COMBINED edge with a resolved callee never forms; dynamic dispatch surfaces as a dynamic-dispatch UNCERTAINTY + hasUnresolvedCalls instead. The mergeVia matrix still pins the dynamic rank for completeness.",
+  "modelInstanceId": "r0",
+  "appGuid": "3a200000-0000-0000-0000-00000000003a",
+  "pipelineVectorCount": 4,
+  "effectKeyVectorCount": 4,
+  "mergeViaVectorCount": 25,
+  "pipelineVectors": [
+    {
+      "name": "diamond_effectkey_dedup",
+      "description": "a diamond Caller→Mid1→Leaf.W and Caller→Mid2→Leaf.W: Leaf's single Insert reaches Caller via two paths but de-dupes to ONE effect (effectKeyOf excludes via, dedup by key)",
+      "files": [
+        [
+          "a",
+          "table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Leaf { procedure W() var R: Record T; begin R.Insert(true); end; }\ncodeunit 50101 Mids\n{\n    var L: Codeunit Leaf;\n    procedure Mid1() begin L.W(); end;\n    procedure Mid2() begin L.W(); end;\n    procedure Caller() begin Mid1(); Mid2(); end;\n}"
+        ]
+      ],
+      "expected": {
+        "summaries": [
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "direct"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#041a1b938916fb590e80615ae68439643eb10a89479182021b34a621d5cd2587",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#08411945d8093572925776b6a916c6f8aa2979e2aef8fdbd98a6be88f79a0795",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#1ab5a22e9446e2ed684a3cb785054809e5c73b21aebce2cf99f178a18385c201",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          }
+        ]
+      },
+      "expectedTrace": {
+        "traces": []
+      },
+      "invariants": [
+        "every routine has exactly one dbEffect (the diamond de-duped)",
+        "a direct effect exists (Leaf.W)",
+        "≥3 inherited effects (the same Leaf op, inherited along each path)",
+        "all effects share one effectKey (single fact)",
+        "no recursive SCC trace"
+      ]
+    },
+    {
+      "name": "via_kind_enumeration",
+      "description": "direct + inherited + event-subscriber + implicit-trigger via tags on inherited DbEffects (the reachable via kinds in source-only L4; `dynamic` via is structurally unreachable — see lattice note)",
+      "files": [
+        [
+          "a",
+          "table 50000 T\n{\n    fields { field(1; \"No.\"; Code[20]) { } }\n    keys { key(K; \"No.\") { } }\n    trigger OnInsert() var R2: Record T; begin R2.ModifyAll(\"No.\", ''); end;\n}\ncodeunit 50100 Pub\n{\n    [IntegrationEvent(false, false)]\n    procedure OnE() begin end;\n    procedure Fire() var R: Record T; begin R.Insert(true); OnE(); end;\n}\ncodeunit 50101 Sub\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Pub, 'OnE', '', false, false)]\n    procedure H() var R: Record T; begin R.DeleteAll(); end;\n}"
+        ]
+      ],
+      "expected": {
+        "summaries": [
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#98346da5d6b1d05da0daaffb1ca53f81633333dea8bf0e5d72bc9e0fc4c18f6a",
+            "dbEffects": [
+              {
+                "effectKey": "DeleteAll|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0|f",
+                "op": "DeleteAll",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              },
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#98346da5d6b1d05da0daaffb1ca53f81633333dea8bf0e5d72bc9e0fc4c18f6a/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#98346da5d6b1d05da0daaffb1ca53f81633333dea8bf0e5d72bc9e0fc4c18f6a/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "direct"
+              },
+              {
+                "effectKey": "ModifyAll|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0|f",
+                "op": "ModifyAll",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "implicit-trigger"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#d646ce6a3b477a51fa0b72dd85a7c3d41a6f29e7970d93a533a86be89a128988",
+            "dbEffects": [
+              {
+                "effectKey": "DeleteAll|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0|f",
+                "op": "DeleteAll",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "event-subscriber"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247",
+            "dbEffects": [
+              {
+                "effectKey": "DeleteAll|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0|f",
+                "op": "DeleteAll",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#e9495bee16ef745d8358de94d15b6c3b88786d4d9399cd1f2471636ec1904247/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "direct"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+            "dbEffects": [
+              {
+                "effectKey": "ModifyAll|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0|f",
+                "op": "ModifyAll",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "direct"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          }
+        ]
+      },
+      "expectedTrace": {
+        "traces": []
+      },
+      "invariants": [
+        "a direct effect exists",
+        "an inherited effect exists",
+        "an event-subscriber effect exists",
+        "an implicit-trigger effect exists",
+        "no dynamic effect (dynamic via is unreachable in source-only L4)"
+      ]
+    },
+    {
+      "name": "paramroles_crosscall_composition",
+      "description": "Driver.Entry(var Rec) forwards Rec to Helper.Persist(var R) which Modifies it; the cross-call exit-effect fold lifts persists/mutates onto Entry's parameter role",
+      "files": [
+        [
+          "a",
+          "table 50000 T { fields { field(1; \"No.\"; Code[20]) { } field(2; Name; Text[50]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Helper { procedure Persist(var R: Record T) begin R.Modify(true); end; }\ncodeunit 50101 Driver\n{\n    var H: Codeunit Helper;\n    procedure Entry(var Rec: Record T) begin H.Persist(Rec); end;\n}"
+        ]
+      ],
+      "expected": {
+        "summaries": [
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#dc146f0b9dbb7d37dff8dd25733214d82019a8c5bd1adbdc6701e99d3ec864b8",
+            "dbEffects": [
+              {
+                "effectKey": "Modify|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#dc146f0b9dbb7d37dff8dd25733214d82019a8c5bd1adbdc6701e99d3ec864b8/op0|p0",
+                "op": "Modify",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#dc146f0b9dbb7d37dff8dd25733214d82019a8c5bd1adbdc6701e99d3ec864b8/op0",
+                "tempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                },
+                "via": "direct"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [
+              {
+                "parameterIndex": 0,
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "readsFields": [],
+                "writesFields": [],
+                "mayResetFilters": false,
+                "mayChangeLoadFields": false,
+                "mayAssignRecord": false,
+                "mayUseRecordRef": false,
+                "requiresLoadedAtEntry": "yes",
+                "requiredLoadedFieldsAtEntry": [],
+                "mutatesBeforeLoad": "yes",
+                "persistsCurrentRecord": "yes",
+                "setBasedDbWrites": "no",
+                "validatesParam": "no",
+                "copiesIntoParam": "no",
+                "resetsFiltersOnParam": "no",
+                "dirtyAtExit": "no",
+                "currentLoadedFieldsAtExit": "full",
+                "mutatesParam": "yes",
+                "loadsFromDbParam": "no",
+                "initialisesParam": "no"
+              }
+            ],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50101#dc3131b643d632f76c1ca786c6eaa81b55a733273e1ed733ca799b25a6bda9b8",
+            "dbEffects": [
+              {
+                "effectKey": "Modify|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#dc146f0b9dbb7d37dff8dd25733214d82019a8c5bd1adbdc6701e99d3ec864b8/op0|p0",
+                "op": "Modify",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#dc146f0b9dbb7d37dff8dd25733214d82019a8c5bd1adbdc6701e99d3ec864b8/op0",
+                "tempState": {
+                  "kind": "parameter-dependent",
+                  "parameterIndex": 0
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [
+              {
+                "parameterIndex": 0,
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "readsFields": [],
+                "writesFields": [],
+                "mayResetFilters": false,
+                "mayChangeLoadFields": false,
+                "mayAssignRecord": false,
+                "mayUseRecordRef": false,
+                "requiresLoadedAtEntry": "yes",
+                "requiredLoadedFieldsAtEntry": [],
+                "mutatesBeforeLoad": "yes",
+                "persistsCurrentRecord": "yes",
+                "setBasedDbWrites": "no",
+                "validatesParam": "no",
+                "copiesIntoParam": "no",
+                "resetsFiltersOnParam": "no",
+                "dirtyAtExit": "no",
+                "currentLoadedFieldsAtExit": "full",
+                "mutatesParam": "yes",
+                "loadsFromDbParam": "no",
+                "initialisesParam": "no"
+              }
+            ],
+            "inRecursiveCycle": false,
+            "hasUnresolvedCalls": false
+          }
+        ]
+      },
+      "expectedTrace": {
+        "traces": []
+      },
+      "invariants": [
+        "Driver.Entry has a parameterRole with persists=yes (cross-call composed)",
+        "≥2 routines carry a parameterRole with mutates=yes"
+      ]
+    },
+    {
+      "name": "recursive_3cycle_trace",
+      "description": "a 3-cycle (A→B→C→A) where A performs an Insert; the DB effect propagates around the cycle over multiple JACOBI passes — the trace shows changed=[true,true,false] (≥2 iterations REQUIRED)",
+      "files": [
+        [
+          "a",
+          "table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Cyc\n{\n    procedure A() var R: Record T; begin R.Insert(true); B(); end;\n    procedure B() begin C(); end;\n    procedure C() begin A(); end;\n}"
+        ]
+      ],
+      "expected": {
+        "summaries": [
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "direct"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": true,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": true,
+            "hasUnresolvedCalls": false
+          },
+          {
+            "routineId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214",
+            "dbEffects": [
+              {
+                "effectKey": "Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f",
+                "op": "Insert",
+                "tableId": "3a200000-0000-0000-0000-00000000003a:Table:50000",
+                "operationId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0",
+                "tempState": {
+                  "kind": "known",
+                  "value": false
+                },
+                "via": "inherited"
+              }
+            ],
+            "uncertainties": [],
+            "parameterRoles": [],
+            "inRecursiveCycle": true,
+            "hasUnresolvedCalls": false
+          }
+        ]
+      },
+      "expectedTrace": {
+        "traces": [
+          {
+            "sccId": "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411,3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40,3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214",
+            "members": [
+              "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411",
+              "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40",
+              "3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214"
+            ],
+            "iterations": 3,
+            "passes": [
+              {
+                "iteration": 1,
+                "changed": true,
+                "fingerprint": "[[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:direct\\\"],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40\",\"[[],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:inherited\\\"],false,[],[]]\"]]"
+              },
+              {
+                "iteration": 2,
+                "changed": true,
+                "fingerprint": "[[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:direct\\\"],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:inherited\\\"],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:inherited\\\"],false,[],[]]\"]]"
+              },
+              {
+                "iteration": 3,
+                "changed": false,
+                "fingerprint": "[[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:direct\\\"],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#6129e4b894ebb04fbb24d5bb64df63b5cb536c627ed7284654a37525b3735b40\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:inherited\\\"],false,[],[]]\"],[\"3a200000-0000-0000-0000-00000000003a:Codeunit:50100#9456f67da66f732c374c844b42bad45370e767995a504002fd5a35749486d214\",\"[[\\\"Insert|3a200000-0000-0000-0000-00000000003a:Table:50000|3a200000-0000-0000-0000-00000000003a:Codeunit:50100#373764cdab70266d0c4a799fbba7e7d9500628bba09ed6fd1396ef1cca146411/op0|f:inherited\\\"],false,[],[]]\"]]"
+              }
+            ]
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one recursive-SCC trace with 3 members",
+        "the trace ran ≥2 iterations (the JACOBI cycle iterated)",
+        "the LAST pass converged (changed=false); all earlier passes changed=true",
+        "all 3 members are inRecursiveCycle with the Insert effect",
+        "the cycle has both a direct and inherited via for the Insert"
+      ]
+    }
+  ],
+  "effectKeyVectors": [
+    {
+      "name": "insert-known-false-temp",
+      "description": "Insert on a non-temp record → tempStateKey 'f'",
+      "input": {
+        "op": "Insert",
+        "tableId": "g/Table:50000",
+        "operationId": "g/r1/op0",
+        "tempState": {
+          "kind": "known",
+          "value": false
+        }
+      },
+      "expectedKey": "Insert|g/Table:50000|g/r1/op0|f"
+    },
+    {
+      "name": "modify-known-true-temp",
+      "description": "Modify on a temp record → tempStateKey 't'",
+      "input": {
+        "op": "Modify",
+        "tableId": "g/Table:50000",
+        "operationId": "g/r1/op1",
+        "tempState": {
+          "kind": "known",
+          "value": true
+        }
+      },
+      "expectedKey": "Modify|g/Table:50000|g/r1/op1|t"
+    },
+    {
+      "name": "delete-unknown-temp",
+      "description": "Delete with unknown temp state → tempStateKey 'u'",
+      "input": {
+        "op": "Delete",
+        "tableId": "g/Table:50000",
+        "operationId": "g/r1/op2",
+        "tempState": {
+          "kind": "unknown"
+        }
+      },
+      "expectedKey": "Delete|g/Table:50000|g/r1/op2|u"
+    },
+    {
+      "name": "findset-param-dependent-temp",
+      "description": "FindSet with parameter-dependent temp state → tempStateKey 'p<index>'",
+      "input": {
+        "op": "FindSet",
+        "tableId": "unknown",
+        "operationId": "g/r2/op0",
+        "tempState": {
+          "kind": "parameter-dependent",
+          "parameterIndex": 1
+        }
+      },
+      "expectedKey": "FindSet|unknown|g/r2/op0|p1"
+    }
+  ],
+  "mergeViaVectors": [
+    {
+      "a": "direct",
+      "b": "direct",
+      "expected": "direct"
+    },
+    {
+      "a": "direct",
+      "b": "implicit-trigger",
+      "expected": "direct"
+    },
+    {
+      "a": "direct",
+      "b": "event-subscriber",
+      "expected": "direct"
+    },
+    {
+      "a": "direct",
+      "b": "dynamic",
+      "expected": "direct"
+    },
+    {
+      "a": "direct",
+      "b": "inherited",
+      "expected": "direct"
+    },
+    {
+      "a": "implicit-trigger",
+      "b": "direct",
+      "expected": "direct"
+    },
+    {
+      "a": "implicit-trigger",
+      "b": "implicit-trigger",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "implicit-trigger",
+      "b": "event-subscriber",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "implicit-trigger",
+      "b": "dynamic",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "implicit-trigger",
+      "b": "inherited",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "event-subscriber",
+      "b": "direct",
+      "expected": "direct"
+    },
+    {
+      "a": "event-subscriber",
+      "b": "implicit-trigger",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "event-subscriber",
+      "b": "event-subscriber",
+      "expected": "event-subscriber"
+    },
+    {
+      "a": "event-subscriber",
+      "b": "dynamic",
+      "expected": "event-subscriber"
+    },
+    {
+      "a": "event-subscriber",
+      "b": "inherited",
+      "expected": "event-subscriber"
+    },
+    {
+      "a": "dynamic",
+      "b": "direct",
+      "expected": "direct"
+    },
+    {
+      "a": "dynamic",
+      "b": "implicit-trigger",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "dynamic",
+      "b": "event-subscriber",
+      "expected": "event-subscriber"
+    },
+    {
+      "a": "dynamic",
+      "b": "dynamic",
+      "expected": "dynamic"
+    },
+    {
+      "a": "dynamic",
+      "b": "inherited",
+      "expected": "dynamic"
+    },
+    {
+      "a": "inherited",
+      "b": "direct",
+      "expected": "direct"
+    },
+    {
+      "a": "inherited",
+      "b": "implicit-trigger",
+      "expected": "implicit-trigger"
+    },
+    {
+      "a": "inherited",
+      "b": "event-subscriber",
+      "expected": "event-subscriber"
+    },
+    {
+      "a": "inherited",
+      "b": "dynamic",
+      "expected": "dynamic"
+    },
+    {
+      "a": "inherited",
+      "b": "inherited",
+      "expected": "inherited"
+    }
+  ]
+}
