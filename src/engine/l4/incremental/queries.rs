@@ -340,6 +340,113 @@ pub struct InternalId<'db> {
 }
 
 // ===========================================================================
+// PER-ROUTINE edge queries (Stage 3 re-granularization, the CRUX). These replace
+// the monolithic `combined_graph` read inside `scc_summaries`: each member reads
+// ONLY its OWN outgoing edge slice + uncertainty slice. The value is exactly the
+// per-`from` slice the structural `combined_graph` would emit (the inputs are the
+// same per-routine `combined_edges`/`uncertainty_edges` slices), so it BACKDATES
+// when a routine's own edges are unchanged — an edit to a DIFFERENT routine's
+// edges leaves THIS routine's slice value-equal. `scc_summaries(scc_key)` builds a
+// per-SCC mini combined graph from ITS MEMBERS' slices (+ the members' edge
+// targets' `body_available`), so it no longer reads the whole graph.
+// ===========================================================================
+
+/// A value-equal carrier for one routine's outgoing combined-edge slice (the
+/// `edgeSortKey`-sorted slice the combined graph groups under `from`). Behind an
+/// `Arc` so the tracked return is cheap; `PartialEq` is the structural slice compare
+/// (with the `Arc::ptr_eq` fast path) so an unchanged slice backdates.
+#[derive(Clone, salsa::Update)]
+pub struct RoutineCombinedEdges {
+    pub edges: Arc<Vec<CombinedEdge>>,
+}
+value_eq_carrier!(RoutineCombinedEdges, edges);
+impl Eq for RoutineCombinedEdges {}
+
+/// `routine_combined_edges(internal_id)` — one routine's OUTGOING combined edges,
+/// read straight from its own `RoutineInput::combined_edges`. Depends ONLY on that
+/// one routine's edge input (NOT the whole graph), so editing another routine's
+/// edges leaves this value-equal ⇒ this query backdates.
+#[salsa::tracked]
+pub fn routine_combined_edges<'db>(
+    db: &'db dyn L4Db,
+    registry: RoutineRegistry,
+    internal_id: InternalId<'db>,
+) -> RoutineCombinedEdges {
+    let by_id = registry.by_id(db);
+    let edges = by_id
+        .get(internal_id.id(db))
+        .map(|ri| ri.combined_edges(db).clone())
+        .unwrap_or_else(|| Arc::new(Vec::new()));
+    RoutineCombinedEdges { edges }
+}
+
+/// A value-equal carrier for one routine's outgoing uncertainty-edge slice.
+#[derive(Clone, salsa::Update)]
+pub struct RoutineUncertaintyEdges {
+    pub edges: Arc<Vec<UncertaintyEdge>>,
+}
+value_eq_carrier!(RoutineUncertaintyEdges, edges);
+impl Eq for RoutineUncertaintyEdges {}
+
+/// `routine_uncertainty_edges(internal_id)` — one routine's OUTGOING uncertainty
+/// edges (to-less callsites), read from its own `RoutineInput::uncertainty_edges`.
+/// Per-routine ⇒ backdates when that routine's slice is unchanged.
+#[salsa::tracked]
+pub fn routine_uncertainty_edges<'db>(
+    db: &'db dyn L4Db,
+    registry: RoutineRegistry,
+    internal_id: InternalId<'db>,
+) -> RoutineUncertaintyEdges {
+    let by_id = registry.by_id(db);
+    let edges = by_id
+        .get(internal_id.id(db))
+        .map(|ri| ri.uncertainty_edges(db).clone())
+        .unwrap_or_else(|| Arc::new(Vec::new()));
+    RoutineUncertaintyEdges { edges }
+}
+
+/// A value-equal carrier for one routine's `body_available` flag (a plain `bool`
+/// projection so an edge target's bodyAvailable feeds `scc_summaries` per-routine,
+/// not via the monolithic `by_id` scan).
+#[salsa::tracked]
+pub fn routine_body_available<'db>(
+    db: &'db dyn L4Db,
+    registry: RoutineRegistry,
+    internal_id: InternalId<'db>,
+) -> bool {
+    let by_id = registry.by_id(db);
+    by_id
+        .get(internal_id.id(db))
+        .map(|ri| ri.body_available(db))
+        .unwrap_or(false)
+}
+
+/// `routine_leaf_summary(internal_id)` — `Some(retained summary)` when the routine
+/// is a FIXED LEAF (an R3a-5 dep routine), else `None`. Per-routine (reads only
+/// THIS routine's `is_leaf` + `base_summary`). The from-scratch path pre-seeds EVERY
+/// leaf's retained summary into the global `final_map`; per-SCC, `scc_summaries`
+/// seeds the retained summary of each of its members' EDGE-TARGET leaves into the
+/// `predecessor_final_map` (a leaf's own SCC `scc_summaries` returns empty, so the
+/// retained summary must be sourced here, not via the successor recursion).
+#[salsa::tracked]
+pub fn routine_leaf_summary<'db>(
+    db: &'db dyn L4Db,
+    registry: RoutineRegistry,
+    internal_id: InternalId<'db>,
+) -> Option<SummaryValue> {
+    let by_id = registry.by_id(db);
+    by_id.get(internal_id.id(db)).and_then(|ri| {
+        if ri.is_leaf(db) {
+            Some(SummaryValue {
+                summary: ri.base_summary(db).clone(),
+            })
+        } else {
+            None
+        }
+    })
+}
+
+// ===========================================================================
 // scc_summaries(scc_key) — the internal JACOBI loop over `scc_members` (in SORTED
 // StableRoutineId order). Depends on `scc_members` / `scc_successors` / the
 // members' inputs / successor `scc_summaries` — NOT the monolithic condensation.
@@ -363,7 +470,6 @@ pub fn scc_summaries<'db>(
     scc_key: SccKey<'db>,
 ) -> SccSummaries {
     let by_id = registry.by_id(db);
-    let cg = combined_graph(db, universe, registry);
     let stable_map_arc = ctx.stable_map(db);
 
     // The members, in INTERNAL-id order from the projection query.
@@ -385,34 +491,107 @@ pub fn scc_summaries<'db>(
     // (Leaves are pre-seeded into final_map in the from-scratch path; here they
     // arrive via the successor recursion. Their retained `base_summary` is used.)
 
-    // --- Build the SHARED per-SCC ctx (workspace-wide lookup structures). The
-    //     JACOBI reads only the entries it needs by key. ---
-    // routines_by_id holds &L3Routine; we must keep the Arcs alive for the borrow.
-    let routine_arcs: HashMap<String, Arc<crate::engine::l3::l3_workspace::L3Routine>> = by_id
-        .iter()
-        .map(|(id, ri)| (id.clone(), ri.routine(db).clone()))
-        .collect();
+    // === RE-GRANULARIZATION (Stage 3, the CRUX) ============================
+    // Build a PER-SCC mini combined graph + per-SCC lookup maps from ONLY this
+    // SCC's MEMBERS' per-routine inputs (NOT the whole `combined_graph` / `by_id`
+    // scan). For each member `m` we read m's OWN `routine_combined_edges(m)` +
+    // `routine_uncertainty_edges(m)` + m's `routine`/`base_summary`/`is_leaf`/
+    // `body_available` inputs. The JACOBI's `compose_routine` additionally reads
+    // each edge TARGET's `body_available` (the opaque-callee guard) — we read THOSE
+    // per-target via `routine_body_available(target)`. The callee SUMMARIES arrive
+    // via `predecessor_final_map` (successor `scc_summaries`), NOT via the ctx maps.
+    //
+    // RESULT: this query depends ONLY on {its members' inputs + edges} ∪ {its edge
+    // targets' body_available} ∪ {successor `scc_summaries`} ∪ {scc_members /
+    // scc_successors / scc_is_recursive(this key)}. An edit isolated to an unrelated
+    // SCC's input leaves all of those value-equal ⇒ this query BACKDATES. The
+    // monolithic `combined_graph`/`by_id.iter()` reads are GONE.
+    // =======================================================================
+
+    // Per-member edge slices → the mini combined graph (only members as `from`).
+    let mut edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+    let mut mini_uncertainty: Vec<UncertaintyEdge> = Vec::new();
+    // The set of edge TARGETS referenced by members (need their body_available).
+    let mut edge_targets: BTreeSet<String> = BTreeSet::new();
+    for m in &members {
+        let iid = InternalId::new(db, m.clone());
+        let me = routine_combined_edges(db, registry, iid);
+        if !me.edges.is_empty() {
+            for e in me.edges.iter() {
+                edge_targets.insert(e.to.clone());
+            }
+            edges_by_from.insert(m.clone(), (*me.edges).clone());
+        }
+        for ue in routine_uncertainty_edges(db, registry, iid).edges.iter() {
+            mini_uncertainty.push(ue.clone());
+        }
+    }
+    // `compose_routine` filters `graph.uncertainty_edges` by `from == member`, so
+    // the per-SCC list (members' own slices) is exactly what it consumes; the
+    // global uncertaintySortKey sort is irrelevant under that filter, but keep a
+    // deterministic order for stability.
+    mini_uncertainty.sort_by_key(uncertainty_sort_key);
+
+    // The mini-graph `nodes` list only needs to cover the members + their targets
+    // for any `nodes`-based read; `compose_routine` reads only `edges_by_from` and
+    // `uncertainty_edges`, so an exact node list is not required — supply members +
+    // targets for completeness/determinism.
+    let mut mini_nodes: BTreeSet<String> = members.iter().cloned().collect();
+    mini_nodes.extend(edge_targets.iter().cloned());
+    let mini_graph = CombinedGraph {
+        nodes: mini_nodes.into_iter().collect(),
+        edges_by_from,
+        uncertainty_edges: mini_uncertainty,
+        typed_edges: Vec::new(),
+    };
+
+    // Per-member lookup maps (routines_by_id / base_summaries / leaf_summaries) —
+    // ONLY this SCC's members (compose_routine is called for members only).
+    let mut routine_arcs: HashMap<String, Arc<crate::engine::l3::l3_workspace::L3Routine>> =
+        HashMap::new();
+    let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+    let mut leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+    let mut body_avail_by_id: HashMap<String, bool> = HashMap::new();
+    for m in &members {
+        let Some(ri) = by_id.get(m) else { continue };
+        routine_arcs.insert(m.clone(), ri.routine(db).clone());
+        body_avail_by_id.insert(m.clone(), ri.body_available(db));
+        let base = ri.base_summary(db);
+        if ri.is_leaf(db) {
+            leaf_summaries.insert(m.clone(), (**base).clone());
+        } else {
+            base_summaries.insert(m.clone(), (**base).clone());
+        }
+    }
+    // Edge TARGETS' body_available (read per-target — the opaque-callee guard in
+    // `compose_routine` does `body_avail_by_id.get(&edge.to)`). A target that is
+    // itself a member is already present; only fill the non-member targets, each
+    // via its own per-routine `routine_body_available` query (NOT the global scan).
+    //
+    // ALSO seed each edge-target FIXED LEAF's retained summary into the
+    // `predecessor_final_map`: the from-scratch path pre-seeds EVERY leaf into the
+    // global `final_map`, so a member that calls a dep leaf folds in its retained
+    // summary. A leaf's OWN `scc_summaries` returns empty (run_one_scc short-circuits
+    // a leaf), so the retained summary must be sourced per-target here — NOT via the
+    // successor recursion. (`routine_leaf_summary` is per-routine ⇒ granular.)
+    for t in &edge_targets {
+        let tid = InternalId::new(db, t.clone());
+        body_avail_by_id
+            .entry(t.clone())
+            .or_insert_with(|| routine_body_available(db, registry, tid));
+        if let Some(leaf) = routine_leaf_summary(db, registry, tid) {
+            predecessor_final_map
+                .entry(t.clone())
+                .or_insert_with(|| (*leaf.summary).clone());
+        }
+    }
     let routines_by_id: HashMap<String, &crate::engine::l3::l3_workspace::L3Routine> = routine_arcs
         .iter()
         .map(|(id, a)| (id.clone(), a.as_ref()))
         .collect();
 
-    // base_summaries (NON-leaf routines) + leaf_summaries (the retained-summary
-    // seam). Mirrors `compute_summaries_with_leaves`.
-    let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
-    let mut leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
-    let mut body_avail_by_id: HashMap<String, bool> = HashMap::new();
-    for (id, ri) in by_id.iter() {
-        body_avail_by_id.insert(id.clone(), ri.body_available(db));
-        let base = ri.base_summary(db);
-        if ri.is_leaf(db) {
-            leaf_summaries.insert(id.clone(), (**base).clone());
-        } else {
-            base_summaries.insert(id.clone(), (**base).clone());
-        }
-    }
     // Leaves must also be in the predecessor map (the from-scratch path pre-seeds
-    // them into final_map). Add any leaf not already present from successors.
+    // them into final_map). Add any member-leaf not already present from successors.
     for (id, s) in &leaf_summaries {
         predecessor_final_map
             .entry(id.clone())
@@ -451,7 +630,7 @@ pub fn scc_summaries<'db>(
         routines_by_id: &routines_by_id,
         base_summaries: &base_summaries,
         upgraded_bindings: upgraded,
-        graph: &cg.graph,
+        graph: &mini_graph,
         body_avail_by_id: &body_avail_by_id,
         stable_map: stable_map_arc,
         leaf_summaries: &leaf_summaries,
