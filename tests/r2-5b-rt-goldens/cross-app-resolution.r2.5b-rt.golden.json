@@ -134,6 +134,13 @@
       "recordOperations": []
     },
     {
+      "stableRoutineId": "11111111-0000-0000-0000-0000000000aa:Codeunit:70003#7d5229a5a61f2c7744f955a92c794efe5eef2fbff782511f190594fe29c19788",
+      "name": "HandleOnNeverPublished",
+      "objectType": "Codeunit",
+      "recordVariables": [],
+      "recordOperations": []
+    },
+    {
       "stableRoutineId": "dddddddd-0000-0000-0000-000000000001:Codeunit:50100#03a6b75d7eb5491d232e2ec7e12a95023962c1f4d76b06cfab4e122cb9c06acb",
       "name": "InternalReset",
       "objectType": "Codeunit",

@@ -70,32 +70,6 @@ pub struct CrossAppL3 {
     pub apps: Vec<(String, String)>,
 }
 
-/// Derive a record param's table name from its ABI `typeText` (`Record "X"` /
-/// `Record X`), mirroring al-sem's grammar-derived `table_name`. Returns None for a
-/// non-record type. The native source path reads this from the grammar node; for a
-/// dep (symbol-only) routine we recover it from the projected type text.
-fn record_table_name_from_type(type_text: &str) -> Option<String> {
-    let trimmed = type_text.trim();
-    let lower = trimmed.to_lowercase();
-    let rest = lower.strip_prefix("record")?;
-    // `\b` after "record": the next char must be a non-word char.
-    let boundary_ok = rest
-        .chars()
-        .next()
-        .map(|c| !(c.is_ascii_alphanumeric() || c == '_'))
-        .unwrap_or(false);
-    if !boundary_ok {
-        return None;
-    }
-    // The remainder of the ORIGINAL (case-preserving) text after "Record".
-    let after = trimmed[6..].trim();
-    if after.is_empty() {
-        return None;
-    }
-    let unquoted = after.trim_matches('"');
-    Some(unquoted.to_string())
-}
-
 /// Convert one projected dep object into the L3 object shape (identical to the
 /// native source path's `L3Object`). The dep object carries the same identity
 /// (StableObjectId-independent internal id) the native path mints.
@@ -161,11 +135,14 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
             type_text: p.type_text.clone(),
             is_var: p.is_var,
             is_record: p.is_record,
-            table_name: if p.is_record {
-                record_table_name_from_type(&p.type_text)
-            } else {
-                None
-            },
+            // PARITY (R2.5b-c): al-sem's dep-routine parameters come from the ABI
+            // symbol-reference projection (`dependency-projection.ts`), which does NOT
+            // populate `tableName` on a record parameter (only the NATIVE grammar path
+            // sets it). The event-graph publisher param shape (R2.5b-c) is the first
+            // golden consumer of a dep routine's param `tableName`, and al-sem omits it
+            // there — so a dep record param's `table_name` MUST be `None` to byte-match.
+            // (Deriving it from `type_text` here over-populated vs al-sem; corrected.)
+            table_name: None,
         })
         .collect();
 
