@@ -115,6 +115,15 @@ pub struct L3RecordOperation {
     /// position inside a block (mirrors al-sem `op.sourceAnchor.range`). L2 data
     /// that the L3 record-type projection drops, forwarded here for L4 only.
     pub source_anchor: crate::engine::l2::features::PAnchor,
+    /// The enclosing-loop id stack (from L2 body walk). L2 data that the L3
+    /// record-type projection drops, forwarded here for L5 detectors (d4 reads
+    /// `op.loopStack.includes(loop.id)`). Additive — the L3 projections are
+    /// field-allowlisted, so this never reaches an R0–R3 golden.
+    pub loop_stack: Vec<String>,
+    /// Structured field-argument classification (from L2 body walk). L2 data that
+    /// the L3 record-type projection drops, forwarded here for L5 detectors (d4
+    /// reads `op.fieldArgumentInfos[0]` for the literal-key test). Additive.
+    pub field_argument_infos: Option<Vec<crate::engine::l2::features::PExpressionInfo>>,
 }
 
 /// A lexical variable (params → locals → globals) carrying its declared type, for
@@ -210,6 +219,10 @@ pub struct L3Routine {
     /// if/case/loop. `None` for opaque / TryFunction / bodyless routines (the
     /// walker then falls back to the straight-line pass, mirroring al-sem).
     pub statement_tree: Option<crate::engine::l2::features::PCFNNode>,
+    /// The routine's loops (L2 body-walk output). L2 data that the L3
+    /// record-type projection drops, forwarded here for L5 detectors (d4 reads
+    /// `routine.features.loops`). Additive — never reaches an R0–R3 golden.
+    pub loops: Vec<crate::engine::l2::features::PLoop>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -600,6 +613,8 @@ fn project_file(
                     temp_state: Some(op.temp_state.clone()),
                     field_arguments: op.field_arguments.clone(),
                     source_anchor: op.source_anchor.clone(),
+                    loop_stack: op.loop_stack.clone(),
+                    field_argument_infos: op.field_argument_infos.clone(),
                 })
                 .collect();
             let field_accesses = features.field_accesses.clone();
@@ -634,6 +649,7 @@ fn project_file(
             let call_sites = features.call_sites.clone();
             let operation_sites = features.operation_sites.clone();
             let statement_tree = features.statement_tree.clone();
+            let loops = features.loops.clone();
 
             // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
             // projection does (routine-indexer.ts parity): a code_block body is
@@ -683,6 +699,7 @@ fn project_file(
                 call_sites,
                 operation_sites,
                 statement_tree,
+                loops,
             });
         }
     }

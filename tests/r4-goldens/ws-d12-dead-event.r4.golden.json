@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-d12-dead-event",
+  "detectors": [
+    "d12-dead-integration-event"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d12-dead-integration-event",
+      "id": "d12/11111111-0000-0000-0000-00000000d12a/Codeunit/50112/event/onafterdostuff",
+      "rootCauseKey": "d12/11111111-0000-0000-0000-00000000d12a/Codeunit/50112/event/onafterdostuff",
+      "title": "Integration event has no subscribers",
+      "rootCause": "OnAfterDoStuff publishes an integration event that no subscriber across this workspace or its dependencies handles — the extensibility point is dead.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/codeunit.al",
+        "range": {
+          "startLine": 3,
+          "startColumn": 1,
+          "endLine": 3,
+          "endColumn": 54
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 1,
+              "endLine": 3,
+              "endColumn": 54
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d12a:Codeunit:50112#fbd570fa4286481b85a1c9b61b7d67c3b8ecaad847cd9bbb28e78b3158294cf6",
+            "syntaxKind": "procedure"
+          },
+          "note": "publishes OnAfterDoStuff"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d12a:Codeunit:50112"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Either remove the event if it has no real extensibility purpose, or document why it exists for future subscribers.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "096251c50433624f"
+    }
+  ]
+}

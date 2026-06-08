@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-d14-dead-routine",
+  "detectors": [
+    "d14-dead-routine"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d14-dead-routine",
+      "id": "d14/11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+      "rootCauseKey": "d14/11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+      "title": "Routine is unreachable from any entry point",
+      "rootCause": "DeadHelper on D14EntryPoints is not called from any page action, trigger, OnRun, web service, or event subscriber in this app — appears to be dead code.",
+      "severity": "info",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 1,
+          "endLine": 9,
+          "endColumn": 40
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 1,
+              "endLine": 9,
+              "endColumn": 40
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+            "syntaxKind": "procedure"
+          },
+          "note": "DeadHelper (no inbound edges from entry-point closure)"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d14a:Codeunit:50114"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the routine if truly unused, or wire it up to an entry point if intended to be invoked.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "5d902db6bef3be05"
+    }
+  ]
+}

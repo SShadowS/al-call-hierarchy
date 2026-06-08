@@ -1,0 +1,131 @@
+{
+  "description": "R4-0 Finding[] golden — stable projection of Finding[] from analyzeWorkspace (deterministic: true) per ws-d* smoke fixture. Comparison surface for the al-sem → Rust L5 detector parity differential. All ids in stable form (StableRoutineId/StableObjectId/StableTableId). See scripts/r4-finding-projection.ts.",
+  "capturePoint": "post-runDetectors: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0', detectors: [...]}) → runDetectors (sorted by detector/primaryLocationKey/rootCauseKey) → projectR4Findings",
+  "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
+  "alSemGitSha": "2f2faf3fbbc66198d091e074871c34dee6ae91f4",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r4-0",
+  "fixtureCount": 7,
+  "positiveCount": 7,
+  "negativeCount": 0,
+  "totalFindings": 9,
+  "waves": [
+    {
+      "wave": "R4-A",
+      "description": "Intraprocedural — pure features read, no summary",
+      "detectors": [
+        "d4-repeated-lookup-in-loop"
+      ]
+    },
+    {
+      "wave": "R4-B",
+      "description": "Metadata — tableById field metadata",
+      "detectors": [
+        "d22-flowfield-without-calcfields"
+      ]
+    },
+    {
+      "wave": "R4-C",
+      "description": "Graph — eventGraph/callGraph edges",
+      "detectors": [
+        "d12-dead-integration-event"
+      ]
+    },
+    {
+      "wave": "R4-D",
+      "description": "Capability-query — path-walker + capability helpers",
+      "detectors": [
+        "d8-commit-in-transaction"
+      ]
+    },
+    {
+      "wave": "R4-E",
+      "description": "Record-flow — parameterRoles + load/filter state",
+      "detectors": [
+        "d3-missing-setloadfields"
+      ]
+    },
+    {
+      "wave": "R4-F",
+      "description": "Ordering-facts — IO-unsafe-txn, IO-before-commit etc.",
+      "detectors": [
+        "d47-io-unsafe-txn"
+      ]
+    },
+    {
+      "wave": "R4-G",
+      "description": "Path-walker commit-reachability — dead-routine BFS",
+      "detectors": [
+        "d14-dead-routine"
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "fixture": "ws-d4-repeated-get",
+      "goldenFile": "ws-d4-repeated-get.r4.golden.json",
+      "detectors": [
+        "d4-repeated-lookup-in-loop"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d22",
+      "goldenFile": "ws-d22.r4.golden.json",
+      "detectors": [
+        "d22-flowfield-without-calcfields"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d12-dead-event",
+      "goldenFile": "ws-d12-dead-event.r4.golden.json",
+      "detectors": [
+        "d12-dead-integration-event"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "goldenFile": "ws-d8-commit-in-tx.r4.golden.json",
+      "detectors": [
+        "d8-commit-in-transaction"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d3",
+      "goldenFile": "ws-d3.r4.golden.json",
+      "detectors": [
+        "d3-missing-setloadfields"
+      ],
+      "findingCount": 3,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "goldenFile": "ws-txn-d47-pos-http-nocommit.r4.golden.json",
+      "detectors": [
+        "d47-io-unsafe-txn"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "goldenFile": "ws-d14-dead-routine.r4.golden.json",
+      "detectors": [
+        "d14-dead-routine"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    }
+  ]
+}

@@ -168,6 +168,7 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         call_sites: Vec::new(),
         operation_sites: Vec::new(),
         statement_tree: None,
+        loops: Vec::new(),
     }
 }
 

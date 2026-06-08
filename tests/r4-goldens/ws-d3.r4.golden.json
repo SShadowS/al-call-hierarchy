@@ -1,0 +1,292 @@
+{
+  "fixtureName": "ws-d3",
+  "detectors": [
+    "d3-missing-setloadfields"
+  ],
+  "findingCount": 3,
+  "findings": [
+    {
+      "detector": "d3-missing-setloadfields",
+      "id": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d/op1",
+      "rootCauseKey": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d/op1",
+      "title": "Incomplete SetLoadFields — accessed fields not loaded",
+      "rootCause": "IncompleteLoad runs FindSet on Customer and then accesses field(s) [address] — an incomplete SetLoadFields.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/reports.al",
+        "range": {
+          "startLine": 26,
+          "startColumn": 8,
+          "endLine": 26,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 26,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer with a partial SetLoadFields",
+          "operationId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d/op1"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 27,
+              "startColumn": 11,
+              "endLine": 27,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Name"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 28,
+              "startColumn": 12,
+              "endLine": 28,
+              "endColumn": 28
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Address"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 28,
+              "startColumn": 32,
+              "endLine": 28,
+              "endColumn": 48
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Address"
+        }
+      ],
+      "affectedObjects": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101"
+      ],
+      "affectedTables": [
+        "33333333-d300-0000-0000-000000000003:Table:65100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Extend SetLoadFields to include: address.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "8533c99a3a523256"
+    },
+    {
+      "detector": "d3-missing-setloadfields",
+      "id": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/op1",
+      "rootCauseKey": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/op1",
+      "title": "Incomplete SetLoadFields — accessed fields not loaded",
+      "rootCause": "PartialThenCallee runs FindSet on Customer and then accesses field(s) [name] — an incomplete SetLoadFields.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/reports.al",
+        "range": {
+          "startLine": 47,
+          "startColumn": 8,
+          "endLine": 47,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 47,
+              "startColumn": 8,
+              "endLine": 47,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer with a partial SetLoadFields",
+          "operationId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/op1"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 48,
+              "startColumn": 8,
+              "endLine": 48,
+              "endColumn": 32
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "passes Customer to EnrichCustomer, which reads 1 field(s)",
+          "callsiteId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101"
+      ],
+      "affectedTables": [
+        "33333333-d300-0000-0000-000000000003:Table:65100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Extend SetLoadFields to include: name.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "8c578f517f6995fa"
+    },
+    {
+      "detector": "d3-missing-setloadfields",
+      "id": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9/op0",
+      "rootCauseKey": "d3/33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9/op0",
+      "title": "Missing SetLoadFields before a record retrieval",
+      "rootCause": "MissingLoad runs FindSet on Customer and then accesses field(s) [name] — no SetLoadFields was set.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/reports.al",
+        "range": {
+          "startLine": 6,
+          "startColumn": 8,
+          "endLine": 6,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer with no SetLoadFields",
+          "operationId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9/op0"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Name"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 12,
+              "endLine": 8,
+              "endColumn": 25
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Name"
+        },
+        {
+          "routineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/reports.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 29,
+              "endLine": 8,
+              "endColumn": 42
+            },
+            "enclosingRoutineId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9",
+            "syntaxKind": "member_expression"
+          },
+          "note": "accesses Customer.Name"
+        }
+      ],
+      "affectedObjects": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101"
+      ],
+      "affectedTables": [
+        "33333333-d300-0000-0000-000000000003:Table:65100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add SetLoadFields(name) before the retrieval.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "84fd0cb8154efb0b"
+    }
+  ]
+}

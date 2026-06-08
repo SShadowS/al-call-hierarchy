@@ -89,6 +89,7 @@ pub fn routine(id: &str, kind: &str) -> L3Routine {
         call_sites: Vec::new(),
         operation_sites: Vec::new(),
         statement_tree: None,
+        loops: Vec::new(),
     }
 }
 

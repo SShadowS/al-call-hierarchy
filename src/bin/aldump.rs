@@ -48,7 +48,7 @@ fn usage() -> ExitCode {
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
          --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
-         --r3a5-cross-app-summary] \
+         --r3a5-cross-app-summary | --r4-findings] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -68,6 +68,7 @@ fn main() -> ExitCode {
     let mut r3a3_cone_coverage = false;
     let mut r3a4_dep_hooks = false;
     let mut r3a5_cross_app_summary = false;
+    let mut r4_findings = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -126,6 +127,10 @@ fn main() -> ExitCode {
             r3a5_cross_app_summary = true;
             continue;
         }
+        if arg == "--r4-findings" {
+            r4_findings = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -147,6 +152,7 @@ fn main() -> ExitCode {
         r3a3_cone_coverage,
         r3a4_dep_hooks,
         r3a5_cross_app_summary,
+        r4_findings,
     ]
     .iter()
     .filter(|f| **f)
@@ -282,6 +288,51 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize R3a-3 cone+coverage projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if r4_findings {
+        // R4 FINDINGS: run the SOURCE-ONLY L0→L3 pipeline, then the L5 harness
+        // (build_detector_context → run_detectors over the registered detectors →
+        // stable projection) and emit the R4FindingsProjection in the SAME
+        // shape/key-order as the al-sem `<fixture>.r4.golden.json`. Only the ported
+        // detectors are registered, so the projection carries their subset.
+        // Fail-closed/empty layouts → an empty projection (never throws).
+        let fixture_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let detectors = al_call_hierarchy::engine::l5::detectors::registered_detectors();
+        let detector_names: Vec<String> = detectors.iter().map(|d| d.name.clone()).collect();
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => al_call_hierarchy::engine::l5::finding::project_r4_findings(
+                &resolved,
+                &detectors,
+                &fixture_name,
+                &detector_names,
+            ),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4 projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l5::finding::R4FindingsProjection {
+                    fixture_name,
+                    detectors: detector_names,
+                    finding_count: 0,
+                    findings: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R4 findings projection: {e}");
                 ExitCode::FAILURE
             }
         };

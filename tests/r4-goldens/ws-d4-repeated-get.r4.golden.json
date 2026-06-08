@@ -1,0 +1,100 @@
+{
+  "fixtureName": "ws-d4-repeated-get",
+  "detectors": [
+    "d4-repeated-lookup-in-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d4-repeated-lookup-in-loop",
+      "id": "d4/11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/loop0/customer",
+      "rootCauseKey": "d4/11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/loop0/customer",
+      "title": "Repeated identical lookup inside a loop",
+      "rootCause": "BadLookup calls Get on Customer 2 times inside a loop with the same literal key — cache the result once before the loop.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/codeunit.al",
+        "range": {
+          "startLine": 7,
+          "startColumn": 4,
+          "endLine": 7,
+          "endColumn": 27
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 3,
+              "endLine": 9,
+              "endColumn": 29
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+            "syntaxKind": "repeat_statement"
+          },
+          "note": "repeat loop",
+          "loopId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 27
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Get on Customer with literal key",
+          "operationId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/op1"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 27
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Get on Customer with literal key",
+          "operationId": "11111111-0000-0000-0000-00000000d40a:Codeunit:50104#6fd27fda0b5d01b2f9c23ca1eb953b4c9e6d0cac6d8542a69202a1b7fd57ec9a/op2"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d40a:Codeunit:50104"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d40a:Table:18"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the lookup out of the loop into a local variable, then read fields from that variable inside the loop.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "1613cafbb8edc2bf"
+    }
+  ]
+}

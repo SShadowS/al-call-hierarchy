@@ -1,0 +1,211 @@
+//! D4 — repeated identical lookup inside a loop. Port of al-sem
+//! `src/detectors/d4-repeated-lookup-in-loop.ts`.
+//!
+//! Detects `Get` / `FindFirst` / `FindLast` called 2+ times inside the SAME loop
+//! with the same STRING-LIKE LITERAL key argument on the same record variable.
+//! v1 only matches string-literal arguments (`'...'` / `"..."`) — the
+//! conservative correct case (the key is known at compile time → trivially
+//! hoistable). The dedup key uses the unquoted `.value` (falling back to `.text`)
+//! so `'X'` and `"X"` group together.
+//!
+//! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
+
+use crate::engine::l2::features::{PAnchor, PExpressionInfo};
+use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
+use crate::engine::l5::confidence::to_confidence;
+use crate::engine::l5::detector_context::DetectorContext;
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
+};
+use crate::engine::l5::fingerprint::FingerprintIndex;
+use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+
+const DETECTOR: &str = "d4-repeated-lookup-in-loop";
+
+/// `isStringLikeLiteral` (`model/expression.ts`): a `string_literal` or
+/// `quoted_identifier`.
+fn is_string_like_literal(info: &PExpressionInfo) -> bool {
+    info.kind == "string_literal" || info.kind == "quoted_identifier"
+}
+
+/// Build the internal `SourceAnchor` from an L2 `PAnchor` (which drops
+/// enclosingRoutineId) + the owning routine's internal id. For d4 every anchor
+/// lives in `routine`, so `enclosing_routine_id = routine.id`.
+fn anchor_of(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
+    SourceAnchor {
+        source_unit_id: a.source_unit_id.clone(),
+        start_line: a.start_line,
+        start_column: a.start_column,
+        end_line: a.end_line,
+        end_column: a.end_column,
+        enclosing_routine_id: routine.id.clone(),
+        syntax_kind: a.syntax_kind.clone(),
+        normalized_text_hash: None,
+        leading_context_hash: None,
+        trailing_context_hash: None,
+    }
+}
+
+pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+    const LOOKUP_OPS: [&str; 3] = ["Get", "FindFirst", "FindLast"];
+
+    let ws = &resolved.workspace;
+    // The fingerprint index (routine-by-id + object-by-id) over INTERNAL ids —
+    // the fingerprint hashes the internal rootCauseKey + affectedTables.
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut candidates_considered = 0usize;
+
+    for routine in &ws.routines {
+        // roleOf(routine) !== "primary" → skip. Source-only: every routine is
+        // primary, so this never skips (mirrors al-sem semantics).
+        if !routine.body_available {
+            continue;
+        }
+        if routine.parse_incomplete {
+            continue;
+        }
+        candidates_considered += 1;
+
+        for loop_info in &routine.loops {
+            // Collect lookup ops inside THIS loop with a string-like literal key.
+            // candidates: (op-index, key) so we keep op order + group later.
+            let mut candidates: Vec<(usize, String)> = Vec::new();
+            for (op_idx, op) in routine.record_operations.iter().enumerate() {
+                if !LOOKUP_OPS.contains(&op.op.as_str()) {
+                    continue;
+                }
+                if !op.loop_stack.iter().any(|l| l == &loop_info.id) {
+                    continue;
+                }
+                let key_info = op.field_argument_infos.as_ref().and_then(|v| v.first());
+                let Some(key_info) = key_info else {
+                    continue;
+                };
+                if !is_string_like_literal(key_info) {
+                    continue;
+                }
+                let key = key_info
+                    .value
+                    .clone()
+                    .unwrap_or_else(|| key_info.text.clone());
+                candidates.push((op_idx, key));
+            }
+
+            if candidates.len() < 2 {
+                continue;
+            }
+
+            // Group by (recordVariableName.toLowerCase, key), preserving first-seen
+            // group order (al-sem `Map` insertion order).
+            let mut group_order: Vec<String> = Vec::new();
+            let mut groups: std::collections::HashMap<String, Vec<usize>> =
+                std::collections::HashMap::new();
+            for (op_idx, key) in &candidates {
+                let op = &routine.record_operations[*op_idx];
+                let group_key = format!("{}|{}", op.record_variable_name.to_lowercase(), key);
+                let entry = groups.entry(group_key.clone()).or_insert_with(|| {
+                    group_order.push(group_key.clone());
+                    Vec::new()
+                });
+                entry.push(*op_idx);
+            }
+
+            for group_key in &group_order {
+                let op_idxs = &groups[group_key];
+                if op_idxs.len() < 2 {
+                    continue;
+                }
+                let first = &routine.record_operations[op_idxs[0]];
+                let first_rec_var_lower = first.record_variable_name.to_lowercase();
+
+                let id = format!("d4/{}/{}/{}", routine.id, loop_info.id, first_rec_var_lower);
+                let root_cause_key = id.clone();
+
+                // Evidence path: the loop step, then one step per op.
+                let mut path: Vec<EvidenceStep> = Vec::with_capacity(op_idxs.len() + 1);
+                path.push(EvidenceStep {
+                    routine_id: routine.id.clone(),
+                    operation_id: None,
+                    callsite_id: None,
+                    loop_id: Some(loop_info.id.clone()),
+                    source_anchor: anchor_of(&loop_info.source_anchor, routine),
+                    note: format!("{} loop", loop_info.loop_type),
+                });
+                for op_idx in op_idxs {
+                    let o = &routine.record_operations[*op_idx];
+                    path.push(EvidenceStep {
+                        routine_id: routine.id.clone(),
+                        operation_id: Some(o.id.clone()),
+                        callsite_id: None,
+                        loop_id: None,
+                        source_anchor: anchor_of(&o.source_anchor, routine),
+                        note: format!("{} on {} with literal key", o.op, o.record_variable_name),
+                    });
+                }
+
+                let affected_objects = vec![routine.object_id.clone()];
+                let affected_tables: Vec<String> = match &first.table_id {
+                    Some(t) => vec![t.clone()],
+                    None => Vec::new(),
+                };
+
+                let confidence: FindingConfidence = to_confidence(&[], "likely");
+
+                let root_cause = format!(
+                    "{} calls {} on {} {} times inside a loop with the same literal key \
+                     — cache the result once before the loop.",
+                    routine.name,
+                    first.op,
+                    first.record_variable_name,
+                    op_idxs.len()
+                );
+
+                let mut finding = Finding {
+                    id,
+                    root_cause_key,
+                    detector: DETECTOR.to_string(),
+                    title: "Repeated identical lookup inside a loop".to_string(),
+                    root_cause,
+                    severity: "medium".to_string(),
+                    confidence,
+                    primary_location: anchor_of(&first.source_anchor, routine),
+                    evidence_path: path,
+                    additional_paths: None,
+                    affected_objects,
+                    affected_tables,
+                    fix_options: vec![FixOption {
+                        description:
+                            "Move the lookup out of the loop into a local variable, then read \
+                             fields from that variable inside the loop."
+                                .to_string(),
+                        safety: "high".to_string(),
+                    }],
+                    provenance: vec![Evidence {
+                        source: "tree-sitter".to_string(),
+                        note: None,
+                    }],
+                    actionable_anchor: None,
+                    fingerprint: None,
+                    event_kind: None,
+                    cross_extension_subscribers: None,
+                };
+                finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
+                findings.push(finding);
+            }
+        }
+    }
+
+    // Within-detector sort by compareStrings(a.id, b.id) (byte order).
+    findings.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let emitted = findings.len();
+    DetectorOutput {
+        findings,
+        stats: DetectorStats {
+            detector: DETECTOR.to_string(),
+            candidates_considered,
+            findings_emitted: emitted,
+        },
+    }
+}

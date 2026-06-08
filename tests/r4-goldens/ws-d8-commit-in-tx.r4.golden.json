@@ -1,0 +1,86 @@
+{
+  "fixtureName": "ws-d8-commit-in-tx",
+  "detectors": [
+    "d8-commit-in-transaction"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d8-commit-in-transaction",
+      "id": "d8/11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0/op2",
+      "rootCauseKey": "d8/11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0/op2",
+      "title": "Commit inside a posting transaction span",
+      "rootCause": "HandlePosted calls Commit while reachable from PostSalesDoc, which writes 3 tables. A mid-transaction Commit breaks rollback semantics — if the surrounding operation later fails, the data is left half-written.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/subscriber.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 8,
+          "endLine": 10,
+          "endColumn": 16
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/posting.al",
+            "range": {
+              "startLine": 2,
+              "startColumn": 4,
+              "endLine": 15,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+            "syntaxKind": "procedure"
+          },
+          "note": "transaction-managing routine: PostSalesDoc"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/subscriber.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 16
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit inside PostSalesDoc's transaction span",
+          "operationId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0/op2"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d80a:Codeunit:50108",
+        "11111111-0000-0000-0000-00000000d80a:Codeunit:50109"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d80a:Table:36",
+        "11111111-0000-0000-0000-00000000d80a:Table:37",
+        "11111111-0000-0000-0000-00000000d80a:Table:50100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Remove the Commit, or restructure so the surrounding transaction completes (returns control to its caller) before this code runs.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a399ac3d58b3be62"
+    }
+  ]
+}

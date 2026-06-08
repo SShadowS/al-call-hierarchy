@@ -23,5 +23,16 @@ pub mod full_summary;
 pub mod reverse_call_graph;
 pub mod transaction_spans;
 
+// R4-0 Task 2b — the L5 HARNESS (Finding model + stable projection, fingerprint,
+// confidence, detector registry, detector context, path walker) and the ported
+// detectors (currently d4).
+pub mod confidence;
+pub mod detector_context;
+pub mod detectors;
+pub mod finding;
+pub mod fingerprint;
+pub mod path_walker;
+pub mod registry;
+
 #[cfg(test)]
 mod test_support;

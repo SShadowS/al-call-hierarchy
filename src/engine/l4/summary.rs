@@ -86,6 +86,28 @@ pub fn uncertainty_key(u: &Uncertainty) -> String {
     format!("{}|{}", u.kind, u.routine_id.as_deref().unwrap_or(""))
 }
 
+/// De-duplicate a list of [`Uncertainty`] values by key (keep first seen), then
+/// sort by key. Mirrors al-sem `dedupeUncertainties` (uncertainty-util.ts).
+pub(crate) fn dedupe_uncertainties(list: Vec<Uncertainty>) -> Vec<Uncertainty> {
+    use std::collections::HashMap;
+    let mut seen: HashMap<String, Uncertainty> = HashMap::new();
+    // Preserve first-seen order (insertion order) via a separate keys vec.
+    let mut order: Vec<String> = Vec::new();
+    for u in list {
+        let k = uncertainty_key(&u);
+        if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(k.clone()) {
+            order.push(k);
+            e.insert(u);
+        }
+    }
+    let mut result: Vec<Uncertainty> = order
+        .into_iter()
+        .map(|k| seen.remove(&k).unwrap())
+        .collect();
+    result.sort_by_key(uncertainty_key);
+    result
+}
+
 /// Per-record-parameter role summary (internal form). Mirrors al-sem
 /// `RecordRoleSummary`.
 #[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
@@ -314,7 +336,7 @@ pub struct R3a2Trace {
 // ---------------------------------------------------------------------------
 
 /// Build internal-RoutineId → StableRoutineId from the workspace routines.
-fn build_routine_stable_map(
+pub(crate) fn build_routine_stable_map(
     routines: &[crate::engine::l3::l3_workspace::L3Routine],
 ) -> std::collections::HashMap<String, String> {
     let mut m = std::collections::HashMap::new();
@@ -325,7 +347,10 @@ fn build_routine_stable_map(
 }
 
 /// Convert an internal RoutineId to StableRoutineId; pass through if unmapped.
-fn stable_routine_id(internal: &str, map: &std::collections::HashMap<String, String>) -> String {
+pub(crate) fn stable_routine_id(
+    internal: &str,
+    map: &std::collections::HashMap<String, String>,
+) -> String {
     map.get(internal)
         .cloned()
         .unwrap_or_else(|| internal.to_string())
@@ -335,7 +360,10 @@ fn stable_routine_id(internal: &str, map: &std::collections::HashMap<String, Str
 /// stable form. Internal RoutineId is `${modelInstanceId}/${hash}` (exactly two
 /// `/`-separated parts), so the suffix is everything after the SECOND `/`.
 /// Mirrors `stableSubId` in r3a2-projection.ts.
-fn stable_sub_id(internal_sub_id: &str, map: &std::collections::HashMap<String, String>) -> String {
+pub(crate) fn stable_sub_id(
+    internal_sub_id: &str,
+    map: &std::collections::HashMap<String, String>,
+) -> String {
     // The internal sub-id looks like `<modelInstanceId>/<hash>/<suffix>`.
     // We need to split off the first two `/`-parts as the routineId.
     let first_slash = internal_sub_id.find('/');

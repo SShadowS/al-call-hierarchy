@@ -1,0 +1,67 @@
+{
+  "fixtureName": "ws-d22",
+  "detectors": [
+    "d22-flowfield-without-calcfields"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d22-flowfield-without-calcfields",
+      "id": "d22/11111111-0000-0000-0000-00000000d220:Codeunit:50800#1c770c02d93c8675f81ecdca501bfa726e636597a58dc33f476dc3cb2b71d4eb/customer/balance (lcy)/9:18",
+      "rootCauseKey": "d22/11111111-0000-0000-0000-00000000d220:Codeunit:50800#1c770c02d93c8675f81ecdca501bfa726e636597a58dc33f476dc3cb2b71d4eb/customer/balance (lcy)",
+      "title": "FlowField read without prior CalcFields",
+      "rootCause": "ReadFlowFieldWithoutCalc reads Customer.Balance (LCY) (a FlowField) but never called CalcFields(Balance (LCY)) on Customer — the read returns the AL default (0 / empty), not the live value.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 18,
+          "endLine": 9,
+          "endColumn": 42
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d220:Codeunit:50800#1c770c02d93c8675f81ecdca501bfa726e636597a58dc33f476dc3cb2b71d4eb",
+        "syntaxKind": "member_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d220:Codeunit:50800#1c770c02d93c8675f81ecdca501bfa726e636597a58dc33f476dc3cb2b71d4eb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 18,
+              "endLine": 9,
+              "endColumn": 42
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d220:Codeunit:50800#1c770c02d93c8675f81ecdca501bfa726e636597a58dc33f476dc3cb2b71d4eb",
+            "syntaxKind": "member_expression"
+          },
+          "note": "reads FlowField Customer.Balance (LCY) without a prior CalcFields(Balance (LCY)) on Customer"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d220:Codeunit:50800"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d220:Table:50800"
+      ],
+      "fixOptions": [
+        {
+          "description": "Call `Customer.CalcFields(Balance (LCY));` before reading the field. Hoist the CalcFields out of any tight loop to avoid an N+1.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "1ea79e02a154f56a"
+    }
+  ]
+}
