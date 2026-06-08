@@ -29,6 +29,7 @@ and `docs/`.
 | **R3a-1** | The **FIRST L4 sub-gate** — the L4 GRAPH SUBSTRATE: `buildCombinedGraph` (resolved call graph + event graph → `CombinedEdge[]` of kinds direct/method/codeunit-run/report-run/page-run/interface/implicit-trigger/event-dispatch/dynamic + the bipartite event-dispatch edges + the to-less `UncertaintyEdge[]` + the typed `GraphEdge[]`/`typedEdges`, `edgeSortKey`-ordered) + `tarjanScc` (ITERATIVE Tarjan → the reverse-topological SCC condensation; members sorted; `recursive` = size>1 ∨ self-loop), captured POST-`buildCombinedGraph` / POST-`tarjanScc` / PRE-`computeSummaries` (NO summaries, NO dep hooks, source-only) in stable-id form | **SHIPPED** — 158/158 source-only fixtures byte-match, `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal (edgesByKind direct=123/method=26/codeunit-run=4/interface=4/implicit-trigger=6/event-dispatch=41; combined=204, uncertainty=93, eventDispatch=41, typed=206, typedEvt=41, sccs=557, recursive=3, multiMember=3); `aldump --r3a1-combined-graph` emits the projection; the native L4-direct structural oracle green (5 invariants: every edge `to` is a real routine id; event-dispatch edges == resolved publisher→subscriber pairs; valid reverse-topological SCC order; `recursive` ⟺ size>1 ∨ self-loop; the SCC partition covers every node exactly once). NEXT: **R3a-2** (the JACOBI fixed-point summary core over this SCC condensation) |
 | **R3a-2** | The **SECOND L4 sub-gate** — the **JACOBI FIXED-POINT SUMMARY CORE** (the heart of L4): `computeSummaries`/`runSummaries` composing per-routine `RoutineSummary` CORE bottom-up over the (R3a-1-parity) reverse-topo SCC condensation via a finite monotone JACOBI fixed point (frozen prior-pass snapshot; new-map writes; map swap; `summaryFingerprint` convergence; the `MAX_FIXED_POINT_ITERATIONS=1000` cap). Surface: `dbEffects` (the `effectKeyOf`-keyed merge with via-precedence `direct>implicit-trigger>event-subscriber>dynamic>inherited`), `uncertainties` (caller-side opaque-callee attach + dedup), `parameterRoles` (cross-call entry-req + exit-effect composition via the **branch-aware CFG walker**, incl. resolved `readsFields`/`writesFields` FieldIds), `inRecursiveCycle`, `hasUnresolvedCalls`. Captured POST-`computeSummaries` (NO dep hooks R3a-4, NO cone/coverage R3a-3), source-only, stable-id form | **SHIPPED** — 158/158 source-only fixtures byte-match + the 3 per-recursive-SCC fingerprint-TRACE goldens byte-match (the JACOBI proof: per-iteration fingerprint sequence + iteration count + per-pass `changed` == al-sem ⟹ frozen-snapshot, not Gauss-Seidel), `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal (routines=567, inheritedEffects=56, viaKinds direct=273/event-subscriber=12/implicit-trigger=3/inherited=55 + dynamic ABSENT, recursiveCycle=13, opaqueCallee=2, crossCallExitEffect=44, uncertaintyKinds unresolved-call=99/dynamic-dispatch=4/external-target=4/interface-open-world=4/ambiguous-overload=4/opaque-callee=2/member-not-found=1/parse-incomplete=1; trace: recursiveSCCs=3, requiring≥2-iter=2, maxIter=4); `aldump --r3a2-summary-core` + `--r3a2-trace` emit the projections; native L4-direct structural oracle green (5 invariants: every inherited effect traces to a callee effect; `effectKeyOf` dedup per routine; via = max over contributing edge-vias; `inRecursiveCycle` ⟺ recursive SCC; uncertainty ⟹ `hasUnresolvedCalls`). The branch-aware CFG walker port (R3a-2 Tasks 1-2 `1e5d4b0`) + the `resolve_field` field-id port (this task) landed. |
 | **R3a-3** | The **THIRD L4 sub-gate** — the **CAPABILITY CONE + COVERAGE** (the last two `RoutineSummary` fields): per-routine `capabilityFactsDirect` (the 13 `extractCapabilities` family extractors run over the L3-RESOLVED features — table/commit/dispatch/http/telemetry/isolated-storage/hyperlink/file-blob/background/ui/ui-window-open/events/error — with resolved `resourceId`, the UNREACHABLE-exclusion pass, the full value-source classifier incl. initializer-chasing + member-expression table-field, PLUS the L4 publisher-`publish`-fact injection), `capabilityFactsInherited` (`composeInheritedCones` — the shortest-path-wins bottom-up cone walk over `typedEdges` + the SCC condensation, `inheritedFactKey` dedup, equal-distance tie-breaker, canonical sort), and `coverage` (`CoverageRecord` — directStatus + the monotone inheritedStatus roll-up + the uncertainty-derived reason union from the L4 fixed point — ambiguous-overload/member-not-found/external-target/interface-open-world — + unknownTargets). Captured POST-`computeSummaries` cone pass (NO dep hooks R3a-4), source-only, stable-id form | **SHIPPED** — 159/159 source-only fixtures byte-match (incl. the added `ws-r3a3-equal-distance-tie` tie fixture), `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal on the comparable fields + recomputed-from-goldens-equal (routines=573, routinesWithInheritedFacts=142, coveragesWithNonTrivialInheritedStatus=22, provenance direct=556/inherited=246, confidence static=708/unresolved=93/configDynamic=1, op commit=90/delete=6/error-throw=16/execute=15/insert=71/modify=116/publish=95/read=175/send=38/store-write=1/subscribe=122/ui-confirm=1/ui-error=16/ui-message=37/ui-window-open=1/write-blob=2, via self=556/call=192/event-dispatch=54, directStatus complete=560/partial=12/unknown=1, inheritedStatus complete=551/partial=22) PLUS the REAL self-validating BFS counts that supersede the al-sem manifest's conservative proxies (genuine >1-hop shortest witnesses=72, genuine equal-distance ties=15 — both > 0); `extra` is id-free across the corpus so it byte-matches verbatim; `aldump --r3a3-cone-coverage` emits the projection; native L4-direct structural oracle green (provenance/via invariants incl. the event-dispatch no-callsite carve-out; `inheritedFactKey` dedup; every inherited key descends from a direct producer; monotone coverage roll-up well-formedness; the independent-BFS-vs-cone agreement; 16-op / 10-resourceKind family coverage). With R3a-3 SHIPPED, the **FULL source-only L4 `RoutineSummary` is at byte-parity** (core R3a-2 + cone/coverage R3a-3). NEXT: **R3a-4** (the dep producer/consumer hooks — `injectIntraAppCallEdges` feeding the cone cross-app) |
+| **R3a-4** | The **FOURTH L4 sub-gate** — the **DEP-ARTIFACT PRODUCER + CONSUMER HOOKS** (the cross-app L4 substrate, the input the R3a-5 cone reads): the embedded-source PRODUCER (`build_dep_artifact_l4` — the engine re-run over a dep `.app`'s embedded `.al` source, projecting `intraAppCallEdges` own→own resolved/deduped/sorted, `citedOperationEvidence` direct-fact witnesses, `depOrderIndex` per-routine order entries + return summaries + a freshness stamp; `summaryMode` "full" only when a body parsed) + the CONSUMER hooks (`inject_intra_app_call_edges` → synthetic direct-call `typedEdges` under the both-ends-in-merged-model guard; `collect_cited_dep_evidence` deduped/sorted; `collect_dep_order_index` under the freshness barrier) + the **stable-id dep-routine PROJECTION** (`DepIdStabilizer`: internal `<modelInstanceId>/<keyHash>[/opN|/csN]` → stable `<appGuid>:<Type>:<Num>#<normalizedSignatureHash>[/opN|/csN]`, cache/modelInstanceId/devFingerprint-INDEPENDENT — NO `dep:<artifactKey>` prefix). Captured POST-`injectIntraAppCallEdges`/`collectCitedDepEvidence`/`collectDepOrderIndex`, stable-id form | **SHIPPED** — 1/1 cross-app fixture (the source-bearing `Dep Chain` dep with the DoIt→DoWrite→Insert chain) **BYTE-MATCHES** the al-sem golden, `KNOWN_DIVERGENCES` empty; the stable-id projection is wired + verified model-instance-independent (`36dce15b…`/`d1b6bb59…` stable routine ids match al-sem exactly); the anti-degenerate matrix (fail-on-zero) Rust-computed + manifest-oracle-equal (intraAppCallEdges=1, injectedTypedEdges=1, citedEvidence=1, orderEntries=2, returnSummaries=2, depOrderIndexPresent=true, freshnessStampFresh=true); `aldump --r3a4-dep-hooks` emits the projection; native L4-direct oracle green (4 invariants: every intraAppCallEdge own→own; injected typedEdge ⟺ an intraAppCallEdge with both ends in the merged model + 1:1 synthetic direct-call; the freshness stamp gates stale artifacts to ABSENT; cited evidence/order entries/return summaries deduped + sorted). The return-summary gate was made faithful to al-sem (`summary === undefined` ≡ "is summarized" — emits a return summary for EVERY own routine incl. bodyless, not gated on `body_available`; observationally equivalent on this corpus, no golden impact). The `depOrderIndex` CONTENTS are count-reduced in the golden projection (per-routine scopeFrame/op/callsite COUNTS, not the full order data) — **R3a-5 owns the full order-index contents** if its cone needs them. NEXT: **R3a-5** (the FULL cross-app L4 summary parity — the cone propagating dep facts to primary callers) |
 
 ---
 
@@ -1369,6 +1370,79 @@ cross-app + the dep-artifact producer projection), the cross-app capability cone
 
 ---
 
+## R3a-4 parity status (SHIPPED — dep-artifact producer + consumer hooks + stable-id projection) — R3's FOURTH L4 sub-gate — the cross-app L4 SUBSTRATE
+
+R3a-4 ports the **dependency-artifact L4 producer + the consumer hooks** — the cross-app
+substrate the R3a-5 cone reads. It is the bridge that makes a dep `.app`'s behavior
+visible to the primary app's L4 summaries:
+
+1. **The embedded-source PRODUCER** (`build_dep_artifact_l4`, `src/engine/deps/dep_artifact_l4.rs`)
+   — the engine RE-RUN over a dep `.app`'s embedded `.al` source (the isolated dep L3
+   model, `analysisRole "dependency"`, `sourceUnitId = dep:<appGuid>:<relpath>`), then a
+   compact projection: `intraAppCallEdges` (own→own resolved direct/method/interface
+   edges, deduped by `(from,to)`, sorted), `citedOperationEvidence` (the direct-capability
+   witnesses — `r.Insert` at its file:line anchor with `controlContext`), and
+   `depOrderIndex` (per-routine order entries + return summaries + a freshness stamp).
+   `summaryMode` is `"full"` only when ≥1 body parsed (a symbol-only / parse-failed dep →
+   the order index is ABSENT, a barrier).
+2. **The CONSUMER hooks** — `inject_intra_app_call_edges` (each intra-app edge with BOTH
+   ends in the merged model → one synthetic `direct-call` `typedEdge`, `syntaxKind`
+   "synthetic"); `collect_cited_dep_evidence` (deduped by operationId, sorted);
+   `collect_dep_order_index` (collected only from artifacts whose stamp is FRESH — the
+   freshness barrier; stale/absent/schema-mismatch → skipped).
+3. **The stable-id dep-routine PROJECTION** (`DepIdStabilizer`,
+   `src/engine/deps/r3a4_projection.rs`) — THE key fix. A dep routine's INTERNAL id
+   (`<modelInstanceId>/<keyHash>[/opN|/csN]`) is modelInstanceId/devFingerprint-keyed →
+   NOT reproducible by another engine. The projection maps it to the STABLE
+   `<appGuid>:<Type>:<Num>#<normalizedSignatureHash>[/opN|/csN]` form
+   (appGuid/signature-derived → cache/modelInstanceId/devFingerprint-INDEPENDENT, NO
+   `dep:<artifactKey>` prefix). The Rust dep routine already carries `stable_routine_id`
+   = `to_stable_object_id(object_id) + "#" + normalized_signature_hash` — exactly al-sem's
+   stabilizer base; the `/opN`/`/csN` suffix (everything after the two-`/`-part routine
+   id) is re-attached. The emitted ids (`36dce15b…`/`d1b6bb59…`) match al-sem's golden
+   EXACTLY and are verified model-instance-independent.
+
+**Captured POST-`injectIntraAppCallEdges`/`collectCitedDepEvidence`/`collectDepOrderIndex`**,
+stable-id form. The cross-app fixture is the source-bearing `Dep Chain` codeunit (50300)
+with the intra-dep call chain `DoIt() → DoWrite() → r.Insert(true)` — non-hollow, so every
+payload surface is exercised.
+
+**Result — the EXIT GATE:** the 1 cross-app fixture **BYTE-MATCHES** the al-sem golden
+(`tests/r3a4-goldens/cross-app-dep-hooks.r3a4.golden.json`), `KNOWN_DIVERGENCES` empty. The
+anti-degenerate matrix (fail-on-zero) is Rust-computed + al-sem-manifest-oracle-equal:
+intraAppCallEdges=1, injectedTypedEdges=1, citedEvidence=1, orderEntries=2,
+returnSummaries=2, depOrderIndexPresent=true, freshnessStampFresh=true. `aldump
+--r3a4-dep-hooks <workspace>` emits the projection. The native L4-direct oracle is green
+(4 invariants: every intraAppCallEdge own→own; injected typedEdge ⟺ an intraAppCallEdge
+with both ends in the merged model + 1:1 synthetic direct-call; the freshness stamp gates
+stale artifacts to ABSENT; cited evidence / order entries / return summaries deduped +
+sorted). The R3a-4 Task-2 vector parity (7 tests) stays green.
+
+**Return-summary gate made faithful:** the Task-2 review found the Rust gated the
+per-routine return summary on `!body_available`, while al-sem gates on
+`summary === undefined` (faithful = "is the routine summarized" — which after
+`runSummaries` is true for ALL own routines, incl. bodyless ones, which get an
+unknown/partial summary). The Rust gate now matches al-sem's logic (emit a return summary
+for every own routine; only the ORDER ENTRY is gated on having scope frames + ops/callsites).
+On this corpus there are no bodyless own routines (native interface methods are not
+routines), so the gates are observationally equivalent — no golden impact, but the Rust is
+now faithful for a future corpus with a bodyless own dep routine.
+
+**SCOPE NOTE — order-index contents:** the R3a-4 golden projects the `depOrderIndex` /
+`depRoutineOrderEntries` as COUNTS (per-routine `scopeFrameCount` / `operationOrderCount` /
+`callsiteOrderCount`, + the index `routineCount` / `returnSummaryCount`), NOT the full
+order data. **R3a-5 owns the full order-index CONTENTS** if its cross-app cone needs the
+per-op/-callsite ordering to sequence dep effects.
+
+With R3a-4 SHIPPED, the **cross-app L4 substrate is at byte-parity** — the dep producer
+payloads + the injected typed edges + the collected evidence/order data are all
+byte-identical to al-sem, with the dep-routine ids in the stable, engine-reproducible form.
+**NEXT: R3a-5** — the FULL cross-app L4 summary: inject the R3a-4 dep `intraAppCallEdges`
+into `typedEdges` BEFORE the cone walk so `composeInheritedCones` propagates a dep's
+`capabilityFactsDirect` to its primary-app callers.
+
+---
+
 ## Running migration status
 
 | Layer | Gate(s) | Status |
@@ -1388,7 +1462,8 @@ cross-app + the dep-artifact producer projection), the cross-app capability cone
 | L4 (summaries) | **R3a-2** (the JACOBI fixed-point `RoutineSummary` core over the SCC condensation, source-only) | **DONE** — 158/158 source-only fixtures byte-match + the 3 per-recursive-SCC fingerprint-TRACE goldens byte-match (the JACOBI proof) + the anti-degenerate matrix (≥1 inherited effect, 4 reachable via-kinds + dynamic absent, ≥1 opaque-callee, ≥1 cross-call exit-effect, ≥1 recursive-cycle routine; ≥1 recursive SCC requiring ≥2 iterations) Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal; `aldump --r3a2-summary-core` + `--r3a2-trace` emitters; native L4-direct structural oracle green (5 invariants); `KNOWN_DIVERGENCES` empty |
 | L4 (summaries) | **R3a-3** (the capability cone + coverage over the SCC condensation, source-only) | **DONE** — 159/159 source-only fixtures byte-match (incl. the `ws-r3a3-equal-distance-tie` fixture) + the anti-degenerate matrix (≥1 routine with inherited facts; REAL BFS genuine >1-hop witnesses=72 + genuine equal-distance ties=15; ≥1 non-trivial inheritedStatus; each provenance/confidence/via kind; 16-op family coverage) Rust-computed + manifest-oracle-equal-on-comparable + recomputed-from-goldens-equal; `aldump --r3a3-cone-coverage` emitter; native L4-direct structural oracle green (6 oracle tests); `KNOWN_DIVERGENCES` empty; `extra` id-free → byte-matches verbatim |
 | L4 (summaries) | **R3a (= R3a-1 + R3a-2 + R3a-3)** | **SOURCE-ONLY L4 RoutineSummary COMPLETE** — graph substrate + JACOBI summary core + capability cone/coverage at byte-parity |
-| L4 (summaries) | R3a-4+ (dep producer/consumer hooks — the cross-app cone — + Salsa incrementality) | NEXT — R3a-4 injects dep `intraAppCallEdges` into `typedEdges` BEFORE the cone walk so the cone propagates dep `capabilityFactsDirect` to primary callers; the dep-artifact PRODUCER projection must be ported to feed it |
+| L4 (deps) | **R3a-4** (dep-artifact producer + consumer hooks + stable-id dep-routine projection) | **DONE** — 1/1 cross-app fixture BYTE-MATCHES the al-sem golden, `KNOWN_DIVERGENCES` empty; the stable-id dep-routine projection (`DepIdStabilizer` → `appGuid:Type:Num#sigHash`, NO `dep:` prefix) wired + model-instance-independent + al-sem-equal; anti-degenerate matrix (fail-on-zero, intraAppCallEdges=1/injected=1/cited=1/orderEntries=2/returnSummaries=2/depOrderIndexPresent/freshnessStampFresh) manifest-oracle-equal; `aldump --r3a4-dep-hooks` emitter; native L4-direct oracle (4 invariants); return-summary gate made al-sem-faithful (`summary===undefined` ≡ summarized, not `body_available`). The `depOrderIndex` order-index CONTENTS are count-reduced in the projection — R3a-5 owns the full contents if its cone needs them |
+| L4 (summaries) | R3a-5+ (the FULL cross-app L4 summary — the cone propagating dep facts to primary callers — + Salsa incrementality) | NEXT — R3a-5 injects the R3a-4 dep `intraAppCallEdges` into `typedEdges` BEFORE the cone walk so the cone propagates dep `capabilityFactsDirect` to primary callers; the R3a-4 producer/consumer substrate + stable-id projection now feed it |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 

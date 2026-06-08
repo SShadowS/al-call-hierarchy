@@ -1,0 +1,1 @@
+{"id":"22222222-0001-0000-0000-0000000000bb","name":"R3a4 Host","publisher":"TestPub","version":"1.0.0.0","runtime":"11.0","idRanges":[{"from":70000,"to":79999}],"dependencies":[{"id":"cccccccc-0001-0000-0000-000000000001","name":"Dep Chain","publisher":"TestPub","version":"1.0.0.0"}]}

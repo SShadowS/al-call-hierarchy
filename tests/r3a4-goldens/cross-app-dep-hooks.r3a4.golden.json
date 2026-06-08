@@ -1,0 +1,101 @@
+{
+  "fixtureName": "cross-app-dep-hooks",
+  "artifactPayloads": [
+    {
+      "appGuid": "cccccccc-0001-0000-0000-000000000001",
+      "name": "Dep Chain",
+      "version": "1.0.0.0",
+      "summaryMode": "full",
+      "intraAppCallEdges": [
+        {
+          "from": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2",
+          "to": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0",
+          "callsiteId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2/cs0"
+        }
+      ],
+      "citedOperationEvidence": [
+        {
+          "operationId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0",
+          "sourceFile": "dep:cccccccc-0001-0000-0000-000000000001:DepChain.Codeunit.al",
+          "startLine": 5,
+          "startColumn": 8,
+          "endLine": 5,
+          "endColumn": 22,
+          "displayText": "r.Insert",
+          "controlContext": "top-level"
+        }
+      ],
+      "depOrderIndex": {
+        "stamp": {
+          "appId": "cccccccc-0001-0000-0000-000000000001",
+          "version": "1.0.0.0",
+          "orderIndexSchemaVersion": "1",
+          "fresh": true
+        },
+        "routineCount": 2,
+        "returnSummaryCount": 2
+      }
+    }
+  ],
+  "consumedEffect": {
+    "injectedTypedEdges": [
+      {
+        "kind": "direct-call",
+        "from": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2",
+        "to": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0",
+        "callsiteId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2/cs0"
+      }
+    ],
+    "citedDepOperationEvidence": [
+      {
+        "operationId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0",
+        "sourceFile": "dep:cccccccc-0001-0000-0000-000000000001:DepChain.Codeunit.al",
+        "startLine": 5,
+        "startColumn": 8,
+        "endLine": 5,
+        "endColumn": 22,
+        "displayText": "r.Insert",
+        "controlContext": "top-level"
+      }
+    ],
+    "depRoutineOrderEntries": [
+      {
+        "routineId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2",
+        "scopeFrameCount": 1,
+        "operationOrderCount": 0,
+        "callsiteOrderCount": 1
+      },
+      {
+        "routineId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0",
+        "scopeFrameCount": 1,
+        "operationOrderCount": 1,
+        "callsiteOrderCount": 0
+      }
+    ],
+    "depReturnSummaries": [
+      {
+        "routineId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#36dce15b251a978c68883c6f029962f4fa6d2e829ca0fd4601e0bd4f41d9eed2",
+        "hasNormalReturnPath": true,
+        "allPathsError": false,
+        "hasTryFunctionBoundary": false,
+        "coverage": "resolved",
+        "commitBehavior": "normal"
+      },
+      {
+        "routineId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0",
+        "hasNormalReturnPath": true,
+        "allPathsError": false,
+        "hasTryFunctionBoundary": false,
+        "coverage": "resolved",
+        "commitBehavior": "normal"
+      }
+    ]
+  },
+  "intraAppCallEdgesCount": 1,
+  "injectedTypedEdgesCount": 1,
+  "citedEvidenceCount": 1,
+  "orderEntriesCount": 2,
+  "returnSummariesCount": 2,
+  "depOrderIndexPresent": true,
+  "freshnessStampFresh": true
+}

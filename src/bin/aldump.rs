@@ -47,7 +47,7 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
-         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage] \
+         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -65,6 +65,7 @@ fn main() -> ExitCode {
     let mut r3a2_summary_core = false;
     let mut r3a2_trace = false;
     let mut r3a3_cone_coverage = false;
+    let mut r3a4_dep_hooks = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -115,6 +116,10 @@ fn main() -> ExitCode {
             r3a3_cone_coverage = true;
             continue;
         }
+        if arg == "--r3a4-dep-hooks" {
+            r3a4_dep_hooks = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -134,6 +139,7 @@ fn main() -> ExitCode {
         r3a2_summary_core,
         r3a2_trace,
         r3a3_cone_coverage,
+        r3a4_dep_hooks,
     ]
     .iter()
     .filter(|f| **f)
@@ -143,7 +149,8 @@ fn main() -> ExitCode {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
              --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph / \
-             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage are mutually exclusive"
+             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / --r3a4-dep-hooks \
+             are mutually exclusive"
         );
         return usage();
     }
@@ -152,6 +159,34 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if r3a4_dep_hooks {
+        // R3a-4 DEP-HOOK PROJECTION: read the workspace's `.alpackages` dep `.app`(s),
+        // build each dep's embedded-source PRODUCER artifact, drive the CONSUMER hooks
+        // (inject_intra_app_call_edges / collect_cited_dep_evidence /
+        // collect_dep_order_index) over a merged model whose routine membership =
+        // workspace own routines + every dep's own routines, then STABLE-PROJECT every
+        // id-bearing field (appGuid:Type:Num#sigHash — cache/modelInstanceId-independent)
+        // and emit the producer payloads + consumed effect in the SAME stable shape /
+        // key-order as the al-sem `cross-app-dep-hooks.r3a4.golden.json`. CAPTURE POINT:
+        // post-inject/collect hooks; the R3a-5 cross-app cone is NOT projected here.
+        // Fail-closed → an empty projection (never throws).
+        let projection =
+            al_call_hierarchy::engine::deps::r3a4_projection::project_r3a4_from_workspace(
+                &workspace,
+                "cross-app-dep-hooks",
+            );
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R3a-4 dep-hook projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if r3a2_summary_core {
         // R3a-2 SUMMARY CORE: run the SOURCE-ONLY L0→L3 pipeline → buildCombinedGraph

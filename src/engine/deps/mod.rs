@@ -23,4 +23,5 @@ pub mod cross_app_l3;
 pub mod dep_artifact_l4;
 pub mod merged_index;
 pub mod projection;
+pub mod r3a4_projection;
 pub mod symbol_reference;

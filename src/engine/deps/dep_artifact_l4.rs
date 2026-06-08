@@ -594,17 +594,23 @@ fn build_dep_order_index(
         if r.app_guid != app_guid {
             continue;
         }
-        // al-sem `if (r.summary === undefined) continue` — a routine is "summarized"
-        // when it has a parsed body (the dep model summarizes all body-available
-        // routines). Symbol-only routines (no body) carry no scope frames / order.
-        if !r.body_available {
-            continue;
-        }
+        // FAITHFUL gate (al-sem `if (r.summary === undefined) continue`): `runSummaries`
+        // assigns a summary to EVERY non-leaf dep-own routine — body-available OR not
+        // (a bodyless routine's `computeRoutineReturnSummary` yields unknown/partial).
+        // Dep-own routines start with `summary === undefined` so they are all non-leaves
+        // → all summarized → none skipped here. (The Rust dep model summarizes the same
+        // set; there is no per-routine `summary` field, so "is summarized" ≡ "is an
+        // own routine in the resolved dep model", which the appGuid filter above already
+        // established. NOT gated on `body_available` — on a bodyless own routine al-sem
+        // still emits a return summary, and gating on body would drop it.)
 
-        // Return summary (for all summarized routines).
+        // Return summary (for ALL summarized own routines — incl. bodyless, which
+        // `compute_dep_return_summary` reduces to unknown/partial).
         return_summary_list.push(compute_dep_return_summary(r));
 
-        // Order entry: only for routines with scope frames + ops/callsites.
+        // Order entry: only for routines with scope frames + ops/callsites. A bodyless
+        // routine has no scope frames → it contributes a return summary but no order
+        // entry (matches al-sem's `r.features?.scopeFrames` empty-skip below).
         let scope_frames = scope_frames_by_routine
             .get(&r.id)
             .cloned()
