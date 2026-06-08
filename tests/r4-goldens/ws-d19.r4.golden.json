@@ -1,0 +1,121 @@
+{
+  "fixtureName": "ws-d19",
+  "detectors": [
+    "d19-unused-parameter"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d19-unused-parameter",
+      "id": "d19/11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb/p1",
+      "rootCauseKey": "d19/11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb/p1",
+      "title": "Procedure parameter is never used",
+      "rootCause": "WithUnusedScalar declares parameter 'ScalarUnused' (Integer) at position 1 but the body never references it.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 17,
+          "startColumn": 4,
+          "endLine": 20,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 17,
+              "startColumn": 4,
+              "endLine": 20,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#72ac8426b9a4808f40d0ef8ffd02cefb801c6cc8ad17ee1c4506e4d6e3c453eb",
+            "syntaxKind": "procedure"
+          },
+          "note": "parameter 'ScalarUnused: Integer' declared but never referenced"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d190:Codeunit:50500"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "e98ed7aae2c5e338"
+    },
+    {
+      "detector": "d19-unused-parameter",
+      "id": "d19/11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093/p1",
+      "rootCauseKey": "d19/11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093/p1",
+      "title": "Procedure parameter is never used",
+      "rootCause": "WithUnusedRecord declares parameter 'UnusedCustomer' (Record Customer) at position 1 but the body never references it.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 3,
+          "startColumn": 4,
+          "endLine": 6,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d190:Codeunit:50500#056678bb521c1256a60258abdc0ae76c6b00157feea15238c0d34848a7bad093",
+            "syntaxKind": "procedure"
+          },
+          "note": "parameter 'UnusedCustomer: Record Customer' declared but never referenced"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d190:Codeunit:50500"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "1494a929e37d6718"
+    }
+  ]
+}

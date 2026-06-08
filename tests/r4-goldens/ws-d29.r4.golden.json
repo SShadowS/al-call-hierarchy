@@ -1,0 +1,157 @@
+{
+  "fixtureName": "ws-d29",
+  "detectors": [
+    "d29-subscriber-modify-on-event-record"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d29-subscriber-modify-on-event-record",
+      "id": "d29/11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/op0",
+      "rootCauseKey": "d29/11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/op0",
+      "title": "Event subscriber mutates the inbound record",
+      "rootCause": "OnBeforeDeleteMutates subscribes to 'onbeforedeleteevent' and calls Delete on Rec, the inbound record parameter — re-firing the same event from a subscriber can recurse.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 13,
+          "startColumn": 8,
+          "endLine": 13,
+          "endColumn": 20
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 11,
+              "startColumn": 4,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] OnBeforeDeleteMutates on 'onbeforedeleteevent'"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 20
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Delete on Rec — the event's inbound record parameter",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d290:Codeunit:51300"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d290:Table:51300"
+      ],
+      "fixOptions": [
+        {
+          "description": "Either use Modify(false) to suppress trigger re-firing, perform the mutation on a fresh record loaded by primary key, or move the work outside the subscriber path.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a380a4c391adccf5"
+    },
+    {
+      "detector": "d29-subscriber-modify-on-event-record",
+      "id": "d29/11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/op0",
+      "rootCauseKey": "d29/11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/op0",
+      "title": "Event subscriber mutates the inbound record",
+      "rootCause": "OnAfterModifyMutates subscribes to 'onaftermodifyevent' and calls Modify on Rec, the inbound record parameter — re-firing the same event from a subscriber can recurse.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 6,
+          "startColumn": 8,
+          "endLine": 6,
+          "endColumn": 20
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] OnAfterModifyMutates on 'onaftermodifyevent'"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 20
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Modify on Rec — the event's inbound record parameter",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d290:Codeunit:51300"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d290:Table:51300"
+      ],
+      "fixOptions": [
+        {
+          "description": "Either use Modify(false) to suppress trigger re-firing, perform the mutation on a fresh record loaded by primary key, or move the work outside the subscriber path.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "589b4d281aa63dc7"
+    }
+  ]
+}

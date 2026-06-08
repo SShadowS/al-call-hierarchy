@@ -4,7 +4,10 @@
 pub mod d10;
 pub mod d11;
 pub mod d18;
+pub mod d19;
+pub mod d20;
 pub mod d21;
+pub mod d29;
 pub mod d36;
 pub mod d4;
 pub mod d5;
@@ -67,8 +70,20 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d18::detect_d18,
         },
         Detector {
+            name: "d19-unused-parameter".to_string(),
+            run: d19::detect_d19,
+        },
+        Detector {
+            name: "d20-unreachable-after-exit".to_string(),
+            run: d20::detect_d20,
+        },
+        Detector {
             name: "d21-read-without-load".to_string(),
             run: d21::detect_d21,
+        },
+        Detector {
+            name: "d29-subscriber-modify-on-event-record".to_string(),
+            run: d29::detect_d29,
         },
         Detector {
             name: "d36-late-setloadfields".to_string(),

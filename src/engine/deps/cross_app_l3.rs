@@ -169,6 +169,22 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         operation_sites: Vec::new(),
         statement_tree: None,
         loops: Vec::new(),
+        // Dep routines are bodyless (ABI symbol-only) — no body anchor / refs /
+        // unreachable statements. `body_available` is hardcoded false for projected
+        // dep routines (deps/projection.rs), and the L5 detectors that read these
+        // (d19/d20/d29) gate on `body_available` or `kind`, so the defaults are never
+        // observed. If dep bodies ever become available, revisit these defaults
+        // (empty identifier_references would otherwise read as d19 false-positives).
+        source_anchor: crate::engine::l2::features::PAnchor {
+            source_unit_id: String::new(),
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+            syntax_kind: String::new(),
+        },
+        identifier_references: Vec::new(),
+        unreachable_statements: Vec::new(),
     }
 }
 

@@ -223,6 +223,21 @@ pub struct L3Routine {
     /// record-type projection drops, forwarded here for L5 detectors (d4 reads
     /// `routine.features.loops`). Additive — never reaches an R0–R3 golden.
     pub loops: Vec<crate::engine::l2::features::PLoop>,
+    /// The routine's OWN declaration anchor (the procedure / trigger_declaration
+    /// node range, with `syntax_kind` = "procedure" / "trigger_declaration").
+    /// al-sem `routine-indexer.ts:419` builds this as the routine's `sourceAnchor`.
+    /// Captured during L2/L3 assembly where the routine NODE is available. Read by
+    /// d19 (primaryLocation + evidence) and d29 (first evidence step). Additive —
+    /// the L3 record-type projection is field-allowlisted so this never reaches an
+    /// R0–R3 golden.
+    pub source_anchor: crate::engine::l2::features::PAnchor,
+    /// Lowercased / sorted / deduped identifier references in the routine body
+    /// (L2 features `identifierReferences`). Read by d19 to test parameter use.
+    /// Additive — forwarded verbatim from L2.
+    pub identifier_references: Vec<String>,
+    /// Unreachable-after-exit statements recorded during the L2 body DFS
+    /// (`features.unreachableStatements`). Read by d20. Additive — forwarded verbatim.
+    pub unreachable_statements: Vec<crate::engine::l2::features::PUnreachableStatement>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -447,6 +462,27 @@ fn index_table(
     }
 }
 
+/// Build a `PAnchor` from a node + the file's UTF-16 column index, mirroring the
+/// L2 body-walk `Ctx::anchor`. Used to capture the routine's OWN declaration
+/// anchor (`syntax_kind` = node.kind() = "procedure" / "trigger_declaration"),
+/// matching al-sem `routine-indexer.ts:419`'s `sourceAnchor`.
+fn anchor_from_node(
+    node: Node,
+    source_unit_id: &str,
+    cols: &Utf16Cols,
+) -> crate::engine::l2::features::PAnchor {
+    let sp = node.start_position();
+    let ep = node.end_position();
+    crate::engine::l2::features::PAnchor {
+        source_unit_id: source_unit_id.to_string(),
+        start_line: sp.row as u32,
+        start_column: cols.col(sp.row, sp.column),
+        end_line: ep.row as u32,
+        end_column: cols.col(ep.row, ep.column),
+        syntax_kind: node.kind().to_string(),
+    }
+}
+
 /// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
 fn collect_routine_nodes(decl: Node) -> Vec<Node> {
     let mut out = Vec::new();
@@ -650,6 +686,13 @@ fn project_file(
             let operation_sites = features.operation_sites.clone();
             let statement_tree = features.statement_tree.clone();
             let loops = features.loops.clone();
+            // d19 reads the L2 identifier-reference set (lowercased / sorted /
+            // deduped exactly as L2 produced it); d20 reads the unreachable list.
+            let identifier_references = features.identifier_references.clone();
+            let unreachable_statements = features.unreachable_statements.clone();
+            // The routine's OWN declaration anchor (al-sem routine-indexer.ts:419):
+            // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
+            let source_anchor = anchor_from_node(routine, source_unit_id, cols);
 
             // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
             // projection does (routine-indexer.ts parity): a code_block body is
@@ -700,6 +743,9 @@ fn project_file(
                 operation_sites,
                 statement_tree,
                 loops,
+                source_anchor,
+                identifier_references,
+                unreachable_statements,
             });
         }
     }

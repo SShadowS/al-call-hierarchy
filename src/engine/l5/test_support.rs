@@ -90,6 +90,9 @@ pub fn routine(id: &str, kind: &str) -> L3Routine {
         operation_sites: Vec::new(),
         statement_tree: None,
         loops: Vec::new(),
+        source_anchor: dummy_anchor(),
+        identifier_references: Vec::new(),
+        unreachable_statements: Vec::new(),
     }
 }
 

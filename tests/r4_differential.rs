@@ -17,8 +17,8 @@
 //!
 //! ## Negative assertions
 //!
-//! Each of the 6 new R4-A detectors (d5/d10/d11/d18/d21/d36) MUST yield 0 findings
-//! over a neutral fixture that lacks its pattern.
+//! Each new R4-A detector (d5/d10/d11/d18/d21/d36, plus d19/d20/d29) MUST yield 0
+//! findings over a neutral fixture that lacks its pattern.
 //!
 //! ## KNOWN_DIVERGENCES gating
 //!
@@ -143,6 +143,27 @@ const WAVE_A: &[Smoke] = &[
         detectors: &["d36-late-setloadfields"],
         ported: true,
     },
+    // d19: unused procedure parameter
+    Smoke {
+        fixture: "ws-d19",
+        wave: "R4-A",
+        detectors: &["d19-unused-parameter"],
+        ported: true,
+    },
+    // d20: unreachable statement after unconditional exit
+    Smoke {
+        fixture: "ws-d20",
+        wave: "R4-A",
+        detectors: &["d20-unreachable-after-exit"],
+        ported: true,
+    },
+    // d29: event subscriber mutates the inbound record
+    Smoke {
+        fixture: "ws-d29",
+        wave: "R4-A",
+        detectors: &["d29-subscriber-modify-on-event-record"],
+        ported: true,
+    },
 ];
 
 /// A negative assertion: the given detector must produce 0 findings over the
@@ -192,6 +213,27 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d36-late-setloadfields",
         neutral_fixture: "ws-d18",
+    },
+    // d19: ws-d11-no-get has a procedure `FromParam(var Customer: Record Customer)`
+    // whose record parameter IS referenced (Customer.Modify()) — the detector runs
+    // its identifier-reference check on a parameterized procedure and finds every
+    // param used, so it emits 0.
+    NegativeAssertion {
+        detector: "d19-unused-parameter",
+        neutral_fixture: "ws-d11-no-get",
+    },
+    // d20: ws-d36 has Get/SetLoadFields procedures but no Exit/Error/CurrReport.Quit
+    // followed by a statement — the body DFS records no unreachable pair, so 0.
+    NegativeAssertion {
+        detector: "d20-unreachable-after-exit",
+        neutral_fixture: "ws-d36",
+    },
+    // d29: ws-d11-no-get contains Modify on a record (the MUTATING_OPS family) but
+    // has NO [EventSubscriber] routine at all — the subscriber-kind gate suppresses
+    // every candidate, so 0.
+    NegativeAssertion {
+        detector: "d29-subscriber-modify-on-event-record",
+        neutral_fixture: "ws-d11-no-get",
     },
 ];
 
@@ -559,10 +601,11 @@ fn differential_r4_findings_match_goldens() {
 
     eprintln!(
         "R4 differential: {} smoke + {} R4-A wave fixture(s); {} ported (all byte-matched); \
-         6 negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
+         {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
         WAVE_A.len(),
         ported_results.len(),
+        NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
         allowlist.len(),
     );

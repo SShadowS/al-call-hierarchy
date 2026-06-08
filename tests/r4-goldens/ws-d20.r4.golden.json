@@ -1,0 +1,151 @@
+{
+  "fixtureName": "ws-d20",
+  "detectors": [
+    "d20-unreachable-after-exit"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d20-unreachable-after-exit",
+      "id": "d20/11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb/u0",
+      "rootCauseKey": "d20/11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb/u0",
+      "title": "Unreachable statement after unconditional exit",
+      "rootCause": "ErrorThenStatement: the statement after `Error` is unreachable — control leaves the routine before it can run.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 13,
+          "startColumn": 8,
+          "endLine": 13,
+          "endColumn": 29
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Error statement — control leaves the routine here"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 29
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#2304027f7183ef649daa846b59f4bb438b6d40342aa7d9cc055483eb949c39bb",
+            "syntaxKind": "call_expression"
+          },
+          "note": "this statement (and any siblings after it) is never executed"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d200:Codeunit:50600"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the unreachable statement, or move the preceding exit / Error / Quit inside a conditional so the later code can run.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "5036b64f5803aa28"
+    },
+    {
+      "detector": "d20-unreachable-after-exit",
+      "id": "d20/11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee/u0",
+      "rootCauseKey": "d20/11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee/u0",
+      "title": "Unreachable statement after unconditional exit",
+      "rootCause": "ExitThenStatement: the statement after `Exit` is unreachable — control leaves the routine before it can run.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 6,
+          "startColumn": 8,
+          "endLine": 6,
+          "endColumn": 29
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 12
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+            "syntaxKind": "exit_statement"
+          },
+          "note": "Exit statement — control leaves the routine here"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 29
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d200:Codeunit:50600#aa54f07912d2d1c8f9f6911dc98b3f813ad067a916a1387bd850a9303e6cc9ee",
+            "syntaxKind": "call_expression"
+          },
+          "note": "this statement (and any siblings after it) is never executed"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d200:Codeunit:50600"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the unreachable statement, or move the preceding exit / Error / Quit inside a conditional so the later code can run.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "55757d43139d0eb2"
+    }
+  ]
+}
