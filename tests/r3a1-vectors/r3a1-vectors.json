@@ -1,0 +1,429 @@
+{
+  "description": "R3a-1 combined-graph + SCC vectors. Each vector is a small inline AL workspace run through the REAL pipeline (indexWorkspace → resolveModel ONCE → buildCombinedGraph → tarjanScc → projectR3a1; READ-only, captured POST-buildCombinedGraph/POST-tarjanScc/PRE-computeSummaries, no dep hooks). Covers the edge-kind enumeration (direct/method/codeunit-run/interface multi-edge/implicit-trigger/event-dispatch/dynamic + uncertainty), a self-loop recursive SCC, a mutual-recursion (size-2) recursive SCC, and the reverse-topological SCC order (caller after callee). Hand-authored invariants were asserted against the live projection before emit.",
+  "modelInstanceId": "r0",
+  "appGuid": "3a100000-0000-0000-0000-00000000003a",
+  "vectorCount": 4,
+  "vectors": [
+    {
+      "name": "edge_kind_enumeration",
+      "description": "a workspace exercising direct/method/codeunit-run/interface(multi-edge)/implicit-trigger/event-dispatch/dynamic combined-edge kinds + an uncertainty edge",
+      "files": [
+        [
+          "a",
+          "table 50000 Customer\n{\n    fields { field(1; \"No.\"; Code[20]) { } }\n    keys { key(PK; \"No.\") { } }\n\n    trigger OnInsert()\n    begin\n    end;\n}\ninterface IProc\n{\n    procedure Process();\n}\ncodeunit 50100 \"Proc A\" implements IProc\n{\n    procedure Process() begin end;\n}\ncodeunit 50101 \"Proc B\" implements IProc\n{\n    procedure Process() begin end;\n}\ncodeunit 50102 Worker\n{\n    trigger OnRun() begin end;\n\n    [IntegrationEvent(false, false)]\n    procedure OnSomething() begin end;\n}\ncodeunit 50103 Helper\n{\n    procedure DoHelp() begin end;\n}\ncodeunit 50104 Driver\n{\n    var\n        H: Codeunit Helper;\n        P: Interface IProc;\n\n    procedure DirectCall() begin LocalProc(); end;\n    procedure LocalProc() begin end;\n    procedure MethodCall() begin H.DoHelp(); end;\n    procedure RunCall() begin Codeunit.Run(Codeunit::Worker); end;\n    procedure IfaceCall() begin P.Process(); end;\n    procedure DynamicCall(Which: Integer) begin Codeunit.Run(Which); end;\n    procedure InsertCall() var C: Record Customer; begin C.Insert(true); end;\n    procedure UnresolvedCall() begin NoSuchProc(); end;\n}\ncodeunit 50105 Sub\n{\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::Worker, 'OnSomething', '', false, false)]\n    procedure OnWorkerSomething() begin end;\n}"
+        ]
+      ],
+      "expected": {
+        "combinedEdges": [
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+            "kind": "codeunit-run",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#fda4ceeed3bfa7f9c4c0acbdb6369db519c624846a22de694a874f1d3ded869d",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50105#5d44286007386de3b2dc2d2a8b32b609e3ae99a7f46cd7600298d68d98b1a15e",
+            "kind": "event-dispatch",
+            "resolution": "resolved",
+            "eventId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102::OnSomething::fda4ceeed3bfa7f9c4c0acbdb6369db519c624846a22de694a874f1d3ded869d",
+            "subscriberAppId": "3a100000-0000-0000-0000-00000000003a"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+            "kind": "interface",
+            "resolution": "maybe",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50101#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+            "kind": "interface",
+            "resolution": "maybe",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50103#90ed363dc3dbb3b39e7c45b5ea28f7029b9dae1d20c3d4376b8366ee114ea27a",
+            "kind": "method",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ff8da84c77349428b25e1edab4d26ad266901e573b3ecb3b2812179e9f9bf083",
+            "to": "3a100000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
+            "kind": "implicit-trigger",
+            "resolution": "maybe",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ff8da84c77349428b25e1edab4d26ad266901e573b3ecb3b2812179e9f9bf083/op0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ff8da84c77349428b25e1edab4d26ad266901e573b3ecb3b2812179e9f9bf083/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6c98ec6ae32817714038fb0339cb82085d71ab2667a07a4263bda82c08651581",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575/op0"
+          }
+        ],
+        "uncertaintyEdges": [
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7c39cd642fc692d23e402408daa1ae8cf094e5336e9ff2ef0ab54e0140503dbe",
+            "uncertainty": {
+              "kind": "unresolved-call",
+              "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7c39cd642fc692d23e402408daa1ae8cf094e5336e9ff2ef0ab54e0140503dbe/cs0"
+            }
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e",
+            "uncertainty": {
+              "kind": "interface-open-world",
+              "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/cs0",
+              "interfaceName": "IProc"
+            }
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#bd6ee0d91342cf34e5574167ebbf5c9943006d0f1eacec9c9df26faaab46dfc1",
+            "uncertainty": {
+              "kind": "dynamic-dispatch",
+              "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#bd6ee0d91342cf34e5574167ebbf5c9943006d0f1eacec9c9df26faaab46dfc1/op0"
+            }
+          }
+        ],
+        "typedEdges": [
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6c98ec6ae32817714038fb0339cb82085d71ab2667a07a4263bda82c08651581",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575/cs0"
+          },
+          {
+            "kind": "variable-typed-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50103#90ed363dc3dbb3b39e7c45b5ea28f7029b9dae1d20c3d4376b8366ee114ea27a",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418/cs0",
+            "receiverType": "Codeunit Helper"
+          },
+          {
+            "kind": "object-run-resolved",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434/cs0",
+            "targetObject": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102",
+            "objectType": "Codeunit"
+          },
+          {
+            "kind": "interface-dispatch",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/cs0",
+            "interfaceName": "IProc",
+            "candidateCount": 2
+          },
+          {
+            "kind": "interface-dispatch",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50101#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e/cs0",
+            "interfaceName": "IProc",
+            "candidateCount": 2
+          },
+          {
+            "kind": "object-run-unresolved",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#bd6ee0d91342cf34e5574167ebbf5c9943006d0f1eacec9c9df26faaab46dfc1",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#bd6ee0d91342cf34e5574167ebbf5c9943006d0f1eacec9c9df26faaab46dfc1/cs0",
+            "objectType": "Codeunit",
+            "targetIdSource": {
+              "kind": "expression"
+            }
+          },
+          {
+            "kind": "event-dispatch",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#fda4ceeed3bfa7f9c4c0acbdb6369db519c624846a22de694a874f1d3ded869d",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50105#5d44286007386de3b2dc2d2a8b32b609e3ae99a7f46cd7600298d68d98b1a15e",
+            "eventId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50102::OnSomething::fda4ceeed3bfa7f9c4c0acbdb6369db519c624846a22de694a874f1d3ded869d"
+          }
+        ],
+        "sccs": [
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ee0e1df60349d41d961fc0f436f88d28bfe04ef31df0daac20717fe2afc5a434"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6c98ec6ae32817714038fb0339cb82085d71ab2667a07a4263bda82c08651581"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50105#5d44286007386de3b2dc2d2a8b32b609e3ae99a7f46cd7600298d68d98b1a15e"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50102#fda4ceeed3bfa7f9c4c0acbdb6369db519c624846a22de694a874f1d3ded869d"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7c39cd642fc692d23e402408daa1ae8cf094e5336e9ff2ef0ab54e0140503dbe"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50101#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#73772db666ec75006e420e5f75f149f7788519ff6e55c2de4a88c65051f3362e"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50103#90ed363dc3dbb3b39e7c45b5ea28f7029b9dae1d20c3d4376b8366ee114ea27a"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#6b38b0d2fb47560fa948fe24b3aeb1fc521a40d35bdbf1a570d55a911c78a418"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#ff8da84c77349428b25e1edab4d26ad266901e573b3ecb3b2812179e9f9bf083"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#7cc65eabb51864ac9d16e84cf811ad0c97c284075792a9603129efe38df08575"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50104#bd6ee0d91342cf34e5574167ebbf5c9943006d0f1eacec9c9df26faaab46dfc1"
+            ],
+            "recursive": false
+          }
+        ]
+      },
+      "invariants": [
+        "has a direct edge",
+        "has a method edge",
+        "has a codeunit-run edge",
+        "has interface multi-edges (≥2) sharing a callsite",
+        "has an implicit-trigger edge",
+        "has an event-dispatch edge with stable eventId + subscriberAppId",
+        "has a dynamic-dispatch uncertainty edge",
+        "has an unresolved-call uncertainty edge",
+        "typedEdges carry NO sourceAnchor (display data dropped)"
+      ]
+    },
+    {
+      "name": "self_loop_recursive_scc",
+      "description": "a directly self-recursive procedure (A calls A) → a size-1 RECURSIVE SCC",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 SelfRec\n{\n    procedure Recur()\n    begin\n        Recur();\n    end;\n}"
+        ]
+      ],
+      "expected": {
+        "combinedEdges": [
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242/op0"
+          }
+        ],
+        "uncertaintyEdges": [],
+        "typedEdges": [
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242/cs0"
+          }
+        ],
+        "sccs": [
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#1eb80305cbca660ba8ec24171a5bcf76dd6cfeb9aa2c1c947fc0ce7bc2115242"
+            ],
+            "recursive": true
+          }
+        ]
+      },
+      "invariants": [
+        "a self-loop combined edge exists (from == to)",
+        "the self-loop SCC is size-1 AND recursive"
+      ]
+    },
+    {
+      "name": "mutual_recursive_scc",
+      "description": "mutually recursive procedures (Ping↔Pong) → a size-2 RECURSIVE SCC",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Cycle\n{\n    procedure Ping() begin Pong(); end;\n    procedure Pong() begin Ping(); end;\n}"
+        ]
+      ],
+      "expected": {
+        "combinedEdges": [
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3/op0"
+          }
+        ],
+        "uncertaintyEdges": [],
+        "typedEdges": [
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/cs0"
+          },
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3/cs0"
+          }
+        ],
+        "sccs": [
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3"
+            ],
+            "recursive": true
+          }
+        ]
+      },
+      "invariants": [
+        "exactly one SCC with 2 members, marked recursive",
+        "both directions present as direct edges"
+      ]
+    },
+    {
+      "name": "reverse_topo_chain",
+      "description": "a linear call chain Top→Mid→Leaf → the SCC list is reverse-topological (Leaf before Mid before Top)",
+      "files": [
+        [
+          "a",
+          "codeunit 50100 Chain\n{\n    procedure Top() begin Mid(); end;\n    procedure Mid() begin Leaf(); end;\n    procedure Leaf() begin end;\n}"
+        ]
+      ],
+      "expected": {
+        "combinedEdges": [
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71/op0"
+          },
+          {
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#aa1df0d029d17a4b31887859cffdc77988c363725d462953c4f1bb6251038dbe",
+            "kind": "direct",
+            "resolution": "resolved",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f/cs0",
+            "operationId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f/op0"
+          }
+        ],
+        "uncertaintyEdges": [],
+        "typedEdges": [
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71/cs0"
+          },
+          {
+            "kind": "direct-call",
+            "from": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f",
+            "to": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#aa1df0d029d17a4b31887859cffdc77988c363725d462953c4f1bb6251038dbe",
+            "callsiteId": "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f/cs0"
+          }
+        ],
+        "sccs": [
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#aa1df0d029d17a4b31887859cffdc77988c363725d462953c4f1bb6251038dbe"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#54b2376a58f1af1acb1cca05a2a6784d086f6fd0e20657990914a55f44c0080f"
+            ],
+            "recursive": false
+          },
+          {
+            "members": [
+              "3a100000-0000-0000-0000-00000000003a:Codeunit:50100#b2ff8c83d256c3b73c095708287121396313d073e4f13c8b2159d9e287ae4f71"
+            ],
+            "recursive": false
+          }
+        ]
+      },
+      "invariants": [
+        "3 singleton SCCs, none recursive",
+        "every caller appears AFTER its callee in the SCC list (reverse-topo)"
+      ]
+    }
+  ]
+}
