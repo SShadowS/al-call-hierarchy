@@ -1573,6 +1573,45 @@ incremental L4 `RoutineSummary` + cone substrate.
 
 ---
 
+## R4-0 status (SHIPPED — the L5 shared substrate + harness + first detector)
+
+R4-0 stands up the L5 detector layer in `src/engine/l5/` (greenfield) and proves the full
+**substrate → detector → stable-projection → fingerprint → differential** path at byte-parity.
+
+- **al-sem side (Task 1, pushed):** `scripts/r4-finding-projection.ts` (the stable `Finding[]`
+  projection — the comparison surface), `scripts/dump-r4-findings.ts`, the 7-fixture smoke
+  goldens (`scripts/r4-goldens/`), the contract test. Two-stage opus review folded the
+  convergent MUST-FIXes (stable map over ALL routines incl. dep; re-sort in stable space so the
+  order is reproducible from stable ids alone — both byte-invariant on the single-app smoke).
+- **engine Task 2a (the query substrate):** `reverse_call_graph` / `entry_points` /
+  `capability_query` / `transaction_spans` + `FullRoutineSummary` (re-unifies the cone's
+  direct/inherited facts + coverage that the Rust core `RoutineSummary` keeps separate). 25
+  native ground-truth-free oracles. Role threaded as `dep_routine_ids: &BTreeSet` (empty ⇒
+  all-primary source-only); `access_modifier` + `internalReachableExternally` are explicit
+  inputs (model-wiring deferred to the D14/R4-G wave).
+- **engine Task 2b (the harness + d4):** the `Finding` shape + the stable projection (serde
+  field order mirrors al-sem's projection INSERTION order, not the TS interface decl;
+  single-pass longest-match id-replacement; re-sort in stable space) + `fingerprint_of` (over
+  INTERNAL ids, plain UTF-8 sha256) + `to_confidence` (full uncertainty→cappedBy map) +
+  `run_detectors` (catch_unwind→diagnostic, role-scope filter, `(detector via compareNatural,
+  primaryLocationKey, rootCauseKey)` sort) + `detector_context` (eager indexes + per-routine
+  `FullRoutineSummary` via the `compose_cone_over_graph` seam) + `path_walker` (bounded DFS
+  20/500 WITH uncertainty accumulation) + d4 + `aldump --r4-findings` + `tests/r4_differential.rs`.
+  Additive L2→L3 forward (`L3Routine.loops`, `L3RecordOperation.{loop_stack,field_argument_infos}`)
+  — non-breaking (the L3 projections are field-allowlisted; the full R0–R3 suite stays green).
+- **Result:** `ws-d4-repeated-get` byte-matches its al-sem golden end-to-end (4437 bytes, fp
+  `1613cafbb8edc2bf`); the other 6 smoke fixtures run clean to the L5 boundary and flip on as
+  their wave's detector lands; `KNOWN_DIVERGENCES` empty.
+- **Tracked cross-cutting follow-up (NOT bundled):** al-sem `compareStrings` is UTF-16 code-unit
+  order while Rust `str::cmp` is UTF-8 byte order — they differ only for non-BMP chars, the same
+  ASCII/BMP corpus assumption R0–R3's `cmpStable → str::cmp` port already rests on. A true fix is
+  a whole-engine comparator change, tracked separately.
+
+**NEXT: R4-A** (the intraprocedural detectors — d5/d10/d11/d18/d19/d20/d21/d29/d36, pure
+`routine.features` reads), then B…G per the plan.
+
+---
+
 ## Running migration status
 
 | Layer | Gate(s) | Status |
@@ -1597,7 +1636,8 @@ incremental L4 `RoutineSummary` + cone substrate.
 | L4 (summaries) | **R3a (= R3a-0 … R3a-5)** | **L4 RoutineSummary COMPLETE** — graph substrate + JACOBI summary core + capability cone/coverage + dep producer/consumer hooks + FULL cross-app summary with dep-fact propagation, at byte-parity source-only AND cross-app |
 | L4 (Salsa) | **R3b** (Salsa incrementality over the L4 fixed point — the novel core) | **DONE** — wrapped-parity (r3a3+r3a5 byte-match from-scratch + golden) + incremental-equality (1908 edits byte-equal) + Stage-3 re-granularization (`scc_summaries` depends ONLY on its SCC's members+successors via per-routine `routine_combined_edges`/`routine_uncertainty_edges`/`routine_body_available`/`routine_leaf_summary`; OUTPUT unchanged) + recompute-MINIMALITY (`tests/r3b_minimality.rs` EXIT GATE: by-category WillExecute instrumentation; SUMMARY set ⊆ reverse cone; STRICT-SUBSET on curated fixtures — localized edit recomputes 4/6 SCCs, 2 unrelated early-cut; root-caller 1/6; 111 real fixtures reverse-cone-bounded, 77 strict-subset witnesses; topology/churn/dep cases cone-bounded + byte-equal) + the cyclic fixed-point fingerprint TRACE reproduced THROUGH the Salsa `scc_trace` query (== R3a-2 == al-sem) + the R3a-5 injection-coverage hardening oracle (O6); `KNOWN_DIVERGENCES` empty |
 | **L4** | **R3 (= R3a + R3b)** | **L4 COMPLETE** — summaries from-scratch (byte-parity, source-only + cross-app) AND incremental (Salsa, reverse-cone-minimal). **NEXT: R4** (L5 detectors over the L4 substrate) |
-| L5 (detectors) | **R4** (the L5 performance detectors — pure queries over the L4 `RoutineSummary` + cone substrate) | NEXT — not started |
+| L5 (detectors) | **R4-0** (the shared detector SUBSTRATE + harness + the first detector + the differential) | **DONE** — `src/engine/l5/` greenfield: query substrate (reverse-graph/entry-points/capability-query/transaction-spans, 25 native oracles, Task 2a) + harness (Finding + stable projection + fingerprint + confidence + registry/run_detectors + detector_context + path_walker, Task 2b) + d4 ported + `aldump --r4-findings` + `tests/r4_differential.rs`. **ws-d4-repeated-get byte-matches its al-sem golden end-to-end** (4437 bytes, fp `1613cafbb8edc2bf`); full suite green; `KNOWN_DIVERGENCES` empty. The other 6 smoke fixtures run clean to the L5 boundary, flipped on per wave |
+| L5 (detectors) | **R4-A…G** (the 42 detectors — pure queries over the L4 `RoutineSummary` + cone substrate) | IN PROGRESS — R4-A (intraprocedural) next; per-detector Finding[] byte-parity (positive + negative) per `ws-d*` fixture |
 | product | — | not started |
 
 With R2.5b shipped, **R0 + R1 + R2 (R2a–R2d) + R2.5 (R2.5a + R2.5b) are done — L3 is
