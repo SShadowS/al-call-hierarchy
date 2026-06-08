@@ -24,6 +24,7 @@ and `docs/`.
 | **R2d** | L3 coverage (source-only): `buildCoverage` — the "no silent clean" `AnalysisCoverage` accounting: `sourceUnitsTotal`/`sourceUnitsParsed` (the index-stage-warning `failedUnitRefs` decrement — corpus-inert, vector-covered), `routinesTotal`/`routinesBodyAvailable` (count) / `routinesParseIncomplete` (StableRoutineId[], INDEPENDENT filters — NOT a partition), `opaqueApps` (empty source-only), `unresolvedCallsites` (StableCallsiteId MULTISET: the 4 resolutions unknown/ambiguous/member-not-found/external-target — NOT opaque/builtin/maybe; duplicates PRESERVED), `dynamicDispatchSites` (StableOperationId MULTISET: dispatchKind=="dynamic"), captured POST-RESOLVE / PRE-SUMMARY in stable-id form, READ off the parity R2b call graph + L2 routine flags | **SHIPPED** — 158/158 fixtures with the projected `AnalysisCoverage` compared (multisets positional after sort, dups preserved), 0 divergences, `KNOWN_DIVERGENCES` empty, the anti-degenerate coverage matrix healthy + manifest-oracle-equal (sourceUnitsTotal=314, sourceUnitsParsed=314, routinesTotal=567, routinesBodyAvailable=567, routinesParseIncomplete=1, opaqueApps=0, unresolvedCallsites=86, dynamicDispatchSites=3; unresolvedMaxDup=1, dynamicMaxDup=1), native L3-direct coverage oracle green (5 invariants) |
 | **R2 (= R2a+R2b+R2c+R2d)** | Full **source-only L3 resolve** parity: record types + call graph + event graph + coverage at the `resolveModel` (post-resolve / pre-summary) boundary | **COMPLETE** — all four sub-gates SHIPPED; the full source-only L3 surface is at byte-parity with al-sem over the corpus + a native L3-direct oracle per sub-gate |
 | **R2.5a** | Symbol-only `.app` reader (ZIP → `NavxManifest.xml` + `SymbolReference.json` → shared `Routine`/`ObjectDecl`/`Table`/`Field` shape) + the **dependency-entity subset of the merged index** at byte-parity (StableObjectId/StableTableId/StableFieldId/StableRoutineId, `signatureFingerprint`, `attributesParsed`, object props, table fields/keys, routine accessModifier, app `sourceKind`), captured POST-`withDependencyArtifacts`/-`resolveModel` with `noDepSummaries:true` — incl. the L3 **extension-field-merge capture-point** (dep `TableExtension` fields merged INTO the base table) | **SHIPPED** — 2/2 fixtures byte-match, `KNOWN_DIVERGENCES` empty, anti-degenerate matrix manifest-oracle-equal (objects=16/tables=2/routines=11; dispatch rb=7/ext=2/bare=6/tbl=1; sourceKind app=1/symbol=1; events pub=1/sub=1; mergedExtFields=1), native structural oracle green (6 checks); ABI-vs-native fix-then-freeze = NO fix needed (native==ABI 1:1). NEXT: **R2.5b** (cross-app L3) |
+| **R2.5b** | Cross-app **L3 RESOLUTION** over the merged (workspace + `.app`-dep) index — the R2a–R2d L3 surfaces re-run with deps no longer opaque: (a) a record var typed as a DEP table binds to the dep StableTableId + dep/ws TableExtension fields merge across the boundary; (b) `cu.M()` on a PRESENT dep codeunit resolves to the dep StableRoutineId (the source-only `opaque`→`resolved`/`external-target` transitions; the edge does NOT gate on the dep routine's `internal`/`local` accessModifier); (c) a `[EventSubscriber]` ↔ dep-published `[IntegrationEvent]` links to the dep publisher EventId (both directions); (d) coverage `routinesTotal` counts dep routines + the `unresolvedCallsites` multiset reflects cross-app resolution. Captured POST-`resolveModel` over the merged index (`noDepSummaries:true`), stable ids | **SHIPPED** — all 4 sub-gate differentials byte-match (rt/cg/eg/cov, 1 cross-app fixture each), `KNOWN_DIVERGENCES` empty; cross-app matrices healthy (rt: depBoundRecordVars=2/depBoundRecordOps=2/depExtMergedFields=1; cg: resolvedToDepRoutine=4/memberNotFound=1/opaque=1/externalTarget=1/upgradedBindings=1; eg: resolvedToDepPublisher=1/depSubscriberEdges=1/maybe=1; cov: crossAppResolvedAbsent=4/externalTargetPresent=1/unresolved=2/opaqueApps=0-faithfully-empty); 4 native oracles per sub-gate green + the cross_app_l3 smoke/poison/aldump tests green. TWO al-sem latent bugs faithfully MIRRORED (`opaqueApps`=`[]`; `primaryDependencies`-stamped-after-resolve member-opaque-dead) — see below. R2.5 COMPLETE → L3 COMPLETE |
 
 ---
 
@@ -1012,23 +1013,168 @@ extends, never replaces, the R1/R2a–R2d goldens.
 
 ---
 
-## R2.5b (cross-app L3 resolution) — STUB
+## R2.5b parity status (SHIPPED — cross-app L3 resolution) — R2.5's SECOND + LAST sub-gate — R2.5 COMPLETE → L3 COMPLETE
 
-R2.5b is the SECOND R2.5 sub-gate — it lifts the SOURCE-ONLY restriction every L3
-sub-gate (R2a–R2d) carried by re-running them over `workspace + deps` (the R2.5a
-dependency entities are now in the merged index). Scope:
+R2.5b is the SECOND and LAST R2.5 sub-gate: it lifts the SOURCE-ONLY restriction
+every L3 sub-gate (R2a–R2d) carried by re-running the FOUR L3 surfaces over
+`workspace + deps` — the R2.5a dependency entities are now in the merged index, so
+the callsites that resolved to `opaque`/`external-target` source-only now bind to
+REAL dep entities. R2.5b is **wiring + cross-app fixtures + anti-degenerate matrices
++ native oracles**, NOT a new L3 algorithm: it FEEDS the R2.5a merged index into the
+ALREADY-PORTED `l3_workspace` pipeline (`src/engine/deps/cross_app_l3.rs` wraps the
+source-only `l3` projections over the merged model). It extends, never replaces, the
+R1/R2a–R2d/R2.5a goldens. Captured POST-`resolveModel` over the merged index
+(`noDepSummaries:true`), stable ids; **all four sub-gate differentials byte-match,
+`KNOWN_DIVERGENCES` empty.**
 
-- **Re-run R2a–R2d over `workspace + deps`** — record-types bind to DEP tables;
-  the call graph resolves to DEP routines with the opaque→resolved / external-target
-  transitions (a member miss on a typed receiver whose object lives in a FETCHED dep
-  resolves; in an UNfetched dep → `opaque`); the event graph links subscribers to
-  DEP publishers (the distinct `EventSymbol` entity lands here); coverage
-  `opaqueApps` + the real unfetched-dep coverage become **non-empty** and
-  `analysisGaps` (deferred from R2d) lands.
+**The four cross-app sub-gates (each a `.app`-bearing differential + a native oracle).**
 
-R2.5b reuses the resolved source-only L3 verbatim — it ADDS the R2.5a dependency
-projection as a second model-feed, never replaces the native one. It extends, never
-replaces, the R1/R2a–R2d/R2.5a goldens.
+- **R2.5b-a record-types** (`tests/r2_5b_rt_differential.rs` + `r2_5b_rt_oracles.rs`).
+  A record var typed as a DEP table binds to the dep `StableTableId`
+  (`${depAppGuid}:Table:${number}`) — observable ONLY post-resolve (the dep table
+  enters the symbol table via `withDependencyArtifacts`), so it is a genuine
+  anti-stale vector (Rev 2 #3). A dep `TableExtension`'s fields merge onto its dep
+  base table AND a workspace `TableExtension`'s field merges onto a dep base table —
+  the merge crosses the app boundary in BOTH directions. The matrix is fail-on-zero:
+  `depBoundRecordVars=2`, `depBoundRecordOps=2`, `depExtensionMergedFields=1`. The
+  native oracle asserts the SPECIFIC expected dep `StableTableId` + the exact merged
+  `StableFieldId` (NOT "is-a-dep-table"); the corpus carries **≥2 dep tables** so a
+  wrong-but-same binding is detectable (Rev 2 #1).
+- **R2.5b-b call graph** (`tests/r2_5b_cg_differential.rs` + `r2_5b_cg_oracles.rs`).
+  A `cu.M()` on a PRESENT dep codeunit + name/arity match resolves to the dep
+  `StableRoutineId` (`resolution:"resolved"`, `to` = the dep routine); a present dep
+  object + a missing member → `member-not-found`; an object in an UNfetched declared
+  dep → `opaque`; an absent object with all deps fetched → `external-target`. **The
+  edge does NOT gate on the dep routine's `internal`/`local` accessModifier** (Rev 2
+  #2 — that is an L5/D13 concern): a fixture with an `internal` AND a `local` dep
+  callee asserts the edge forms IDENTICALLY regardless (a guard against a
+  wrongly-added visibility gate). `argumentBindings` is upgraded in place on the
+  resolved edge. Matrix (fail-on-zero): `resolvedToDepRoutine=4`, `memberNotFound=1`,
+  `opaque=1`, `externalTarget=1`, `upgradedResolvedBindings=1`. The native oracle
+  asserts the four resolved member edges are the four DISTINCT exact dep
+  `StableRoutineId`s + the internal/local callees resolve to their exact ids.
+- **R2.5b-c event graph** (`tests/r2_5b_eg_differential.rs` + `r2_5b_eg_oracles.rs`).
+  A workspace `[EventSubscriber]` to a dep-published `[IntegrationEvent]` links to
+  the dep publisher EventId, AND a dep subscriber to a workspace event links (Rev 2
+  #7 — the latter rides the parity-projected dep `attributesParsed`). Matrix
+  (fail-on-zero): `resolvedToDepPublisher=1`, `depSubscriberEdges=1`, `maybe=1`. The
+  native oracle asserts the SPECIFIC expected dep publisher EventId (NOT "links to a
+  dep event"); an UNlinked subscriber forms NO false-`resolved` edge — **open-world
+  soundness preserved**: cross-app linkage is *target-runs* binding, NOT a refutation
+  (per the event-crossed-refutation-unsound-openworld rule).
+- **R2.5b-d coverage** (`tests/r2_5b_cov_differential.rs` + `r2_5b_cov_oracles.rs`).
+  `routinesTotal` COUNTS dep routines (`coverage.ts:60` `index.routines.length`, no
+  `analysisRole` filter); the `unresolvedCallsites` MULTISET reflects cross-app
+  resolution — the cross-app member calls that RESOLVED drop OUT, the external-target
+  member miss stays IN. Matrix (fail-on-zero): `crossAppResolvedAbsent=4`,
+  `externalTargetPresent=1`, `unresolved=2`; **`opaqueApps`=`[]` — faithfully
+  empty** (NOT non-empty — see the deferred bug below). The native oracle asserts
+  `opaqueApps` is EXACTLY `[]`, the now-resolved callsites are ABSENT from the
+  unresolved multiset, the external-target miss is PRESENT, and `routinesTotal`
+  counts dep routines.
+
+**Same-bytes cross-app fixtures.** Both sides read the SAME dep `.app` bytes: al-sem
+commits them (`test/fixtures/r2.5b-deps/<guid>.app`, built deterministically by
+`buildTestApp`); the engine copies those exact bytes into
+`tests/r2-5b-fixtures/<fixture>/.alpackages/`. The workspace `.al` files are the
+hand-maintained engine mirror of al-sem's INLINE capture-script constants
+(`scripts/r2.5b-cross-app-capture.ts`, written to an mkdtemp — al-sem commits no
+`.al` workspace dir). The **unified `#[ignore]`d refresh**
+(`tests/r2_5b_refresh.rs::refresh_r2_5b_goldens_from_al_sem`, gated on `AL_SEM_DIR`)
+re-copies ALL FOUR golden sets + the dep `.app`s from an al-sem checkout in one
+command (mirroring the R2.5a refresh) — the documented one-command regen path.
+
+**The L4-leakage POISON guard (Rev 2 #5)** — `tests/cross_app_l3_poison.rs`: a merged
+model with BOGUS `summary`/`cone`/`typedEdge`/`intraAppCallEdges` fields present
+must produce a BYTE-IDENTICAL L3 projection vs without them (if the output changes,
+L3 is reading out-of-scope state). The L3 input boundary is an L3-only merged index;
+the four projections HARD-FORBID L4/summary/typedEdges/cone keys on both sides.
+
+### TWO DEFERRED LATENT al-sem BUGS (faithfully MIRRORED for byte-parity)
+
+R2.5b reproduces al-sem byte-for-byte — including two latent al-sem bugs surfaced +
+source-verified during the migration. Both are MIRRORED (not "fixed in Rust",
+because that would be a DIVERGENCE), flagged here as a **consolidated post-migration
+fix-then-freeze**: fix them ONCE in al-sem (with the broad-blast-radius rebaseline
+they each require), then re-freeze the engine goldens.
+
+1. **`opaqueApps` is structurally ALWAYS `[]`** (source-only AND cross-app) — Rev 3.
+   `buildCoverage` (`coverage.ts:37-39`) reads
+   `index.identity.apps.filter(sourceKind === "symbol-only")`, but
+   `withDependencyArtifacts` appends deps to `index.apps` (the `App[]`, which carries
+   no `sourceKind`) and spreads `...index` leaving `identity.apps` UNCHANGED;
+   `analyzeWorkspace` never stamps the symbol-only dep `AppIdentity`s into
+   `identity.apps`. So the symbol-only dep filter matches nothing and `opaqueApps`
+   stays `[]` even cross-app. The R2.5b-d gate was RE-SCOPED (Rev 3) off `opaqueApps`
+   onto the genuinely-observable `unresolvedCallsites` MULTISET delta. The fix has a
+   broad blast radius (every `identity.apps` consumer + the e2e snapshots) → DEFERRED.
+   (The two stale pre-Rev3 Rust doc-comments that claimed "opaqueApps non-empty" —
+   `cross_app_l3.rs::project_coverage` + `l3/coverage.rs` module doc — were corrected
+   to state this faithful-empty reality + cite the bug.)
+2. **`primaryDependencies` stamped AFTER `resolveModel` → the member-call `opaque`
+   branch is dead** (Rev 2 #2 nuance). In the dump/analyze path
+   `has_unfetched_declared_dependency` reads `primary_dependencies`, but that field
+   is populated AFTER resolution, so at resolve time it is empty → the member-call
+   "opaque" branch (`call-resolver.ts`: object absent + an UNfetched declared dep) is
+   structurally UNREACHABLE, and a missing member object ALWAYS resolves to
+   `external-target` (never member-`opaque`). The `opaque` axis is therefore populated
+   SOLELY by OBJECT-RUN misses (a missing object-run target is always opaque). The
+   engine mirrors this exactly (`cg` matrix: `opaque=1` is the object-run miss;
+   `externalTarget=1` is the member miss). DEFERRED to the same fix-then-freeze.
+
+### Covered vs deferred (R2.5b — honest)
+
+- **Covered (cross-app L3 resolution):** record-types bound to dep tables + bidirectional
+  extension-field merge; the call graph resolved to dep routines (the
+  `opaque`→`resolved`/`external-target` transitions, no accessModifier gate, in-place
+  `argumentBindings` upgrade); the event graph linked to dep publishers (both
+  directions, open-world target-runs binding); coverage `routinesTotal` counting dep
+  routines + the cross-app `unresolvedCallsites` multiset delta. 4/4 sub-gate
+  differentials byte-match + 4 native oracles + the smoke/poison/aldump guards.
+- **Deferred:** the two latent al-sem bugs above (fix-then-freeze); the `analysisGaps`
+  per-app gap derivation (tied to the opaqueApps surface → revisited with bug #1); the
+  **distinct `EventSymbol` entity as a first-class cross-app entity** (at this capture
+  point events project through the same EventSymbol/EventEdge shape as source-only
+  R2c — no NEW cross-app entity materializes); the L4 dependency SUMMARIES +
+  capability-cone propagation across app boundaries
+  (`intraAppCallEdges`/`citedOperationEvidence`/`depOrderIndex`), SCC/fixed-point,
+  Salsa incrementality → **R3**; L5 detectors → R4; product wire-in.
+
+### R2.5 COMPLETE → L3 COMPLETE
+
+With R2.5b SHIPPED, **R2.5 (= R2.5a identity + R2.5b cross-app L3) is COMPLETE** — the
+symbol-only `.app` reader reproduces the merged-index dependency-entity IDENTITY subset
+byte-for-byte (R2.5a) AND the four L3 surfaces RESOLVE over the merged workspace+deps
+index at byte-parity (R2.5b). And with the source-only **R2 (R2a–R2d)** + the cross-app
+**R2.5 (R2.5a + R2.5b)** both done, **L3 (resolve) is COMPLETE**: record types, call
+graph, event graph, and coverage are all at byte-parity with al-sem — source-only AND
+cross-app — each with a native L3-direct oracle. NEXT: **R3** (L4 summaries).
+
+---
+
+## R3 (L4 engine / Salsa summaries) — STUB
+
+R3 is the FIRST L4 gate — the genuinely hard INCREMENTAL gate. It lifts parity from
+the per-routine / per-edge L3 RESOLUTION surface to the **bottom-up effect summaries**
+al-sem composes over the call graph. Scope (al-sem `src/engine/`):
+
+- **Combined graph → Tarjan SCC → condensation.** Build the COMBINED graph (call edges
+  + event edges + implicit-trigger edges), run Tarjan's SCC algorithm, and condense it
+  to a DAG so recursive cycles collapse to a single fixed-point node.
+- **Finite monotone fixed-point `RoutineSummary`.** Compose per-routine effects
+  bottom-up over the SCC condensation using a finite monotone lattice so recursive
+  cycles CONVERGE (`typedEdges`, `intraAppCallEdges`, `citedOperationEvidence`,
+  `depOrderIndex`, the inherited/cone capability facts, the L4-injected `op:"publish"`,
+  the L4-augmented coverage status/reasons + per-app `CoverageRecord`). This is where
+  every L4-forbidden field R0–R2.5 hard-forbade finally MATERIALIZES.
+- **Salsa incrementality — the hard part.** Re-derive only what a source edit
+  invalidates (the incremental engine), proving the incremental result EQUALS a clean
+  from-scratch recompute (the incremental-parity gate) — beyond the byte-equality the
+  R0–R2.5 differentials establish.
+
+R3 reuses the resolved L3 model (R2 + R2.5) verbatim as its input — it ADDS the
+summary pass, never replaces the resolution. It extends, never replaces, the
+R1/R2a–R2d/R2.5a/R2.5b goldens.
 
 ---
 
@@ -1044,14 +1190,21 @@ replaces, the R1/R2a–R2d/R2.5a goldens.
 | L3 (resolve) | **R2d** (coverage, source-only) | **DONE** — 158/158 + coverage matrix + manifest oracle (incl. max-dup/decremented axes) + native L3-direct oracle (5 invariants) |
 | L3 (resolve) | **R2 (= R2a+R2b+R2c+R2d)** | **SOURCE-ONLY L3 COMPLETE** — full source-only L3 surface at byte-parity + a native L3-direct oracle per sub-gate |
 | L3 (deps) | **R2.5a** (`.app` symbol reader + merged-index identity parity) | **DONE** — 2/2 fixtures byte-match + anti-degenerate matrix + manifest oracle + 6 structural oracle checks; extension-field-merge capture-point reproduced; ABI-vs-native fix-then-freeze = NO fix needed (pipelines converged 1:1) |
-| L3 (deps) | R2.5b (cross-app L3 resolution) | remaining — re-run R2a–R2d over workspace+deps (`opaqueApps`/`analysisGaps` become non-empty; the `EventSymbol` entity lands) |
-| L4 (summaries) | R3 | not started |
+| L3 (deps) | **R2.5b** (cross-app L3 resolution) | **DONE** — 4/4 sub-gate differentials byte-match (rt/cg/eg/cov) + 4 native oracles + smoke/poison/aldump guards; cross-app matrices healthy; `KNOWN_DIVERGENCES` empty; TWO al-sem latent bugs (`opaqueApps`=`[]`; member-opaque dead) faithfully MIRRORED → consolidated post-migration fix-then-freeze |
+| L3 (deps) | **R2.5 (= R2.5a + R2.5b)** | **CROSS-APP L3 COMPLETE** — `.app` identity parity + cross-app L3 resolution at byte-parity |
+| **L3 (resolve)** | **L3 = R2 (source-only) + R2.5 (cross-app)** | **L3 COMPLETE** — record types + call graph + event graph + coverage at byte-parity, source-only AND cross-app, each with a native L3-direct oracle |
+| L4 (summaries) | R3 (combined graph → Tarjan SCC → finite monotone fixed-point `RoutineSummary` + Salsa incrementality) | not started — the hard incremental gate |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
-With R2.5a shipped, **R0 + R1 + R2a–R2d + R2.5a are done** — the source-only L3 surface
-is at byte-parity, and the symbol-only `.app` reader reproduces the merged-index
-dependency-entity IDENTITY subset byte-for-byte (incl. the extension-field-merge
-capture-point). NEXT: **R2.5b** (cross-app L3, where `opaqueApps` + the real
-unfetched-dep coverage + `analysisGaps` become non-empty, and the `EventSymbol` entity
-lands); then R3 (L4 summaries), R4 (L5 detectors), and the product surface.
+With R2.5b shipped, **R0 + R1 + R2 (R2a–R2d) + R2.5 (R2.5a + R2.5b) are done — L3 is
+COMPLETE**: the source-only L3 surface is at byte-parity, the symbol-only `.app` reader
+reproduces the merged-index dependency-entity IDENTITY subset byte-for-byte, and the
+four L3 surfaces RESOLVE over the merged workspace+deps index at byte-parity (record
+types → dep tables, call graph → dep routines, event graph → dep publishers, coverage
+counting dep routines). TWO latent al-sem bugs (`opaqueApps` always `[]`; the
+member-call `opaque` branch dead because `primaryDependencies` is stamped after
+`resolveModel`) are faithfully MIRRORED for byte-parity, flagged for a consolidated
+post-migration fix-then-freeze. NEXT: **R3** (L4 summaries — combined graph → Tarjan SCC
+condensation → finite monotone fixed-point `RoutineSummary`, plus Salsa
+incrementality), then R4 (L5 detectors) and the product surface.

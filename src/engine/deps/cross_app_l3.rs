@@ -336,8 +336,16 @@ impl CrossAppL3 {
         self.resolved.project_event_graph()
     }
 
-    /// Cross-app L3 coverage projection (R2.5b-d) — `opaqueApps` NON-empty for the
-    /// symbol-only deps; the unresolved/dynamic multisets reflect cross-app resolution.
+    /// Cross-app L3 coverage projection (R2.5b-d). `opaqueApps` is FAITHFULLY `[]`
+    /// even cross-app — mirroring an al-sem latent bug: `buildCoverage` reads
+    /// `index.identity.apps.filter(sourceKind == "symbol-only")`, but
+    /// `withDependencyArtifacts` appends deps to `index.apps` (the `App[]`, no
+    /// `sourceKind`) and leaves `identity.apps` UNCHANGED, so no symbol-only dep
+    /// `AppIdentity` is ever present (Rev 3). DEFERRED to a consolidated
+    /// post-migration fix-then-freeze. The observable cross-app coverage signal is
+    /// the `unresolvedCallsites`/`dynamicDispatchSites` multiset delta (cross-app
+    /// member calls that RESOLVED drop OUT; the external-target miss stays IN), and
+    /// `routinesTotal` counts dep routines.
     pub fn project_coverage(
         &self,
         units: &[crate::engine::l3::coverage::CoverageUnit],

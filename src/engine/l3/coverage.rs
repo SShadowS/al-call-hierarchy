@@ -21,8 +21,13 @@
 //!     `parseIncomplete` routines. `bodyAvailable` and `parseIncomplete` are
 //!     INDEPENDENT filters over the L2 flags, NOT a partition (a routine can be
 //!     neither, e.g. a syntax-error body that still has a code block → both true).
-//!   - `opaqueApps` = the appGuid[] of `sourceKind == "symbol-only"` apps. EMPTY
-//!     in the source-only world (no dependency apps); becomes non-empty in R2.5.
+//!   - `opaqueApps` = the appGuid[] of `sourceKind == "symbol-only"` apps. ALWAYS
+//!     `[]` — both source-only AND cross-app (R2.5b) — faithful to an al-sem latent
+//!     bug (Rev 3): `buildCoverage` reads `index.identity.apps.filter(sourceKind ==
+//!     "symbol-only")`, but `withDependencyArtifacts` appends deps to `index.apps`
+//!     (the `App[]`, no `sourceKind`) and leaves `identity.apps` UNCHANGED, so no
+//!     symbol-only dep `AppIdentity` is ever present. DEFERRED to a consolidated
+//!     post-migration fix-then-freeze.
 //!   - `unresolvedCallsites` = a MULTISET (`.map` over EDGES — NOT unique sites):
 //!     every call-graph edge whose `resolution ∈ {unknown, ambiguous,
 //!     member-not-found, external-target}` → its stable callsiteId. Duplicates are
