@@ -1,0 +1,17 @@
+{
+  "summaries": [
+    {
+      "routineId": "2b000000-0000-0000-0000-00000000bbbb:Codeunit:50350#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "dbEffects": [],
+      "uncertainties": [
+        {
+          "kind": "external-target",
+          "callsiteId": "2b000000-0000-0000-0000-00000000bbbb:Codeunit:50350#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    }
+  ]
+}

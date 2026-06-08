@@ -1,0 +1,66 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+      "dbEffects": [
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-00000000d461:Table:50000|11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op0|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+          "operationId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Insert|11111111-0000-0000-0000-00000000d461:Table:50000|11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op2|f",
+          "op": "Insert",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+          "operationId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op2",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+      "dbEffects": [
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-00000000d461:Table:50000|11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op0|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+          "operationId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "inherited"
+        },
+        {
+          "effectKey": "Insert|11111111-0000-0000-0000-00000000d461:Table:50000|11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op2|f",
+          "op": "Insert",
+          "tableId": "11111111-0000-0000-0000-00000000d461:Table:50000",
+          "operationId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op2",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "inherited"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

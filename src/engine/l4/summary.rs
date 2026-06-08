@@ -369,16 +369,19 @@ fn stable_table_id(internal: &str) -> String {
     }
 }
 
-/// Project an internal FieldId to stable form. Internal FieldIds look like
-/// `${appGuid}/table/${tableNum}/field/${fieldNum}`. Stable form is
-/// `${appGuid}:Table:${tableNum}#${fieldNum}`.
+/// Project an internal FieldId to stable form. Mirrors al-sem
+/// `toStableFieldId` (src/model/stable-identity.ts): the internal FieldId is
+/// `${tableId}/${fieldNumber}` (e.g. `${appGuid}/table/${N}/${M}`); split on
+/// the LAST slash into the internal TableId + the field number, then convert
+/// the table id to stable form: `${stableTableId}#${fieldNumber}`.
 fn stable_field_id(internal: &str) -> String {
-    // Internal: appGuid/table/N/field/M
-    let parts: Vec<&str> = internal.split('/').collect();
-    if parts.len() == 5 && parts[1] == "table" && parts[3] == "field" {
-        format!("{}:Table:{}#{}", parts[0], parts[2], parts[4])
-    } else {
-        internal.to_string()
+    match internal.rfind('/') {
+        Some(last_slash) if last_slash > 0 => {
+            let table_internal = &internal[..last_slash];
+            let field_num = &internal[last_slash + 1..];
+            format!("{}#{}", stable_table_id(table_internal), field_num)
+        }
+        _ => internal.to_string(),
     }
 }
 
@@ -637,12 +640,28 @@ fn run_and_project(
         edges_by_from: &adjacency,
     });
 
+    // Build the field-resolution index from the resolved tables (extension
+    // fields are already merged into each base table's `fields` at L3) so the
+    // parameterRoles readsFields/writesFields resolve to FieldIds — mirroring
+    // al-sem's `resolveField` against `ctx.tableById`. Keyed (tableId,
+    // lowercased field name).
+    let mut field_index: crate::engine::l4::summary_runner::FieldIndex =
+        std::collections::HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+
     // Run the JACOBI fixed-point, optionally collecting the trace.
     let (final_summaries, raw_traces) = compute_summaries(
         &ws.routines,
         &graph,
         &scc,
         &calls.upgraded_bindings,
+        &field_index,
         collect_trace,
     );
 

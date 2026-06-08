@@ -1,0 +1,24 @@
+{
+  "summaries": [
+    {
+      "routineId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de",
+      "dbEffects": [
+        {
+          "effectKey": "Insert|aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100|aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de/op1|f",
+          "op": "Insert",
+          "tableId": "aaaaaaaa-0000-0000-0000-000000oc0001:Table:50100",
+          "operationId": "aaaaaaaa-0000-0000-0000-000000oc0001:Codeunit:50101#3d108653b68759d30b56c4d56657dee56a1facb68872be4ac5d9598abdbd48de/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

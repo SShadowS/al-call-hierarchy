@@ -1,0 +1,40 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434",
+      "dbEffects": [
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-0000000d4709:Table:50100|11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op0|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-0000000d4709:Table:50100",
+          "operationId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-0000000d4709:Table:50100|11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op1|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-0000000d4709:Table:50100",
+          "operationId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    }
+  ]
+}

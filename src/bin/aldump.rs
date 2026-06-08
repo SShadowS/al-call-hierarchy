@@ -46,7 +46,8 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
-         --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph] \
+         --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
+         --r3a2-summary-core | --r3a2-trace] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -61,6 +62,8 @@ fn main() -> ExitCode {
     let mut r2_5a_merged_index = false;
     let mut l3_cross_app = false;
     let mut r3a1_combined_graph = false;
+    let mut r3a2_summary_core = false;
+    let mut r3a2_trace = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -99,6 +102,14 @@ fn main() -> ExitCode {
             r3a1_combined_graph = true;
             continue;
         }
+        if arg == "--r3a2-summary-core" {
+            r3a2_summary_core = true;
+            continue;
+        }
+        if arg == "--r3a2-trace" {
+            r3a2_trace = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -115,6 +126,8 @@ fn main() -> ExitCode {
         r2_5a_merged_index,
         l3_cross_app,
         r3a1_combined_graph,
+        r3a2_summary_core,
+        r3a2_trace,
     ]
     .iter()
     .filter(|f| **f)
@@ -123,8 +136,8 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
-             --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph \
-             are mutually exclusive"
+             --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph / \
+             --r3a2-summary-core / --r3a2-trace are mutually exclusive"
         );
         return usage();
     }
@@ -133,6 +146,67 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if r3a2_summary_core {
+        // R3a-2 SUMMARY CORE: run the SOURCE-ONLY L0→L3 pipeline → buildCombinedGraph
+        // → tarjanScc → computeSummaries (the JACOBI fixed point), then project the
+        // RoutineSummary CORE (dbEffects / uncertainties / parameterRoles /
+        // inRecursiveCycle / hasUnresolvedCalls) in the SAME stable shape/key-order as
+        // the al-sem `<fixture>.r3a2.golden.json`. CAPTURE POINT: POST-computeSummaries;
+        // NO dep hooks (R3a-4); the cone/coverage (R3a-3) are never declared on the
+        // projected types. Fail-closed/empty layouts → an empty projection (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => al_call_hierarchy::engine::l4::summary::project_r3a2(&resolved),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-2 projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l4::summary::R3a2Projection { summaries: vec![] }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R3a-2 summary-core projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if r3a2_trace {
+        // R3a-2 JACOBI fingerprint TRACE: run the same SOURCE-ONLY pipeline but ALSO
+        // collect the per-recursive-SCC fingerprint trace the fixed-point loop produces
+        // (the per-iteration stable fingerprint sequence + iteration count + per-pass
+        // `changed`), in the SAME shape/key-order as the al-sem
+        // `<fixture>.r3a2-trace.golden.json`. Proves JACOBI parity (frozen prior-pass
+        // snapshot, not Gauss-Seidel). Fail-closed → an empty trace (never throws).
+        let trace = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                al_call_hierarchy::engine::l4::summary::project_r3a2_with_trace(&resolved).1
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-2 trace",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l4::summary::R3a2Trace { traces: vec![] }
+            }
+        };
+        return match serde_json::to_string_pretty(&trace) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R3a-2 trace: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if r3a1_combined_graph {
         // R3a-1 L4 GRAPH SUBSTRATE: run the SOURCE-ONLY L0→L3 pipeline, then

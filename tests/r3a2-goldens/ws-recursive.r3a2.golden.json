@@ -1,0 +1,44 @@
+{
+  "summaries": [
+    {
+      "routineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+      "dbEffects": [
+        {
+          "effectKey": "FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f",
+          "op": "FindSet",
+          "tableId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+          "operationId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": true,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "dbEffects": [
+        {
+          "effectKey": "FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f",
+          "op": "FindSet",
+          "tableId": "dddddddd-0000-0000-0000-0000000000d1:Table:62100",
+          "operationId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "inherited"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": true,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

@@ -1,0 +1,4070 @@
+{
+  "description": "R3a-2 summary-CORE + per-recursive-SCC fingerprint-TRACE goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.r3a2.golden.json is the ALLOWLISTED projection of the per-routine RoutineSummary CORE (dbEffects / uncertainties / parameterRoles / inRecursiveCycle / hasUnresolvedCalls), captured POST-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the dump NEVER runs the dep hooks). Each <fixture>.r3a2-trace.golden.json (present only when the fixture has ≥1 recursive SCC) is the per-recursive-SCC fingerprint TRACE: the per-iteration stable fingerprint sequence + iteration count + the per-pass `changed` flag that the JACOBI fixed-point loop produced. The Rust port must reproduce the SAME trace → proves JACOBI parity (frozen prior-pass snapshot, not Gauss-Seidel). All ids in stable form (StableRoutineId / StableTableId / StableFieldId / stable operationId / callsiteId). See scripts/r3a2-projection.ts.",
+  "capturePoint": "post-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the final mutated routine.summary CORE; NO dep hooks)",
+  "note": "R3a-2 is the summary CORE only. EXCLUDED (later gates): capabilityFactsDirect/Inherited + coverage (R3a-3, the cone), fieldEffects (lazy/detector), the dep hooks (R3a-4), full cross-app (R3a-5). computeSummaries DOES attach capabilityFacts*/coverage to each summary after the fixed point converges; the projection's strict allowlist drops them. The trace fingerprint is computed in STABLE-id space (al-sem's internal summaryFingerprint embeds internal RoutineIds/ObjectIds and is not id-portable); the internal→stable map is an order-preserving bijection, so the stable fingerprint changes iff the internal one does → the trajectory (iteration count + per-pass `changed`) is identical. Source-only: .app-bearing fixtures are EXCLUDED.",
+  "alSemGitSha": "11c0530ae48e869507f551f328269eb37cce2c2c",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r3a2",
+  "forbiddenKeys": [
+    "capabilityFactsDirect",
+    "capabilityFactsInherited",
+    "coverage",
+    "fieldEffects",
+    "citedDepEvidence",
+    "depOrderIndex",
+    "intraAppCallEdges",
+    "directStatus",
+    "inheritedStatus",
+    "unknownTargets"
+  ],
+  "fixtureCount": 158,
+  "matrix": {
+    "routineCount": 567,
+    "routinesWithInheritedEffects": 56,
+    "viaKinds": {
+      "direct": 273,
+      "event-subscriber": 12,
+      "implicit-trigger": 3,
+      "inherited": 55
+    },
+    "recursiveCycleRoutines": 13,
+    "unresolvedCallRoutines": 112,
+    "opaqueCalleeUncertainties": 2,
+    "uncertaintyKinds": {
+      "ambiguous-overload": 4,
+      "dynamic-dispatch": 4,
+      "external-target": 4,
+      "interface-open-world": 4,
+      "member-not-found": 1,
+      "opaque-callee": 2,
+      "parse-incomplete": 1,
+      "unresolved-call": 99
+    },
+    "parameterRolesWithCrossCallExitEffect": 44,
+    "recursiveSccCount": 3,
+    "recursiveSccsRequiring2PlusIterations": 2,
+    "maxRecursiveSccIterations": 4
+  },
+  "fixtures": [
+    {
+      "fixture": "ws-api-page",
+      "goldenFile": "ws-api-page.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-argument-bindings",
+      "goldenFile": "ws-argument-bindings.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 7,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-builtin-unresolved",
+      "goldenFile": "ws-builtin-unresolved.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-calls",
+      "goldenFile": "ws-calls.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "dynamic-dispatch": 1,
+          "member-not-found": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-callsite-resolutions",
+      "goldenFile": "ws-callsite-resolutions.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 3,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "dynamic-dispatch": 2,
+          "parse-incomplete": 1,
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-combined",
+      "goldenFile": "ws-combined.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-compose",
+      "goldenFile": "ws-compose.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1",
+      "goldenFile": "ws-d1.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 3,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-dep-terminal",
+      "goldenFile": "ws-d1-dep-terminal.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-multi-caller",
+      "goldenFile": "ws-d1-multi-caller.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 3,
+        "viaKinds": {
+          "direct": 4,
+          "inherited": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-setup-singleton",
+      "goldenFile": "ws-d1-setup-singleton.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d10-self-mod",
+      "goldenFile": "ws-d10-self-mod.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 7
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-modifyall-init",
+      "goldenFile": "ws-d11-modifyall-init.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-no-get",
+      "goldenFile": "ws-d11-no-get.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d12-dead-event",
+      "goldenFile": "ws-d12-dead-event.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-internal-call",
+      "goldenFile": "ws-d13-internal-call.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-member-call",
+      "goldenFile": "ws-d13-member-call.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "external-target": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "goldenFile": "ws-d14-dead-routine.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-internal-no-ivt",
+      "goldenFile": "ws-d14-internal-no-ivt.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 7,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-page-procedure",
+      "goldenFile": "ws-d14-page-procedure.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-public-dead",
+      "goldenFile": "ws-d14-public-dead.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d16-obsolete",
+      "goldenFile": "ws-d16-obsolete.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d17-drift",
+      "goldenFile": "ws-d17-drift.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d18",
+      "goldenFile": "ws-d18.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d19",
+      "goldenFile": "ws-d19.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d2",
+      "goldenFile": "ws-d2.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 7,
+        "routinesWithInheritedEffects": 3,
+        "viaKinds": {
+          "direct": 1,
+          "event-subscriber": 1,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d20",
+      "goldenFile": "ws-d20.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 4,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 4
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d21",
+      "goldenFile": "ws-d21.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d22",
+      "goldenFile": "ws-d22.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d29",
+      "goldenFile": "ws-d29.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3",
+      "goldenFile": "ws-d3.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 7
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-method-stmt",
+      "goldenFile": "ws-d3-method-stmt.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-temp",
+      "goldenFile": "ws-d3-temp.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d32",
+      "goldenFile": "ws-d32.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 8,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 10
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d33",
+      "goldenFile": "ws-d33.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 6
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d34",
+      "goldenFile": "ws-d34.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d35",
+      "goldenFile": "ws-d35.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d36",
+      "goldenFile": "ws-d36.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d37",
+      "goldenFile": "ws-d37.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 10,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 11,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d38",
+      "goldenFile": "ws-d38.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d39",
+      "goldenFile": "ws-d39.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 5,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d4-repeated-get",
+      "goldenFile": "ws-d4-repeated-get.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 7
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d40",
+      "goldenFile": "ws-d40.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 10,
+        "routinesWithInheritedEffects": 5,
+        "viaKinds": {
+          "direct": 5,
+          "inherited": 6
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 3,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d41",
+      "goldenFile": "ws-d41.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d42",
+      "goldenFile": "ws-d42.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 5,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 6,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 6
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d5-modifyall",
+      "goldenFile": "ws-d5-modifyall.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 7
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-neg",
+      "goldenFile": "ws-d50-neg.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-pos",
+      "goldenFile": "ws-d50-pos.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-jobqueue",
+      "goldenFile": "ws-d51-jobqueue.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "goldenFile": "ws-d51-neg.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "goldenFile": "ws-d51-pos.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d7-event-cycle",
+      "goldenFile": "ws-d7-event-cycle.r3a2.golden.json",
+      "traceFile": "ws-d7-event-cycle.r3a2-trace.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 6,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 1,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "goldenFile": "ws-d8-commit-in-tx.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 5,
+          "event-subscriber": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-digest-pr49388",
+      "goldenFile": "ws-digest-pr49388.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "interface-open-world": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-e2e",
+      "goldenFile": "ws-e2e.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 10,
+        "routinesWithInheritedEffects": 6,
+        "viaKinds": {
+          "direct": 4,
+          "event-subscriber": 1,
+          "inherited": 8
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 3,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-chains",
+      "goldenFile": "ws-event-chains.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 2,
+          "event-subscriber": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-cycle",
+      "goldenFile": "ws-event-cycle.r3a2.golden.json",
+      "traceFile": "ws-event-cycle.r3a2-trace.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 5,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 1,
+        "recursiveSccsRequiring2PlusIterations": 1,
+        "maxRecursiveSccIterations": 4
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-d45-deep",
+      "goldenFile": "ws-event-d45-deep.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 4,
+        "viaKinds": {
+          "direct": 1,
+          "event-subscriber": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-fanout",
+      "goldenFile": "ws-event-fanout.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled",
+      "goldenFile": "ws-event-ishandled.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-conditional-set",
+      "goldenFile": "ws-event-ishandled-conditional-set.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-exit",
+      "goldenFile": "ws-event-ishandled-exit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-helper",
+      "goldenFile": "ws-event-ishandled-helper.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-multi-dispatch",
+      "goldenFile": "ws-event-ishandled-multi-dispatch.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-nested-guard",
+      "goldenFile": "ws-event-ishandled-nested-guard.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-isolated",
+      "goldenFile": "ws-event-isolated.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-multi-sub-overlap",
+      "goldenFile": "ws-event-multi-sub-overlap.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 2,
+          "event-subscriber": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 2,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-read-after-write",
+      "goldenFile": "ws-event-read-after-write.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 2,
+          "event-subscriber": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-transitive-exposure",
+      "goldenFile": "ws-event-transitive-exposure.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 1,
+          "event-subscriber": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-events",
+      "goldenFile": "ws-events.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-implicit-trigger",
+      "goldenFile": "ws-implicit-trigger.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 1,
+          "implicit-trigger": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-inline-suppress",
+      "goldenFile": "ws-inline-suppress.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 7
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-install-codeunit",
+      "goldenFile": "ws-install-codeunit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-interface-dispatch",
+      "goldenFile": "ws-interface-dispatch.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 1,
+        "uncertaintyKinds": {
+          "interface-open-world": 2,
+          "opaque-callee": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-may-facts",
+      "goldenFile": "ws-may-facts.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 10,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 6,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-codeunit",
+      "goldenFile": "ws-member-call-codeunit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-resolution",
+      "goldenFile": "ws-member-call-resolution.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-multi-object",
+      "goldenFile": "ws-multi-object.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-op-order",
+      "goldenFile": "ws-op-order.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-error",
+      "goldenFile": "ws-order-branch-error.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-exit",
+      "goldenFile": "ws-order-branch-exit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-commit-before-io",
+      "goldenFile": "ws-order-commit-before-io.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-conditional-exit-before-commit",
+      "goldenFile": "ws-order-conditional-exit-before-commit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 3
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-condleaf",
+      "goldenFile": "ws-order-condleaf.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-io-before-commit",
+      "goldenFile": "ws-order-io-before-commit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-loop",
+      "goldenFile": "ws-order-loop.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-transitive-unknown",
+      "goldenFile": "ws-order-transitive-unknown.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-tryfunction",
+      "goldenFile": "ws-order-tryfunction.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-two-commits",
+      "goldenFile": "ws-order-two-commits.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-pos2",
+      "goldenFile": "ws-overload-arg-pos2.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-type",
+      "goldenFile": "ws-overload-arg-type.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "ambiguous-overload": 1,
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-callexpr-discriminator",
+      "goldenFile": "ws-overload-callexpr-discriminator.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-char",
+      "goldenFile": "ws-overload-char.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "ambiguous-overload": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-enum-discriminator",
+      "goldenFile": "ws-overload-enum-discriminator.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-field-discriminator",
+      "goldenFile": "ws-overload-field-discriminator.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-negatives",
+      "goldenFile": "ws-overload-negatives.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 9,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "ambiguous-overload": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-paramfx",
+      "goldenFile": "ws-paramfx.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 1,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-path-facts",
+      "goldenFile": "ws-path-facts.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 12,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 14,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 4,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 4
+        },
+        "parameterRolesWithCrossCallExitEffect": 8,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-dynamic-dispatch",
+      "goldenFile": "ws-policy-api-dynamic-dispatch.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "dynamic-dispatch": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-isolated-storage",
+      "goldenFile": "ws-policy-api-isolated-storage.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ledger-write",
+      "goldenFile": "ws-policy-api-ledger-write.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ui",
+      "goldenFile": "ws-policy-api-ui.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-clean",
+      "goldenFile": "ws-policy-clean.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-subscriber",
+      "goldenFile": "ws-policy-commit-in-subscriber.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-trigger",
+      "goldenFile": "ws-policy-commit-in-trigger.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-install-business-write",
+      "goldenFile": "ws-policy-install-business-write.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-trigger-http",
+      "goldenFile": "ws-policy-trigger-http.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-pr-summary-multi",
+      "goldenFile": "ws-pr-summary-multi.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preflight-missingdep",
+      "goldenFile": "ws-preflight-missingdep.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preset-txn",
+      "goldenFile": "ws-preset-txn.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-prove",
+      "goldenFile": "ws-prove.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 17,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 1,
+        "uncertaintyKinds": {
+          "interface-open-world": 1,
+          "opaque-callee": 1,
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r0-canon-stress",
+      "goldenFile": "ws-r0-canon-stress.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 16,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2a-record-types",
+      "goldenFile": "ws-r2a-record-types.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 8,
+          "implicit-trigger": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-external",
+      "goldenFile": "ws-r2b-external.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "external-target": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-opaque",
+      "goldenFile": "ws-r2b-opaque.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "external-target": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-maybe-elem",
+      "goldenFile": "ws-r2c-maybe-elem.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-mixed",
+      "goldenFile": "ws-r2c-mixed.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 8,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-two-sub-maybe",
+      "goldenFile": "ws-r2c-two-sub-maybe.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-recursive",
+      "goldenFile": "ws-recursive.r3a2.golden.json",
+      "traceFile": "ws-recursive.r3a2-trace.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 2,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 1,
+        "recursiveSccsRequiring2PlusIterations": 1,
+        "maxRecursiveSccIterations": 2
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-report-trigger",
+      "goldenFile": "ws-report-trigger.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-resolve",
+      "goldenFile": "ws-resolve.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-roots-config",
+      "goldenFile": "ws-roots-config.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-statement-tree",
+      "goldenFile": "ws-statement-tree.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 26,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 27
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 5,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 5
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-test-codeunit",
+      "goldenFile": "ws-test-codeunit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-triggers",
+      "goldenFile": "ws-triggers.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 6,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-tx-span",
+      "goldenFile": "ws-tx-span.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "goldenFile": "ws-txn-d46-neg.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 2,
+          "inherited": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "goldenFile": "ws-txn-d46-pos.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 4,
+        "routinesWithInheritedEffects": 2,
+        "viaKinds": {
+          "direct": 4,
+          "inherited": 4
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-deduped",
+      "goldenFile": "ws-txn-d47-advisory-deduped.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-post-nowrite",
+      "goldenFile": "ws-txn-d47-advisory-post-nowrite.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-crosshop-iobeforecommit",
+      "goldenFile": "ws-txn-d47-crosshop-iobeforecommit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 2,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 2
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-clean",
+      "goldenFile": "ws-txn-d47-event-neg-clean.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 3,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 3
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-isolated",
+      "goldenFile": "ws-txn-d47-event-neg-isolated.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 3,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 3
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-pos",
+      "goldenFile": "ws-txn-d47-event-pos.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 3,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 3,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 3
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-commit-between",
+      "goldenFile": "ws-txn-d47-neg-commit-between.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-readonly",
+      "goldenFile": "ws-txn-d47-neg-readonly.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-temp",
+      "goldenFile": "ws-txn-d47-neg-temp.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-file",
+      "goldenFile": "ws-txn-d47-pos-file.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-commit-after",
+      "goldenFile": "ws-txn-d47-pos-http-commit-after.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "goldenFile": "ws-txn-d47-pos-http-nocommit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "goldenFile": "ws-txn-d48-neg.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "goldenFile": "ws-txn-d48-pos.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 5,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 5,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 5
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-commit-between",
+      "goldenFile": "ws-txn-d49-neg-commit-between.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-no-write",
+      "goldenFile": "ws-txn-d49-neg-no-write.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-run-boundary",
+      "goldenFile": "ws-txn-d49-neg-run-boundary.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-temp-write",
+      "goldenFile": "ws-txn-d49-neg-temp-write.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-message",
+      "goldenFile": "ws-txn-d49-pos-modify-message.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-runmodal",
+      "goldenFile": "ws-txn-d49-pos-modify-runmodal.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-unresolved",
+      "goldenFile": "ws-unresolved.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-upgrade-codeunit",
+      "goldenFile": "ws-upgrade-codeunit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-with-receiver",
+      "goldenFile": "ws-with-receiver.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 1,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 2
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-always-error",
+      "goldenFile": "ws-xhop-callee-always-error.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-error",
+      "goldenFile": "ws-xhop-callee-error.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-conditional",
+      "goldenFile": "ws-xhop-conditional.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-io-before-commit",
+      "goldenFile": "ws-xhop-io-before-commit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {},
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 1,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {
+          "unresolved-call": 1
+        },
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-loop",
+      "goldenFile": "ws-xhop-loop.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-tryfunction-committer",
+      "goldenFile": "ws-xhop-tryfunction-committer.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 1,
+        "viaKinds": {
+          "direct": 1,
+          "inherited": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-write-commit",
+      "goldenFile": "ws-xhop-write-commit.r3a2.golden.json",
+      "matrix": {
+        "routineCount": 2,
+        "routinesWithInheritedEffects": 0,
+        "viaKinds": {
+          "direct": 1
+        },
+        "recursiveCycleRoutines": 0,
+        "unresolvedCallRoutines": 0,
+        "opaqueCalleeUncertainties": 0,
+        "uncertaintyKinds": {},
+        "parameterRolesWithCrossCallExitEffect": 0,
+        "recursiveSccCount": 0,
+        "recursiveSccsRequiring2PlusIterations": 0,
+        "maxRecursiveSccIterations": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "fixture": "ws-diff-coverage-narrowed",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-new-capability",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-permission-expanded",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-removed-field",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-rename",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    }
+  ]
+}

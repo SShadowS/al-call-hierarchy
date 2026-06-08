@@ -1,0 +1,230 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729",
+      "dbEffects": [
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d290:Table:51300|11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/op0|p0",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#2444ebaf8c87fd15d1372f411726e2ee0f62c32c161adcd7e9e0b3aeed56c729/op0",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "yes",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "yes",
+          "persistsCurrentRecord": "yes",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "yes",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        },
+        {
+          "parameterIndex": 1,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "no",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "no",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f",
+      "dbEffects": [
+        {
+          "effectKey": "Delete|11111111-0000-0000-0000-00000000d290:Table:51300|11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/op0|p0",
+          "op": "Delete",
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#611afff1b132b12e74aefd16efe50d39b41d5085a6da83aac8ccb5a277a0b31f/op0",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "no",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "no",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d",
+      "dbEffects": [
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-00000000d290:Table:51300|11111111-0000-0000-0000-00000000d290:Codeunit:51300#82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d/op0|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#82f666c0eaebc63968584c2ae92c028a93863b7c42bcd0f8a3daa1e09d6c8a4d/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [
+            "11111111-0000-0000-0000-00000000d290:Table:51300#1"
+          ],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "yes",
+          "requiredLoadedFieldsAtEntry": [
+            "No."
+          ],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "no",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        },
+        {
+          "parameterIndex": 1,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "no",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "no",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231",
+      "dbEffects": [
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d290:Table:51300|11111111-0000-0000-0000-00000000d290:Codeunit:51300#f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231/op0|p0",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "operationId": "11111111-0000-0000-0000-00000000d290:Codeunit:51300#f8cb2c5b997560ce5f358ca9a162b6146d290093fe75f4582b832bf2391e7231/op0",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "11111111-0000-0000-0000-00000000d290:Table:51300",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "yes",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "yes",
+          "persistsCurrentRecord": "yes",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "yes",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
+      "dbEffects": [
+        {
+          "effectKey": "Insert|11111111-0000-0000-0000-000000aa0001:Table:50100|11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op1|f",
+          "op": "Insert",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100",
+          "operationId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-000000aa0001:Table:50100|11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op2|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-000000aa0001:Table:50100",
+          "operationId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op2",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

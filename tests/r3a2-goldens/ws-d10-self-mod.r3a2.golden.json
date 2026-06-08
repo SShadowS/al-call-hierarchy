@@ -1,0 +1,99 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8",
+      "dbEffects": [
+        {
+          "effectKey": "FindSet|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op0|f",
+          "op": "FindSet",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op1|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op2|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op2",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Next|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op3|f",
+          "op": "Next",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#1ee7b7d72fb6c2aaba88da09a011b9d89b0bf23fa54c9466fb1c0bf63547a3a8/op3",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+      "dbEffects": [
+        {
+          "effectKey": "FindSet|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op0|f",
+          "op": "FindSet",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op1|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Next|11111111-0000-0000-0000-00000000d10a:Table:18|11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op2|f",
+          "op": "Next",
+          "tableId": "11111111-0000-0000-0000-00000000d10a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op2",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

@@ -27,6 +27,7 @@ and `docs/`.
 | **R2.5b** | Cross-app **L3 RESOLUTION** over the merged (workspace + `.app`-dep) index — the R2a–R2d L3 surfaces re-run with deps no longer opaque: (a) a record var typed as a DEP table binds to the dep StableTableId + dep/ws TableExtension fields merge across the boundary; (b) `cu.M()` on a PRESENT dep codeunit resolves to the dep StableRoutineId (the source-only `opaque`→`resolved`/`external-target` transitions; the edge does NOT gate on the dep routine's `internal`/`local` accessModifier); (c) a `[EventSubscriber]` ↔ dep-published `[IntegrationEvent]` links to the dep publisher EventId (both directions); (d) coverage `routinesTotal` counts dep routines + the `unresolvedCallsites` multiset reflects cross-app resolution. Captured POST-`resolveModel` over the merged index (`noDepSummaries:true`), stable ids | **SHIPPED** — all 4 sub-gate differentials byte-match (rt/cg/eg/cov, 1 cross-app fixture each), `KNOWN_DIVERGENCES` empty; cross-app matrices healthy (rt: depBoundRecordVars=2/depBoundRecordOps=2/depExtMergedFields=1; cg: resolvedToDepRoutine=4/memberNotFound=1/opaque=1/externalTarget=1/upgradedBindings=1; eg: resolvedToDepPublisher=1/depSubscriberEdges=1/maybe=1; cov: crossAppResolvedAbsent=4/externalTargetPresent=1/unresolved=2/opaqueApps=2-symbol-only-deps after R3a-0 Fix 2); 4 native oracles per sub-gate green + the cross_app_l3 smoke/poison/aldump tests green. The TWO al-sem latent bugs are now **FIXED in R3a-0** (`opaqueApps` lists the symbol-only deps; the `primaryDependencies`-before-resolve member-opaque branch is live in production) — see the R3a-0 row + the "two latent bugs — FIXED" section below. R2.5 COMPLETE → L3 COMPLETE |
 | **R3a-0** | The **semantic oracle epoch** — al-sem fixes the two deferred latent bugs that feed L4 (`81d538a` primaryDependencies-before-resolve + opaqueApps populated; `f1650ba` corpus proof; `93e360d` R2.5b capture stamps `primaryDependencies` BEFORE resolve = production-faithful + the corpus made ALL-FETCHED; artifact schema 1→2, cache `summarySchema` 32→33 / `depCache` 7→8). The Rust R2.5 emitters re-flip to the corrected al-sem; the R2.5 differential must re-pass at ZERO divergences before R3a-1. | **SHIPPED** — BOTH emitters flipped to the FIXED behavior. **Fix 2 (opaqueApps):** the cov emitter passes ALL apps so the `symbol-only` filter lists the dep guids (`["dddddddd-…01","eeeeeeee-…02"]`). **Fix 1 (real ledger):** the cg + cov cross-app emitters thread the REAL declared/fetched ledger (mirroring fixed production+capture al-sem); the Rust fixture `app.json` dropped `Lib Absent` to match the all-fetched corpus. On the all-fetched corpus this is BYTE-INVARIANT (declared=fetched={Lib Core, Lib Ext} → `has_unfetched_declared_dependency` false → `gone.M()` → `external-target` genuinely; object-run → `opaque`). All 4 R2.5b content goldens (rt/cg/cov/eg) byte-match the current al-sem `93e360d`; the cov golden was re-copied. The full R2.5 differential re-passes at 0 divergences, `KNOWN_DIVERGENCES` empty. `tests/r3a0_unfetched_dep_opaque.rs` proves the Fix-1 member-`opaque` resolver branch (unfetched-declared-dep + `cu.M()` → `opaque`, absent from unresolvedCallsites; no-dep control → `external-target`, present). |
 | **R3a-1** | The **FIRST L4 sub-gate** — the L4 GRAPH SUBSTRATE: `buildCombinedGraph` (resolved call graph + event graph → `CombinedEdge[]` of kinds direct/method/codeunit-run/report-run/page-run/interface/implicit-trigger/event-dispatch/dynamic + the bipartite event-dispatch edges + the to-less `UncertaintyEdge[]` + the typed `GraphEdge[]`/`typedEdges`, `edgeSortKey`-ordered) + `tarjanScc` (ITERATIVE Tarjan → the reverse-topological SCC condensation; members sorted; `recursive` = size>1 ∨ self-loop), captured POST-`buildCombinedGraph` / POST-`tarjanScc` / PRE-`computeSummaries` (NO summaries, NO dep hooks, source-only) in stable-id form | **SHIPPED** — 158/158 source-only fixtures byte-match, `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal (edgesByKind direct=123/method=26/codeunit-run=4/interface=4/implicit-trigger=6/event-dispatch=41; combined=204, uncertainty=93, eventDispatch=41, typed=206, typedEvt=41, sccs=557, recursive=3, multiMember=3); `aldump --r3a1-combined-graph` emits the projection; the native L4-direct structural oracle green (5 invariants: every edge `to` is a real routine id; event-dispatch edges == resolved publisher→subscriber pairs; valid reverse-topological SCC order; `recursive` ⟺ size>1 ∨ self-loop; the SCC partition covers every node exactly once). NEXT: **R3a-2** (the JACOBI fixed-point summary core over this SCC condensation) |
+| **R3a-2** | The **SECOND L4 sub-gate** — the **JACOBI FIXED-POINT SUMMARY CORE** (the heart of L4): `computeSummaries`/`runSummaries` composing per-routine `RoutineSummary` CORE bottom-up over the (R3a-1-parity) reverse-topo SCC condensation via a finite monotone JACOBI fixed point (frozen prior-pass snapshot; new-map writes; map swap; `summaryFingerprint` convergence; the `MAX_FIXED_POINT_ITERATIONS=1000` cap). Surface: `dbEffects` (the `effectKeyOf`-keyed merge with via-precedence `direct>implicit-trigger>event-subscriber>dynamic>inherited`), `uncertainties` (caller-side opaque-callee attach + dedup), `parameterRoles` (cross-call entry-req + exit-effect composition via the **branch-aware CFG walker**, incl. resolved `readsFields`/`writesFields` FieldIds), `inRecursiveCycle`, `hasUnresolvedCalls`. Captured POST-`computeSummaries` (NO dep hooks R3a-4, NO cone/coverage R3a-3), source-only, stable-id form | **SHIPPED** — 158/158 source-only fixtures byte-match + the 3 per-recursive-SCC fingerprint-TRACE goldens byte-match (the JACOBI proof: per-iteration fingerprint sequence + iteration count + per-pass `changed` == al-sem ⟹ frozen-snapshot, not Gauss-Seidel), `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal (routines=567, inheritedEffects=56, viaKinds direct=273/event-subscriber=12/implicit-trigger=3/inherited=55 + dynamic ABSENT, recursiveCycle=13, opaqueCallee=2, crossCallExitEffect=44, uncertaintyKinds unresolved-call=99/dynamic-dispatch=4/external-target=4/interface-open-world=4/ambiguous-overload=4/opaque-callee=2/member-not-found=1/parse-incomplete=1; trace: recursiveSCCs=3, requiring≥2-iter=2, maxIter=4); `aldump --r3a2-summary-core` + `--r3a2-trace` emit the projections; native L4-direct structural oracle green (5 invariants: every inherited effect traces to a callee effect; `effectKeyOf` dedup per routine; via = max over contributing edge-vias; `inRecursiveCycle` ⟺ recursive SCC; uncertainty ⟹ `hasUnresolvedCalls`). The branch-aware CFG walker port (R3a-2 Tasks 1-2 `1e5d4b0`) + the `resolve_field` field-id port (this task) landed. NEXT: **R3a-3** (the capability cone + coverage over this summary core) |
 
 ---
 
@@ -1249,10 +1250,59 @@ VALID reverse-topological order (every edge `from→to` has `scc[to] ≤ scc[fro
 self-loop); (5) the SCC partition covers every node exactly once (no node missing, none
 in two SCCs; every member a real routine id). All green.
 
-With R3a-1 SHIPPED, the L4 graph substrate is at byte-parity. **NEXT: R3a-2** — the
-JACOBI fixed-point `RoutineSummary` core over this SCC condensation (each recursive SCC
-iterates with the frozen prior-pass snapshot to a fingerprint-detected fixed point; the
-R3a-2 oracle captures the per-SCC iteration trace).
+With R3a-1 SHIPPED, the L4 graph substrate is at byte-parity.
+
+---
+
+## R3a-2 parity status (SHIPPED — JACOBI fixed-point summary core, source-only) — R3's SECOND L4 sub-gate
+
+R3a-2 ports the **heart of L4** — the finite monotone **JACOBI fixed point** that composes
+per-routine `RoutineSummary` CORE bottom-up over the (R3a-1-parity) reverse-topo SCC
+condensation. Capture point: POST-`computeSummaries`, source-only, stable-id form. The
+comparison surface is the summary CORE ONLY — `dbEffects`, `uncertainties`,
+`parameterRoles`, `inRecursiveCycle`, `hasUnresolvedCalls`; the cone/coverage (R3a-3),
+`fieldEffects` (lazy/detector), and the dep-hook output (R3a-4) are HARD-FORBIDDEN (never
+declared on the projected types + scanned for on both sides).
+
+**The JACOBI discipline (the load-bearing correctness rule).** Each pass FREEZES the entire
+prior-pass summary map; ALL reads within a pass see the frozen snapshot; writes go to a NEW
+map; the maps swap at end of pass. This is JACOBI, not Gauss-Seidel. Both reach the same
+fixed point (monotone lattice) but via DIFFERENT trajectories — a different iteration count
+and a different per-pass `changed` sequence. The per-recursive-SCC fingerprint TRACE oracle
+captures the per-iteration fingerprint sequence + iteration count + `changed`, so a
+trajectory divergence is caught HERE (before R3b's Salsa makes it incremental).
+
+What's proven:
+
+1. **Full-corpus summary-core differential** (`tests/r3a2_differential.rs`): 158/158
+   source-only fixtures byte-match (`aldump --r3a2-summary-core` ≡ `project_r3a2`), positional
+   structural diff over the canonically-sorted projection; `KNOWN_DIVERGENCES` empty.
+2. **Fingerprint-TRACE differential** (`tests/r3a2_trace_differential.rs`): the 3
+   recursive-SCC-bearing fixtures' per-iteration fingerprint sequences + iteration counts +
+   per-pass `changed` flags byte-match the al-sem trace goldens — the JACOBI proof.
+3. **Anti-degenerate matrix** (Rust-computed, manifest-oracle-equal + recomputed-from-goldens-equal):
+   routines=567, inheritedEffects=56, viaKinds {direct=273, event-subscriber=12,
+   implicit-trigger=3, inherited=55} (the 4 reachable kinds present; `dynamic` ABSENT in the
+   source-only corpus), recursiveCycle=13, opaqueCallee=2, crossCallExitEffect=44,
+   uncertaintyKinds {unresolved-call=99, dynamic-dispatch=4, external-target=4,
+   interface-open-world=4, ambiguous-overload=4, opaque-callee=2, member-not-found=1,
+   parse-incomplete=1}; trace stats recursiveSCCs=3, requiring≥2-iter=2, maxIter=4.
+4. **Native L4-direct structural oracle** (`tests/r3a2_oracles.rs`, 5 invariants over the RUST
+   output): every inherited effect (`via != "direct"`) traces to a combined-graph callee
+   carrying the same effectKey; `effectKeyOf` dedup holds per routine; the merged `via` equals
+   the MAX over the contributing edge-vias (`via_for_edge_kind(edge.kind)`); `inRecursiveCycle`
+   ⟺ the routine's R3a-1 SCC is recursive; any routine with ≥1 uncertainty has
+   `hasUnresolvedCalls = true`.
+
+The branch-aware CFG walker (the path-aware entry-req + exit-effect facts, if/case/loop
+branch-join) + the JACOBI loop were ported in Tasks 1-2 (`1e5d4b0`); the `resolve_field`
+field-id resolution for `readsFields`/`writesFields` was ported in Task 3 (see the
+readsFields/writesFields note in the summary above — it is IN R3a-2, not deferred).
+
+With R3a-2 SHIPPED, the per-routine summary core is at byte-parity and the JACOBI trajectory
+is proven over the corpus. **NEXT: R3a-3** — the inherited capability cone
+(`composeInheritedCones` over `typedEdges`, shortest-path-wins + the equal-distance
+tie-breaker) + the coverage roll-up, composed over this byte-parity summary core.
 
 ---
 
@@ -1272,7 +1322,8 @@ R3a-2 oracle captures the per-SCC iteration trace).
 | L3 (deps) | **R2.5 (= R2.5a + R2.5b)** | **CROSS-APP L3 COMPLETE** — `.app` identity parity + cross-app L3 resolution at byte-parity |
 | **L3 (resolve)** | **L3 = R2 (source-only) + R2.5 (cross-app)** | **L3 COMPLETE** — record types + call graph + event graph + coverage at byte-parity, source-only AND cross-app, each with a native L3-direct oracle |
 | L4 (graph) | **R3a-1** (combined graph + Tarjan SCC, source-only) | **DONE** — 158/158 source-only fixtures byte-match + the anti-degenerate matrix (≥3 edge kinds, ≥1 uncertainty, ≥1 event-dispatch, nonzero typed, ≥1 recursive + ≥1 multi-member SCC) Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal; `aldump --r3a1-combined-graph` emitter; native L4-direct structural oracle green (5 invariants); `KNOWN_DIVERGENCES` empty |
-| L4 (summaries) | R3a-2+ (the JACOBI fixed-point `RoutineSummary` core over the SCC condensation + capability cone + coverage + dep hooks + Salsa incrementality) | NEXT — R3a-2 is the per-SCC fixed-point summary core (the reverse-topo order is the bottom-up composition order; each recursive SCC iterates with the JACOBI snapshot to a fingerprint-detected fixed point) |
+| L4 (summaries) | **R3a-2** (the JACOBI fixed-point `RoutineSummary` core over the SCC condensation, source-only) | **DONE** — 158/158 source-only fixtures byte-match + the 3 per-recursive-SCC fingerprint-TRACE goldens byte-match (the JACOBI proof) + the anti-degenerate matrix (≥1 inherited effect, 4 reachable via-kinds + dynamic absent, ≥1 opaque-callee, ≥1 cross-call exit-effect, ≥1 recursive-cycle routine; ≥1 recursive SCC requiring ≥2 iterations) Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal; `aldump --r3a2-summary-core` + `--r3a2-trace` emitters; native L4-direct structural oracle green (5 invariants); `KNOWN_DIVERGENCES` empty |
+| L4 (summaries) | R3a-3+ (the capability cone + coverage over this summary core + dep hooks + Salsa incrementality) | NEXT — R3a-3 composes the inherited capability cone (`composeInheritedCones` over `typedEdges`, shortest-path-wins) + the coverage roll-up over this byte-parity summary core |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
@@ -1300,7 +1351,40 @@ goldens (combined=204 across ≥3 edge kinds, uncertainty=93, eventDispatch=41, 
 sccs=557 incl. 3 recursive + 3 multi-member), and the native L4-direct structural oracle
 green (every edge target a real routine id; event-dispatch edges == resolved
 publisher→subscriber pairs; valid reverse-topological SCC order; `recursive` ⟺ size>1 ∨
-self-loop; the SCC partition covers every node exactly once). NEXT: **R3a-2** — the JACOBI
-fixed-point `RoutineSummary` core over this SCC condensation (the reverse-topo order is the
-bottom-up composition order), then the capability cone (R3a-3), the dep hooks (R3a-4), full
-cross-app (R3a-5), Salsa incrementality, R4 (L5 detectors), and the product surface.
+self-loop; the SCC partition covers every node exactly once).
+
+**R3a-2 (the SECOND L4 sub-gate — the heart of L4) is now SHIPPED** — the JACOBI
+FIXED-POINT SUMMARY CORE (`computeSummaries`/`runSummaries`) is at byte-parity with al-sem
+over the full 158-fixture source-only corpus, captured POST-`computeSummaries` (no dep
+hooks, no cone/coverage). The Rust-computed anti-degenerate matrix equals BOTH the al-sem
+`manifest.json` block AND the matrix recomputed from the goldens (routines=567,
+inheritedEffects=56, viaKinds direct=273/event-subscriber=12/implicit-trigger=3/inherited=55
+with `dynamic` ABSENT in the source-only corpus, recursiveCycle=13, opaqueCallee=2,
+crossCallExitEffect=44), AND the 3 per-recursive-SCC fingerprint-TRACE goldens byte-match
+(recursiveSCCs=3, ≥2-iteration=2, maxIter=4) — proving the Rust fixed point is **JACOBI**
+(frozen prior-pass snapshot), not Gauss-Seidel: a Gauss-Seidel trajectory would reach the
+same final summary but diverge on the per-iteration fingerprint sequence / iteration count.
+The native L4-direct structural oracle is green (every inherited effect traces to a callee
+effect; `effectKeyOf` dedup per routine; via = max over contributing edge-vias;
+`inRecursiveCycle` ⟺ recursive SCC; uncertainty ⟹ `hasUnresolvedCalls`).
+
+The R3a-2 port landed across two efforts: the **branch-aware CFG walker** + the JACOBI loop
+(Tasks 1-2, `1e5d4b0`), and the **`resolve_field` field-id port** (this task — see the
+readsFields/writesFields note below).
+
+**readsFields/writesFields — field-id resolution is IN R3a-2 (not deferred).** Task 2 had
+left `resolve_field` stubbed to `None`, assuming the al-sem goldens carried empty
+`readsFields`/`writesFields`. The full-corpus differential surfaced this as the ONLY
+divergence: al-sem POPULATES these on 10 fixtures (e.g. `ws-paramfx`,
+`ws-event-read-after-write`, `ws-overload-field-discriminator`) with resolved StableFieldIds.
+The fix was small and faithful — al-sem's `resolveField` is a case-insensitive field-name
+lookup in the parameter's resolved table — so this task ported it: a workspace `FieldIndex`
+(`(tableId, lowercased field name) → internal FieldId`, built over the L3 tables with
+extension fields already merged) threaded through `compute_summaries` →
+`base_intraprocedural_summary` → `compute_record_roles` → `resolve_field`, plus a fix to
+`stable_field_id` to mirror al-sem's `toStableFieldId` (split on the LAST `/`, not a literal
+`/field/` segment). NO al-sem projection change was needed. After the port the full corpus
+byte-matches with `KNOWN_DIVERGENCES` empty.
+
+**NEXT:** the capability cone (R3a-3), the coverage roll-up (R3a-3), the dep hooks (R3a-4),
+full cross-app (R3a-5), Salsa incrementality, R4 (L5 detectors), and the product surface.

@@ -1,0 +1,205 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5",
+      "dbEffects": [
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5/op0|f",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#22f2db6aea41947760c947ccaca6d8328f2c2c07d5fcdf0dcacc91794b14d4c5/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847",
+      "dbEffects": [
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847/op1|f",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#5d82461f31280415a7190b011b973696f4f049c3527045e2ec68ab907603c847/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/op1|p0",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/op1",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "inherited"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+      "dbEffects": [],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a/cs0"
+        }
+      ],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "unknown",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "yes",
+          "requiredLoadedFieldsAtEntry": [
+            "Address"
+          ],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "no",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4",
+      "dbEffects": [
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/op1|p0",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/op1",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#78c18e349bdafff4c6979b7186bd49b5155311ae1d62e30ac707c2529fc1c6c4/cs0"
+        }
+      ],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "unknown",
+          "readsFields": [],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": true,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "no",
+          "requiredLoadedFieldsAtEntry": [],
+          "mutatesBeforeLoad": "no",
+          "persistsCurrentRecord": "no",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": [
+            "Address"
+          ],
+          "mutatesParam": "no",
+          "loadsFromDbParam": "yes",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639",
+      "dbEffects": [
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639/op1|f",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#a256e283b6b3478172c12ed2b15168ac5c971e87510de04bb529c7bdfd67b639/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+      "dbEffects": [
+        {
+          "effectKey": "FindFirst|unknown|11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/op1|f",
+          "op": "FindFirst",
+          "tableId": "unknown",
+          "operationId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    }
+  ]
+}

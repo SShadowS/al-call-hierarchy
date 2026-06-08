@@ -1,0 +1,44 @@
+{
+  "summaries": [
+    {
+      "routineId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50100#a4783091e5a2ce84b875f460663fb04cafedd8ec26bc670ff1654e96f0fdce60",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50100#bf6f279bda1c62b446d89e3513be0d6ca5c813037bda89c3d255ab42d528ff74",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50101#0ed66f27b5b139f3746a1d1fd5210d9f4ad475cf835187edbc7f7853e53675b9",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50101#586c01506844ee66234f0eac8161f3212a76c85876e492d51d2be7671ef40289",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50101#6b13af773e90952bc7f684fbb1e7074d8caf6943dfe97c0ac4d31327cb1a0a2a",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

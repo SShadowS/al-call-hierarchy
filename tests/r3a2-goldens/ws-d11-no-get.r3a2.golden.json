@@ -1,0 +1,103 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+      "dbEffects": [
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d11a:Table:18|11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/op0|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945",
+      "dbEffects": [
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d11a:Table:18|11111111-0000-0000-0000-00000000d11a:Codeunit:50111#c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945/op0|p0",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#c65b0e2c6af93474d7ba99a1f80d8f8334d0029109042fba855db0fe22ec4945/op0",
+          "tempState": {
+            "kind": "parameter-dependent",
+            "parameterIndex": 0
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [
+        {
+          "parameterIndex": 0,
+          "tableId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+          "readsFields": [
+            "11111111-0000-0000-0000-00000000d11a:Table:18#50"
+          ],
+          "writesFields": [],
+          "mayResetFilters": false,
+          "mayChangeLoadFields": false,
+          "mayAssignRecord": false,
+          "mayUseRecordRef": false,
+          "requiresLoadedAtEntry": "yes",
+          "requiredLoadedFieldsAtEntry": [
+            "Last Date Modified"
+          ],
+          "mutatesBeforeLoad": "yes",
+          "persistsCurrentRecord": "yes",
+          "setBasedDbWrites": "no",
+          "validatesParam": "no",
+          "copiesIntoParam": "no",
+          "resetsFiltersOnParam": "no",
+          "dirtyAtExit": "no",
+          "currentLoadedFieldsAtExit": "full",
+          "mutatesParam": "yes",
+          "loadsFromDbParam": "no",
+          "initialisesParam": "no"
+        }
+      ],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6",
+      "dbEffects": [
+        {
+          "effectKey": "Get|11111111-0000-0000-0000-00000000d11a:Table:18|11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6/op0|f",
+          "op": "Get",
+          "tableId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6/op0",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        },
+        {
+          "effectKey": "Modify|11111111-0000-0000-0000-00000000d11a:Table:18|11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6/op1|f",
+          "op": "Modify",
+          "tableId": "11111111-0000-0000-0000-00000000d11a:Table:18",
+          "operationId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#dcb43b9123e7d916f966ed1e525e4e2b7d71e78a683d128f738983262365ebb6/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

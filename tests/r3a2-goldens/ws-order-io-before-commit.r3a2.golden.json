@@ -1,0 +1,29 @@
+{
+  "summaries": [
+    {
+      "routineId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52",
+      "dbEffects": [
+        {
+          "effectKey": "Insert|bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100|bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/op1|f",
+          "op": "Insert",
+          "tableId": "bbbbbbbb-0000-0000-0000-000000oi0001:Table:50100",
+          "operationId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/op1",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          },
+          "via": "direct"
+        }
+      ],
+      "uncertainties": [
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "bbbbbbbb-0000-0000-0000-000000oi0001:Codeunit:50101#d8a0e66b44d9b1336b7e1c53592c3954b52491a73ae4d1ffeb621a0e1ba24a52/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    }
+  ]
+}

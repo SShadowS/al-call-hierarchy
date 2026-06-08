@@ -1,0 +1,63 @@
+{
+  "summaries": [
+    {
+      "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed",
+      "dbEffects": [],
+      "uncertainties": [
+        {
+          "kind": "dynamic-dispatch",
+          "operationId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed/op0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "dbEffects": [],
+      "uncertainties": [
+        {
+          "kind": "dynamic-dispatch",
+          "operationId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#708496f489864d6a1474620c5f618551f0b0261cc4f38e0f45d46b1167d345ed/op0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50100#e1c70a546ea08fc525ac78a0f7aa33c159843046d614a58d09b8de4ddb279b81",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    },
+    {
+      "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80",
+      "dbEffects": [],
+      "uncertainties": [
+        {
+          "kind": "parse-incomplete",
+          "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80"
+        },
+        {
+          "kind": "unresolved-call",
+          "callsiteId": "11111111-2222-3333-4444-555555555555:Codeunit:50101#337986a952c0fde5957bdd4f5f1b10c63d5c1e992a8f3fc3637e51f6c87fbd80/cs0"
+        }
+      ],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": true
+    },
+    {
+      "routineId": "11111111-2222-3333-4444-555555555555:Codeunit:50102#d9856041059f64d8aadd6e81f9291b0c6e2650ef69812ad24eadb27d52050200",
+      "dbEffects": [],
+      "uncertainties": [],
+      "parameterRoles": [],
+      "inRecursiveCycle": false,
+      "hasUnresolvedCalls": false
+    }
+  ]
+}

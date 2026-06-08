@@ -100,8 +100,9 @@ pub(crate) fn record_flow_role(op: &str) -> &'static str {
 pub fn base_intraprocedural_summary(
     routine: &L3Routine,
     _routines_by_id: &HashMap<String, &L3Routine>,
+    fields: &FieldIndex,
 ) -> RoutineSummary {
-    let parameter_roles = compute_record_roles(routine);
+    let parameter_roles = compute_record_roles(routine, fields);
 
     // Opaque (.app symbol, no body).
     if !routine.body_available {
@@ -175,7 +176,7 @@ pub fn base_intraprocedural_summary(
 /// `computeRecordRolesCtx`. Path-aware facts (requiresLoadedAtEntry etc.) are
 /// populated as "unknown" here; `compose_routine` overwrites them with the
 /// flat-walker facts (which need the current fixed-point `lookup`).
-fn compute_record_roles(routine: &L3Routine) -> Vec<RecordRoleSummary> {
+fn compute_record_roles(routine: &L3Routine, fields: &FieldIndex) -> Vec<RecordRoleSummary> {
     let mut out: Vec<RecordRoleSummary> = Vec::new();
     for param in &routine.parameters {
         if !param.is_record {
@@ -214,7 +215,7 @@ fn compute_record_roles(routine: &L3Routine) -> Vec<RecordRoleSummary> {
             if fa.record_variable_name.to_lowercase() != rec_var_name_lc {
                 continue;
             }
-            if let Some(fid) = resolve_field(&table_id, &fa.field_name, routine) {
+            if let Some(fid) = resolve_field(&table_id, &fa.field_name, fields) {
                 reads_fields.push(fid);
             }
         }
@@ -227,7 +228,7 @@ fn compute_record_roles(routine: &L3Routine) -> Vec<RecordRoleSummary> {
             if op.op == "Validate" {
                 if let Some(args) = &op.field_arguments {
                     for arg in args {
-                        if let Some(fid) = resolve_field(&table_id, arg, routine) {
+                        if let Some(fid) = resolve_field(&table_id, arg, fields) {
                             writes_fields.push(fid);
                         }
                     }
@@ -309,13 +310,25 @@ fn compute_record_roles(routine: &L3Routine) -> Vec<RecordRoleSummary> {
     out
 }
 
-/// Resolve a field name to its internal FieldId by table. Returns None if the
-/// table or field is not found.
-fn resolve_field(_table_id: &str, _field_name: &str, _routine: &L3Routine) -> Option<String> {
-    // Field-id resolution deferred to R3a-3 (requires direct table access).
-    // The base parameterRoles will have empty reads/writesFields, matching
-    // vector expectations for routines without field-accessing operations.
-    None
+/// A field-resolution index: `(internal tableId, lowercased field name) →
+/// internal FieldId`. Built once per workspace from the resolved tables (and
+/// their merged extension fields). Mirrors the case-insensitive
+/// `resolveField` lookup al-sem performs against `ctx.tableById` in
+/// `src/engine/summary-engine.ts`.
+pub type FieldIndex = HashMap<(String, String), String>;
+
+/// Resolve a field name to its internal FieldId by table, case-insensitively.
+/// Mirrors al-sem `resolveField` (summary-engine.ts):
+///   `table?.fields.find(f => f.name.toLowerCase() === fieldName.toLowerCase())?.id`.
+/// Returns None when the table is unresolved (`"unknown"`) or the field is not
+/// found on the table.
+fn resolve_field(table_id: &str, field_name: &str, fields: &FieldIndex) -> Option<String> {
+    if table_id == "unknown" {
+        return None;
+    }
+    fields
+        .get(&(table_id.to_string(), field_name.to_lowercase()))
+        .cloned()
 }
 
 // ---------------------------------------------------------------------------
@@ -344,10 +357,11 @@ fn compose_routine(
     let lookup =
         |id: &str| -> Option<&RoutineSummary> { snapshot.get(id).or_else(|| final_map.get(id)) };
 
-    let base = base_summaries
-        .get(&routine.id)
-        .cloned()
-        .unwrap_or_else(|| base_intraprocedural_summary(routine, &HashMap::new()));
+    // Every routine has a precomputed base summary, so this fallback is dead;
+    // an empty field index is fine for the unreachable branch.
+    let base = base_summaries.get(&routine.id).cloned().unwrap_or_else(|| {
+        base_intraprocedural_summary(routine, &HashMap::new(), &FieldIndex::new())
+    });
 
     let mut has_unresolved_calls = base.has_unresolved_calls;
 
@@ -680,11 +694,13 @@ fn summary_fingerprint(s: &PRoutineSummaryCore) -> String {
 /// Returns:
 /// - `final_summaries`: internal-id map of ALL computed summaries.
 /// - `raw_traces`: per-recursive-SCC trace (empty when `collect_trace=false`).
+#[allow(clippy::too_many_arguments)]
 pub fn compute_summaries(
     routines: &[L3Routine],
     graph: &CombinedGraph,
     scc: &SccResult,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
     collect_trace: bool,
 ) -> (HashMap<String, RoutineSummary>, Vec<RawSccTrace>) {
     // Build O(1) lookup indexes.
@@ -704,7 +720,7 @@ pub fn compute_summaries(
         .map(|r| {
             (
                 r.id.clone(),
-                base_intraprocedural_summary(r, &routines_by_id),
+                base_intraprocedural_summary(r, &routines_by_id, fields),
             )
         })
         .collect();

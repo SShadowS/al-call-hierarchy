@@ -1,0 +1,24 @@
+{
+  "traces": [
+    {
+      "sccId": "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e,dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3",
+      "members": [
+        "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e",
+        "dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3"
+      ],
+      "iterations": 2,
+      "passes": [
+        {
+          "iteration": 1,
+          "changed": true,
+          "fingerprint": "[[\"dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e\",\"[[\\\"FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f:direct\\\"],false,[],[]]\"],[\"dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3\",\"[[\\\"FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f:inherited\\\"],false,[],[]]\"]]"
+        },
+        {
+          "iteration": 2,
+          "changed": false,
+          "fingerprint": "[[\"dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e\",\"[[\\\"FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f:direct\\\"],false,[],[]]\"],[\"dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#f10fcd64e5ec3c71098c9d3ba82377f34c81238b19cbe692f936e991d63b78f3\",\"[[\\\"FindSet|dddddddd-0000-0000-0000-0000000000d1:Table:62100|dddddddd-0000-0000-0000-0000000000d1:Codeunit:62101#3a05cea69b7954348cd58a7de9b18004d49bc50d8c5e690a0ef2b10564ee1e2e/op0|f:inherited\\\"],false,[],[]]\"]]"
+        }
+      ]
+    }
+  ]
+}
