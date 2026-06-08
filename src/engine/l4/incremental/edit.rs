@@ -362,6 +362,33 @@ impl EditableModel {
         }
     }
 
+    /// Demand the per-recursive-SCC JACOBI fingerprint TRACE through the Salsa
+    /// `scc_trace` query, projected to the stable [`PSccTrace`] form (the R3a-2
+    /// trace golden shape). This reproduces the R3a-2 recursive-SCC trace THROUGH
+    /// the incremental Salsa query graph — the cyclic-fixed-point-through-Salsa
+    /// proof. Demands every routine's SccKey, collects the distinct recursive traces
+    /// (a non-recursive SCC yields `None`), and projects them deterministically.
+    pub fn demand_scc_traces(&self) -> Vec<crate::engine::l4::summary::PSccTrace> {
+        use super::queries::{scc_for_routine, scc_trace, InternalId};
+        let db: &dyn L4Db = &self.db;
+        let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
+        let mut raws: Vec<crate::engine::l4::summary_runner::RawSccTrace> = Vec::new();
+        for id in self.demand_order() {
+            let iid = InternalId::new(db, id.clone());
+            if let Some(key) = scc_for_routine(db, self.universe, self.registry, self.ctx, iid) {
+                // Dedup by the interned member set (each SCC visited once).
+                let members = key.members(db).clone();
+                if !seen.insert(members) {
+                    continue;
+                }
+                if let Some(tv) = scc_trace(db, self.universe, self.registry, self.ctx, key) {
+                    raws.push((*tv.trace).clone());
+                }
+            }
+        }
+        crate::engine::l4::summary::project_raw_scc_traces(raws, &self.model.ctx.stable_map)
+    }
+
     // -----------------------------------------------------------------------
     // SET-FACT edits — mutate ONE RoutineInput field. The universe is unchanged.
     // -----------------------------------------------------------------------

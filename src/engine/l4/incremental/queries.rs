@@ -469,6 +469,63 @@ pub fn scc_summaries<'db>(
     ctx: AppContext,
     scc_key: SccKey<'db>,
 ) -> SccSummaries {
+    let out = compute_one_scc(db, universe, registry, ctx, scc_key, false);
+    let mut map: BTreeMap<String, RoutineSummary> = BTreeMap::new();
+    for (id, s) in out.summaries {
+        map.insert(id, s);
+    }
+    SccSummaries {
+        summaries: Arc::new(map),
+    }
+}
+
+// ===========================================================================
+// scc_trace(scc_key) — the per-SCC JACOBI fingerprint TRACE through Salsa. Runs the
+// SAME re-granularized per-SCC computation as `scc_summaries`, but with the R3a
+// `collect_trace=true` hook, so a recursive SCC's incremental recompute reproduces
+// the EXACT R3a-2 per-iteration fingerprint trace THROUGH the Salsa query (the
+// cyclic-fixed-point-through-Salsa proof). A non-recursive SCC returns `None`.
+// ===========================================================================
+
+/// A value-equal carrier for one recursive SCC's raw JACOBI trace (internal-id
+/// form). Behind an `Arc`; `None` for a non-recursive SCC.
+#[derive(Clone, salsa::Update)]
+pub struct SccTraceValue {
+    pub trace: Arc<crate::engine::l4::summary_runner::RawSccTrace>,
+}
+impl PartialEq for SccTraceValue {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.trace, &other.trace) || *self.trace == *other.trace
+    }
+}
+impl Eq for SccTraceValue {}
+
+#[salsa::tracked]
+pub fn scc_trace<'db>(
+    db: &'db dyn L4Db,
+    universe: RoutineUniverse,
+    registry: RoutineRegistry,
+    ctx: AppContext,
+    scc_key: SccKey<'db>,
+) -> Option<SccTraceValue> {
+    let out = compute_one_scc(db, universe, registry, ctx, scc_key, true);
+    out.trace.map(|t| SccTraceValue { trace: Arc::new(t) })
+}
+
+/// The shared per-SCC computation behind both `scc_summaries` (collect_trace=false)
+/// and `scc_trace` (collect_trace=true). Builds the PER-SCC mini combined graph +
+/// member-only lookup maps from the re-granularized per-routine queries and runs the
+/// PROVEN R3a `run_one_scc`. (NOT itself a Salsa query — both callers ARE, and they
+/// invoke the SAME per-routine/successor sub-queries, so the dependency footprint is
+/// identical: this is a plain helper, not a memoization seam.)
+fn compute_one_scc<'db>(
+    db: &'db dyn L4Db,
+    universe: RoutineUniverse,
+    registry: RoutineRegistry,
+    ctx: AppContext,
+    scc_key: SccKey<'db>,
+    collect_trace: bool,
+) -> crate::engine::l4::summary_runner::SccComputeOut {
     let by_id = registry.by_id(db);
     let stable_map_arc = ctx.stable_map(db);
 
@@ -636,14 +693,7 @@ pub fn scc_summaries<'db>(
         leaf_summaries: &leaf_summaries,
     };
 
-    let out = run_one_scc(&scc_entry, &predecessor_final_map, &sctx, false);
-    let mut map: BTreeMap<String, RoutineSummary> = BTreeMap::new();
-    for (id, s) in out.summaries {
-        map.insert(id, s);
-    }
-    SccSummaries {
-        summaries: Arc::new(map),
-    }
+    run_one_scc(&scc_entry, &predecessor_final_map, &sctx, collect_trace)
 }
 
 /// `routine_summary(stable_id)` — the settled CORE summary for one routine,

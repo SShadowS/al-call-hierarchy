@@ -38,12 +38,14 @@ const MAX_FIXED_POINT_ITERATIONS: usize = 1000;
 // ---------------------------------------------------------------------------
 
 /// One raw SCC trace (internal ids).
+#[derive(Clone, PartialEq, Eq, salsa::Update)]
 pub struct RawSccTrace {
     pub members: Vec<String>,
     pub passes: Vec<RawSccTracePass>,
 }
 
 /// One pass in the raw SCC trace.
+#[derive(Clone, PartialEq, Eq, salsa::Update)]
 pub struct RawSccTracePass {
     pub iteration: usize,
     pub changed: bool,
@@ -975,7 +977,12 @@ pub fn run_one_scc(
             let mut members: Vec<&str> = scc_entry
                 .members
                 .iter()
-                .map(|m| ctx.stable_map.get(m).map(|s| s.as_str()).unwrap_or(m.as_str()))
+                .map(|m| {
+                    ctx.stable_map
+                        .get(m)
+                        .map(|s| s.as_str())
+                        .unwrap_or(m.as_str())
+                })
                 .collect();
             members.sort_unstable();
             eprintln!(

@@ -259,7 +259,7 @@ pub struct PRecordRoleSummary {
 }
 
 /// Projected RoutineSummary CORE (stable-id form).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, salsa::Update)]
 pub struct PRoutineSummaryCore {
     #[serde(rename = "routineId")]
     pub routine_id: String,
@@ -687,57 +687,69 @@ fn run_and_project(
 
     // Project traces (if collected).
     let traces = if collect_trace {
-        let mut t: Vec<PSccTrace> = raw_traces
-            .into_iter()
-            .map(|raw| {
-                let stable_members: Vec<String> = raw
-                    .members
-                    .iter()
-                    .map(|m| stable_routine_id(m, &map))
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                let scc_id = stable_members.join(",");
-                let passes: Vec<PSccTracePass> = raw
-                    .passes
-                    .into_iter()
-                    .map(|p| {
-                        // Sort members by stable routineId for a deterministic fingerprint.
-                        let mut sorted: Vec<&PRoutineSummaryCore> =
-                            p.member_summaries.iter().collect();
-                        sorted.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-                        let fp = serde_json::to_string(
-                            &sorted
-                                .iter()
-                                .map(|s| {
-                                    serde_json::Value::Array(vec![
-                                        serde_json::Value::String(s.routine_id.clone()),
-                                        serde_json::Value::String(stable_summary_fingerprint(s)),
-                                    ])
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .unwrap_or_default();
-                        PSccTracePass {
-                            iteration: p.iteration,
-                            changed: p.changed,
-                            fingerprint: fp,
-                        }
-                    })
-                    .collect();
-                PSccTrace {
-                    scc_id,
-                    members: stable_members,
-                    iterations: passes.len(),
-                    passes,
-                }
-            })
-            .collect();
-        t.sort_by(|a, b| a.scc_id.cmp(&b.scc_id));
-        Some(t)
+        Some(project_raw_scc_traces(raw_traces, &map))
     } else {
         Some(Vec::new())
     };
 
     (projected, traces)
+}
+
+/// Project a list of `RawSccTrace`s (per-recursive-SCC JACOBI traces, already in
+/// internal-id form) to the stable [`PSccTrace`] form — the SAME projection the
+/// R3a-2 trace golden carries. Exposed so the R3b Salsa `scc_summaries` path can
+/// reproduce the byte-identical per-iteration fingerprint trace THROUGH the Salsa
+/// query (the cyclic-fixed-point-through-Salsa proof). The output is sorted by
+/// `sccId` (deterministic).
+pub fn project_raw_scc_traces(
+    raw_traces: Vec<crate::engine::l4::summary_runner::RawSccTrace>,
+    map: &std::collections::HashMap<String, String>,
+) -> Vec<PSccTrace> {
+    let mut t: Vec<PSccTrace> = raw_traces
+        .into_iter()
+        .map(|raw| {
+            let stable_members: Vec<String> = raw
+                .members
+                .iter()
+                .map(|m| stable_routine_id(m, map))
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            let scc_id = stable_members.join(",");
+            let passes: Vec<PSccTracePass> = raw
+                .passes
+                .into_iter()
+                .map(|p| {
+                    // Sort members by stable routineId for a deterministic fingerprint.
+                    let mut sorted: Vec<&PRoutineSummaryCore> = p.member_summaries.iter().collect();
+                    sorted.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
+                    let fp = serde_json::to_string(
+                        &sorted
+                            .iter()
+                            .map(|s| {
+                                serde_json::Value::Array(vec![
+                                    serde_json::Value::String(s.routine_id.clone()),
+                                    serde_json::Value::String(stable_summary_fingerprint(s)),
+                                ])
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap_or_default();
+                    PSccTracePass {
+                        iteration: p.iteration,
+                        changed: p.changed,
+                        fingerprint: fp,
+                    }
+                })
+                .collect();
+            PSccTrace {
+                scc_id,
+                members: stable_members,
+                iterations: passes.len(),
+                passes,
+            }
+        })
+        .collect();
+    t.sort_by(|a, b| a.scc_id.cmp(&b.scc_id));
+    t
 }
