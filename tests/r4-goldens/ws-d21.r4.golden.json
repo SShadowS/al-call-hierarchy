@@ -1,0 +1,127 @@
+{
+  "fixtureName": "ws-d21",
+  "detectors": [
+    "d21-read-without-load"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d21-read-without-load",
+      "id": "d21/11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591/11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591/op0",
+      "rootCauseKey": "d21/11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591/11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591/op0",
+      "title": "Read on uninitialised record",
+      "rootCause": "CalcFieldsWithoutLoad calls CalcFields on Customer but never loaded it — the call operates on a default record and may silently succeed or always raise.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 15,
+          "startColumn": 8,
+          "endLine": 15,
+          "endColumn": 44
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 15,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 44
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591",
+            "syntaxKind": "call_expression"
+          },
+          "note": "CalcFields on Customer with no prior Get/Find/Init in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#d5bd2f04811dd6c33bfc27da492de24331aa6c9b7197bd547f65ca01113aa591/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d210:Codeunit:50700"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d210:Table:50700"
+      ],
+      "fixOptions": [
+        {
+          "description": "Load the record with Get / FindFirst before TestField/CalcFields, or pass it in as a var parameter from a caller that loaded it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "dc2f820e63c9dbc0"
+    },
+    {
+      "detector": "d21-read-without-load",
+      "id": "d21/11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669/11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669/op0",
+      "rootCauseKey": "d21/11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669/11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669/op0",
+      "title": "Read on uninitialised record",
+      "rootCause": "TestFieldWithoutLoad calls TestField on Customer but never loaded it — the call operates on a default record and may silently succeed or always raise.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 7,
+          "startColumn": 8,
+          "endLine": 7,
+          "endColumn": 32
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 32
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669",
+            "syntaxKind": "call_expression"
+          },
+          "note": "TestField on Customer with no prior Get/Find/Init in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d210:Codeunit:50700#c483447967b17b04cfef9d7ca72d6728c0f402bd351f453351bcd71f83d85669/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d210:Codeunit:50700"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d210:Table:50700"
+      ],
+      "fixOptions": [
+        {
+          "description": "Load the record with Get / FindFirst before TestField/CalcFields, or pass it in as a var parameter from a caller that loaded it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "f248a86f9dad2640"
+    }
+  ]
+}

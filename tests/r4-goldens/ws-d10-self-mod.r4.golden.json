@@ -1,0 +1,84 @@
+{
+  "fixtureName": "ws-d10-self-mod",
+  "detectors": [
+    "d10-self-modifying-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d10-self-modifying-loop",
+      "id": "d10/11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op1",
+      "rootCauseKey": "d10/11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op1",
+      "title": "Self-modifying loop",
+      "rootCause": "BadModify runs Modify on the iterating record Customer inside its own loop — the cursor's snapshot may be corrupted.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/codeunit.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 4,
+          "endLine": 8,
+          "endColumn": 21
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 3,
+              "endLine": 9,
+              "endColumn": 28
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+            "syntaxKind": "repeat_statement"
+          },
+          "note": "repeat loop iterating Customer",
+          "loopId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Modify on iterating record Customer",
+          "operationId": "11111111-0000-0000-0000-00000000d10a:Codeunit:50110#b9f1025f25ce20d9a93c9d76ceea306147d0ba8c85eea2a697cf6eda5402f74c/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d10a:Codeunit:50110"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d10a:Table:18"
+      ],
+      "fixOptions": [
+        {
+          "description": "Collect the keys first, then iterate a fresh recordset to perform the modifications; or use ModifyAll with a filter.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a9ffe3998709525b"
+    }
+  ]
+}

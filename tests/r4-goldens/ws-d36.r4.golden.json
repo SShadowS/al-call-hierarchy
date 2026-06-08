@@ -1,0 +1,68 @@
+{
+  "fixtureName": "ws-d36",
+  "detectors": [
+    "d36-late-setloadfields"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d36-late-setloadfields",
+      "id": "d36/11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de/11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de/op1",
+      "rootCauseKey": "d36/11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de/11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de/op1",
+      "title": "SetLoadFields placed after the load",
+      "rootCause": "SetLoadFieldsAfterGet calls SetLoadFields on Customer after the record was already loaded and never loads it again — the partial-record optimisation cannot apply.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 8,
+          "endLine": 8,
+          "endColumn": 36
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 36
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de",
+            "syntaxKind": "call_expression"
+          },
+          "note": "SetLoadFields on Customer after the record was already loaded — the call has no effect",
+          "operationId": "11111111-0000-0000-0000-00000000d360:Codeunit:51200#03773bb07c900d2afa7c8d5dca508f909a43d1d37f40606b245699813ecc38de/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d360:Codeunit:51200"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d360:Table:51200"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the SetLoadFields call to BEFORE the preceding Get / Find on Customer, so the loader can fetch only the listed fields.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "e453e889410ea504"
+    }
+  ]
+}

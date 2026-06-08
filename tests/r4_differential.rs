@@ -7,19 +7,18 @@
 //!
 //! ## Wave gating (the ACCEPTANCE GATE)
 //!
-//! Only d4 is ported in R4-0 Task 2b. So:
-//!   - `ws-d4-repeated-get` (wave R4-A) MUST byte-match its golden END-TO-END
-//!     (the projection serialized pretty + trailing newline == the golden file).
-//!   - The other 6 smoke fixtures carry findings from NOT-YET-PORTED detectors.
-//!     For those we assert the fixture runs cleanly to the L5 boundary and, with
-//!     only the registered (d4) detectors, produces the d4-SUBSET of the golden
-//!     (empty for non-d4 fixtures), logging "deferred to wave X". Each wave flips
-//!     its fixture to a full byte-match as its detector lands.
+//! `ported: true` fixtures MUST byte-match their golden END-TO-END. `ported: false`
+//! fixtures run cleanly and produce the registered-detector subset (empty for not-yet-
+//! ported detectors). Each wave flips its fixture(s) to `ported: true` as they land.
 //!
 //! ## Anti-degenerate (fail-on-zero)
 //!
-//! `ws-d4-repeated-get` MUST produce ≥1 finding AND byte-match — a regression that
-//! zeroed d4 would otherwise pass the "empty subset == empty subset" path.
+//! Each ported detector's positive fixture MUST produce ≥1 finding AND byte-match.
+//!
+//! ## Negative assertions
+//!
+//! Each of the 6 new R4-A detectors (d5/d10/d11/d18/d21/d36) MUST yield 0 findings
+//! over a neutral fixture that lacks its pattern.
 //!
 //! ## KNOWN_DIVERGENCES gating
 //!
@@ -37,10 +36,9 @@ use serde_json::Value;
 
 const R4_TEST_NAME: &str = "differential_r4_findings_match_goldens";
 
-/// The smoke set: ≥1 fixture per substrate wave (mirrors al-sem's SMOKE_FIXTURES).
-/// `(fixture, wave, detectors)`. `detectors` is the GOLDEN envelope's detector
-/// list (NOT the registered set) — passed to `project_r4_findings` so the envelope
-/// matches the al-sem golden. `ported` flips true as each wave's detector lands.
+/// A smoke entry — the wave representative fixtures (one per substrate wave).
+/// These are kept from R4-0 for continuity; the per-detector fixtures below are the
+/// actual byte-match entries for R4-A.
 struct Smoke {
     fixture: &'static str,
     wave: &'static str,
@@ -48,6 +46,7 @@ struct Smoke {
     ported: bool,
 }
 
+/// The wave-representative smoke set (one per substrate wave).
 const SMOKE: &[Smoke] = &[
     Smoke {
         fixture: "ws-d4-repeated-get",
@@ -90,6 +89,109 @@ const SMOKE: &[Smoke] = &[
         wave: "R4-G",
         detectors: &["d14-dead-routine"],
         ported: false,
+    },
+];
+
+/// R4-A per-detector positive fixtures (ported: true = byte-match required).
+const WAVE_A: &[Smoke] = &[
+    // d5: loop-and-Modify could be ModifyAll
+    Smoke {
+        fixture: "ws-d5-modifyall",
+        wave: "R4-A",
+        detectors: &["d5-set-based-opportunity"],
+        ported: true,
+    },
+    // d10: self-modifying loop
+    Smoke {
+        fixture: "ws-d10-self-mod",
+        wave: "R4-A",
+        detectors: &["d10-self-modifying-loop"],
+        ported: true,
+    },
+    // d11: modify without get (no-get positive)
+    Smoke {
+        fixture: "ws-d11-no-get",
+        wave: "R4-A",
+        detectors: &["d11-modify-without-get"],
+        ported: true,
+    },
+    // d11: modify without get (modifyall+init, second positive fixture)
+    Smoke {
+        fixture: "ws-d11-modifyall-init",
+        wave: "R4-A",
+        detectors: &["d11-modify-without-get"],
+        ported: true,
+    },
+    // d18: constant filter in loop
+    Smoke {
+        fixture: "ws-d18",
+        wave: "R4-A",
+        detectors: &["d18-constant-filter-in-loop"],
+        ported: true,
+    },
+    // d21: read without load
+    Smoke {
+        fixture: "ws-d21",
+        wave: "R4-A",
+        detectors: &["d21-read-without-load"],
+        ported: true,
+    },
+    // d36: SetLoadFields placed after the load
+    Smoke {
+        fixture: "ws-d36",
+        wave: "R4-A",
+        detectors: &["d36-late-setloadfields"],
+        ported: true,
+    },
+];
+
+/// A negative assertion: the given detector must produce 0 findings over the
+/// neutral fixture (which lacks the detector's triggering pattern).
+struct NegativeAssertion {
+    detector: &'static str,
+    neutral_fixture: &'static str,
+}
+
+/// One neutral per detector — pick a corpus fixture that CONTAINS the detector's
+/// op-family but in a safe arrangement, so the detector genuinely runs its logic and
+/// emits 0. The per-detector rationale is given below.
+const NEGATIVES: &[NegativeAssertion] = &[
+    // d5: ws-d18 has for-loops (no repeat..until / Next()) and SetRange/SetFilter —
+    // but no Modify inside any loop, so the loop-and-Modify pattern never fires.
+    NegativeAssertion {
+        detector: "d5-set-based-opportunity",
+        neutral_fixture: "ws-d18",
+    },
+    // d10: ws-d36 has Get/SetLoadFields ops but no loops at all — the self-modifying
+    // loop detector requires Next() inside a repeat..until body and finds none.
+    NegativeAssertion {
+        detector: "d10-self-modifying-loop",
+        neutral_fixture: "ws-d36",
+    },
+    // d11: ws-d10-self-mod has Modify on Customer but FindSet() (a LOAD_OP) precedes
+    // every Modify — the "loaded before" check suppresses all instances.
+    NegativeAssertion {
+        detector: "d11-modify-without-get",
+        neutral_fixture: "ws-d10-self-mod",
+    },
+    // d18: ws-d5-modifyall has SetRange outside the loop only; no SetRange/SetFilter
+    // appears inside any loop body, so the constant-filter pattern never triggers.
+    NegativeAssertion {
+        detector: "d18-constant-filter-in-loop",
+        neutral_fixture: "ws-d5-modifyall",
+    },
+    // d21: ws-d36 contains Get/SetLoadFields but no TestField/CalcFields/CalcSums —
+    // the reading ops that d21 checks for are entirely absent.
+    NegativeAssertion {
+        detector: "d21-read-without-load",
+        neutral_fixture: "ws-d36",
+    },
+    // d36: ws-d18 has SetRange/SetFilter inside loops and FindFirst — but no
+    // SetLoadFields or AddLoadFields appear anywhere, so the late-setloadfields
+    // pattern is never exercised.
+    NegativeAssertion {
+        detector: "d36-late-setloadfields",
+        neutral_fixture: "ws-d18",
     },
 ];
 
@@ -214,7 +316,7 @@ fn diff_value(fixture: &str, path: &str, golden: &Value, rust: &Value, out: &mut
 }
 
 /// Run the Rust source-only L5 pass for one fixture over the REGISTERED detectors,
-/// projecting the envelope with the golden's declared detector list.
+/// projecting the envelope with the given detector list (findings filtered to that set).
 fn run_rust(fixture: &str, detector_names: &[&str]) -> R4FindingsProjection {
     let fixture_dir = corpus_dir().join(fixture);
     assert!(
@@ -261,6 +363,65 @@ fn finding_subset(golden: &Value, names: &BTreeSet<String>) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Run a single smoke entry through the acceptance gate or deferred path.
+fn run_smoke_entry(
+    smoke: &Smoke,
+    registered_names: &BTreeSet<String>,
+    all_divergences: &mut Vec<Divergence>,
+) -> Option<(bool, usize)> {
+    let golden_path = goldens_dir().join(format!("{}.r4.golden.json", smoke.fixture));
+    assert!(
+        golden_path.is_file(),
+        "missing R4 golden: {}",
+        golden_path.display()
+    );
+    let golden_text = std::fs::read_to_string(&golden_path)
+        .unwrap_or_else(|e| panic!("read R4 golden {}: {e}", golden_path.display()));
+    let golden_json: Value = serde_json::from_str(&golden_text)
+        .unwrap_or_else(|e| panic!("R4 golden {} not valid JSON: {e}", golden_path.display()));
+    // Shape guard.
+    let _: R4FindingsProjection = serde_json::from_value(golden_json.clone())
+        .unwrap_or_else(|e| panic!("R4 golden {} not R4FindingsProjection: {e}", smoke.fixture));
+
+    let rust = run_rust(smoke.fixture, smoke.detectors);
+
+    if smoke.ported {
+        let rust_text = pretty_with_newline(&rust);
+        let byte_matched = rust_text == golden_text;
+        if !byte_matched {
+            let rust_json = serde_json::to_value(&rust).expect("rust → value");
+            diff_value(smoke.fixture, "", &golden_json, &rust_json, all_divergences);
+        }
+        let count = rust.finding_count;
+        assert_eq!(
+            rust_text, golden_text,
+            "R4 ACCEPTANCE GATE: {} ({}) did NOT byte-match its golden",
+            smoke.fixture, smoke.wave
+        );
+        Some((byte_matched, count))
+    } else {
+        let golden_subset = finding_subset(&golden_json, registered_names);
+        let rust_json = serde_json::to_value(&rust).expect("rust → value");
+        let rust_subset = finding_subset(&rust_json, registered_names);
+        diff_value(
+            smoke.fixture,
+            ".findings(registered-subset)",
+            &Value::Array(golden_subset.clone()),
+            &Value::Array(rust_subset.clone()),
+            all_divergences,
+        );
+        eprintln!(
+            "R4 {} ({}): deferred to wave {} — registered-subset findings: {} (golden subset: {})",
+            smoke.fixture,
+            smoke.wave,
+            smoke.wave,
+            rust_subset.len(),
+            golden_subset.len(),
+        );
+        None
+    }
+}
+
 #[test]
 fn differential_r4_findings_match_goldens() {
     let allowlist: Vec<AllowEntry> = load_allowlist()
@@ -274,85 +435,72 @@ fn differential_r4_findings_match_goldens() {
         .collect();
 
     let mut all_divergences: Vec<Divergence> = Vec::new();
-    let mut d4_byte_matched = false;
-    let mut d4_finding_count = 0usize;
 
+    // Track per-fixture byte-match results for anti-degenerate checks.
+    let mut ported_results: Vec<(&'static str, bool, usize)> = Vec::new();
+
+    // --- Smoke entries (wave representatives) ----------------------------------
     for smoke in SMOKE {
-        let golden_path = goldens_dir().join(format!("{}.r4.golden.json", smoke.fixture));
-        assert!(
-            golden_path.is_file(),
-            "missing R4 golden: {}",
-            golden_path.display()
-        );
-        let golden_text = std::fs::read_to_string(&golden_path)
-            .unwrap_or_else(|e| panic!("read R4 golden {}: {e}", golden_path.display()));
-        let golden_json: Value = serde_json::from_str(&golden_text)
-            .unwrap_or_else(|e| panic!("R4 golden {} not valid JSON: {e}", golden_path.display()));
-        // Shape guard — the golden parses as R4FindingsProjection.
-        let _: R4FindingsProjection =
-            serde_json::from_value(golden_json.clone()).unwrap_or_else(|e| {
-                panic!("R4 golden {} not R4FindingsProjection: {e}", smoke.fixture)
-            });
-
-        let rust = run_rust(smoke.fixture, smoke.detectors);
-
-        if smoke.ported {
-            // ACCEPTANCE GATE: full END-TO-END byte-match of the serialized doc.
-            let rust_text = pretty_with_newline(&rust);
-            if rust_text == golden_text {
-                d4_byte_matched = true;
-            } else {
-                // Surface a structural diff to aid debugging, then fall through to
-                // the assertion below.
-                let rust_json = serde_json::to_value(&rust).expect("rust → value");
-                diff_value(
-                    smoke.fixture,
-                    "",
-                    &golden_json,
-                    &rust_json,
-                    &mut all_divergences,
-                );
-            }
-            d4_finding_count = rust.finding_count;
-            assert_eq!(
-                rust_text, golden_text,
-                "R4 ACCEPTANCE GATE: {} ({}) did NOT byte-match its golden",
-                smoke.fixture, smoke.wave
-            );
-        } else {
-            // DEFERRED wave: the fixture must run cleanly to the L5 boundary, and
-            // the d4-SUBSET of the golden (filtered to the REGISTERED detectors)
-            // must match the Rust output (empty == empty for non-d4 fixtures).
-            let golden_subset = finding_subset(&golden_json, &registered_names);
-            let rust_json = serde_json::to_value(&rust).expect("rust → value");
-            let rust_subset = finding_subset(&rust_json, &registered_names);
-            diff_value(
-                smoke.fixture,
-                ".findings(registered-subset)",
-                &Value::Array(golden_subset.clone()),
-                &Value::Array(rust_subset.clone()),
-                &mut all_divergences,
-            );
-            eprintln!(
-                "R4 {} ({}): deferred to wave {} — registered-subset findings: {} (golden subset: {})",
-                smoke.fixture,
-                smoke.wave,
-                smoke.wave,
-                rust_subset.len(),
-                golden_subset.len(),
-            );
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
         }
     }
 
-    // --- Anti-degenerate (fail-on-zero on the ported detector) --------------
-    assert!(
-        d4_byte_matched,
-        "R4 anti-degenerate: ws-d4-repeated-get did NOT byte-match (acceptance gate failed)"
-    );
-    assert!(
-        d4_finding_count >= 1,
-        "R4 anti-degenerate: ws-d4-repeated-get produced {d4_finding_count} findings — expected ≥1"
-    );
+    // --- R4-A per-detector fixtures -------------------------------------------
+    for smoke in WAVE_A {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
+    // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
+    for (fixture, byte_matched, count) in &ported_results {
+        assert!(
+            *byte_matched,
+            "R4 anti-degenerate: {fixture} did NOT byte-match (acceptance gate failed)"
+        );
+        assert!(
+            *count >= 1,
+            "R4 anti-degenerate: {fixture} produced {count} findings — expected ≥1"
+        );
+    }
+
+    // --- Negative assertions: each new R4-A detector → 0 findings on neutral --
+    for neg in NEGATIVES {
+        let neutral_dir = corpus_dir().join(neg.neutral_fixture);
+        assert!(
+            neutral_dir.is_dir(),
+            "R4 negative: neutral fixture {} not found",
+            neg.neutral_fixture
+        );
+        let detectors = registered_detectors();
+        let names = vec![neg.detector.to_string()];
+        let rust = match assemble_and_resolve_workspace_default(&neutral_dir) {
+            Some(resolved) => {
+                project_r4_findings(&resolved, &detectors, neg.neutral_fixture, &names)
+            }
+            None => R4FindingsProjection {
+                fixture_name: neg.neutral_fixture.to_string(),
+                detectors: names.clone(),
+                finding_count: 0,
+                findings: vec![],
+            },
+        };
+        assert_eq!(
+            rust.finding_count, 0,
+            "R4 negative assertion FAILED: detector {} produced {} finding(s) on neutral fixture {} \
+             (expected 0)",
+            neg.detector, rust.finding_count, neg.neutral_fixture
+        );
+        eprintln!(
+            "R4 negative: {} on {} → {} findings (expected 0) ✓",
+            neg.detector, neg.neutral_fixture, rust.finding_count
+        );
+    }
 
     // --- Allowlist gating ---------------------------------------------------
     all_divergences
@@ -410,10 +558,12 @@ fn differential_r4_findings_match_goldens() {
     );
 
     eprintln!(
-        "R4 differential: {} smoke fixture(s); ws-d4-repeated-get byte-matched ({} finding(s)); \
-         6 fixtures deferred to later waves; allowlist fully consumed ({} entr(y/ies)).",
+        "R4 differential: {} smoke + {} R4-A wave fixture(s); {} ported (all byte-matched); \
+         6 negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
-        d4_finding_count,
+        WAVE_A.len(),
+        ported_results.len(),
+        SMOKE.iter().filter(|s| !s.ported).count(),
         allowlist.len(),
     );
 }
@@ -434,8 +584,14 @@ fn refresh_r4_goldens_from_al_sem() {
     let dst = goldens_dir();
     std::fs::create_dir_all(&dst).expect("mk r4 goldens dir");
     let mut copied = 0usize;
-    for smoke in SMOKE {
-        let name = format!("{}.r4.golden.json", smoke.fixture);
+    // Smoke + wave-A fixtures
+    let all_fixtures: Vec<&str> = SMOKE
+        .iter()
+        .chain(WAVE_A.iter())
+        .map(|s| s.fixture)
+        .collect();
+    for fixture in all_fixtures {
+        let name = format!("{fixture}.r4.golden.json");
         let s = src.join(&name);
         if s.exists() {
             std::fs::copy(&s, dst.join(&name)).unwrap_or_else(|e| panic!("copy {name}: {e}"));

@@ -1,0 +1,159 @@
+{
+  "fixtureName": "ws-d18",
+  "detectors": [
+    "d18-constant-filter-in-loop"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d18-constant-filter-in-loop",
+      "id": "d18/11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/loop0/customer/\"no.\"",
+      "rootCauseKey": "d18/11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/loop0/customer/\"no.\"",
+      "title": "Constant filter applied inside a loop",
+      "rootCause": "ConstantSetFilterInLoop calls SetFilter on Customer.\"No.\" with literal arguments inside a for loop — the filter is identical every iteration and can be hoisted outside.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 21,
+          "startColumn": 12,
+          "endLine": 21,
+          "endColumn": 52
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 12
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 21,
+              "startColumn": 12,
+              "endLine": 21,
+              "endColumn": 52
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7",
+            "syntaxKind": "call_expression"
+          },
+          "note": "SetFilter(\"No.\", '%1', 'C0001') on Customer",
+          "operationId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#896010174b9d011f506419160db2ccd1c0c7ca97e48b0537621c01405b10baf7/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d180:Codeunit:50400"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d180:Table:50400"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the SetRange/SetFilter call outside the loop. The filter state persists across iterations until reset or cleared.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ef94ce7a1cc67f05"
+    },
+    {
+      "detector": "d18-constant-filter-in-loop",
+      "id": "d18/11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/loop0/customer/status",
+      "rootCauseKey": "d18/11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/loop0/customer/status",
+      "title": "Constant filter applied inside a loop",
+      "rootCause": "ConstantSetRangeInLoop calls SetRange on Customer.Status with literal arguments inside a for loop — the filter is identical every iteration and can be hoisted outside.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 12,
+          "endLine": 9,
+          "endColumn": 60
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 12
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 60
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "SetRange(Status, Customer.Status::Open) on Customer",
+          "operationId": "11111111-0000-0000-0000-00000000d180:Codeunit:50400#7a74230810f532595961b5376d0973c4e6b25f52af0d951c3fc18cb13de9957b/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d180:Codeunit:50400"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d180:Table:50400"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the SetRange/SetFilter call outside the loop. The filter state persists across iterations until reset or cleared.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ea36d98860d6bb91"
+    }
+  ]
+}

@@ -420,9 +420,15 @@ fn stable_primary_location_key(f: &StableFinding) -> String {
 /// project + RE-SORT the Finding[] in stable space — the byte-parity surface.
 ///
 /// `resolved` is the L0→L3 source-only model; `detectors` are the registered L5
-/// detectors. `fixture_name` + `detector_names` populate the projection envelope
-/// (`detector_names` is the SMOKE_FIXTURES detector list, not the registered set,
-/// so the envelope matches the al-sem golden even when only a subset is ported).
+/// detectors. `fixture_name` + `detector_names` populate the projection envelope.
+///
+/// Mirrors al-sem's `projectR4Findings`: only findings from the detectors listed in
+/// `detector_names` are included in the output, matching the per-fixture golden scope.
+/// (al-sem passes `detectorNames` to `analyzeWorkspace({ detectors: selectedDetectors })`
+/// so only those detectors run; the Rust port runs all registered detectors and then
+/// filters to the named set — byte-equivalent for ANY requested detector set, because
+/// fingerprint and role-scope are per-finding, and the final stable re-sort is applied
+/// post-filter; the filter is not a single-detector-only crutch.)
 pub fn project_r4_findings(
     resolved: &L3Resolved,
     detectors: &[Detector],
@@ -431,11 +437,16 @@ pub fn project_r4_findings(
 ) -> R4FindingsProjection {
     let RunOutput { findings, .. } = run_detectors(resolved, detectors);
 
+    // Filter to only the named detectors (mirrors al-sem: only selected detectors run).
+    let detector_name_set: std::collections::HashSet<&str> =
+        detector_names.iter().map(|s| s.as_str()).collect();
+
     let map = crate::engine::l4::summary::build_routine_stable_map(&resolved.workspace.routines);
     let stable_finding_id = make_stable_finding_id_fn(&map);
 
     let mut stable: Vec<StableFinding> = findings
         .iter()
+        .filter(|f| detector_name_set.contains(f.detector.as_str()))
         .map(|f| project_finding(f, &map, &stable_finding_id))
         .collect();
 

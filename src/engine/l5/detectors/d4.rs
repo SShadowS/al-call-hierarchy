@@ -10,13 +10,12 @@
 //!
 //! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
 
-use crate::engine::l2::features::{PAnchor, PExpressionInfo};
-use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
+use crate::engine::l2::features::PExpressionInfo;
+use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::finding::{
-    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
-};
+use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
@@ -26,24 +25,6 @@ const DETECTOR: &str = "d4-repeated-lookup-in-loop";
 /// `quoted_identifier`.
 fn is_string_like_literal(info: &PExpressionInfo) -> bool {
     info.kind == "string_literal" || info.kind == "quoted_identifier"
-}
-
-/// Build the internal `SourceAnchor` from an L2 `PAnchor` (which drops
-/// enclosingRoutineId) + the owning routine's internal id. For d4 every anchor
-/// lives in `routine`, so `enclosing_routine_id = routine.id`.
-fn anchor_of(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
-    SourceAnchor {
-        source_unit_id: a.source_unit_id.clone(),
-        start_line: a.start_line,
-        start_column: a.start_column,
-        end_line: a.end_line,
-        end_column: a.end_column,
-        enclosing_routine_id: routine.id.clone(),
-        syntax_kind: a.syntax_kind.clone(),
-        normalized_text_hash: None,
-        leading_context_hash: None,
-        trailing_context_hash: None,
-    }
 }
 
 pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {

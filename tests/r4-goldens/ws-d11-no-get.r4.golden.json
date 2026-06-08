@@ -1,0 +1,68 @@
+{
+  "fixtureName": "ws-d11-no-get",
+  "detectors": [
+    "d11-modify-without-get"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d11-modify-without-get",
+      "id": "d11/11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/op0",
+      "rootCauseKey": "d11/11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/op0",
+      "title": "Modify without Get",
+      "rootCause": "BadNoGet calls Modify on Customer but never loaded it — the record's state may be stale or partial.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/codeunit.al",
+        "range": {
+          "startLine": 6,
+          "startColumn": 2,
+          "endLine": 6,
+          "endColumn": 19
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 2,
+              "endLine": 6,
+              "endColumn": 19
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Modify on Customer with no prior Get/Find in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d11a:Codeunit:50111#881c9fa334f3ac465d5cd49a0006aa72e974ae6d11579f8fc225190f6663601c/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d11a:Codeunit:50111"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d11a:Table:18"
+      ],
+      "fixOptions": [
+        {
+          "description": "Load the record with Get / FindFirst before mutating, or pass it in as a var parameter from a caller that loaded it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4b4b227b4509499b"
+    }
+  ]
+}
