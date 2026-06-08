@@ -1,0 +1,532 @@
+{
+	"description": "R3a-3 cone+coverage vectors. PIPELINE vectors are small inline AL workspaces run through the REAL pipeline (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries → projectR3a3; captured POST-computeSummaries, no dep hooks). They cover: (1) inheritedFactKey dedup (diamond → 1 inherited fact), (2) shortest-path-wins (3-level chain), (3) the equal-distance tie-breaker (two paths at distance=2 to same capability), (4) coverage roll-up (partial inheritedStatus propagated through cone). Hand-authored invariants were asserted against the live projection before emit.",
+	"modelInstanceId": "r0",
+	"appGuid": "3a300000-0000-0000-0000-00000000003a",
+	"pipelineVectorCount": 4,
+	"pipelineVectors": [
+		{
+			"name": "diamond_inheritedfactkey_dedup",
+			"description": "a diamond Caller→Mid1→Leaf.DoInsert and Caller→Mid2→Leaf.DoInsert: Leaf's single direct Insert fact reaches Caller via two paths but de-dupes to ONE inherited fact (inheritedFactKey = op|resourceKind|resourceId|confidence)",
+			"files": [
+				[
+					"a",
+					"table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Leaf { procedure W() var R: Record T; begin R.Insert(true); end; }\ncodeunit 50101 Mids\n{\n    var L: Codeunit Leaf;\n    procedure Mid1() begin L.W(); end;\n    procedure Mid2() begin L.W(); end;\n    procedure Caller() begin Mid1(); Mid2(); end;\n}"
+				]
+			],
+			"expected": {
+				"summaries": [
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2",
+						"capabilityFactsDirect": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "direct",
+								"via": "self",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"capabilityFactsInherited": [],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#041a1b938916fb590e80615ae68439643eb10a89479182021b34a621d5cd2587",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#041a1b938916fb590e80615ae68439643eb10a89479182021b34a621d5cd2587/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#041a1b938916fb590e80615ae68439643eb10a89479182021b34a621d5cd2587",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#08411945d8093572925776b6a916c6f8aa2979e2aef8fdbd98a6be88f79a0795",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#08411945d8093572925776b6a916c6f8aa2979e2aef8fdbd98a6be88f79a0795/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#08411945d8093572925776b6a916c6f8aa2979e2aef8fdbd98a6be88f79a0795",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#1ab5a22e9446e2ed684a3cb785054809e5c73b21aebce2cf99f178a18385c201",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#1ab5a22e9446e2ed684a3cb785054809e5c73b21aebce2cf99f178a18385c201/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#1ab5a22e9446e2ed684a3cb785054809e5c73b21aebce2cf99f178a18385c201",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					}
+				]
+			},
+			"invariants": [
+				"Leaf has exactly 1 direct fact",
+				"Caller has exactly 1 inherited fact (diamond de-duped)",
+				"≥1 routine has inherited facts",
+				"all inherited facts have provenance=inherited",
+				"all direct facts have provenance=direct and via=self"
+			]
+		},
+		{
+			"name": "chain_shortest_path_wins",
+			"description": "a 3-level chain Top→Mid→Leaf where Leaf has a direct Insert; Mid inherits at distance=1; Top inherits at distance=2 — confirming shortest-path propagation over multiple hops",
+			"files": [
+				[
+					"a",
+					"table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Leaf { procedure W() var R: Record T; begin R.Insert(true); end; }\ncodeunit 50101 Mid { var L: Codeunit Leaf; procedure Go() begin L.W(); end; }\ncodeunit 50102 Top { var M: Codeunit Mid; procedure Run() begin M.Go(); end; }"
+				]
+			],
+			"expected": {
+				"summaries": [
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2",
+						"capabilityFactsDirect": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "direct",
+								"via": "self",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"capabilityFactsInherited": [],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#2edeb181de09db2c8ebc805742978e9327ffaae8728ba00c2bd71fe7283b85d2",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#2edeb181de09db2c8ebc805742978e9327ffaae8728ba00c2bd71fe7283b85d2/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#2edeb181de09db2c8ebc805742978e9327ffaae8728ba00c2bd71fe7283b85d2",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#33d35a619ad83f9845b45eef2f6cd0c2f24682fdb3229af53ce2a096ca6e5dd2/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f4d305b5727b3e4b165def61c389be53f4098f08c90b618bf006289d95695411/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					}
+				]
+			},
+			"invariants": [
+				"Leaf has 1 direct fact",
+				"Mid has 1 inherited fact at distance ≥1",
+				"Top has 1 inherited fact (distance ≥2)",
+				"Top's inherited fact has via=call (via a callee chain)"
+			]
+		},
+		{
+			"name": "equal_distance_tie",
+			"description": "two equal-distance paths (distance=2) from Caller to the same Insert capability: Caller→Path1→Leaf and Caller→Path2→Leaf. The tie-breaker (canonical repKey + edgeSortKey) deterministically selects one winner — exercising the equal-distance branch in capability-cone.ts",
+			"files": [
+				[
+					"a",
+					"table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Leaf { procedure DoInsert() var R: Record T; begin R.Insert(true); end; }\ncodeunit 50101 Path1 { var L: Codeunit Leaf; procedure Via1() begin L.DoInsert(); end; }\ncodeunit 50102 Path2 { var L: Codeunit Leaf; procedure Via2() begin L.DoInsert(); end; }\ncodeunit 50103 Caller\n{\n    var P1: Codeunit Path1;\n    var P2: Codeunit Path2;\n    procedure Run() begin P1.Via1(); P2.Via2(); end;\n}"
+				]
+			],
+			"expected": {
+				"summaries": [
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b",
+						"capabilityFactsDirect": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "direct",
+								"via": "self",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b/op0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/2f0269b267cfdda1e1acc83f764ad6a51ed8b25a1fcaf34ffddbefaf5747f0bb/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"capabilityFactsInherited": [],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#84cbb2e991002377e68baaed972736805898e90f8e43eca0344e51e44a049599",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#84cbb2e991002377e68baaed972736805898e90f8e43eca0344e51e44a049599/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/2f0269b267cfdda1e1acc83f764ad6a51ed8b25a1fcaf34ffddbefaf5747f0bb/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#84cbb2e991002377e68baaed972736805898e90f8e43eca0344e51e44a049599",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#4220a4d31c94a2b1b867ce22aae44d52fa8511108968dd3b831f8962bdb9a3b4",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#4220a4d31c94a2b1b867ce22aae44d52fa8511108968dd3b831f8962bdb9a3b4/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/2f0269b267cfdda1e1acc83f764ad6a51ed8b25a1fcaf34ffddbefaf5747f0bb/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50102#4220a4d31c94a2b1b867ce22aae44d52fa8511108968dd3b831f8962bdb9a3b4",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50103#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#331c9694c5c911c2a1bd603dc7aa9d2d16669cdb6f4084370c97624c1566f97b/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50103#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/2f0269b267cfdda1e1acc83f764ad6a51ed8b25a1fcaf34ffddbefaf5747f0bb/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50103#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+							"directStatus": "complete",
+							"inheritedStatus": "complete",
+							"reasons": [],
+							"unknownTargets": []
+						}
+					}
+				]
+			},
+			"invariants": [
+				"Leaf has 1 direct Insert fact",
+				"Caller has exactly 1 inherited fact (tie de-duped to one)",
+				"the tie resolves deterministically (re-running gives the same inherited witness)",
+				"all inherited facts have provenance=inherited and witnessCallsiteId present"
+			]
+		},
+		{
+			"name": "coverage_rollup_partial",
+			"description": "a routine calling an inner routine that has unresolved calls gets non-trivial coverage (partial inheritedStatus) propagated through the cone; the coverage record carries reasons including unresolved-call or object-run-unresolved",
+			"files": [
+				[
+					"a",
+					"table 50000 T { fields { field(1; \"No.\"; Code[20]) { } } keys { key(K; \"No.\") { } } }\ncodeunit 50100 Inner\n{\n    procedure DoWork()\n    var\n        R: Record T;\n    begin\n        R.Insert(true);\n        // Call an unresolvable Codeunit.Run to make coverage partial\n        Codeunit.Run(0);\n    end;\n}\ncodeunit 50101 Outer { var I: Codeunit Inner; procedure Run() begin I.DoWork(); end; }"
+				]
+			],
+			"expected": {
+				"summaries": [
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+						"capabilityFactsDirect": [
+							{
+								"op": "execute",
+								"resourceKind": "codeunit",
+								"confidence": "static",
+								"provenance": "direct",
+								"via": "self",
+								"resourceArgSource": {
+									"kind": "literal",
+									"value": "0"
+								},
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e/cs0",
+								"extra": {
+									"kind": "dispatch",
+									"objectType": "Codeunit"
+								}
+							},
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "direct",
+								"via": "self",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e/op0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f3847ef1fca8788ad2765bc38216be0130a4ea0dcc7162c45e2cca8b16ab8313/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"capabilityFactsInherited": [],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+							"directStatus": "complete",
+							"inheritedStatus": "partial",
+							"reasons": ["object-run-unresolved"],
+							"unknownTargets": []
+						}
+					},
+					{
+						"routineId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+						"capabilityFactsDirect": [],
+						"capabilityFactsInherited": [
+							{
+								"op": "execute",
+								"resourceKind": "codeunit",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceArgSource": {
+									"kind": "literal",
+									"value": "0"
+								},
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+								"extra": {
+									"kind": "dispatch",
+									"objectType": "Codeunit"
+								}
+							},
+							{
+								"op": "insert",
+								"resourceKind": "table",
+								"confidence": "static",
+								"provenance": "inherited",
+								"via": "call",
+								"resourceId": "3a300000-0000-0000-0000-00000000003a:Table:50000",
+								"witnessOperationId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50100#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e/op0",
+								"witnessCallsiteId": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+								"extra": {
+									"kind": "table",
+									"opSubtype": "Insert",
+									"recordVariableId": "r0/f3847ef1fca8788ad2765bc38216be0130a4ea0dcc7162c45e2cca8b16ab8313/rv/r",
+									"tempState": {
+										"kind": "known",
+										"value": false
+									}
+								}
+							}
+						],
+						"coverage": {
+							"subject": "3a300000-0000-0000-0000-00000000003a:Codeunit:50101#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+							"directStatus": "complete",
+							"inheritedStatus": "partial",
+							"reasons": ["object-run-unresolved"],
+							"unknownTargets": []
+						}
+					}
+				]
+			},
+			"invariants": [
+				"≥1 routine has non-trivial coverage (not complete/complete)",
+				"Outer has non-trivial inheritedStatus",
+				"≥1 coverage record has non-empty reasons"
+			]
+		}
+	]
+}
