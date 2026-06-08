@@ -50,9 +50,29 @@ fn aldump_l3_cross_app_emits_nonempty_resolution() {
         "≥1 cross-app member call resolved to a dep routine"
     );
 
-    // coverage.opaqueApps NON-empty (the symbol-only deps).
+    // coverage.opaqueApps is EXACTLY [] — FAITHFUL to a KNOWN al-sem latent bug (REV3):
+    // buildCoverage filters index.identity.apps by sourceKind==="symbol-only", but
+    // withDependencyArtifacts never populates identity.apps with the symbol-only deps, so
+    // opaqueApps is structurally always empty. The cross-app COVERAGE signal is instead
+    // the unresolvedCallsites resolution delta (the resolved cross-app member call above
+    // dropped OUT; the external-target member miss stays IN), proven in the R2.5b-d
+    // differential / oracle. The opaqueApps fix is deferred to a post-migration
+    // fix-then-freeze.
     let opaque = v["coverage"]["opaqueApps"].as_array().expect("opaqueApps");
-    assert!(!opaque.is_empty(), "opaqueApps non-empty cross-app");
+    assert!(
+        opaque.is_empty(),
+        "opaqueApps == [] (faithful to the al-sem latent bug — REV3)"
+    );
+    // The cross-app coverage WIN is still observable: the external-target member miss
+    // stays IN unresolvedCallsites (proving the unresolved multiset reflects cross-app
+    // resolution, not a source-only "everything unresolved" or empty surface).
+    let unresolved = v["coverage"]["unresolvedCallsites"]
+        .as_array()
+        .expect("unresolvedCallsites");
+    assert!(
+        !unresolved.is_empty(),
+        "unresolvedCallsites carries the member-not-found + external-target misses"
+    );
 
     // ≥2 event edges (ws→dep + dep→ws).
     let edges = v["eventGraph"]["edges"]

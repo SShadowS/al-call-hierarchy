@@ -286,12 +286,26 @@ impl L3Resolved {
 
     /// CROSS-APP (R2.5b) coverage capture: the merged workspace+dep model with the
     /// real dep ledger. `apps` is `(appGuid, sourceKind)` for the workspace ("source")
-    /// plus each dep ("symbol-only" | "app-source"); symbol-only deps populate
-    /// `opaqueApps` (NON-empty cross-app, vs the source-only baseline's empty).
+    /// plus each dep ("symbol-only" | "app-source").
     ///
-    /// `declared_dep_app_guids` / `fetched_app_guids` thread the member opaque-vs-
-    /// external-target split into `resolve_calls`, so the unresolved-callsite multiset
-    /// reflects cross-app resolution. NO new algorithm — the merged input + the ledger.
+    /// REV3 — `opaqueApps` is structurally `[]` (FAITHFUL to a KNOWN al-sem latent bug,
+    /// NOT a miss). al-sem's `buildCoverage` (`src/resolve/coverage.ts:37-39`) computes
+    /// `opaqueApps = index.identity.apps.filter(sourceKind==="symbol-only")`, but
+    /// `withDependencyArtifacts` (`src/deps/dependency-artifact.ts:201-217`) appends the
+    /// dep apps to `index.apps` (the `App[]` collection — which has NO `sourceKind`) and
+    /// spreads `...index`, leaving `index.identity.apps` UNCHANGED; `analyzeWorkspace`
+    /// never stamps the symbol-only dep `AppIdentity`s into `identity.apps`. So al-sem's
+    /// `opaqueApps` is ALWAYS empty in the workspace path — source-only AND cross-app.
+    /// Per plan Rev 3 / Option B we MIRROR current al-sem: pass ONLY the WORKSPACE
+    /// (`"source"`) apps to `build_coverage`, so `opaqueApps` stays `[]` (the symbol-only
+    /// dep rows are dropped here, reproducing al-sem's `identity.apps` NOT carrying them).
+    /// The opaqueApps fix is deferred to a consolidated post-migration fix-then-freeze
+    /// (alongside the primaryDependencies bug).
+    ///
+    /// `declared_dep_app_guids` / `fetched_app_guids` are accepted for symmetry but NOT
+    /// threaded into the member opaque-vs-external-target split (PARITY: al-sem's
+    /// `primaryDependencies` is undefined DURING resolve ⇒ unfetched=false ⇒ member
+    /// misses are external-target, never opaque — the known al-sem quirk).
     pub fn project_coverage_cross_app(
         &self,
         units: &[CoverageUnit],
@@ -304,8 +318,7 @@ impl L3Resolved {
         let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
         // PARITY: the call resolution INSIDE coverage runs exactly as al-sem's
         // resolveModel — primaryDependencies undefined ⇒ unfetched=false (member
-        // misses are external-target, never opaque). The dep ledger feeds ONLY
-        // `opaqueApps` (the symbol-only `apps` rows), NOT the member split.
+        // misses are external-target, never opaque).
         let no_deps: Vec<DeclaredDependency> = Vec::new();
         let no_fetched: Vec<String> = Vec::new();
         let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
@@ -316,9 +329,18 @@ impl L3Resolved {
             .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
             .collect();
 
+        // REV3: mirror al-sem's `identity.apps` — workspace ("source") apps ONLY. The
+        // symbol-only dep rows are NOT carried into the opaqueApps filter (al-sem's
+        // identity.apps never gains them), so `opaqueApps` is faithfully `[]`.
+        let workspace_apps: Vec<(String, String)> = apps
+            .iter()
+            .filter(|(_, source_kind)| source_kind == "source")
+            .cloned()
+            .collect();
+
         build_coverage(
             &ws.routines,
-            apps,
+            &workspace_apps,
             &resolved.edges,
             units,
             index_diagnostics,
