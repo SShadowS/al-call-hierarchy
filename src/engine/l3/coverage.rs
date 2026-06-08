@@ -292,42 +292,41 @@ impl L3Resolved {
     /// real dep ledger. `apps` is `(appGuid, sourceKind)` for the workspace ("source")
     /// plus each dep ("symbol-only" | "app-source").
     ///
-    /// FIXED (R3a-0 semantic-oracle epoch, al-sem `81d538a`+`f1650ba`):
+    /// FIXED (R3a-0 semantic-oracle epoch, al-sem `81d538a`+`f1650ba`+`93e360d`):
     ///   - `opaqueApps` = the `sourceKind == "symbol-only"` dep app guids. al-sem's Fix 2
-    ///     now stamps the dep `AppIdentity`s (with `sourceKind`, derived from the artifact
+    ///     stamps the dep `AppIdentity`s (with `sourceKind`, derived from the artifact
     ///     header) into `index.identity.apps` via `withDependencyArtifacts`, and
     ///     `buildCoverage` reads `identity.apps.filter(sourceKind=="symbol-only")`. So we
     ///     pass ALL apps (workspace + deps) to `build_coverage` and let its `symbol-only`
-    ///     filter populate `opaqueApps` — no longer dropped to `[]`. The al-sem golden's
-    ///     `opaqueApps` MOVED accordingly (Fix 2 is active in the R2.5b capture harness,
-    ///     which calls `withDependencyArtifacts`).
+    ///     filter populate `opaqueApps`.
+    ///   - The call resolution INSIDE coverage threads the REAL declared/fetched ledger
+    ///     (Fix 1: al-sem now reads `identity.primaryDependencies` DURING resolve, in both
+    ///     production AND the capture harness as of `93e360d`). The `unresolvedCallsites`
+    ///     multiset matches al-sem's resolved `model.callGraph`.
     ///
-    /// CAPTURE-ORDER CAVEAT (al-sem `r2.5b-cross-app-capture.ts`): the committed al-sem
-    /// R2.5b goldens are captured with `primaryDependencies` stamped AFTER `resolveModel`
-    /// (the OLD order), so Fix 1's member-`opaque` branch is NOT reflected in the golden's
-    /// `unresolvedCallsites` for THIS corpus — which DOES have an unfetched declared dep
-    /// (`Lib Absent`) + a `gone.M()` member miss. We therefore resolve the call graph here
-    /// with the SAME empty ledger the capture used (NOT the production-fixed ledger), so the
-    /// coverage `unresolvedCallsites` byte-matches the committed golden. Threading the real
-    /// ledger would correctly produce `opaque` (and DROP the `gone.M()` callsite) — matching
-    /// PRODUCTION `analyzeWorkspace` — but DIVERGE from the stale golden. See the R3a-0
-    /// report: this golden staleness is an al-sem capture-harness concern, NOT a Rust bug.
+    /// On the ALL-FETCHED R2.5b corpus (the prior `Lib Absent` unfetched dep was removed in
+    /// al-sem `93e360d`) threading the real ledger is BYTE-INVARIANT vs the empty ledger:
+    /// `has_unfetched_declared_dependency` is false, so the `gone.M()` member miss stays
+    /// `external-target` and remains IN `unresolvedCallsites`.
     pub fn project_coverage_cross_app(
         &self,
         units: &[CoverageUnit],
         index_diagnostics: &[CoverageDiagnostic],
         apps: &[(String, String)],
-        _declared_dep_app_guids: &[String],
-        _fetched_app_guids: &[String],
+        declared_dep_app_guids: &[String],
+        fetched_app_guids: &[String],
     ) -> AnalysisCoverage {
         let ws = &self.workspace;
         let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-        // CAPTURE-ORDER PARITY: resolve with the EMPTY ledger the al-sem R2.5b capture used
-        // (stamps primaryDependencies AFTER resolve), so unresolvedCallsites byte-matches the
-        // committed golden. (Production al-sem threads the real ledger → gone.M() opaque.)
-        let no_deps: Vec<DeclaredDependency> = Vec::new();
-        let no_fetched: Vec<String> = Vec::new();
-        let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+        // Thread the REAL declared/fetched ledger — mirrors fixed production + capture al-sem
+        // (reads primaryDependencies DURING resolve). Byte-invariant on the all-fetched corpus.
+        let declared: Vec<DeclaredDependency> = declared_dep_app_guids
+            .iter()
+            .map(|app_guid| DeclaredDependency {
+                app_guid: app_guid.clone(),
+            })
+            .collect();
+        let resolved = resolve_calls(ws, &symbols, &declared, fetched_app_guids);
 
         let by_internal: HashMap<String, String> = ws
             .routines

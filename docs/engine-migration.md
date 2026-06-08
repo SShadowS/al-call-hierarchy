@@ -25,7 +25,7 @@ and `docs/`.
 | **R2 (= R2a+R2b+R2c+R2d)** | Full **source-only L3 resolve** parity: record types + call graph + event graph + coverage at the `resolveModel` (post-resolve / pre-summary) boundary | **COMPLETE** — all four sub-gates SHIPPED; the full source-only L3 surface is at byte-parity with al-sem over the corpus + a native L3-direct oracle per sub-gate |
 | **R2.5a** | Symbol-only `.app` reader (ZIP → `NavxManifest.xml` + `SymbolReference.json` → shared `Routine`/`ObjectDecl`/`Table`/`Field` shape) + the **dependency-entity subset of the merged index** at byte-parity (StableObjectId/StableTableId/StableFieldId/StableRoutineId, `signatureFingerprint`, `attributesParsed`, object props, table fields/keys, routine accessModifier, app `sourceKind`), captured POST-`withDependencyArtifacts`/-`resolveModel` with `noDepSummaries:true` — incl. the L3 **extension-field-merge capture-point** (dep `TableExtension` fields merged INTO the base table) | **SHIPPED** — 2/2 fixtures byte-match, `KNOWN_DIVERGENCES` empty, anti-degenerate matrix manifest-oracle-equal (objects=16/tables=2/routines=11; dispatch rb=7/ext=2/bare=6/tbl=1; sourceKind app=1/symbol=1; events pub=1/sub=1; mergedExtFields=1), native structural oracle green (6 checks); ABI-vs-native fix-then-freeze = NO fix needed (native==ABI 1:1). NEXT: **R2.5b** (cross-app L3) |
 | **R2.5b** | Cross-app **L3 RESOLUTION** over the merged (workspace + `.app`-dep) index — the R2a–R2d L3 surfaces re-run with deps no longer opaque: (a) a record var typed as a DEP table binds to the dep StableTableId + dep/ws TableExtension fields merge across the boundary; (b) `cu.M()` on a PRESENT dep codeunit resolves to the dep StableRoutineId (the source-only `opaque`→`resolved`/`external-target` transitions; the edge does NOT gate on the dep routine's `internal`/`local` accessModifier); (c) a `[EventSubscriber]` ↔ dep-published `[IntegrationEvent]` links to the dep publisher EventId (both directions); (d) coverage `routinesTotal` counts dep routines + the `unresolvedCallsites` multiset reflects cross-app resolution. Captured POST-`resolveModel` over the merged index (`noDepSummaries:true`), stable ids | **SHIPPED** — all 4 sub-gate differentials byte-match (rt/cg/eg/cov, 1 cross-app fixture each), `KNOWN_DIVERGENCES` empty; cross-app matrices healthy (rt: depBoundRecordVars=2/depBoundRecordOps=2/depExtMergedFields=1; cg: resolvedToDepRoutine=4/memberNotFound=1/opaque=1/externalTarget=1/upgradedBindings=1; eg: resolvedToDepPublisher=1/depSubscriberEdges=1/maybe=1; cov: crossAppResolvedAbsent=4/externalTargetPresent=1/unresolved=2/opaqueApps=2-symbol-only-deps after R3a-0 Fix 2); 4 native oracles per sub-gate green + the cross_app_l3 smoke/poison/aldump tests green. The TWO al-sem latent bugs are now **FIXED in R3a-0** (`opaqueApps` lists the symbol-only deps; the `primaryDependencies`-before-resolve member-opaque branch is live in production) — see the R3a-0 row + the "two latent bugs — FIXED" section below. R2.5 COMPLETE → L3 COMPLETE |
-| **R3a-0** | The **semantic oracle epoch** — al-sem fixes the two deferred latent bugs that feed L4 (`81d538a` primaryDependencies-before-resolve + opaqueApps populated; `f1650ba` corpus proof + golden regen; artifact schema 1→2, cache `summarySchema` 32→33 / `depCache` 7→8). The Rust R2.5 emitters re-flip to the corrected al-sem; the R2.5 differential must re-pass at ZERO divergences before R3a-1. | **SHIPPED** — Fix 2 (opaqueApps) flipped: the cov emitter passes ALL apps so the `symbol-only` filter lists the dep guids (`["dddddddd-…01","eeeeeeee-…02"]`); the cov golden copied byte-for-byte from al-sem. The full R2.5 differential (rt/cg/eg/cov) re-passes at 0 divergences, `KNOWN_DIVERGENCES` empty. NEW `tests/r3a0_unfetched_dep_opaque.rs` proves the Fix-1 member-`opaque` resolver branch (unfetched-declared-dep + `cu.M()` → `opaque`, absent from unresolvedCallsites; no-dep control → `external-target`, present). **CAVEAT (reported, not papered over):** the al-sem R2.5b cg/cov GOLDENS are STALE on Fix 1 for this corpus — the al-sem capture harness still stamps `primaryDependencies` AFTER resolve, so the committed golden's `gone.M()` member miss stays `external-target` (2 unresolved), while PRODUCTION al-sem (verified) classifies it `opaque` (1 unresolved). The Rust cg/cov emitters thread the EMPTY ledger to byte-match the committed golden; threading the real ledger would match production but diverge from the stale golden. See "two latent bugs — FIXED" below. |
+| **R3a-0** | The **semantic oracle epoch** — al-sem fixes the two deferred latent bugs that feed L4 (`81d538a` primaryDependencies-before-resolve + opaqueApps populated; `f1650ba` corpus proof; `93e360d` R2.5b capture stamps `primaryDependencies` BEFORE resolve = production-faithful + the corpus made ALL-FETCHED; artifact schema 1→2, cache `summarySchema` 32→33 / `depCache` 7→8). The Rust R2.5 emitters re-flip to the corrected al-sem; the R2.5 differential must re-pass at ZERO divergences before R3a-1. | **SHIPPED** — BOTH emitters flipped to the FIXED behavior. **Fix 2 (opaqueApps):** the cov emitter passes ALL apps so the `symbol-only` filter lists the dep guids (`["dddddddd-…01","eeeeeeee-…02"]`). **Fix 1 (real ledger):** the cg + cov cross-app emitters thread the REAL declared/fetched ledger (mirroring fixed production+capture al-sem); the Rust fixture `app.json` dropped `Lib Absent` to match the all-fetched corpus. On the all-fetched corpus this is BYTE-INVARIANT (declared=fetched={Lib Core, Lib Ext} → `has_unfetched_declared_dependency` false → `gone.M()` → `external-target` genuinely; object-run → `opaque`). All 4 R2.5b content goldens (rt/cg/cov/eg) byte-match the current al-sem `93e360d`; the cov golden was re-copied. The full R2.5 differential re-passes at 0 divergences, `KNOWN_DIVERGENCES` empty. `tests/r3a0_unfetched_dep_opaque.rs` proves the Fix-1 member-`opaque` resolver branch (unfetched-declared-dep + `cu.M()` → `opaque`, absent from unresolvedCallsites; no-dep control → `external-target`, present). |
 
 ---
 
@@ -1110,32 +1110,27 @@ FIXED in al-sem, and the Rust emitters re-flip to the corrected behavior:
    golden was copied byte-for-byte from al-sem. The cov/smoke/aldump oracles now assert
    the non-empty `opaqueApps`.
 2. **`primaryDependencies` stamped BEFORE `resolveModel` → the member-call `opaque`
-   branch is live** (was dead) — **FIXED in al-sem R3a-0 (Fix 1).** al-sem now stamps
-   `identity.primaryDependencies` onto the merged index BEFORE `resolveModel`, so
-   `hasUnfetchedDeclaredDependency` reads the real declared deps DURING resolution: a
-   member miss whose object is absent into an UNFETCHED declared dep classifies `opaque`
-   (was over-claiming `external-target`). The Rust **resolver** already implements this
-   branch; `tests/r3a0_unfetched_dep_opaque.rs` proves it (unfetched-declared-dep +
-   `cu.M()` → `opaque`, absent from `unresolvedCallsites`; no-dep control →
-   `external-target`, present).
-
-   **REPORTED CAVEAT — the al-sem R2.5b GOLDENS are STALE on Fix 1 for this corpus.**
-   The al-sem R2.5b capture harness (`scripts/r2.5b-cross-app-capture.ts`) deliberately
-   still stamps `primaryDependencies` AFTER resolve (to remain a byte-stable projection
-   harness), and its comment claims the corpus is "stamp-order-invariant" because "member
-   calls all hit FETCHED deps." That claim is FALSE for this fixture: it declares
-   `Lib Absent` (`ffffffff-…03`, no `.app` in `.alpackages` → UNFETCHED) and has a
-   `gone.M()` member call into "Nowhere Cu" (an object in no fetched dep). So PRODUCTION
-   al-sem `analyzeWorkspace` over this fixture (VERIFIED) classifies `gone.M()` `opaque`
-   and DROPS it → `unresolvedCallsites` has 1 entry; but the committed golden (captured
-   with the OLD order) shows `external-target` → 2 entries. The committed al-sem cg AND
-   cov goldens are thus internally inconsistent (Fix 2 applied, Fix 1 NOT). The Rust
-   cg/cov cross-app emitters therefore thread the EMPTY ledger to byte-match the committed
-   golden; threading the real ledger would match PRODUCTION al-sem but DIVERGE from the
-   stale golden. This is an **al-sem capture-harness concern, not a Rust port bug** — it
-   should be resolved al-sem-side (regenerate the R2.5b goldens from the production path,
-   or make the capture stamp before resolve) before R3a-1 relies on the cross-app
-   `unresolvedCallsites`/member-resolution surface.
+   branch is live** (was dead) — **FIXED in al-sem R3a-0 (Fix 1, `81d538a` production +
+   `93e360d` capture).** al-sem now stamps `identity.primaryDependencies` onto the merged
+   index BEFORE `resolveModel` — in BOTH production `analyzeWorkspace` AND the R2.5b
+   capture harness (`93e360d`, enforced by a new contract test asserting
+   capture===production) — so `hasUnfetchedDeclaredDependency` reads the real declared
+   deps DURING resolution: a member miss whose object is absent into an UNFETCHED declared
+   dep classifies `opaque` (was over-claiming `external-target`). To keep the cg matrix's
+   external-target axis covered under the fixed order, al-sem ALSO made the R2.5b corpus
+   **ALL-FETCHED** (removed the prior `Lib Absent` unfetched dep, `93e360d`): with
+   declared = fetched = {Lib Core, Lib Ext}, `gone.M()` (absent object, all deps fetched)
+   → `external-target` GENUINELY, and `Codeunit.Run("Absent Dep Cu")` (object-run,
+   ledger-independent) → `opaque`. **Rust flip:** the cg + cov cross-app emitters
+   (`project_call_graph_cross_app` / `project_coverage_cross_app`) thread the REAL
+   declared/fetched ledger (was empty); the Rust fixture `app.json` dropped `Lib Absent` to
+   match the all-fetched corpus. On the all-fetched corpus this is BYTE-INVARIANT vs the
+   empty ledger (the cg golden is byte-unchanged), so all 4 content goldens still match.
+   The unfetched-declared-dep member-`opaque` branch is proven out-of-corpus by
+   `tests/r3a0_unfetched_dep_opaque.rs` (unfetched-declared-dep + `cu.M()` → `opaque`,
+   absent from `unresolvedCallsites`; no-dep control → `external-target`, present). The
+   earlier golden-staleness concern (an al-sem capture-harness bug) is **RESOLVED** in
+   `93e360d`.
 
 ### Covered vs deferred (R2.5b — honest)
 
@@ -1147,10 +1142,12 @@ FIXED in al-sem, and the Rust emitters re-flip to the corrected behavior:
   routines + the cross-app `unresolvedCallsites` multiset delta. 4/4 sub-gate
   differentials byte-match + 4 native oracles + the smoke/poison/aldump guards.
 - **Fixed at R3a-0:** the two latent al-sem bugs above (`opaqueApps` non-empty + the
-  member-`opaque` branch) — the Rust emitters re-flipped (Fix 2 applied; Fix 1 ledger
-  held at empty to match the stale golden, see the caveat).
-- **Deferred:** the `analysisGaps` per-app gap derivation (tied to the opaqueApps surface
-  → revisited when the al-sem golden staleness is resolved); the
+  member-`opaque` branch) — BOTH Rust emitters re-flipped to the corrected behavior (Fix 2
+  applied; Fix 1 real ledger threaded into the cg + cov cross-app projections, byte-invariant
+  on the all-fetched corpus). The al-sem capture-order golden-staleness is resolved
+  (`93e360d`).
+- **Deferred:** the `analysisGaps` per-app gap derivation (tied to the opaqueApps surface,
+  revisited at R3/R4); the
   **distinct `EventSymbol` entity as a first-class cross-app entity** (at this capture
   point events project through the same EventSymbol/EventEdge shape as source-only
   R2c — no NEW cross-app entity materializes); the L4 dependency SUMMARIES +
@@ -1208,7 +1205,7 @@ R1/R2a–R2d/R2.5a/R2.5b goldens.
 | L3 (resolve) | **R2d** (coverage, source-only) | **DONE** — 158/158 + coverage matrix + manifest oracle (incl. max-dup/decremented axes) + native L3-direct oracle (5 invariants) |
 | L3 (resolve) | **R2 (= R2a+R2b+R2c+R2d)** | **SOURCE-ONLY L3 COMPLETE** — full source-only L3 surface at byte-parity + a native L3-direct oracle per sub-gate |
 | L3 (deps) | **R2.5a** (`.app` symbol reader + merged-index identity parity) | **DONE** — 2/2 fixtures byte-match + anti-degenerate matrix + manifest oracle + 6 structural oracle checks; extension-field-merge capture-point reproduced; ABI-vs-native fix-then-freeze = NO fix needed (pipelines converged 1:1) |
-| L3 (deps) | **R2.5b** (cross-app L3 resolution) | **DONE** — 4/4 sub-gate differentials byte-match (rt/cg/eg/cov) + 4 native oracles + smoke/poison/aldump guards; cross-app matrices healthy; `KNOWN_DIVERGENCES` empty; TWO al-sem latent bugs (`opaqueApps`=`[]`; member-opaque dead) faithfully MIRRORED → consolidated post-migration fix-then-freeze |
+| L3 (deps) | **R2.5b** (cross-app L3 resolution) | **DONE** — 4/4 sub-gate differentials byte-match (rt/cg/eg/cov) + 4 native oracles + smoke/poison/aldump guards; cross-app matrices healthy; `KNOWN_DIVERGENCES` empty; the TWO al-sem latent bugs (`opaqueApps`; member-opaque) **FIXED in R3a-0** — both Rust emitters re-flipped to the corrected behavior |
 | L3 (deps) | **R2.5 (= R2.5a + R2.5b)** | **CROSS-APP L3 COMPLETE** — `.app` identity parity + cross-app L3 resolution at byte-parity |
 | **L3 (resolve)** | **L3 = R2 (source-only) + R2.5 (cross-app)** | **L3 COMPLETE** — record types + call graph + event graph + coverage at byte-parity, source-only AND cross-app, each with a native L3-direct oracle |
 | L4 (summaries) | R3 (combined graph → Tarjan SCC → finite monotone fixed-point `RoutineSummary` + Salsa incrementality) | not started — the hard incremental gate |
@@ -1223,9 +1220,12 @@ types → dep tables, call graph → dep routines, event graph → dep publisher
 counting dep routines). The TWO latent al-sem bugs (`opaqueApps` always `[]`; the
 member-call `opaque` branch dead because `primaryDependencies` was stamped after
 `resolveModel`) are **FIXED in R3a-0** (the semantic oracle epoch): `opaqueApps` now
-lists the symbol-only deps (Rust cov emitter re-flipped, golden re-copied) and the
-member-`opaque` resolver branch is live + proven, with one REPORTED caveat that the
-al-sem R2.5b goldens remain stale on Fix 1 for the corpus (an al-sem capture-harness
-concern). NEXT: **R3** (L4 summaries — combined graph → Tarjan SCC
-condensation → finite monotone fixed-point `RoutineSummary`, plus Salsa
-incrementality), then R4 (L5 detectors) and the product surface.
+lists the symbol-only deps (Rust cov emitter re-flipped, golden re-copied), and the cg +
+cov cross-app emitters thread the REAL declared/fetched ledger mirroring fixed production
+al-sem — with the member-`opaque` resolver branch proven by
+`tests/r3a0_unfetched_dep_opaque.rs`. The corpus is ALL-FETCHED (al-sem `93e360d` removed
+the prior `Lib Absent` unfetched dep + made the capture stamp `primaryDependencies` before
+resolve), so the flip is byte-invariant and all 4 content goldens still match. NEXT: **R3**
+(L4 summaries — combined graph → Tarjan SCC condensation → finite monotone fixed-point
+`RoutineSummary`, plus Salsa incrementality), then R4 (L5 detectors) and the product
+surface.

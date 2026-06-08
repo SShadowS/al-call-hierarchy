@@ -22,22 +22,20 @@
 //! modelInstanceId pinned to `r2.5b` on BOTH sides (the operationId/callsiteId carry
 //! that prefix; the StableRoutineId keys are modelInstanceId-independent).
 //!
-//! ## The opaque-vs-external-target split — CAPTURE-ORDER parity (R3a-0)
+//! ## The opaque-vs-external-target split (R3a-0 — real ledger threaded)
 //!
-//! The committed al-sem R2.5b cg golden is captured with the EMPTY ledger: the al-sem
-//! R2.5b capture harness (`r2.5b-cross-app-capture.ts`) stamps `primaryDependencies`
-//! AFTER `resolveModel`, so during its capture a member call to an ABSENT object is
-//! `external-target`, NEVER member-opaque. `project_call_graph_cross_app` passes EMPTY
-//! declared/fetched into the member split to byte-match that golden.
+//! As of R3a-0 (al-sem `81d538a` Fix 1 + capture fix `93e360d`), both PRODUCTION
+//! `analyzeWorkspace` AND the R2.5b capture harness stamp `primaryDependencies` BEFORE
+//! `resolveModel`, so the resolver reads the REAL declared deps DURING resolution.
+//! `project_call_graph_cross_app` threads the real declared/fetched ledger to mirror this.
 //!
-//! HOWEVER — PRODUCTION al-sem (post-R3a-0, `analyzeWorkspace`) stamps
-//! `primaryDependencies` BEFORE resolve (Fix 1), so for THIS corpus — which declares
-//! `Lib Absent` (unfetched) + has a `gone.M()` member miss — production classifies the
-//! member miss `opaque` and DROPS it from `unresolvedCallsites`. The committed golden is
-//! therefore STALE w.r.t. production (an al-sem capture-harness concern, see the R3a-0
-//! report). The ONLY ledger-independent genuine cross-app `opaque` is the OBJECT-RUN form
-//! (`Codeunit.Run` into an absent declared dep). The production member-`opaque` resolver
-//! behavior is proven by `tests/r3a0_unfetched_dep_opaque.rs`.
+//! On the ALL-FETCHED corpus (declared = fetched = {Lib Core, Lib Ext}; the prior
+//! `Lib Absent` unfetched dep was removed in `93e360d`) this is BYTE-INVARIANT:
+//! `has_unfetched_declared_dependency` is false, so the `gone.M()` member miss into an
+//! absent object is `external-target` GENUINELY (preserving the external-target axis), and
+//! the ONLY genuine cross-app `opaque` is the ledger-independent OBJECT-RUN form
+//! (`Codeunit.Run("Absent Dep Cu")`). The unfetched-declared-dep member-`opaque` branch
+//! (Fix 1) is proven out-of-corpus by `tests/r3a0_unfetched_dep_opaque.rs`.
 //!
 //! ## CROSS-APP anti-degenerate matrix (fail-on-zero, Rev 2 #1/#4)
 //!

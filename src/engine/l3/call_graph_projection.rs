@@ -347,36 +347,37 @@ impl L3Resolved {
     ///
     /// The MEMBER-call opaque-vs-external-target split gates on
     /// `has_unfetched_declared_dependency`, which reads `index.identity.primaryDependencies`.
-    /// As of the R3a-0 semantic-oracle epoch (al-sem `81d538a`), PRODUCTION
-    /// `analyzeWorkspace` stamps `identity.primaryDependencies` onto the merged index
-    /// *BEFORE* `resolveModel`, so a member miss into an UNFETCHED declared dep classifies
-    /// `opaque` (Fix 1, the now-live member-`opaque` branch).
+    /// As of the R3a-0 semantic-oracle epoch (al-sem `81d538a` + capture fix `93e360d`),
+    /// PRODUCTION `analyzeWorkspace` AND the R2.5b capture harness both stamp
+    /// `identity.primaryDependencies` onto the merged index *BEFORE* `resolveModel`, so the
+    /// resolver reads the REAL declared deps DURING resolution (Fix 1): a member miss into an
+    /// UNFETCHED declared dep classifies `opaque` (the member might live there), a fetched-dep
+    /// member miss stays `member-not-found`, and a non-declared-dep object miss stays
+    /// `external-target`. We thread the REAL declared/fetched ledger here to mirror that.
     ///
-    /// CAPTURE-ORDER CAVEAT — the committed al-sem R2.5b cg golden does NOT reflect Fix 1 on
-    /// THIS corpus. The al-sem R2.5b capture harness (`r2.5b-cross-app-capture.ts`)
-    /// deliberately stamps `primaryDependencies` AFTER `resolveModel` (the OLD order) to
-    /// remain a byte-stable projection harness, so its golden's `gone.M()` member miss stays
-    /// `external-target`. BUT this corpus DOES have an unfetched declared dep (`Lib Absent`,
-    /// declared in app.json, no `.app` in `.alpackages`) + a `gone.M()` call into a
-    /// non-fetched object — so PRODUCTION `analyzeWorkspace` (verified) classifies it
-    /// `opaque`. The golden is thus STALE w.r.t. production. We resolve with the EMPTY ledger
-    /// here to byte-match the committed golden; threading the real ledger would produce the
-    /// production `opaque` and DIVERGE from the stale golden. See the R3a-0 report — this is
-    /// an al-sem capture-harness golden-staleness concern, not a Rust port bug. The object-run
-    /// opaque path (`call-resolver.ts:596`, the `Codeunit.Run` "Absent Dep Cu" → opaque) is
-    /// ledger-independent and fires regardless.
+    /// On the ALL-FETCHED R2.5b corpus (declared = fetched = {Lib Core, Lib Ext}; the prior
+    /// `Lib Absent` unfetched dep was removed in al-sem `93e360d`) this is BYTE-INVARIANT:
+    /// `has_unfetched_declared_dependency` is false, so the `gone.M()` member miss into an
+    /// absent object stays `external-target` GENUINELY (preserving the cg matrix's
+    /// external-target axis), while the `Codeunit.Run("Absent Dep Cu")` object-run miss is
+    /// `opaque` (ledger-independent, `call-resolver.ts:596`). The unfetched-declared-dep
+    /// member-`opaque` branch is proven out-of-corpus by `tests/r3a0_unfetched_dep_opaque.rs`.
     pub fn project_call_graph_cross_app(
         &self,
-        _declared_dep_app_guids: &[String],
-        _fetched_app_guids: &[String],
+        declared_dep_app_guids: &[String],
+        fetched_app_guids: &[String],
     ) -> L3CallGraphProjection {
         let ws = &self.workspace;
         let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-        // CAPTURE-ORDER PARITY: empty ledger (mirror al-sem's R2.5b capture, stamps
-        // primaryDependencies AFTER resolve) so the cg golden byte-matches.
-        let no_deps: Vec<DeclaredDependency> = Vec::new();
-        let no_fetched: Vec<String> = Vec::new();
-        let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+        // Thread the REAL declared/fetched ledger — mirrors fixed production al-sem (reads
+        // primaryDependencies DURING resolve). Byte-invariant on the all-fetched corpus.
+        let declared: Vec<DeclaredDependency> = declared_dep_app_guids
+            .iter()
+            .map(|app_guid| DeclaredDependency {
+                app_guid: app_guid.clone(),
+            })
+            .collect();
+        let resolved = resolve_calls(ws, &symbols, &declared, fetched_app_guids);
 
         let by_internal: HashMap<String, String> = ws
             .routines

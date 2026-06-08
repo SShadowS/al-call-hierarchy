@@ -7,7 +7,6 @@
   "idRanges": [{ "from": 50000, "to": 99999 }],
   "dependencies": [
     { "id": "dddddddd-0000-0000-0000-000000000001", "name": "Lib Core", "publisher": "TestPub", "version": "1.0.0.0" },
-    { "id": "eeeeeeee-0000-0000-0000-000000000002", "name": "Lib Ext", "publisher": "TestPub", "version": "1.0.0.0" },
-    { "id": "ffffffff-0000-0000-0000-000000000003", "name": "Lib Absent", "publisher": "TestPub", "version": "1.0.0.0" }
+    { "id": "eeeeeeee-0000-0000-0000-000000000002", "name": "Lib Ext", "publisher": "TestPub", "version": "1.0.0.0" }
   ]
 }

@@ -345,12 +345,12 @@ impl CrossAppL3 {
     /// `dynamicDispatchSites` multiset delta (cross-app member calls that RESOLVED drop
     /// OUT; the external-target miss stays IN), and `routinesTotal` counts dep routines.
     ///
-    /// NOTE (capture-order): the call resolution INSIDE this projection uses the EMPTY
-    /// ledger the al-sem R2.5b capture harness uses (it stamps `primaryDependencies`
-    /// AFTER `resolveModel`), so the `unresolvedCallsites` multiset byte-matches the
-    /// committed golden. Fix 1's member-`opaque` reclassification (which PRODUCTION
-    /// `analyzeWorkspace` applies, and which would DROP the `gone.M()` miss for this
-    /// corpus) is proven separately by `tests/r3a0_unfetched_dep_opaque.rs`.
+    /// The call resolution INSIDE this projection threads the REAL declared/fetched ledger
+    /// (Fix 1: al-sem reads `identity.primaryDependencies` DURING resolve, in production AND
+    /// the capture harness as of `93e360d`). On the all-fetched corpus the `gone.M()` member
+    /// miss is `external-target` (genuinely — all declared deps fetched) and stays IN
+    /// `unresolvedCallsites`; the unfetched-declared-dep member-`opaque` branch is proven by
+    /// `tests/r3a0_unfetched_dep_opaque.rs`.
     pub fn project_coverage(
         &self,
         units: &[crate::engine::l3::coverage::CoverageUnit],
