@@ -1,0 +1,3593 @@
+{
+  "description": "R3a-1 combined-graph + SCC goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.r3a1.golden.json is the ALLOWLISTED projection of the L4 graph substrate, captured POST-buildCombinedGraph / POST-tarjanScc / PRE-computeSummaries (`indexWorkspace` → `resolveModel` ONCE → `buildCombinedGraph` → `tarjanScc`; the dump NEVER runs computeSummaries or the dep hooks). Per fixture: combinedEdges (sorted CombinedEdge[] in al-sem emission order) + uncertaintyEdges (sorted UncertaintyEdge[]) + typedEdges (model.typedEdges/GraphEdge[], display anchors dropped) + sccs (the reverse-topological SCC condensation; members sorted; recursive flag). All ids in stable form (StableRoutineId / StableObjectId / StableTableId / StableEventId / stable callsiteId / operationId). See scripts/r3a1-projection.ts.",
+  "capturePoint": "post-buildCombinedGraph/post-tarjanScc/pre-computeSummaries (indexWorkspace → resolveModel ONCE → buildCombinedGraph → tarjanScc; READ-ONLY)",
+  "note": "R3a-1 is the GRAPH + SCC ONLY. EXCLUDED (later gates): RoutineSummary (dbEffects/uncertainties/parameterRoles/capabilityFacts*/coverage — R3a-2/3), the dep hooks (injectIntraAppCallEdges/collectCitedDepEvidence/collectDepOrderIndex — R3a-4), full cross-app (R3a-5). Source-only: .app-bearing fixtures are EXCLUDED (their dep edges enter typedEdges in R3a-4). Display SourceAnchors are dropped from typedEdges (reconstructed at the R3a-2+ witness layer). The SCC list order is reverse-topological (callees before callers) and POSITIONAL — part of the comparison surface.",
+  "alSemGitSha": "0e87b86a277cb187ee575f156c78e3ce0e82863f",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r3a1",
+  "forbiddenKeys": [
+    "dbEffects",
+    "uncertainties",
+    "parameterRoles",
+    "inRecursiveCycle",
+    "hasUnresolvedCalls",
+    "capabilityFactsDirect",
+    "capabilityFactsInherited",
+    "coverage",
+    "summary",
+    "fieldEffects",
+    "citedDepEvidence",
+    "depOrderIndex",
+    "intraAppCallEdges"
+  ],
+  "fixtureCount": 158,
+  "matrix": {
+    "edgesByKind": {
+      "codeunit-run": 4,
+      "direct": 123,
+      "event-dispatch": 41,
+      "implicit-trigger": 6,
+      "interface": 4,
+      "method": 26
+    },
+    "combinedEdgeCount": 204,
+    "uncertaintyEdgeCount": 93,
+    "eventDispatchEdgeCount": 41,
+    "typedEdgeCount": 206,
+    "typedEventDispatchCount": 41,
+    "sccCount": 557,
+    "recursiveSccCount": 3,
+    "multiMemberSccCount": 3
+  },
+  "fixtures": [
+    {
+      "fixture": "ws-api-page",
+      "goldenFile": "ws-api-page.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-argument-bindings",
+      "goldenFile": "ws-argument-bindings.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 6
+        },
+        "combinedEdgeCount": 6,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 6,
+        "typedEventDispatchCount": 0,
+        "sccCount": 7,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-builtin-unresolved",
+      "goldenFile": "ws-builtin-unresolved.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-calls",
+      "goldenFile": "ws-calls.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "codeunit-run": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-callsite-resolutions",
+      "goldenFile": "ws-callsite-resolutions.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "method": 2
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 5,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-combined",
+      "goldenFile": "ws-combined.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-compose",
+      "goldenFile": "ws-compose.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1",
+      "goldenFile": "ws-d1.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 3
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-dep-terminal",
+      "goldenFile": "ws-d1-dep-terminal.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-multi-caller",
+      "goldenFile": "ws-d1-multi-caller.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 3
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d1-setup-singleton",
+      "goldenFile": "ws-d1-setup-singleton.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d10-self-mod",
+      "goldenFile": "ws-d10-self-mod.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-modifyall-init",
+      "goldenFile": "ws-d11-modifyall-init.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d11-no-get",
+      "goldenFile": "ws-d11-no-get.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d12-dead-event",
+      "goldenFile": "ws-d12-dead-event.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-internal-call",
+      "goldenFile": "ws-d13-internal-call.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d13-member-call",
+      "goldenFile": "ws-d13-member-call.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "goldenFile": "ws-d14-dead-routine.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-internal-no-ivt",
+      "goldenFile": "ws-d14-internal-no-ivt.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 7,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-page-procedure",
+      "goldenFile": "ws-d14-page-procedure.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d14-public-dead",
+      "goldenFile": "ws-d14-public-dead.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d16-obsolete",
+      "goldenFile": "ws-d16-obsolete.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d17-drift",
+      "goldenFile": "ws-d17-drift.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d18",
+      "goldenFile": "ws-d18.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d19",
+      "goldenFile": "ws-d19.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d2",
+      "goldenFile": "ws-d2.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 4,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 6,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 6,
+        "typedEventDispatchCount": 2,
+        "sccCount": 7,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d20",
+      "goldenFile": "ws-d20.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 4,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d21",
+      "goldenFile": "ws-d21.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d22",
+      "goldenFile": "ws-d22.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d29",
+      "goldenFile": "ws-d29.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3",
+      "goldenFile": "ws-d3.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-method-stmt",
+      "goldenFile": "ws-d3-method-stmt.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d3-temp",
+      "goldenFile": "ws-d3-temp.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d32",
+      "goldenFile": "ws-d32.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 7
+        },
+        "combinedEdgeCount": 7,
+        "uncertaintyEdgeCount": 5,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 7,
+        "typedEventDispatchCount": 0,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d33",
+      "goldenFile": "ws-d33.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d34",
+      "goldenFile": "ws-d34.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 3
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d35",
+      "goldenFile": "ws-d35.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d36",
+      "goldenFile": "ws-d36.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d37",
+      "goldenFile": "ws-d37.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "method": 1
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 10,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d38",
+      "goldenFile": "ws-d38.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 3,
+          "event-dispatch": 3
+        },
+        "combinedEdgeCount": 6,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 3,
+        "typedEdgeCount": 6,
+        "typedEventDispatchCount": 3,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d39",
+      "goldenFile": "ws-d39.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 3
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d4-repeated-get",
+      "goldenFile": "ws-d4-repeated-get.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d40",
+      "goldenFile": "ws-d40.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 6
+        },
+        "combinedEdgeCount": 6,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 6,
+        "typedEventDispatchCount": 0,
+        "sccCount": 10,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d41",
+      "goldenFile": "ws-d41.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 4
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 4,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d42",
+      "goldenFile": "ws-d42.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 4
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 4,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d5-modifyall",
+      "goldenFile": "ws-d5-modifyall.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-neg",
+      "goldenFile": "ws-d50-neg.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "codeunit-run": 1,
+          "direct": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d50-pos",
+      "goldenFile": "ws-d50-pos.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "codeunit-run": 1,
+          "direct": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-jobqueue",
+      "goldenFile": "ws-d51-jobqueue.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "goldenFile": "ws-d51-neg.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "goldenFile": "ws-d51-pos.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d7-event-cycle",
+      "goldenFile": "ws-d7-event-cycle.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 4,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 6,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 6,
+        "typedEventDispatchCount": 2,
+        "sccCount": 1,
+        "recursiveSccCount": 1,
+        "multiMemberSccCount": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "goldenFile": "ws-d8-commit-in-tx.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-digest-pr49388",
+      "goldenFile": "ws-digest-pr49388.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-e2e",
+      "goldenFile": "ws-e2e.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 7,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 8,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 8,
+        "typedEventDispatchCount": 1,
+        "sccCount": 10,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-chains",
+      "goldenFile": "ws-event-chains.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 2,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-cycle",
+      "goldenFile": "ws-event-cycle.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "event-dispatch": 2,
+          "method": 1
+        },
+        "combinedEdgeCount": 5,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 5,
+        "typedEventDispatchCount": 2,
+        "sccCount": 1,
+        "recursiveSccCount": 1,
+        "multiMemberSccCount": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-d45-deep",
+      "goldenFile": "ws-event-d45-deep.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 4,
+        "typedEventDispatchCount": 2,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-fanout",
+      "goldenFile": "ws-event-fanout.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 6
+        },
+        "combinedEdgeCount": 7,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 6,
+        "typedEdgeCount": 7,
+        "typedEventDispatchCount": 6,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled",
+      "goldenFile": "ws-event-ishandled.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-conditional-set",
+      "goldenFile": "ws-event-ishandled-conditional-set.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-exit",
+      "goldenFile": "ws-event-ishandled-exit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-helper",
+      "goldenFile": "ws-event-ishandled-helper.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 1,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-multi-dispatch",
+      "goldenFile": "ws-event-ishandled-multi-dispatch.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 1,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-ishandled-nested-guard",
+      "goldenFile": "ws-event-ishandled-nested-guard.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-isolated",
+      "goldenFile": "ws-event-isolated.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-multi-sub-overlap",
+      "goldenFile": "ws-event-multi-sub-overlap.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 2,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-read-after-write",
+      "goldenFile": "ws-event-read-after-write.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 2,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-transitive-exposure",
+      "goldenFile": "ws-event-transitive-exposure.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-events",
+      "goldenFile": "ws-events.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-implicit-trigger",
+      "goldenFile": "ws-implicit-trigger.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "implicit-trigger": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-inline-suppress",
+      "goldenFile": "ws-inline-suppress.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-install-codeunit",
+      "goldenFile": "ws-install-codeunit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-interface-dispatch",
+      "goldenFile": "ws-interface-dispatch.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "interface": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-may-facts",
+      "goldenFile": "ws-may-facts.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 10,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-codeunit",
+      "goldenFile": "ws-member-call-codeunit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "implicit-trigger": 2,
+          "method": 2
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-member-call-resolution",
+      "goldenFile": "ws-member-call-resolution.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-multi-object",
+      "goldenFile": "ws-multi-object.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-op-order",
+      "goldenFile": "ws-op-order.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-error",
+      "goldenFile": "ws-order-branch-error.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-branch-exit",
+      "goldenFile": "ws-order-branch-exit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-commit-before-io",
+      "goldenFile": "ws-order-commit-before-io.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-conditional-exit-before-commit",
+      "goldenFile": "ws-order-conditional-exit-before-commit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-condleaf",
+      "goldenFile": "ws-order-condleaf.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-io-before-commit",
+      "goldenFile": "ws-order-io-before-commit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-loop",
+      "goldenFile": "ws-order-loop.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-transitive-unknown",
+      "goldenFile": "ws-order-transitive-unknown.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-tryfunction",
+      "goldenFile": "ws-order-tryfunction.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-order-two-commits",
+      "goldenFile": "ws-order-two-commits.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-pos2",
+      "goldenFile": "ws-overload-arg-pos2.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "method": 2
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-arg-type",
+      "goldenFile": "ws-overload-arg-type.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-callexpr-discriminator",
+      "goldenFile": "ws-overload-callexpr-discriminator.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "method": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-char",
+      "goldenFile": "ws-overload-char.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-enum-discriminator",
+      "goldenFile": "ws-overload-enum-discriminator.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-field-discriminator",
+      "goldenFile": "ws-overload-field-discriminator.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-overload-negatives",
+      "goldenFile": "ws-overload-negatives.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 9,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-paramfx",
+      "goldenFile": "ws-paramfx.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-path-facts",
+      "goldenFile": "ws-path-facts.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 3,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 12,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-dynamic-dispatch",
+      "goldenFile": "ws-policy-api-dynamic-dispatch.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-isolated-storage",
+      "goldenFile": "ws-policy-api-isolated-storage.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ledger-write",
+      "goldenFile": "ws-policy-api-ledger-write.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-api-ui",
+      "goldenFile": "ws-policy-api-ui.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-clean",
+      "goldenFile": "ws-policy-clean.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-subscriber",
+      "goldenFile": "ws-policy-commit-in-subscriber.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-commit-in-trigger",
+      "goldenFile": "ws-policy-commit-in-trigger.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-install-business-write",
+      "goldenFile": "ws-policy-install-business-write.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-policy-trigger-http",
+      "goldenFile": "ws-policy-trigger-http.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-pr-summary-multi",
+      "goldenFile": "ws-pr-summary-multi.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preflight-missingdep",
+      "goldenFile": "ws-preflight-missingdep.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-preset-txn",
+      "goldenFile": "ws-preset-txn.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-prove",
+      "goldenFile": "ws-prove.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2,
+          "interface": 2
+        },
+        "combinedEdgeCount": 4,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 4,
+        "typedEventDispatchCount": 0,
+        "sccCount": 17,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r0-canon-stress",
+      "goldenFile": "ws-r0-canon-stress.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 1,
+        "sccCount": 16,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2a-record-types",
+      "goldenFile": "ws-r2a-record-types.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "implicit-trigger": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-external",
+      "goldenFile": "ws-r2b-external.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2b-opaque",
+      "goldenFile": "ws-r2b-opaque.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-maybe-elem",
+      "goldenFile": "ws-r2c-maybe-elem.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 1,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-mixed",
+      "goldenFile": "ws-r2c-mixed.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "event-dispatch": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 2,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 2,
+        "sccCount": 8,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-r2c-two-sub-maybe",
+      "goldenFile": "ws-r2c-two-sub-maybe.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-recursive",
+      "goldenFile": "ws-recursive.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 1,
+        "multiMemberSccCount": 1
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-report-trigger",
+      "goldenFile": "ws-report-trigger.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-resolve",
+      "goldenFile": "ws-resolve.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-roots-config",
+      "goldenFile": "ws-roots-config.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-statement-tree",
+      "goldenFile": "ws-statement-tree.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 5,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 26,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-test-codeunit",
+      "goldenFile": "ws-test-codeunit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-triggers",
+      "goldenFile": "ws-triggers.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "implicit-trigger": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 6,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-tx-span",
+      "goldenFile": "ws-tx-span.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "goldenFile": "ws-txn-d46-neg.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "goldenFile": "ws-txn-d46-pos.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 2
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 0,
+        "sccCount": 4,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-deduped",
+      "goldenFile": "ws-txn-d47-advisory-deduped.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-advisory-post-nowrite",
+      "goldenFile": "ws-txn-d47-advisory-post-nowrite.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-crosshop-iobeforecommit",
+      "goldenFile": "ws-txn-d47-crosshop-iobeforecommit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-clean",
+      "goldenFile": "ws-txn-d47-event-neg-clean.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-neg-isolated",
+      "goldenFile": "ws-txn-d47-event-neg-isolated.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-event-pos",
+      "goldenFile": "ws-txn-d47-event-pos.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "event-dispatch": 1
+        },
+        "combinedEdgeCount": 2,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 1,
+        "typedEdgeCount": 2,
+        "typedEventDispatchCount": 1,
+        "sccCount": 3,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-commit-between",
+      "goldenFile": "ws-txn-d47-neg-commit-between.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-readonly",
+      "goldenFile": "ws-txn-d47-neg-readonly.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-temp",
+      "goldenFile": "ws-txn-d47-neg-temp.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-file",
+      "goldenFile": "ws-txn-d47-pos-file.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-commit-after",
+      "goldenFile": "ws-txn-d47-pos-http-commit-after.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "goldenFile": "ws-txn-d47-pos-http-nocommit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "goldenFile": "ws-txn-d48-neg.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "goldenFile": "ws-txn-d48-pos.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1,
+          "method": 2
+        },
+        "combinedEdgeCount": 3,
+        "uncertaintyEdgeCount": 2,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 3,
+        "typedEventDispatchCount": 0,
+        "sccCount": 5,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-commit-between",
+      "goldenFile": "ws-txn-d49-neg-commit-between.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-no-write",
+      "goldenFile": "ws-txn-d49-neg-no-write.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-run-boundary",
+      "goldenFile": "ws-txn-d49-neg-run-boundary.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "codeunit-run": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-temp-write",
+      "goldenFile": "ws-txn-d49-neg-temp-write.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-message",
+      "goldenFile": "ws-txn-d49-pos-modify-message.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-runmodal",
+      "goldenFile": "ws-txn-d49-pos-modify-runmodal.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-unresolved",
+      "goldenFile": "ws-unresolved.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-upgrade-codeunit",
+      "goldenFile": "ws-upgrade-codeunit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "direct": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-with-receiver",
+      "goldenFile": "ws-with-receiver.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {},
+        "combinedEdgeCount": 0,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 0,
+        "typedEventDispatchCount": 0,
+        "sccCount": 1,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-always-error",
+      "goldenFile": "ws-xhop-callee-always-error.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-callee-error",
+      "goldenFile": "ws-xhop-callee-error.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-conditional",
+      "goldenFile": "ws-xhop-conditional.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-io-before-commit",
+      "goldenFile": "ws-xhop-io-before-commit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 1,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-loop",
+      "goldenFile": "ws-xhop-loop.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-tryfunction-committer",
+      "goldenFile": "ws-xhop-tryfunction-committer.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-xhop-write-commit",
+      "goldenFile": "ws-xhop-write-commit.r3a1.golden.json",
+      "matrix": {
+        "edgesByKind": {
+          "method": 1
+        },
+        "combinedEdgeCount": 1,
+        "uncertaintyEdgeCount": 0,
+        "eventDispatchEdgeCount": 0,
+        "typedEdgeCount": 1,
+        "typedEventDispatchCount": 0,
+        "sccCount": 2,
+        "recursiveSccCount": 0,
+        "multiMemberSccCount": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "fixture": "ws-diff-coverage-narrowed",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-new-capability",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-permission-expanded",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-removed-field",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    },
+    {
+      "fixture": "ws-diff-rename",
+      "reason": "empty model (0 objects/0 routines) — fail-closed single-app provider; not source-only-analyzable"
+    }
+  ]
+}

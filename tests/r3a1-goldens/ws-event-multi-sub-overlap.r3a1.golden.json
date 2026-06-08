@@ -1,0 +1,75 @@
+{
+  "combinedEdges": [
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c/cs0",
+      "operationId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c/op0"
+    },
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "subscriberAppId": "22222222-2222-2222-2222-222222222222"
+    },
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "subscriberAppId": "22222222-2222-2222-2222-222222222222"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c/cs0"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+      "eventId": "22222222-2222-2222-2222-222222222222:Codeunit:50000::OnAfterPost::fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50000#fa1eb97dcfb6bf28311db3073b9ba9c295461b40e7a33da0440f48a6df91c9e6"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50000#e54ec533bcdea415efc90d3782e512a0bf0411d5c665f03c8e28dbfa9be8300c"
+      ],
+      "recursive": false
+    }
+  ]
+}

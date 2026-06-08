@@ -1,0 +1,61 @@
+{
+  "combinedEdges": [
+    {
+      "from": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+      "to": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050/op0"
+    }
+  ],
+  "uncertaintyEdges": [
+    {
+      "from": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93/cs0"
+      }
+    }
+  ],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+      "to": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a",
+      "callsiteId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050/cs0"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100#c937f452b226f2394cc4c00d2efb29e7f15730196e2230b656bab5c00ec98d1a"
+      ],
+      "recursive": false
+    }
+  ]
+}

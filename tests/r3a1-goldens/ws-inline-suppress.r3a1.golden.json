@@ -1,0 +1,40 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [
+    {
+      "from": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f/cs0"
+      }
+    },
+    {
+      "from": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf/cs0"
+      }
+    }
+  ],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#cf05afce05393ac27b085edce25b3d151eac2ae64579536be0fee05affd52863"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#ff6264fb91831bb39cd1906ef058b715347051bbdf5bacf38328b3596eef909f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "aaaaaaaa-0000-0000-0000-000000000099:Codeunit:50001#fa94647970b8ff1ae4ef5e1961916d11ba069299c6e2e6cf1cf10422cd5fe6bf"
+      ],
+      "recursive": false
+    }
+  ]
+}

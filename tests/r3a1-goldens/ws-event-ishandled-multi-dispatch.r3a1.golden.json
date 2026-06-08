@@ -1,0 +1,75 @@
+{
+  "combinedEdges": [
+    {
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48/cs0",
+      "operationId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48/op1"
+    },
+    {
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b/cs0",
+      "operationId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b/op1"
+    },
+    {
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "99999999-9999-9999-9999-999999999999:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "subscriberAppId": "99999999-9999-9999-9999-999999999999"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "callsiteId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48/cs0"
+    },
+    {
+      "kind": "direct-call",
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "callsiteId": "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b/cs0"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1",
+      "to": "99999999-9999-9999-9999-999999999999:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd",
+      "eventId": "99999999-9999-9999-9999-999999999999:Codeunit:50000::OnBeforePost::79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "99999999-9999-9999-9999-999999999999:Codeunit:50001#7c46317fb2eae08cd9e180ac8c0f3eb97aa9a943892f39bbe0e06e7e0562debd"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "99999999-9999-9999-9999-999999999999:Codeunit:50000#79767d9473a76d5a6a2ba94c6eb8b6272dba8f6125ea7ab2d39e177ba2a91cd1"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "99999999-9999-9999-9999-999999999999:Codeunit:50000#0efd9bc38e09d5da5d41175fb6082001fddad16bc62ee82eddefdfd83bc5ef48"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "99999999-9999-9999-9999-999999999999:Codeunit:50000#495ffedc239a0a859c0031d878edb93322347c10d3de040b55e4c6958a61da5b"
+      ],
+      "recursive": false
+    }
+  ]
+}

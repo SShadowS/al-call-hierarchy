@@ -1,0 +1,43 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f159b51a98015e69967755e8a95d14aa4e15bc6e8fa07bf762525d190f9d48d7"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#79e2b83d4ddf9cdb57992152518ee6f08c550df4321e10153e300f9f200eb887"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#b8b78e01a3c4aaa77c68f72ad1e2db6dc38611b7189de4c1ffeda9b18a910797"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179"
+      ],
+      "recursive": false
+    }
+  ]
+}

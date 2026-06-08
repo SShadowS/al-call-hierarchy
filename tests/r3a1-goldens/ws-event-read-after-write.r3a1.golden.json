@@ -1,0 +1,75 @@
+{
+  "combinedEdges": [
+    {
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7/cs0",
+      "operationId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7/op0"
+    },
+    {
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "subscriberAppId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    },
+    {
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "subscriberAppId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "callsiteId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7/cs0"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40",
+      "to": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000::OnAfterAdjust::ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#ed27d554e6d11ba3175fe7fe2009aa2988f48de11a8f60fb84b18baa8c671b40"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50000#6613cb531f8da247f6c76c9438913d0cc6732d441030931febbe346a095713a7"
+      ],
+      "recursive": false
+    }
+  ]
+}

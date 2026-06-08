@@ -1,0 +1,71 @@
+{
+  "combinedEdges": [
+    {
+      "from": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+      "to": "33333333-d300-0000-0000-000000000003:Codeunit:65101#ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/cs0",
+      "operationId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/op2"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b",
+      "to": "33333333-d300-0000-0000-000000000003:Codeunit:65101#ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255",
+      "callsiteId": "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b/cs0"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#4338388dfabbb40e3de671ef9044f5897db62ecb9267137593f6821bb217301f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#ab78b49a5102a2954ab2e53195832e55320f4c32df89f6aded4ab5c4ec072255"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#0c5f61df0bc5479fadaf6a77b7ecab923755f6761a3fda10f89545b7f3130976"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#5554fe5756ed02c3ae89d7b531e310c8fa1b60110e1b97e1baddb955da81528d"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#b6368d251f983bfb1d86588a2a88e5c2d87dc6b225822693d62c73a279aa79cc"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#959fe42253fa710b6fd2a04997a6931057940b666e550c5399e1959763843a84"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#c50bea33e37ee9a182b81e94d96c1f065694a9b3e220c9c838a7fd0eae2acfa9"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "33333333-d300-0000-0000-000000000003:Codeunit:65101#277e7a1e2c20fea5f5a380f343ceb161f9b9eab474d16a5eb6edbbc05556b92b"
+      ],
+      "recursive": false
+    }
+  ]
+}

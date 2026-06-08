@@ -1,0 +1,229 @@
+{
+  "combinedEdges": [
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb",
+      "to": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#29e70724afc061be760d2d5f9264a6d3e0c52e8ed9169a6559541919b4c4d6aa",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb/cs0",
+      "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb/op1"
+    },
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0",
+      "to": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#49cf0070be191014c14748e89f66f4408ad3dcc2ac6cb36ffe28529dd2a1a76e",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0/cs1",
+      "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0/op1"
+    }
+  ],
+  "uncertaintyEdges": [
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d/cs0"
+      }
+    },
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4/cs0"
+      }
+    },
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096/cs0"
+      }
+    },
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0/cs0"
+      }
+    },
+    {
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce/cs0"
+      }
+    }
+  ],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb",
+      "to": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#29e70724afc061be760d2d5f9264a6d3e0c52e8ed9169a6559541919b4c4d6aa",
+      "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb/cs0"
+    },
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0",
+      "to": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#49cf0070be191014c14748e89f66f4408ad3dcc2ac6cb36ffe28529dd2a1a76e",
+      "callsiteId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0/cs1"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#c1640b5c880e53bdf2da6d5501c300bb289dd54a6ea8476c456109df1719ef7b"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#28abe2002c9b18eddc2e656f4162b0aba245419901fc3c344437fa08732cfa94"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#29e70724afc061be760d2d5f9264a6d3e0c52e8ed9169a6559541919b4c4d6aa"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7866979ab328d9af12fccd529b3dc9cbe975db8177a24d80cd22a49c394297eb"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#867a0de72bb1f96937dae8ed4d879e461487d21fcc481518eb3478cb6c9ec49c"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#466ecf481453b5be43eba5bff88de8de51020a47a20aae6fd133d8940bc7e9e2"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d22979066e687ea4d42c20b5f6cef952882bb84fbba89444bf3a745ac6ee047d"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#dbb7437bb44005fbb6ce7835db4818062d2438989eabb3f19d64408544e7278d"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#a89590b0f08d1d86083af73151eb2a29bd0bf23a5f56319482084df28cd76462"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#49cf0070be191014c14748e89f66f4408ad3dcc2ac6cb36ffe28529dd2a1a76e"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#38a30ff3b2b7ebfc6540e4582fb05a08a05fd28a1236efaf13980234c75a75b9"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d71050efbff50c8c24c7bf3a2e3068701074c9250423cc4b889dd44d9afd3347"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#d95a4a221d6ee9492c64ad9e1f063bd4797cfae190755b516af9baba79f3d1eb"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#e7321c1f20a04a5c8da9f509833e52ca80e3ea7bfe7c8867fac80dfe7bc5d02e"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#057ddc568888c282d11a0fa3308a1e11d265afab574c2591a1b477f694ad196f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4ffe8a39c4e0ea2964bf2273e7accd1121d6be8fb3e29bf1b528b340f4eadbc0"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6a3a9d62e28a00fe92f7082263b23d7af707f2d02018568632dc49b95eb8206a"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#6e53577fbea0129ef6c61edc2f8346ce94b1dc0327d579dd01ce81e385b81af3"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b9ecd2d5ed5471cd9fcc8a5c02aedcdb8f8980f03a77796c1260676b5d7c5d19"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b39767a172f44b59a40309c5157343c9d5bc490f46505f2d96c78c58f4ea6869"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#bf5007b3a2cf8bf36d36a9935b57030d797fe2db9d231e34c614eff6cbfe5e8c"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000abc200:Codeunit:50200#4c6f79ff18c0476f491543a9b50405fcf01d36710d7cdc93b88fe7c0d168c45f"
+      ],
+      "recursive": false
+    }
+  ]
+}

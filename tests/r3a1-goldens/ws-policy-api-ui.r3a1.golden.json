@@ -1,0 +1,21 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [
+    {
+      "from": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0"
+      }
+    }
+  ],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "10000004-0000-0000-0000-000000000000:Page:50101#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0"
+      ],
+      "recursive": false
+    }
+  ]
+}

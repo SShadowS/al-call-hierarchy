@@ -26,6 +26,7 @@ and `docs/`.
 | **R2.5a** | Symbol-only `.app` reader (ZIP → `NavxManifest.xml` + `SymbolReference.json` → shared `Routine`/`ObjectDecl`/`Table`/`Field` shape) + the **dependency-entity subset of the merged index** at byte-parity (StableObjectId/StableTableId/StableFieldId/StableRoutineId, `signatureFingerprint`, `attributesParsed`, object props, table fields/keys, routine accessModifier, app `sourceKind`), captured POST-`withDependencyArtifacts`/-`resolveModel` with `noDepSummaries:true` — incl. the L3 **extension-field-merge capture-point** (dep `TableExtension` fields merged INTO the base table) | **SHIPPED** — 2/2 fixtures byte-match, `KNOWN_DIVERGENCES` empty, anti-degenerate matrix manifest-oracle-equal (objects=16/tables=2/routines=11; dispatch rb=7/ext=2/bare=6/tbl=1; sourceKind app=1/symbol=1; events pub=1/sub=1; mergedExtFields=1), native structural oracle green (6 checks); ABI-vs-native fix-then-freeze = NO fix needed (native==ABI 1:1). NEXT: **R2.5b** (cross-app L3) |
 | **R2.5b** | Cross-app **L3 RESOLUTION** over the merged (workspace + `.app`-dep) index — the R2a–R2d L3 surfaces re-run with deps no longer opaque: (a) a record var typed as a DEP table binds to the dep StableTableId + dep/ws TableExtension fields merge across the boundary; (b) `cu.M()` on a PRESENT dep codeunit resolves to the dep StableRoutineId (the source-only `opaque`→`resolved`/`external-target` transitions; the edge does NOT gate on the dep routine's `internal`/`local` accessModifier); (c) a `[EventSubscriber]` ↔ dep-published `[IntegrationEvent]` links to the dep publisher EventId (both directions); (d) coverage `routinesTotal` counts dep routines + the `unresolvedCallsites` multiset reflects cross-app resolution. Captured POST-`resolveModel` over the merged index (`noDepSummaries:true`), stable ids | **SHIPPED** — all 4 sub-gate differentials byte-match (rt/cg/eg/cov, 1 cross-app fixture each), `KNOWN_DIVERGENCES` empty; cross-app matrices healthy (rt: depBoundRecordVars=2/depBoundRecordOps=2/depExtMergedFields=1; cg: resolvedToDepRoutine=4/memberNotFound=1/opaque=1/externalTarget=1/upgradedBindings=1; eg: resolvedToDepPublisher=1/depSubscriberEdges=1/maybe=1; cov: crossAppResolvedAbsent=4/externalTargetPresent=1/unresolved=2/opaqueApps=2-symbol-only-deps after R3a-0 Fix 2); 4 native oracles per sub-gate green + the cross_app_l3 smoke/poison/aldump tests green. The TWO al-sem latent bugs are now **FIXED in R3a-0** (`opaqueApps` lists the symbol-only deps; the `primaryDependencies`-before-resolve member-opaque branch is live in production) — see the R3a-0 row + the "two latent bugs — FIXED" section below. R2.5 COMPLETE → L3 COMPLETE |
 | **R3a-0** | The **semantic oracle epoch** — al-sem fixes the two deferred latent bugs that feed L4 (`81d538a` primaryDependencies-before-resolve + opaqueApps populated; `f1650ba` corpus proof; `93e360d` R2.5b capture stamps `primaryDependencies` BEFORE resolve = production-faithful + the corpus made ALL-FETCHED; artifact schema 1→2, cache `summarySchema` 32→33 / `depCache` 7→8). The Rust R2.5 emitters re-flip to the corrected al-sem; the R2.5 differential must re-pass at ZERO divergences before R3a-1. | **SHIPPED** — BOTH emitters flipped to the FIXED behavior. **Fix 2 (opaqueApps):** the cov emitter passes ALL apps so the `symbol-only` filter lists the dep guids (`["dddddddd-…01","eeeeeeee-…02"]`). **Fix 1 (real ledger):** the cg + cov cross-app emitters thread the REAL declared/fetched ledger (mirroring fixed production+capture al-sem); the Rust fixture `app.json` dropped `Lib Absent` to match the all-fetched corpus. On the all-fetched corpus this is BYTE-INVARIANT (declared=fetched={Lib Core, Lib Ext} → `has_unfetched_declared_dependency` false → `gone.M()` → `external-target` genuinely; object-run → `opaque`). All 4 R2.5b content goldens (rt/cg/cov/eg) byte-match the current al-sem `93e360d`; the cov golden was re-copied. The full R2.5 differential re-passes at 0 divergences, `KNOWN_DIVERGENCES` empty. `tests/r3a0_unfetched_dep_opaque.rs` proves the Fix-1 member-`opaque` resolver branch (unfetched-declared-dep + `cu.M()` → `opaque`, absent from unresolvedCallsites; no-dep control → `external-target`, present). |
+| **R3a-1** | The **FIRST L4 sub-gate** — the L4 GRAPH SUBSTRATE: `buildCombinedGraph` (resolved call graph + event graph → `CombinedEdge[]` of kinds direct/method/codeunit-run/report-run/page-run/interface/implicit-trigger/event-dispatch/dynamic + the bipartite event-dispatch edges + the to-less `UncertaintyEdge[]` + the typed `GraphEdge[]`/`typedEdges`, `edgeSortKey`-ordered) + `tarjanScc` (ITERATIVE Tarjan → the reverse-topological SCC condensation; members sorted; `recursive` = size>1 ∨ self-loop), captured POST-`buildCombinedGraph` / POST-`tarjanScc` / PRE-`computeSummaries` (NO summaries, NO dep hooks, source-only) in stable-id form | **SHIPPED** — 158/158 source-only fixtures byte-match, `KNOWN_DIVERGENCES` empty; the anti-degenerate matrix Rust-computed + manifest-oracle-equal (edgesByKind direct=123/method=26/codeunit-run=4/interface=4/implicit-trigger=6/event-dispatch=41; combined=204, uncertainty=93, eventDispatch=41, typed=206, typedEvt=41, sccs=557, recursive=3, multiMember=3); `aldump --r3a1-combined-graph` emits the projection; the native L4-direct structural oracle green (5 invariants: every edge `to` is a real routine id; event-dispatch edges == resolved publisher→subscriber pairs; valid reverse-topological SCC order; `recursive` ⟺ size>1 ∨ self-loop; the SCC partition covers every node exactly once). NEXT: **R3a-2** (the JACOBI fixed-point summary core over this SCC condensation) |
 
 ---
 
@@ -1193,6 +1194,68 @@ R1/R2a–R2d/R2.5a/R2.5b goldens.
 
 ---
 
+## R3a-1 parity status (SHIPPED — combined graph + Tarjan SCC, source-only) — R3's FIRST L4 sub-gate
+
+R3a-1 ports the **L4 GRAPH SUBSTRATE** — the input to the fixed-point summary
+(R3a-2). It is the GRAPH + SCC ONLY: no `RoutineSummary` fields, no dep hooks, no
+cross-app. Two structures are captured POST-`buildCombinedGraph` / POST-`tarjanScc` /
+PRE-`computeSummaries`:
+
+1. **The combined graph** (`buildCombinedGraph`): the sorted `CombinedEdge[]` (kinds
+   direct/method/codeunit-run/report-run/page-run/interface/implicit-trigger/
+   event-dispatch/dynamic — the call-derived routine→routine edges PLUS the bipartite
+   event-dispatch edges from the event graph), the to-less `UncertaintyEdge[]`
+   (interface-open-world / dynamic-dispatch / ambiguous-overload / member-not-found /
+   external-target / unresolved-call), and the typed `GraphEdge[]` (`typedEdges` — the
+   Phase 0b-β capability-cone propagation graph; display SourceAnchors dropped). The
+   `edgeSortKey` (`${kind}|${callsiteId ?? operationId ?? eventId ?? ""}|${to}`) order
+   is reproduced exactly.
+2. **The SCC condensation** (`tarjanScc` — ITERATIVE Tarjan, no recursion): the SCC list
+   in REVERSE-TOPOLOGICAL order (callees before callers), each `{members (sorted),
+   recursive}` where `recursive` = size>1 ∨ a self-loop. The reverse-topo ORDER is part
+   of the comparison surface (it is the bottom-up composition order R3a-2 consumes).
+
+**Capture / parity surface.** `assemble_and_resolve_workspace_default(ws)
+.project_r3a1_combined_graph()` (the source-only `indexWorkspace → resolveModel →
+buildCombinedGraph → tarjanScc → projectR3a1` mirror) projects all ids to stable form
+(StableRoutineId / StableObjectId / StableTableId / StableEventId / stable callsiteId /
+operationId). `aldump --r3a1-combined-graph <ws>` emits the same projection on the CLI.
+
+**Differential (`tests/r3a1_differential.rs`).** For each of the 158 committed
+source-only goldens (`tests/r3a1-goldens/*.r3a1.golden.json` — copied from al-sem; the
+`.app`-bearing + empty fail-closed fixtures the al-sem dump EXCLUDED never enter the
+corpus), the Rust projection is structurally positional-diffed against the golden. **All
+158 byte-match; `KNOWN_DIVERGENCES` empty.** A recursive forbidden-key scan hard-fails on
+any later-gate field (dbEffects / uncertainties / parameterRoles / coverage / summary /
+capabilityFacts* / the dep-hook outputs). The `#[ignore]`d `AL_SEM_DIR`-gated
+`refresh_goldens_from_al_sem` (in `tests/differential.rs`) regenerates the goldens from
+an al-sem checkout (step b7).
+
+**Anti-degenerate matrix (fail-on-zero).** Computed from the RUST output (so it proves
+the graph + SCC actually FIRE, not "empty == empty"): ≥3 distinct combined-edge kinds, ≥1
+uncertainty edge, ≥1 event-dispatch edge, nonzero typedEdges, ≥1 recursive SCC, ≥1
+multi-member SCC. The corpus totals are `edgesByKind {direct=123, method=26,
+codeunit-run=4, interface=4, implicit-trigger=6, event-dispatch=41}`, combined=204,
+uncertainty=93, eventDispatch=41, typed=206, typedEvt=41, sccs=557, recursive=3,
+multiMember=3 — equal to BOTH the al-sem `manifest.json` matrix block AND the matrix
+recomputed independently from the goldens.
+
+**Native L4-direct structural oracle (`tests/r3a1_oracles.rs`).** Run over the Rust
+output (NOT a transitive byte-match), 5 invariants: (1) every `CombinedEdge.to`/`.from`
+is a real routine id in the model; (2) the event-dispatch edges == the event graph's
+resolved publisher-routine → subscriber-routine pairs (by eventId); (3) `tarjanScc` is a
+VALID reverse-topological order (every edge `from→to` has `scc[to] ≤ scc[from]`, with
+`scc[to] == scc[from]` only inside a recursive SCC); (4) `recursive` ⟺ (size>1 ∨
+self-loop); (5) the SCC partition covers every node exactly once (no node missing, none
+in two SCCs; every member a real routine id). All green.
+
+With R3a-1 SHIPPED, the L4 graph substrate is at byte-parity. **NEXT: R3a-2** — the
+JACOBI fixed-point `RoutineSummary` core over this SCC condensation (each recursive SCC
+iterates with the frozen prior-pass snapshot to a fingerprint-detected fixed point; the
+R3a-2 oracle captures the per-SCC iteration trace).
+
+---
+
 ## Running migration status
 
 | Layer | Gate(s) | Status |
@@ -1208,7 +1271,8 @@ R1/R2a–R2d/R2.5a/R2.5b goldens.
 | L3 (deps) | **R2.5b** (cross-app L3 resolution) | **DONE** — 4/4 sub-gate differentials byte-match (rt/cg/eg/cov) + 4 native oracles + smoke/poison/aldump guards; cross-app matrices healthy; `KNOWN_DIVERGENCES` empty; the TWO al-sem latent bugs (`opaqueApps`; member-opaque) **FIXED in R3a-0** — both Rust emitters re-flipped to the corrected behavior |
 | L3 (deps) | **R2.5 (= R2.5a + R2.5b)** | **CROSS-APP L3 COMPLETE** — `.app` identity parity + cross-app L3 resolution at byte-parity |
 | **L3 (resolve)** | **L3 = R2 (source-only) + R2.5 (cross-app)** | **L3 COMPLETE** — record types + call graph + event graph + coverage at byte-parity, source-only AND cross-app, each with a native L3-direct oracle |
-| L4 (summaries) | R3 (combined graph → Tarjan SCC → finite monotone fixed-point `RoutineSummary` + Salsa incrementality) | not started — the hard incremental gate |
+| L4 (graph) | **R3a-1** (combined graph + Tarjan SCC, source-only) | **DONE** — 158/158 source-only fixtures byte-match + the anti-degenerate matrix (≥3 edge kinds, ≥1 uncertainty, ≥1 event-dispatch, nonzero typed, ≥1 recursive + ≥1 multi-member SCC) Rust-computed + manifest-oracle-equal + recomputed-from-goldens-equal; `aldump --r3a1-combined-graph` emitter; native L4-direct structural oracle green (5 invariants); `KNOWN_DIVERGENCES` empty |
+| L4 (summaries) | R3a-2+ (the JACOBI fixed-point `RoutineSummary` core over the SCC condensation + capability cone + coverage + dep hooks + Salsa incrementality) | NEXT — R3a-2 is the per-SCC fixed-point summary core (the reverse-topo order is the bottom-up composition order; each recursive SCC iterates with the JACOBI snapshot to a fingerprint-detected fixed point) |
 | L5 (detectors) | R4 | not started |
 | product | — | not started |
 
@@ -1225,7 +1289,18 @@ cov cross-app emitters thread the REAL declared/fetched ledger mirroring fixed p
 al-sem — with the member-`opaque` resolver branch proven by
 `tests/r3a0_unfetched_dep_opaque.rs`. The corpus is ALL-FETCHED (al-sem `93e360d` removed
 the prior `Lib Absent` unfetched dep + made the capture stamp `primaryDependencies` before
-resolve), so the flip is byte-invariant and all 4 content goldens still match. NEXT: **R3**
-(L4 summaries — combined graph → Tarjan SCC condensation → finite monotone fixed-point
-`RoutineSummary`, plus Salsa incrementality), then R4 (L5 detectors) and the product
-surface.
+resolve), so the flip is byte-invariant and all 4 content goldens still match.
+
+**R3a-1 (the FIRST L4 sub-gate) is now SHIPPED** — the L4 GRAPH SUBSTRATE
+(`buildCombinedGraph` + `tarjanScc`) is at byte-parity with al-sem over the full
+158-fixture source-only corpus, captured POST-`buildCombinedGraph` / POST-`tarjanScc` /
+PRE-`computeSummaries` (no summaries, no dep hooks). The Rust-computed anti-degenerate
+matrix equals BOTH the al-sem `manifest.json` block AND the matrix recomputed from the
+goldens (combined=204 across ≥3 edge kinds, uncertainty=93, eventDispatch=41, typed=206,
+sccs=557 incl. 3 recursive + 3 multi-member), and the native L4-direct structural oracle
+green (every edge target a real routine id; event-dispatch edges == resolved
+publisher→subscriber pairs; valid reverse-topological SCC order; `recursive` ⟺ size>1 ∨
+self-loop; the SCC partition covers every node exactly once). NEXT: **R3a-2** — the JACOBI
+fixed-point `RoutineSummary` core over this SCC condensation (the reverse-topo order is the
+bottom-up composition order), then the capability cone (R3a-3), the dep hooks (R3a-4), full
+cross-app (R3a-5), Salsa incrementality, R4 (L5 detectors), and the product surface.

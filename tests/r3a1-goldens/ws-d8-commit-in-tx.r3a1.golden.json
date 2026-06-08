@@ -1,0 +1,55 @@
+{
+  "combinedEdges": [
+    {
+      "from": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "to": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1/op5"
+    },
+    {
+      "from": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "to": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "kind": "event-dispatch",
+      "resolution": "resolved",
+      "eventId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108::OnAfterPostSalesDoc::eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d80a"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+      "to": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "callsiteId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1/cs0"
+    },
+    {
+      "kind": "event-dispatch",
+      "from": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec",
+      "to": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0",
+      "eventId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108::OnAfterPostSalesDoc::eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1"
+      ],
+      "recursive": false
+    }
+  ]
+}

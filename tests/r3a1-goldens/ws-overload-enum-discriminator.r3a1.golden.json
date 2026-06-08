@@ -1,0 +1,42 @@
+{
+  "combinedEdges": [
+    {
+      "from": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "to": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994",
+      "kind": "method",
+      "resolution": "resolved",
+      "callsiteId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+      "operationId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/op0"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "variable-typed-call",
+      "from": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "to": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994",
+      "callsiteId": "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
+      "receiverType": "Codeunit \"EN Target\""
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#582551e385ff779ce1e405c16dee0816721762c1c254ebef96fc9f88917004be"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50140#6cd0c68407c2f43fd12fe2ddda1562c2fc17b0631bb33a03bc7b00a9d7050994"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "eeeeeeee-1111-2222-3333-666666666666:Codeunit:50142#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6"
+      ],
+      "recursive": false
+    }
+  ]
+}

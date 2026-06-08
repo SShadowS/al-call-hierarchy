@@ -1,0 +1,82 @@
+{
+  "combinedEdges": [
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50150#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "kind": "interface",
+      "resolution": "maybe",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs0",
+      "operationId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/op0"
+    },
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50151#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "kind": "interface",
+      "resolution": "maybe",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs0",
+      "operationId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/op0"
+    }
+  ],
+  "uncertaintyEdges": [
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "uncertainty": {
+        "kind": "interface-open-world",
+        "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs0",
+        "interfaceName": "IProcessor"
+      }
+    },
+    {
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50154#f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21",
+      "uncertainty": {
+        "kind": "interface-open-world",
+        "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50154#f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21/cs0",
+        "interfaceName": "IEmpty"
+      }
+    }
+  ],
+  "typedEdges": [
+    {
+      "kind": "interface-dispatch",
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50150#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs0",
+      "interfaceName": "IProcessor",
+      "candidateCount": 2
+    },
+    {
+      "kind": "interface-dispatch",
+      "from": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+      "to": "22222222-2222-2222-2222-222222222222:Codeunit:50151#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f",
+      "callsiteId": "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs0",
+      "interfaceName": "IProcessor",
+      "candidateCount": 2
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50150#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50151#dff06324eeedd2859c0165b14e1a3ff9870b7b35e44732247d6e0721a11a631f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50153#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "22222222-2222-2222-2222-222222222222:Codeunit:50154#f7bf32a74bc243fef943463d450ac7cc1a8aa15ad9a59aab55e679c187bc3b21"
+      ],
+      "recursive": false
+    }
+  ]
+}

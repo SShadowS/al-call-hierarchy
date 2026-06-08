@@ -3181,6 +3181,60 @@ fn refresh_goldens_from_al_sem() {
     }
     eprintln!("refresh: copied {l3cov_copied} L3 coverage golden(s) into tests/r2d-goldens/.");
 
+    // (b7) Regenerate + copy the R3a-1 COMBINED-GRAPH + SCC goldens. A seventh dump
+    //      script (`scripts/dump-r3a1-combined-graph.ts`) writes
+    //      `scripts/r3a1-goldens/*.r3a1.golden.json` + `manifest.json`; copy them
+    //      into `tests/r3a1-goldens/`. The 158 source-only `ws-*` fixtures are the
+    //      SAME trees already copied to `tests/r0-corpus/` above (copied explicitly
+    //      here when missing). al-sem EXCLUDES `.app`-bearing + empty fail-closed
+    //      fixtures, so the golden set is exactly the source-only-analyzable corpus.
+    eprintln!("refresh: running `bun run scripts/dump-r3a1-combined-graph.ts` in {al_sem_dir} ...");
+    let r3a1_status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-r3a1-combined-graph.ts"])
+        .current_dir(&al_sem)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn `bun` for R3a-1 combined-graph dump: {e}"));
+    assert!(
+        r3a1_status.success(),
+        "`bun run scripts/dump-r3a1-combined-graph.ts` failed with status {r3a1_status}"
+    );
+
+    let src_r3a1_goldens = al_sem.join("scripts").join("r3a1-goldens");
+    let dst_r3a1_goldens = repo_root().join("tests").join("r3a1-goldens");
+    std::fs::create_dir_all(&dst_r3a1_goldens).expect("create tests/r3a1-goldens");
+    let mut r3a1_copied = 0usize;
+    for entry in std::fs::read_dir(&src_r3a1_goldens).expect("read al-sem r3a1-goldens") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".r3a1.golden.json") {
+            continue; // skips manifest.json + r3a1-vectors.json (vectors are separate).
+        }
+        // Ensure the source fixture is present in the offline corpus.
+        let fixture = name.trim_end_matches(".r3a1.golden.json").to_string();
+        let fixture_dst = dst_corpus.join(&fixture);
+        if !fixture_dst.is_dir() {
+            let fixture_src = src_fixtures.join(&fixture);
+            if fixture_src.is_dir() {
+                copy_source_fixture(&fixture_src, &fixture_dst);
+                eprintln!(
+                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
+                );
+            }
+        }
+        std::fs::copy(entry.path(), dst_r3a1_goldens.join(&name))
+            .unwrap_or_else(|e| panic!("copy R3a-1 golden {name}: {e}"));
+        r3a1_copied += 1;
+    }
+    let r3a1_manifest_src = src_r3a1_goldens.join("manifest.json");
+    if r3a1_manifest_src.is_file() {
+        std::fs::copy(&r3a1_manifest_src, dst_r3a1_goldens.join("manifest.json"))
+            .expect("copy r3a1-goldens/manifest.json");
+    }
+    eprintln!(
+        "refresh: copied {r3a1_copied} R3a-1 combined-graph golden(s) into tests/r3a1-goldens/."
+    );
+
     // (c) Provenance.
     let al_sem_sha = git_sha(&al_sem);
     let grammar_sha = read_manifest_field(

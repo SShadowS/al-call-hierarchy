@@ -1,0 +1,57 @@
+{
+  "combinedEdges": [
+    {
+      "from": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "to": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359/op6"
+    },
+    {
+      "from": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+      "to": "11111111-0000-0000-0000-00000000d50a:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "kind": "codeunit-run",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01/op0"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+      "to": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+      "callsiteId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359/cs0"
+    },
+    {
+      "kind": "object-run-resolved",
+      "from": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+      "to": "11111111-0000-0000-0000-00000000d50a:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "callsiteId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01/cs0",
+      "targetObject": "11111111-0000-0000-0000-00000000d50a:Codeunit:50201",
+      "objectType": "Codeunit"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d50a:Codeunit:50201#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359"
+      ],
+      "recursive": false
+    }
+  ]
+}

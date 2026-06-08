@@ -1,0 +1,75 @@
+{
+  "combinedEdges": [
+    {
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/op1"
+    },
+    {
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf/op1"
+    },
+    {
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c/cs0",
+      "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c/op1"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/cs0"
+    },
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf/cs0"
+    },
+    {
+      "kind": "direct-call",
+      "from": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+      "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+      "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c/cs0"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c"
+      ],
+      "recursive": false
+    }
+  ]
+}

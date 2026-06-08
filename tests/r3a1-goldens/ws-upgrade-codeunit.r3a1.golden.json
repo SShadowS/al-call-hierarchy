@@ -1,0 +1,35 @@
+{
+  "combinedEdges": [
+    {
+      "from": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "to": "44444444-0000-0000-0000-000000000002:Codeunit:50301#8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "kind": "direct",
+      "resolution": "resolved",
+      "callsiteId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/cs0",
+      "operationId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/op0"
+    }
+  ],
+  "uncertaintyEdges": [],
+  "typedEdges": [
+    {
+      "kind": "direct-call",
+      "from": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "to": "44444444-0000-0000-0000-000000000002:Codeunit:50301#8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25",
+      "callsiteId": "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/cs0"
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "44444444-0000-0000-0000-000000000002:Codeunit:50301#8c1216dadb4a955247cc05476c28dc896d6f1b32975b79624c070839c557ec25"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "44444444-0000-0000-0000-000000000002:Codeunit:50301#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5"
+      ],
+      "recursive": false
+    }
+  ]
+}

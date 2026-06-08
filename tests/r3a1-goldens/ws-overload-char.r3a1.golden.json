@@ -1,0 +1,33 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [
+    {
+      "from": "ffffffff-1111-2222-3333-777777777777:Codeunit:50151#364d8a7ffe8de41a23ee7c8b9dd1a707ce13ad8f1521563624b8f5af8cbfbc7b",
+      "uncertainty": {
+        "kind": "ambiguous-overload",
+        "callsiteId": "ffffffff-1111-2222-3333-777777777777:Codeunit:50151#364d8a7ffe8de41a23ee7c8b9dd1a707ce13ad8f1521563624b8f5af8cbfbc7b/cs0"
+      }
+    }
+  ],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "ffffffff-1111-2222-3333-777777777777:Codeunit:50151#364d8a7ffe8de41a23ee7c8b9dd1a707ce13ad8f1521563624b8f5af8cbfbc7b"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "ffffffff-1111-2222-3333-777777777777:Codeunit:50150#d88d4fffbfeca1052e5c50bcecb136c854b255a202aae85bc9ddfb33f88c8b6d"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "ffffffff-1111-2222-3333-777777777777:Codeunit:50150#d3526fff744d16c607584ce9d7bc44e6dd408b66bd08ca9bc6cbf1d7c14e986c"
+      ],
+      "recursive": false
+    }
+  ]
+}

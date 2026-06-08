@@ -1,0 +1,13 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-000000lo0001:Codeunit:50101#3a212825f19ada075ee0affc78b05b7f6e92a64652962fa7848ff5ae8bfa3e3e"
+      ],
+      "recursive": false
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "10000003-0000-0000-0000-000000000000:Table:50100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e"
+      ],
+      "recursive": false
+    }
+  ]
+}

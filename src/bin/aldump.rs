@@ -46,7 +46,8 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
-         --l3-coverage | --r2.5a-merged-index | --l3-cross-app] <workspace-or-.app>"
+         --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph] \
+         <workspace-or-.app>"
     );
     ExitCode::FAILURE
 }
@@ -59,6 +60,7 @@ fn main() -> ExitCode {
     let mut l3_coverage = false;
     let mut r2_5a_merged_index = false;
     let mut l3_cross_app = false;
+    let mut r3a1_combined_graph = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -93,6 +95,10 @@ fn main() -> ExitCode {
             l3_cross_app = true;
             continue;
         }
+        if arg == "--r3a1-combined-graph" {
+            r3a1_combined_graph = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -108,6 +114,7 @@ fn main() -> ExitCode {
         l3_coverage,
         r2_5a_merged_index,
         l3_cross_app,
+        r3a1_combined_graph,
     ]
     .iter()
     .filter(|f| **f)
@@ -116,7 +123,8 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
-             --l3-coverage / --r2.5a-merged-index / --l3-cross-app are mutually exclusive"
+             --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph \
+             are mutually exclusive"
         );
         return usage();
     }
@@ -125,6 +133,41 @@ fn main() -> ExitCode {
         return usage();
     };
     let workspace = PathBuf::from(workspace_arg);
+
+    if r3a1_combined_graph {
+        // R3a-1 L4 GRAPH SUBSTRATE: run the SOURCE-ONLY L0→L3 pipeline, then
+        // buildCombinedGraph → tarjanScc → projectR3a1, and emit the stable R3a-1
+        // projection (combinedEdges + uncertaintyEdges + typedEdges + the
+        // reverse-topo SCC list) in the SAME shape/key-order as the al-sem
+        // `<fixture>.r3a1.golden.json`. CAPTURE POINT: POST-buildCombinedGraph /
+        // POST-tarjanScc / PRE-computeSummaries — NO dep hooks, NO summaries (R3a-2+).
+        // Fail-closed/empty layouts → an empty projection (never throws).
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => resolved.project_r3a1_combined_graph(),
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-1 projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::l4::combined_graph::R3a1Projection {
+                    combined_edges: vec![],
+                    uncertainty_edges: vec![],
+                    typed_edges: vec![],
+                    sccs: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize R3a-1 projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if l3_cross_app {
         // R2.5b cross-app L3 SMOKE: read the workspace `.al` source + its dep `.app`(s)

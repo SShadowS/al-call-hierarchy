@@ -1,0 +1,21 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [
+    {
+      "from": "2b000000-0000-0000-0000-00000000aaaa:Codeunit:50300#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e",
+      "uncertainty": {
+        "kind": "external-target",
+        "callsiteId": "2b000000-0000-0000-0000-00000000aaaa:Codeunit:50300#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e/cs0"
+      }
+    }
+  ],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "2b000000-0000-0000-0000-00000000aaaa:Codeunit:50300#a15fbfb887bf1826e3f04ea76d6346e88cbd57b0a934f4d9a6a5b5385f360d7e"
+      ],
+      "recursive": false
+    }
+  ]
+}

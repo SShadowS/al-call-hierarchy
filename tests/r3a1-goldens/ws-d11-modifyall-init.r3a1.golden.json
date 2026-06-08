@@ -1,0 +1,25 @@
+{
+  "combinedEdges": [],
+  "uncertaintyEdges": [],
+  "typedEdges": [],
+  "sccs": [
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#30bcc525bb539b81f14504e19fbbe7041d043e3396622cfc67d739758febdb70"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#f0e297a0373556cc47988105bb46918582da6d9ff909c4f27b02684b5cf5809c"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "11111111-0000-0000-0000-00000000d11b:Codeunit:50116#736faf1af08ea8dc98dfd8fcf11c33b0729492a1788d019dab2d17beb861c82f"
+      ],
+      "recursive": false
+    }
+  ]
+}

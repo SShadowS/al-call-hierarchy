@@ -1,0 +1,69 @@
+{
+  "combinedEdges": [
+    {
+      "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "to": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "kind": "method",
+      "resolution": "resolved",
+      "callsiteId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/cs0",
+      "operationId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/op0"
+    }
+  ],
+  "uncertaintyEdges": [
+    {
+      "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
+      "uncertainty": {
+        "kind": "unresolved-call",
+        "callsiteId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127/cs0"
+      }
+    },
+    {
+      "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe",
+      "uncertainty": {
+        "kind": "ambiguous-overload",
+        "callsiteId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe/cs0"
+      }
+    }
+  ],
+  "typedEdges": [
+    {
+      "kind": "variable-typed-call",
+      "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
+      "to": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
+      "callsiteId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/cs0",
+      "receiverType": "Codeunit \"Probe Ovl Importer\""
+    }
+  ],
+  "sccs": [
+    {
+      "members": [
+        "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#2e9024fd2da0d277267e1da029b8cb0849480bcc7d34bd75db7f591810f3febe"
+      ],
+      "recursive": false
+    },
+    {
+      "members": [
+        "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#13e64af2cfa9a6c1b678a140a5e20293ae6f81b88196424df3a6a5e9402f2b1d"
+      ],
+      "recursive": false
+    }
+  ]
+}
