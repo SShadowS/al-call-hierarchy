@@ -306,6 +306,98 @@ pub fn salsa_r3a3_source_only(resolved: &L3Resolved) -> R3a3Projection {
     project_r3a3_from_parts(&ws.routines, &cone_map, &direct_full, &event_graph, &map)
 }
 
+/// Build the FINAL (uncertainty-coverage-folded) fine-grained [`InputModel`] for a
+/// SOURCE-ONLY resolved workspace — the editable picture the Stage-2 incremental-
+/// equality proof drives. The coverage fold mirrors `salsa_r3a3_source_only`'s
+/// two-phase `w`/`w2` build (the cone `directStatus` downgrade + reason forwarding),
+/// so a from-scratch demand over this model byte-matches the R3a-3 path.
+pub fn input_model_r3a3_source_only(resolved: &L3Resolved) -> super::edit::InputModel {
+    let ws: &L3Workspace = &resolved.workspace;
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let event_graph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    let mut field_index: crate::engine::l4::summary_runner::FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+    let routines_by_id: HashMap<String, &L3Routine> =
+        ws.routines.iter().map(|r| (r.id.clone(), r)).collect();
+
+    let mut pub_by_routine: HashMap<String, Vec<&crate::engine::l3::event_graph::EventSymbol>> =
+        HashMap::new();
+    for evt in &event_graph.events {
+        if let Some(pr) = &evt.publisher_routine_id {
+            pub_by_routine.entry(pr.clone()).or_default().push(evt);
+        }
+    }
+
+    // Phase 1: the un-folded model, demanded from-scratch to recover the four
+    // uncertainty-derived coverage reasons.
+    let m1 = super::edit::InputModel::from_parts(
+        &ws.routines,
+        &graph,
+        &ws.objects,
+        &ws.tables,
+        &event_graph,
+        &calls.upgraded_bindings,
+        "r3a3-source-only",
+        "",
+        &|r| base_intraprocedural_summary(r, &routines_by_id, &field_index),
+        &|_id| None,
+        &|r| {
+            let empty: Vec<&crate::engine::l3::event_graph::EventSymbol> = Vec::new();
+            let pubs = pub_by_routine.get(&r.id).unwrap_or(&empty);
+            direct_facts_for_routine(r, pubs)
+        },
+    );
+    let core = m1.demand_from_scratch().core;
+    let uncertainty_reasons = uncertainty_coverage_reasons(&core);
+
+    // Phase 2: the FINAL model with the folded coverage.
+    super::edit::InputModel::from_parts(
+        &ws.routines,
+        &graph,
+        &ws.objects,
+        &ws.tables,
+        &event_graph,
+        &calls.upgraded_bindings,
+        "r3a3-source-only",
+        "",
+        &|r| base_intraprocedural_summary(r, &routines_by_id, &field_index),
+        &|_id| None,
+        &|r| {
+            let empty: Vec<&crate::engine::l3::event_graph::EventSymbol> = Vec::new();
+            let pubs = pub_by_routine.get(&r.id).unwrap_or(&empty);
+            let (facts, mut status, reasons) = direct_facts_for_routine(r, pubs);
+            let mut reason_set: std::collections::BTreeSet<String> =
+                reasons.iter().cloned().collect();
+            let base_len = reason_set.len();
+            if let Some(extra) = uncertainty_reasons.get(&r.id) {
+                for rr in extra {
+                    reason_set.insert(rr.clone());
+                }
+            }
+            let final_reasons: Vec<String> = if reason_set.len() > base_len {
+                if status == "complete" {
+                    status = "partial".to_string();
+                }
+                reason_set.into_iter().collect()
+            } else {
+                reasons
+            };
+            (facts, status, final_reasons)
+        },
+    )
+}
+
 /// Map a routine's L4 fixed-point uncertainties to the four coverage reasons.
 /// Mirrors the source-only `compute_uncertainty_coverage_reasons`.
 fn uncertainty_coverage_reasons(

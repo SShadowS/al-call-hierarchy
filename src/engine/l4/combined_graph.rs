@@ -123,7 +123,7 @@ pub struct CombinedGraph {
 // ---------------------------------------------------------------------------
 
 /// `edgeSortKey(e)` = `${kind}|${callsiteId ?? operationId ?? eventId ?? ""}|${to}`.
-fn edge_sort_key(e: &CombinedEdge) -> String {
+pub fn edge_sort_key(e: &CombinedEdge) -> String {
     let mid = e
         .callsite_id
         .clone()

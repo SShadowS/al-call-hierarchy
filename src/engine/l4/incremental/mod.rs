@@ -56,6 +56,7 @@
 //! The SCC member iteration order is the SORTED `StableRoutineId` set (asserted at
 //! the `scc_summaries` entry), so the JACOBI loop iterates members canonically.
 
+pub mod edit;
 pub mod inputs;
 pub mod queries;
 pub mod wrap;
@@ -69,6 +70,30 @@ pub trait L4Db: salsa::Database {}
 #[derive(Default, Clone)]
 pub struct L4Database {
     storage: salsa::Storage<Self>,
+}
+
+/// A shared, append-only log of executed (recomputed) query names. Cloning shares
+/// the same underlying buffer (the DB clones internally, but the log must stay
+/// shared so the callback writes are observable from the builder).
+pub type RecomputeLog = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+impl L4Database {
+    /// Build an INSTRUMENTED database whose Salsa event callback appends every
+    /// `WillExecute` query-execution to the returned [`RecomputeLog`]. The log is
+    /// the early-cutoff oracle: after a no-op edit, re-demanding should record ZERO
+    /// `scc_summaries` / `cones` executions for the unaffected cone.
+    pub fn instrumented() -> (Self, RecomputeLog) {
+        let log: RecomputeLog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log_cb = log.clone();
+        let storage = salsa::Storage::new(Some(Box::new(move |event: salsa::Event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                if let Ok(mut g) = log_cb.lock() {
+                    g.push(format!("{database_key:?}"));
+                }
+            }
+        })));
+        (L4Database { storage }, log)
+    }
 }
 
 #[salsa::db]
