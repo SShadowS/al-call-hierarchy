@@ -18,6 +18,16 @@
 //!       the merge/propagation does not perturb the source-of-truth fact.
 //!   O5. A primary folds the dep-originated dbEffect as `via:"inherited"` (the
 //!       cross-app dbEffect composition), while the dep routine keeps it `direct`.
+//!   O6. (R3a-5 injection-coverage hardening, R3b carried follow-up) The INTRA-DEP
+//!       injected call edge is LOAD-BEARING: the MIDDLE dep routine `DoIt` inherits
+//!       the inner dep `DoWrite`'s Insert fact ONLY via the injected `DoIt→DoWrite`
+//!       intra-dep edge (the workspace never calls `DoWrite` *through* `DoIt`'s body;
+//!       the dep's own internals are reachable only through the injected edge). A
+//!       future injection regression (the intra-dep edge dropped) → `DoIt` loses its
+//!       inherited Insert fact → THIS oracle fails. The primary-side O1 alone would
+//!       NOT catch it (the primary also calls `DoWrite` directly), so O6 is the
+//!       gate on the injection path specifically. Asserted against the Rust output
+//!       directly (no al-sem golden), so a co-evolving al-sem bug cannot mask it.
 
 use std::path::PathBuf;
 
@@ -242,5 +252,77 @@ fn o5_dbeffect_composes_cross_app() {
         primary_insert[0].operation_id.starts_with(DEP_DOWRITE),
         "the folded dbEffect's operationId is the dep DoWrite's own op, got {}",
         primary_insert[0].operation_id
+    );
+}
+
+/// O6 — the INTRA-DEP injected edge is LOAD-BEARING (R3a-5 injection-coverage
+/// hardening; the R3b carried follow-up). The MIDDLE dep routine `DoIt` (it calls
+/// the inner dep `DoWrite` WITHIN the dep app) inherits `DoWrite`'s Insert fact
+/// ONLY via the injected `DoIt→DoWrite` intra-dep edge — the workspace has no path
+/// to `DoWrite` that goes THROUGH `DoIt`'s reachable body except that injected edge.
+/// If a future regression drops the intra-dep injection, `DoIt`'s inherited Insert
+/// fact disappears and THIS oracle fails — even though the primary-side O1 still
+/// passes (the primary `UseChain` also calls `DoWrite` directly). So O6 gates the
+/// injection path specifically.
+#[test]
+fn o6_intra_dep_injected_edge_is_load_bearing() {
+    let p = projection();
+
+    // `DoIt` (the middle dep) = the DEP routine on codeunit 50300 that (a) is a dep
+    // routine, (b) is NOT the inner `DoWrite` leaf, and (c) inherits the Insert fact
+    // whose witness operation is `DoWrite`'s own op. Find it structurally so the test
+    // does not hard-code the (model-instance-independent but build-derived) sigHash.
+    let do_it = p
+        .summaries
+        .iter()
+        .find(|s| {
+            s.is_dep_routine
+                && s.routine_id != DEP_DOWRITE
+                && s.routine_id.contains(":Codeunit:50300#")
+                && s.capability_facts_inherited.iter().any(|f| {
+                    f.op == "insert"
+                        && f.witness_operation_id
+                            .as_deref()
+                            .map(|w| w.starts_with(DEP_DOWRITE))
+                            .unwrap_or(false)
+                })
+        })
+        .expect(
+            "the middle dep `DoIt` must inherit `DoWrite`'s Insert fact via the injected \
+             intra-dep edge — if absent, the intra-dep injection regressed",
+        );
+
+    // The inherited fact's witness CALLSITE is on `DoIt` itself (the injected edge's
+    // first hop is the dep routine's OWN callsite into `DoWrite`), NOT on a primary.
+    let fact = do_it
+        .capability_facts_inherited
+        .iter()
+        .find(|f| f.op == "insert")
+        .expect("DoIt inherits the Insert fact");
+    assert_eq!(
+        fact.provenance, "inherited",
+        "DoIt's Insert fact is inherited (not its own direct), got {:?}",
+        fact.provenance
+    );
+    let witness_cs = fact
+        .witness_callsite_id
+        .as_deref()
+        .expect("the injected-edge inherited fact carries a witnessCallsiteId");
+    assert!(
+        witness_cs.starts_with(&do_it.routine_id),
+        "the injected intra-dep edge's witness callsite is on the MIDDLE dep DoIt \
+         itself (its own call into DoWrite), got {witness_cs}"
+    );
+
+    // `DoIt` has NO direct Insert capability fact of its own — the fact is PURELY
+    // injection-derived (it would vanish entirely if the intra-dep edge were dropped).
+    assert!(
+        do_it
+            .capability_facts_direct
+            .iter()
+            .all(|f| f.op != "insert"),
+        "DoIt has no DIRECT Insert fact — its Insert is purely injection-inherited, \
+         so the injected edge is load-bearing; got {:?}",
+        do_it.capability_facts_direct
     );
 }

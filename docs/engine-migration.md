@@ -32,6 +32,8 @@ and `docs/`.
 | **R3a-4** | The **FOURTH L4 sub-gate** — the **DEP-ARTIFACT PRODUCER + CONSUMER HOOKS** (the cross-app L4 substrate, the input the R3a-5 cone reads): the embedded-source PRODUCER (`build_dep_artifact_l4` — the engine re-run over a dep `.app`'s embedded `.al` source, projecting `intraAppCallEdges` own→own resolved/deduped/sorted, `citedOperationEvidence` direct-fact witnesses, `depOrderIndex` per-routine order entries + return summaries + a freshness stamp; `summaryMode` "full" only when a body parsed) + the CONSUMER hooks (`inject_intra_app_call_edges` → synthetic direct-call `typedEdges` under the both-ends-in-merged-model guard; `collect_cited_dep_evidence` deduped/sorted; `collect_dep_order_index` under the freshness barrier) + the **stable-id dep-routine PROJECTION** (`DepIdStabilizer`: internal `<modelInstanceId>/<keyHash>[/opN|/csN]` → stable `<appGuid>:<Type>:<Num>#<normalizedSignatureHash>[/opN|/csN]`, cache/modelInstanceId/devFingerprint-INDEPENDENT — NO `dep:<artifactKey>` prefix). Captured POST-`injectIntraAppCallEdges`/`collectCitedDepEvidence`/`collectDepOrderIndex`, stable-id form | **SHIPPED** — 1/1 cross-app fixture (the source-bearing `Dep Chain` dep with the DoIt→DoWrite→Insert chain) **BYTE-MATCHES** the al-sem golden, `KNOWN_DIVERGENCES` empty; the stable-id projection is wired + verified model-instance-independent (`36dce15b…`/`d1b6bb59…` stable routine ids match al-sem exactly); the anti-degenerate matrix (fail-on-zero) Rust-computed + manifest-oracle-equal (intraAppCallEdges=1, injectedTypedEdges=1, citedEvidence=1, orderEntries=2, returnSummaries=2, depOrderIndexPresent=true, freshnessStampFresh=true); `aldump --r3a4-dep-hooks` emits the projection; native L4-direct oracle green (4 invariants: every intraAppCallEdge own→own; injected typedEdge ⟺ an intraAppCallEdge with both ends in the merged model + 1:1 synthetic direct-call; the freshness stamp gates stale artifacts to ABSENT; cited evidence/order entries/return summaries deduped + sorted). The return-summary gate was made faithful to al-sem (`summary === undefined` ≡ "is summarized" — emits a return summary for EVERY own routine incl. bodyless, not gated on `body_available`; observationally equivalent on this corpus, no golden impact). The `depOrderIndex` CONTENTS are count-reduced in the golden projection (per-routine scopeFrame/op/callsite COUNTS, not the full order data) — **R3a-5 owns the full order-index contents** if its cone needs them. NEXT: **R3a-5** (the FULL cross-app L4 summary parity — the cone propagating dep facts to primary callers) |
 | **R3a-5** | The **FIFTH + LAST L4 sub-gate** — the **FULL CROSS-APP L4 SUMMARY** (the R3a-1/2/3 L4 path re-run over the merged workspace+dep corpus WITH the R3a-4 dep hooks): the merged index (workspace native routines + EMPTY-feature dep routines carrying a RETAINED summary = the dep's own `via:"direct"` dbEffects + `capabilityFactsDirect`, recovered from the dep's embedded source) feeds `buildCombinedGraph` → `injectIntraAppCallEdges` (the dep intra-app `direct-call` typedEdges) → `computeSummaries` (dep routines as LEAVES; `compute_summaries_with_leaves`) → the cone, so the cone PROPAGATES the dep's `capabilityFactsDirect` through the injected typedEdges + the cross-app resolved member-call typedEdges to PRIMARY callers' `capabilityFactsInherited`, AND the dbEffect compose folds the dep's `via:"direct"` dbEffect into the primary's `dbEffects` as `via:"inherited"`. The FULL `RoutineSummary` (R3a-2 core + R3a-3 cone/coverage + `isDepRoutine`) is projected per routine, STABLE-id form, over the cross-app corpus. Captured POST-`computeSummaries` WITH dep hooks | **SHIPPED** — 1/1 cross-app fixture (the source-bearing `Dep Chain` DoIt→DoWrite→Insert + a symbol-only dep) **BYTE-MATCHES** the al-sem golden (5 summaries: 2 primary + 3 dep), `KNOWN_DIVERGENCES` empty; the dep fact PROPAGATES — primary `UseChain` inherits the dep `DoWrite`'s Insert capabilityFact (`provenance:"inherited"`, witnessCallsiteId on the primary's cross-app callsite, witnessOperationId the dep's own op) AND folds the dep's Insert dbEffect (`via:"inherited"`); the anti-degenerate CROSS-APP matrix (fail-on-zero) Rust-computed + manifest-oracle-equal (primaryRoutinesWithInheritedDepFacts=1, primaryRoutinesWithDepDbEffects=1, coveragesWithOpaqueAppsReason=2, totalCrossAppInheritedFacts=1); `aldump --r3a5-cross-app-summary` emits the projection; native L4-direct oracle green (5 invariants: the cross-app cone fired with provenance=inherited; the witness traces through the injected/cross-app dep edge; coverage reflects the symbol-only-dep opaque surface; the dep routine's own direct fact is unchanged; the dbEffect composes cross-app direct→inherited). The `compute_summaries_with_leaves` seam mirrors al-sem's `isLeaf(r)=r.summary!==undefined` (dep routines are fixed leaves, never recomputed; source-bearing dep routines retain `bodyAvailable=true` so a primary caller is not spuriously flagged `opaque-callee`). With R3a-5 SHIPPED, the **FULL L4 `RoutineSummary` is at byte-parity — source-only (R3a-1/2/3) + cross-app (R3a-5)**. NEXT: **R3b** (Salsa incrementality over the L4 fixed point) |
 | **R3a (= R3a-0…R3a-5)** | Full **L4 `RoutineSummary`** parity — the combined-graph + Tarjan SCC substrate, the JACOBI fixed-point summary core, the capability cone + coverage, the dep-artifact producer/consumer hooks, and the FULL cross-app summary with dep-fact propagation — at the post-`computeSummaries` (with dep hooks) boundary | **COMPLETE** — all six sub-gates SHIPPED; the full from-scratch L4 `RoutineSummary` is at byte-parity with al-sem over the source-only AND cross-app corpora + a native L4-direct oracle per sub-gate. NEXT: **R3b** (Salsa incrementality over the L4 fixed point — the novel core: wrap the from-scratch L4 in Salsa queries, prove incremental == from-scratch byte-equal + reverse-cone recompute-minimality) |
+| **R3b** | **Salsa INCREMENTALITY over the L4 fixed point** (the novel core, NOT a parity gate — the same L4 OUTPUT, made demand-driven + incremental via a Salsa 0.27 query graph). **Stage 1** wraps the from-scratch L4 in tracked queries (`combined_graph`→`scc_condensation`→interned `SccKey`→the early-cutting projections→`scc_summaries` JACOBI→`routine_summary`/cone) and proves the Salsa-WRAPPED result byte-matches the R3a from-scratch goldens (r3a3 source-only + r3a5 cross-app). **Stage 2** makes the DB persistent + editable (fine-grained per-routine inputs + setters) and proves `incremental == from-scratch` BYTE-equal over 1908 random edits (set-fact / call-edge add-remove / routine add-remove-rename / app-identity / dep-stamp / no-op-at-L4), plus value-equal-carrier no-op early-cutoff + a schedule/DB-provenance/`RUST_HASH_SEED` nondeterminism oracle. **Stage 3** RE-GRANULARIZES `scc_summaries` to depend ONLY on its own SCC's members + edge targets + successor summaries (per-routine `routine_combined_edges`/`routine_uncertainty_edges`/`routine_body_available`/`routine_leaf_summary` queries replace the monolithic `combined_graph` read + full `by_id` scan) and PROVES recompute-MINIMALITY: a localized non-topology edit recomputes only the edited SCC + its reverse cone of callers — a STRICT subset of all SCCs | **SHIPPED** — wrapped-parity (r3a3+r3a5 byte-match from-scratch + golden) + incremental-equality (1908 edits, `KNOWN_DIVERGENCES` empty) + the Stage-3 re-granularization (scc_summaries depends ONLY on its SCC's members+successors; OUTPUT unchanged — all R3a goldens + wrapped-parity + incremental-equality still byte-match) + recompute-MINIMALITY (`tests/r3b_minimality.rs`, the EXIT GATE: by-category WillExecute instrumentation STRUCTURAL/PROJECTION/SUMMARY; the recomputed SUMMARY set ⊆ the reverse cone; STRICT-SUBSET on curated fixtures — a localized leaf-dbEffect edit recomputes only 4/6 SCCs, the 2 unrelated SCCs early-cut, 0 structural; a root-caller edit recomputes exactly 1/6; 111 real multi-SCC fixtures reverse-cone-bounded with 77 witnessing a strict-subset recompute; edge merge/split + add/remove/rename + dep/identity cases stay within the whole-graph cone ceiling AND byte-equal to from-scratch) + the cyclic-fixed-point fingerprint TRACE reproduced THROUGH the Salsa `scc_trace` query (== the R3a-2 per-iteration JACOBI trace == al-sem) on the 3 recursive fixtures. The R3a-5 injection-coverage hardening landed (the `o6_intra_dep_injected_edge_is_load_bearing` native oracle: the MIDDLE dep `DoIt` inherits the inner dep `DoWrite`'s Insert fact PURELY via the injected intra-dep edge — a future injection regression drops it, gating the injection path that the primary-side O1 alone does not). NEXT: **R4** (L5 detectors over the byte-parity + incremental L4 substrate) |
+| **R3 (= R3a + R3b)** | Full **L4 summaries — from-scratch (byte-parity) AND incremental (Salsa, reverse-cone-minimal)** | **COMPLETE** — R3a (from-scratch L4 `RoutineSummary` at byte-parity with al-sem, source-only + cross-app) + R3b (the same L4 made demand-driven + genuinely-minimal-incremental via Salsa, with wrapped-parity + incremental-equality + reverse-cone minimality + the fingerprint trace through Salsa all proven). The L4 substrate is now both al-sem-faithful AND incrementally recomputable. NEXT: **R4** (the L5 performance detectors — pure queries over the L4 `RoutineSummary` + cone substrate) |
 
 ---
 
@@ -1507,10 +1509,67 @@ the dbEffect composes cross-app direct→inherited). The R3a-1/2/3/4 + R2.5b sui
 
 **With R3a-5 SHIPPED, R3a (= R3a-0 … R3a-5) is COMPLETE** — the full from-scratch L4
 `RoutineSummary` is at byte-parity with al-sem over the source-only AND cross-app corpora,
-each sub-gate with a native L4-direct oracle. **NEXT: R3b** — Salsa incrementality over the
-L4 fixed point (the novel core): wrap the from-scratch L4 in Salsa queries (the
-`scc_summaries(scc_key)`-internal-loop pattern) and prove incremental == from-scratch
-byte-equal + the reverse-cone recompute-minimality.
+each sub-gate with a native L4-direct oracle.
+
+---
+
+## R3b status (SHIPPED — Salsa incrementality over the L4 fixed point) — R3 COMPLETE
+
+R3b makes the from-scratch R3a L4 fixed point INCREMENTAL via a Salsa 0.27 demand-driven
+query graph — WITHOUT changing the OUTPUT (the same byte-parity L4 `RoutineSummary`, only
+made recomputable on edits). It shipped in three stages:
+
+- **Stage 1 (wrapped parity).** The from-scratch L4 is wrapped in tracked queries:
+  `combined_graph` → `scc_condensation` (the structural Tarjan pass) → an interned `SccKey`
+  (= the sorted-member-`StableRoutineId` set; a merge/split mints a NEW key) → the
+  early-cutting projections (`scc_members`/`scc_successors`/`scc_is_recursive`/
+  `scc_for_routine`) → `scc_summaries(scc_key)` (the internal R3a JACOBI over the SCC's
+  members, depending on its successor `scc_summaries`) → `routine_summary` + the cone
+  (`inherited_facts`/`coverage`). The Salsa-WRAPPED projection byte-matches the R3a
+  from-scratch goldens (r3a3 source-only + r3a5 cross-app). `tests/r3b_wrapped_parity.rs`.
+
+- **Stage 2 (incremental equality).** The DB is made persistent + editable (fine-grained
+  per-routine inputs + a setter per editable field). `incremental == from-scratch` proven
+  BYTE-equal over **1908 random edits** (set-fact / call-edge add-remove / routine
+  add-remove-rename / app-identity / dep-stamp / no-op-at-L4), with value-equal-carrier
+  no-op early-cutoff and a schedule/DB-provenance/`RUST_HASH_SEED` nondeterminism oracle.
+  `tests/r3b_incremental_equality.rs` + `tests/r3b_incremental_nondeterminism.rs`.
+
+- **Stage 3 (recompute-MINIMALITY — the EXIT GATE).** The summary query is
+  RE-GRANULARIZED: `scc_summaries(scc_key)` no longer reads the monolithic `combined_graph`
+  + a full per-routine scan. Instead it builds a PER-SCC mini combined graph from its
+  MEMBERS' own per-routine queries (`routine_combined_edges` / `routine_uncertainty_edges`),
+  member-only base/routine/leaf maps, and per-target `routine_body_available` /
+  `routine_leaf_summary` reads — so it depends ONLY on {its members' inputs + edges} ∪
+  {its edge targets' bodyAvailable + retained leaf summaries} ∪ {successor `scc_summaries`}
+  ∪ {`scc_members`/`scc_successors`/`scc_is_recursive`(this key)}. An edit isolated to an
+  unrelated SCC leaves all of those value-equal ⇒ the query BACKDATES. `tests/r3b_minimality.rs`
+  (the EXIT GATE) proves recompute-minimality with by-category `WillExecute` instrumentation
+  (STRUCTURAL = `combined_graph`/`scc_condensation`, accounted separately as they may
+  recompute broadly on a topology edit; PROJECTION = the early-cutting per-SCC/per-routine
+  queries; SUMMARY = `scc_summaries`/`scc_trace`/`routine_summary`/`inherited_facts`/
+  `coverage`/`cones`, the BOUNDED set). The recomputed SUMMARY set ⊆ the reverse dependency
+  cone of the changed inputs; on curated fixtures a localized leaf-dbEffect edit recomputes
+  only **4 of 6 SCCs** (the 2 unrelated SCCs early-cut, 0 structural), a root-caller edit
+  recomputes exactly **1 of 6**, and across **111 real multi-SCC corpus fixtures** the bound
+  holds with **77 witnessing a strict-subset recompute**. Topology (edge merge/split),
+  churn (routine add/remove/rename), and dep/identity edits stay within the whole-graph cone
+  ceiling AND byte-equal to from-scratch.
+
+The cyclic fixed point is reproduced THROUGH Salsa: a new `scc_trace(scc_key)` tracked query
+runs the SAME re-granularized per-SCC computation with the R3a `collect_trace` hook, so a
+recursive SCC's incremental recompute reproduces the EXACT R3a-2 per-iteration JACOBI
+fingerprint trace (== al-sem) on the 3 recursive fixtures. The R3a-5 injection-coverage
+hardening landed as the native `o6_intra_dep_injected_edge_is_load_bearing` oracle: the
+MIDDLE dep `DoIt` inherits the inner dep `DoWrite`'s Insert fact PURELY via the injected
+intra-dep edge (it has no direct Insert of its own), so a future injection regression drops
+the fact and the oracle fails — gating the injection path that the primary-side O1 (the
+primary also calls `DoWrite` directly) does not. `KNOWN_DIVERGENCES` empty.
+
+**With R3b SHIPPED, R3 (= R3a + R3b) is COMPLETE** — the L4 summaries are at byte-parity
+from-scratch (source-only + cross-app) AND incrementally recomputable with reverse-cone
+minimality. **NEXT: R4** — the L5 performance detectors, pure queries over the byte-parity +
+incremental L4 `RoutineSummary` + cone substrate.
 
 ---
 
@@ -1535,9 +1594,10 @@ byte-equal + the reverse-cone recompute-minimality.
 | L4 (summaries) | **R3a (= R3a-1 + R3a-2 + R3a-3)** | **SOURCE-ONLY L4 RoutineSummary COMPLETE** — graph substrate + JACOBI summary core + capability cone/coverage at byte-parity |
 | L4 (deps) | **R3a-4** (dep-artifact producer + consumer hooks + stable-id dep-routine projection) | **DONE** — 1/1 cross-app fixture BYTE-MATCHES the al-sem golden, `KNOWN_DIVERGENCES` empty; the stable-id dep-routine projection (`DepIdStabilizer` → `appGuid:Type:Num#sigHash`, NO `dep:` prefix) wired + model-instance-independent + al-sem-equal; anti-degenerate matrix (fail-on-zero, intraAppCallEdges=1/injected=1/cited=1/orderEntries=2/returnSummaries=2/depOrderIndexPresent/freshnessStampFresh) manifest-oracle-equal; `aldump --r3a4-dep-hooks` emitter; native L4-direct oracle (4 invariants); return-summary gate made al-sem-faithful (`summary===undefined` ≡ summarized, not `body_available`). The `depOrderIndex` order-index CONTENTS are count-reduced in the projection — R3a-5 owns the full contents if its cone needs them |
 | L4 (summaries) | **R3a-5** (the FULL cross-app L4 summary — the cone propagating dep facts to primary callers) | **DONE** — 1/1 cross-app fixture BYTE-MATCHES the al-sem golden (5 summaries: 2 primary + 3 dep), `KNOWN_DIVERGENCES` empty; the dep fact PROPAGATES (primary `UseChain` inherits the dep `DoWrite`'s Insert capabilityFact `provenance:"inherited"` + folds its dbEffect `via:"inherited"`); the anti-degenerate CROSS-APP matrix (fail-on-zero: primaryWithInheritedDepFacts=1/primaryWithDepDbEffects=1/coveragesWithOpaqueAppsReason=2/totalCrossAppInheritedFacts=1) manifest-oracle-equal; `aldump --r3a5-cross-app-summary` emitter; native L4-direct oracle (5 invariants); the `compute_summaries_with_leaves` seam mirrors al-sem's `isLeaf` (dep routines as fixed leaves) |
-| L4 (summaries) | **R3a (= R3a-0 … R3a-5)** | **L4 RoutineSummary COMPLETE** — graph substrate + JACOBI summary core + capability cone/coverage + dep producer/consumer hooks + FULL cross-app summary with dep-fact propagation, at byte-parity source-only AND cross-app. **NEXT: R3b** (Salsa incrementality over the L4 fixed point) |
-| L4 (Salsa) | **R3b** (Salsa incrementality over the L4 fixed point — the novel core) | NEXT — wrap the from-scratch L4 in Salsa queries (`scc_summaries(scc_key)`-internal-loop) + prove incremental == from-scratch byte-equal + reverse-cone recompute-minimality |
-| L5 (detectors) | R4 | not started |
+| L4 (summaries) | **R3a (= R3a-0 … R3a-5)** | **L4 RoutineSummary COMPLETE** — graph substrate + JACOBI summary core + capability cone/coverage + dep producer/consumer hooks + FULL cross-app summary with dep-fact propagation, at byte-parity source-only AND cross-app |
+| L4 (Salsa) | **R3b** (Salsa incrementality over the L4 fixed point — the novel core) | **DONE** — wrapped-parity (r3a3+r3a5 byte-match from-scratch + golden) + incremental-equality (1908 edits byte-equal) + Stage-3 re-granularization (`scc_summaries` depends ONLY on its SCC's members+successors via per-routine `routine_combined_edges`/`routine_uncertainty_edges`/`routine_body_available`/`routine_leaf_summary`; OUTPUT unchanged) + recompute-MINIMALITY (`tests/r3b_minimality.rs` EXIT GATE: by-category WillExecute instrumentation; SUMMARY set ⊆ reverse cone; STRICT-SUBSET on curated fixtures — localized edit recomputes 4/6 SCCs, 2 unrelated early-cut; root-caller 1/6; 111 real fixtures reverse-cone-bounded, 77 strict-subset witnesses; topology/churn/dep cases cone-bounded + byte-equal) + the cyclic fixed-point fingerprint TRACE reproduced THROUGH the Salsa `scc_trace` query (== R3a-2 == al-sem) + the R3a-5 injection-coverage hardening oracle (O6); `KNOWN_DIVERGENCES` empty |
+| **L4** | **R3 (= R3a + R3b)** | **L4 COMPLETE** — summaries from-scratch (byte-parity, source-only + cross-app) AND incremental (Salsa, reverse-cone-minimal). **NEXT: R4** (L5 detectors over the L4 substrate) |
+| L5 (detectors) | **R4** (the L5 performance detectors — pure queries over the L4 `RoutineSummary` + cone substrate) | NEXT — not started |
 | product | — | not started |
 
 With R2.5b shipped, **R0 + R1 + R2 (R2a–R2d) + R2.5 (R2.5a + R2.5b) are done — L3 is
