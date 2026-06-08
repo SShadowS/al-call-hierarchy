@@ -18,7 +18,7 @@
 //! ## Negative assertions
 //!
 //! Each new R4-A detector (d5/d10/d11/d18/d21/d36, plus d19/d20/d29) MUST yield 0
-//! findings over a neutral fixture that lacks its pattern.
+//! findings over a neutral fixture that lacks its pattern. R4-B adds d22/d33.
 //!
 //! ## KNOWN_DIVERGENCES gating
 //!
@@ -58,7 +58,7 @@ const SMOKE: &[Smoke] = &[
         fixture: "ws-d22",
         wave: "R4-B",
         detectors: &["d22-flowfield-without-calcfields"],
-        ported: false,
+        ported: true,
     },
     Smoke {
         fixture: "ws-d12-dead-event",
@@ -166,6 +166,17 @@ const WAVE_A: &[Smoke] = &[
     },
 ];
 
+/// R4-B per-detector positive fixtures (metadata — tableById field metadata).
+const WAVE_B: &[Smoke] = &[
+    // d33: unfiltered DeleteAll / ModifyAll
+    Smoke {
+        fixture: "ws-d33",
+        wave: "R4-B",
+        detectors: &["d33-unfiltered-bulk-write"],
+        ported: true,
+    },
+];
+
 /// A negative assertion: the given detector must produce 0 findings over the
 /// neutral fixture (which lacks the detector's triggering pattern).
 struct NegativeAssertion {
@@ -234,6 +245,19 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d29-subscriber-modify-on-event-record",
         neutral_fixture: "ws-d11-no-get",
+    },
+    // d22: ws-d11-no-get has field accesses on "No." and "Last Date Modified" (Normal
+    // fields), but neither field is declared FlowField — the fieldClass gate drops all
+    // accesses and the detector emits 0.
+    NegativeAssertion {
+        detector: "d22-flowfield-without-calcfields",
+        neutral_fixture: "ws-d11-no-get",
+    },
+    // d33: ws-d22 contains Get/CalcFields ops but NO DeleteAll or ModifyAll
+    // calls — the bulk-op gate never fires, so the detector emits 0.
+    NegativeAssertion {
+        detector: "d33-unfiltered-bulk-write",
+        neutral_fixture: "ws-d22",
     },
 ];
 
@@ -499,6 +523,15 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- R4-B per-detector fixtures -------------------------------------------
+    for smoke in WAVE_B {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -600,10 +633,11 @@ fn differential_r4_findings_match_goldens() {
     );
 
     eprintln!(
-        "R4 differential: {} smoke + {} R4-A wave fixture(s); {} ported (all byte-matched); \
+        "R4 differential: {} smoke + {} R4-A + {} R4-B wave fixture(s); {} ported (all byte-matched); \
          {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
         WAVE_A.len(),
+        WAVE_B.len(),
         ported_results.len(),
         NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
@@ -627,10 +661,11 @@ fn refresh_r4_goldens_from_al_sem() {
     let dst = goldens_dir();
     std::fs::create_dir_all(&dst).expect("mk r4 goldens dir");
     let mut copied = 0usize;
-    // Smoke + wave-A fixtures
+    // Smoke + wave-A + wave-B fixtures
     let all_fixtures: Vec<&str> = SMOKE
         .iter()
         .chain(WAVE_A.iter())
+        .chain(WAVE_B.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

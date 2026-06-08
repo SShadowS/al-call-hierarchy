@@ -1,0 +1,186 @@
+{
+  "fixtureName": "ws-d33",
+  "detectors": [
+    "d33-unfiltered-bulk-write"
+  ],
+  "findingCount": 3,
+  "findings": [
+    {
+      "detector": "d33-unfiltered-bulk-write",
+      "id": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b/11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b/op0",
+      "rootCauseKey": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b/11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b/op0",
+      "title": "Unfiltered ModifyAll",
+      "rootCause": "ModifyAllCustomers calls ModifyAll on Customer (Customer) with no SetRange/SetFilter applied since the last Reset — the operation affects every row in the table.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 15,
+          "startColumn": 8,
+          "endLine": 15,
+          "endColumn": 37
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 15,
+              "startColumn": 8,
+              "endLine": 15,
+              "endColumn": 37
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "ModifyAll on Customer (Customer) with no prior SetRange/SetFilter in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#d65f1284ff921af155971313733aa2cb6741c387217914d28f7e46c0e8690c3b/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d330:Table:50900"
+      ],
+      "fixOptions": [
+        {
+          "description": "Apply a SetRange / SetFilter on Customer before calling ModifyAll, or confirm the unconditional whole-table operation is intentional and document it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "6f50fa7d4b0edebe"
+    },
+    {
+      "detector": "d33-unfiltered-bulk-write",
+      "id": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299/11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299/op2",
+      "rootCauseKey": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299/11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299/op2",
+      "title": "Unfiltered DeleteAll",
+      "rootCause": "FilterThenResetThenDelete calls DeleteAll on Customer (Customer) with no SetRange/SetFilter applied since the last Reset — the operation affects every row in the table.",
+      "severity": "critical",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 34,
+          "startColumn": 8,
+          "endLine": 34,
+          "endColumn": 28
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 34,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 28
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299",
+            "syntaxKind": "call_expression"
+          },
+          "note": "DeleteAll on Customer (Customer) with no prior SetRange/SetFilter in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#f82cf961aad91dfd2e7d6b108623a55bf58eec19f31b9ae305298128c941b299/op2"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d330:Table:50900"
+      ],
+      "fixOptions": [
+        {
+          "description": "Apply a SetRange / SetFilter on Customer before calling DeleteAll, or confirm the unconditional whole-table operation is intentional and document it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "571fcbe4871c254a"
+    },
+    {
+      "detector": "d33-unfiltered-bulk-write",
+      "id": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179/11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179/op0",
+      "rootCauseKey": "d33/11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179/11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179/op0",
+      "title": "Unfiltered DeleteAll",
+      "rootCause": "NukeAllCustomers calls DeleteAll on Customer (Customer) with no SetRange/SetFilter applied since the last Reset — the operation affects every row in the table.",
+      "severity": "critical",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 7,
+          "startColumn": 8,
+          "endLine": 7,
+          "endColumn": 28
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 28
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179",
+            "syntaxKind": "call_expression"
+          },
+          "note": "DeleteAll on Customer (Customer) with no prior SetRange/SetFilter in this routine",
+          "operationId": "11111111-0000-0000-0000-00000000d330:Codeunit:50900#40bbe95b9c6cfb03b8f0ed251431e02c4acf2fd83d685ce2d2dc1159f41f2179/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d330:Codeunit:50900"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d330:Table:50900"
+      ],
+      "fixOptions": [
+        {
+          "description": "Apply a SetRange / SetFilter on Customer before calling DeleteAll, or confirm the unconditional whole-table operation is intentional and document it.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "72d69b6cb7bcfe96"
+    }
+  ]
+}

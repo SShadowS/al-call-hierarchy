@@ -1,0 +1,207 @@
+//! D33 — Unfiltered bulk write (`DeleteAll` / `ModifyAll`). Port of al-sem
+//! `src/detectors/d33-unfiltered-bulk-write.ts`.
+//!
+//! Flags `DeleteAll` / `ModifyAll` on a local record variable when no narrowing
+//! filter (`SetRange` / `SetFilter`) has been applied on the same variable since
+//! the last `Reset` (or the start of the routine).
+//!
+//! Skipped:
+//!  - by-var parameter records (caller is responsible for filters).
+//!  - temporary records (`tempState: { kind: "known", value: true }`).
+//!  - operations whose tableId did not resolve.
+//!  - parse-incomplete routines.
+//!
+//! Severity:
+//!  - `DeleteAll` without filter → `critical`.
+//!  - `ModifyAll` without filter → `high`.
+//!
+//! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
+
+use crate::engine::l3::l3_workspace::L3Resolved;
+use crate::engine::l5::confidence::to_confidence;
+use crate::engine::l5::detector_context::DetectorContext;
+use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::fingerprint::FingerprintIndex;
+use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+
+const DETECTOR: &str = "d33-unfiltered-bulk-write";
+
+const BULK_OPS: &[&str] = &["DeleteAll", "ModifyAll"];
+const FILTER_OPS: &[&str] = &["SetRange", "SetFilter"];
+
+pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+    let ws = &resolved.workspace;
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut candidates_considered = 0usize;
+
+    for routine in &ws.routines {
+        // roleOf(routine) !== "primary" — source-only, every routine is primary.
+        if !routine.body_available {
+            continue;
+        }
+        if routine.parse_incomplete {
+            continue;
+        }
+
+        let param_record_names: std::collections::HashSet<String> = routine
+            .record_variables
+            .iter()
+            .filter(|rv| rv.is_parameter)
+            .map(|rv| rv.name.to_lowercase())
+            .collect();
+
+        for op in &routine.record_operations {
+            if !BULK_OPS.contains(&op.op.as_str()) {
+                continue;
+            }
+            candidates_considered += 1;
+
+            let var_key = op.record_variable_name.to_lowercase();
+
+            // Skip temporary records.
+            if let Some(ts) = &op.temp_state {
+                if ts.kind == "known" && ts.value == Some(true) {
+                    continue;
+                }
+            }
+
+            // Skip by-var parameter records.
+            if param_record_names.contains(&var_key) {
+                continue;
+            }
+
+            // Skip if tableId is unresolved.
+            let table_id = match &op.table_id {
+                Some(id) => id.clone(),
+                None => {
+                    continue;
+                }
+            };
+
+            // Check whether a narrowing filter was applied before this op.
+            if was_filtered_before(&routine.record_operations, &var_key, op) {
+                continue;
+            }
+
+            // Resolve the table name for the finding text (fall back to table_id).
+            let table_name = ctx
+                .table_by_id
+                .get(table_id.as_str())
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| table_id.clone());
+
+            let severity = if op.op == "DeleteAll" {
+                "critical"
+            } else {
+                "high"
+            };
+
+            let path = vec![EvidenceStep {
+                routine_id: routine.id.clone(),
+                operation_id: Some(op.id.clone()),
+                callsite_id: None,
+                loop_id: None,
+                source_anchor: anchor_of(&op.source_anchor, routine),
+                note: format!(
+                    "{} on {} ({}) with no prior SetRange/SetFilter in this routine",
+                    op.op, op.record_variable_name, table_name
+                ),
+            }];
+
+            // id = d33/{routineId}/{op.id}
+            let id = format!("d33/{}/{}", routine.id, op.id);
+            let root_cause_key = id.clone();
+
+            let affected_objects = vec![routine.object_id.clone()];
+            let affected_tables = vec![table_id.clone()];
+
+            let confidence: FindingConfidence = to_confidence(&[], "likely");
+
+            let root_cause = format!(
+                "{} calls {} on {} ({}) with no SetRange/SetFilter applied since the last Reset \
+                 — the operation affects every row in the table.",
+                routine.name, op.op, op.record_variable_name, table_name
+            );
+
+            let fix_desc = format!(
+                "Apply a SetRange / SetFilter on {} before calling {}, or confirm the \
+                 unconditional whole-table operation is intentional and document it.",
+                op.record_variable_name, op.op
+            );
+
+            let mut finding = Finding {
+                id,
+                root_cause_key,
+                detector: DETECTOR.to_string(),
+                title: format!("Unfiltered {}", op.op),
+                root_cause,
+                severity: severity.to_string(),
+                confidence,
+                primary_location: anchor_of(&op.source_anchor, routine),
+                evidence_path: path,
+                additional_paths: None,
+                affected_objects,
+                affected_tables,
+                fix_options: vec![FixOption {
+                    description: fix_desc,
+                    safety: "high".to_string(),
+                }],
+                provenance: vec![Evidence {
+                    source: "tree-sitter".to_string(),
+                    note: None,
+                }],
+                actionable_anchor: None,
+                fingerprint: None,
+                event_kind: None,
+                cross_extension_subscribers: None,
+            };
+            finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
+            findings.push(finding);
+        }
+    }
+
+    findings.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let emitted = findings.len();
+    DetectorOutput {
+        findings,
+        stats: DetectorStats {
+            detector: DETECTOR.to_string(),
+            candidates_considered,
+            findings_emitted: emitted,
+        },
+    }
+}
+
+/// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE
+/// `bulk_op` in source order with no intervening `Reset` (which would wipe filters).
+///
+/// Mirrors al-sem `wasFilteredBefore`: scan all ops on the same var strictly before
+/// the bulk op; `SetRange`/`SetFilter` → filtered=true; `Reset` → filtered=false.
+fn was_filtered_before(
+    ops: &[crate::engine::l3::l3_workspace::L3RecordOperation],
+    var_key: &str,
+    bulk_op: &crate::engine::l3::l3_workspace::L3RecordOperation,
+) -> bool {
+    let mut filtered = false;
+    for other in ops {
+        // Skip self.
+        if std::ptr::eq(other, bulk_op) {
+            continue;
+        }
+        if other.record_variable_name.to_lowercase() != var_key {
+            continue;
+        }
+        if !before_anchor(&other.source_anchor, &bulk_op.source_anchor) {
+            continue;
+        }
+        if FILTER_OPS.contains(&other.op.as_str()) {
+            filtered = true;
+        } else if other.op == "Reset" {
+            filtered = false;
+        }
+    }
+    filtered
+}

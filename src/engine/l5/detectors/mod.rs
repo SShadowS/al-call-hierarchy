@@ -1,5 +1,6 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
-//! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A).
+//! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
+//! d22/d33 (R4-B).
 
 pub mod d10;
 pub mod d11;
@@ -7,12 +8,14 @@ pub mod d18;
 pub mod d19;
 pub mod d20;
 pub mod d21;
+pub mod d22;
 pub mod d29;
+pub mod d33;
 pub mod d36;
 pub mod d4;
 pub mod d5;
 
-use crate::engine::l2::features::PAnchor;
+use crate::engine::l2::features::{PAnchor, PExpressionInfo};
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l5::finding::SourceAnchor;
 use crate::engine::l5::registry::Detector;
@@ -25,6 +28,18 @@ pub(crate) fn before_anchor(a: &PAnchor, b: &PAnchor) -> bool {
         return a.start_line < b.start_line;
     }
     a.start_column < b.start_column
+}
+
+/// `unquotedFieldName` from `model/expression.ts`:
+/// Resolve a field-name argument to its unquoted form. Prefers `.value` (set on
+/// `quoted_identifier` / `string_literal` / `qualified_enum_value`) over `.text`.
+/// Preserves original case — callers lowercase for comparison where needed.
+/// Shared across d18 (CalcFields-arg literal check) and d22 (CalcFields-arg coverage).
+pub(crate) fn unquoted_field_name(info: &PExpressionInfo) -> String {
+    if let Some(v) = &info.value {
+        return v.clone();
+    }
+    info.text.clone()
 }
 
 /// Build the internal `SourceAnchor` from an L2 `PAnchor` + the owning routine.
@@ -82,8 +97,16 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d21::detect_d21,
         },
         Detector {
+            name: "d22-flowfield-without-calcfields".to_string(),
+            run: d22::detect_d22,
+        },
+        Detector {
             name: "d29-subscriber-modify-on-event-record".to_string(),
             run: d29::detect_d29,
+        },
+        Detector {
+            name: "d33-unfiltered-bulk-write".to_string(),
+            run: d33::detect_d33,
         },
         Detector {
             name: "d36-late-setloadfields".to_string(),

@@ -17,7 +17,7 @@ use crate::engine::l2::features::PExpressionInfo;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{anchor_of, unquoted_field_name};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -40,15 +40,6 @@ fn is_literal_expression(info: &PExpressionInfo) -> bool {
         "unary_expression" => info.value.is_some(),
         _ => false,
     }
-}
-
-/// `unquotedFieldName` from `model/expression.ts`:
-/// Resolve a field-name argument to its lowered, unquoted form.
-fn unquoted_field_name(info: &PExpressionInfo) -> String {
-    if let Some(v) = &info.value {
-        return v.to_lowercase();
-    }
-    info.text.to_lowercase()
 }
 
 pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
@@ -124,7 +115,7 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                 routine.id,
                 loop_info.id,
                 record_var,
-                unquoted_field_name(field_info)
+                unquoted_field_name(field_info).to_lowercase()
             );
             if seen.contains(&dedup_key) {
                 continue;
