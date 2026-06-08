@@ -21,13 +21,12 @@
 //!     `parseIncomplete` routines. `bodyAvailable` and `parseIncomplete` are
 //!     INDEPENDENT filters over the L2 flags, NOT a partition (a routine can be
 //!     neither, e.g. a syntax-error body that still has a code block → both true).
-//!   - `opaqueApps` = the appGuid[] of `sourceKind == "symbol-only"` apps. ALWAYS
-//!     `[]` — both source-only AND cross-app (R2.5b) — faithful to an al-sem latent
-//!     bug (Rev 3): `buildCoverage` reads `index.identity.apps.filter(sourceKind ==
-//!     "symbol-only")`, but `withDependencyArtifacts` appends deps to `index.apps`
-//!     (the `App[]`, no `sourceKind`) and leaves `identity.apps` UNCHANGED, so no
-//!     symbol-only dep `AppIdentity` is ever present. DEFERRED to a consolidated
-//!     post-migration fix-then-freeze.
+//!   - `opaqueApps` = the appGuid[] of `sourceKind == "symbol-only"` apps. `[]`
+//!     source-only (no deps); NON-EMPTY cross-app (R2.5b) — it lists the symbol-only
+//!     dep app guids. As of R3a-0 (al-sem `81d538a`+`f1650ba`, Fix 2): `buildCoverage`
+//!     reads `index.identity.apps.filter(sourceKind == "symbol-only")`, and
+//!     `withDependencyArtifacts` now stamps the dep `AppIdentity`s (with `sourceKind`,
+//!     from the artifact header) into `identity.apps` — so the symbol-only deps appear.
 //!   - `unresolvedCallsites` = a MULTISET (`.map` over EDGES — NOT unique sites):
 //!     every call-graph edge whose `resolution ∈ {unknown, ambiguous,
 //!     member-not-found, external-target}` → its stable callsiteId. Duplicates are
@@ -293,24 +292,26 @@ impl L3Resolved {
     /// real dep ledger. `apps` is `(appGuid, sourceKind)` for the workspace ("source")
     /// plus each dep ("symbol-only" | "app-source").
     ///
-    /// REV3 — `opaqueApps` is structurally `[]` (FAITHFUL to a KNOWN al-sem latent bug,
-    /// NOT a miss). al-sem's `buildCoverage` (`src/resolve/coverage.ts:37-39`) computes
-    /// `opaqueApps = index.identity.apps.filter(sourceKind==="symbol-only")`, but
-    /// `withDependencyArtifacts` (`src/deps/dependency-artifact.ts:201-217`) appends the
-    /// dep apps to `index.apps` (the `App[]` collection — which has NO `sourceKind`) and
-    /// spreads `...index`, leaving `index.identity.apps` UNCHANGED; `analyzeWorkspace`
-    /// never stamps the symbol-only dep `AppIdentity`s into `identity.apps`. So al-sem's
-    /// `opaqueApps` is ALWAYS empty in the workspace path — source-only AND cross-app.
-    /// Per plan Rev 3 / Option B we MIRROR current al-sem: pass ONLY the WORKSPACE
-    /// (`"source"`) apps to `build_coverage`, so `opaqueApps` stays `[]` (the symbol-only
-    /// dep rows are dropped here, reproducing al-sem's `identity.apps` NOT carrying them).
-    /// The opaqueApps fix is deferred to a consolidated post-migration fix-then-freeze
-    /// (alongside the primaryDependencies bug).
+    /// FIXED (R3a-0 semantic-oracle epoch, al-sem `81d538a`+`f1650ba`):
+    ///   - `opaqueApps` = the `sourceKind == "symbol-only"` dep app guids. al-sem's Fix 2
+    ///     now stamps the dep `AppIdentity`s (with `sourceKind`, derived from the artifact
+    ///     header) into `index.identity.apps` via `withDependencyArtifacts`, and
+    ///     `buildCoverage` reads `identity.apps.filter(sourceKind=="symbol-only")`. So we
+    ///     pass ALL apps (workspace + deps) to `build_coverage` and let its `symbol-only`
+    ///     filter populate `opaqueApps` — no longer dropped to `[]`. The al-sem golden's
+    ///     `opaqueApps` MOVED accordingly (Fix 2 is active in the R2.5b capture harness,
+    ///     which calls `withDependencyArtifacts`).
     ///
-    /// `declared_dep_app_guids` / `fetched_app_guids` are accepted for symmetry but NOT
-    /// threaded into the member opaque-vs-external-target split (PARITY: al-sem's
-    /// `primaryDependencies` is undefined DURING resolve ⇒ unfetched=false ⇒ member
-    /// misses are external-target, never opaque — the known al-sem quirk).
+    /// CAPTURE-ORDER CAVEAT (al-sem `r2.5b-cross-app-capture.ts`): the committed al-sem
+    /// R2.5b goldens are captured with `primaryDependencies` stamped AFTER `resolveModel`
+    /// (the OLD order), so Fix 1's member-`opaque` branch is NOT reflected in the golden's
+    /// `unresolvedCallsites` for THIS corpus — which DOES have an unfetched declared dep
+    /// (`Lib Absent`) + a `gone.M()` member miss. We therefore resolve the call graph here
+    /// with the SAME empty ledger the capture used (NOT the production-fixed ledger), so the
+    /// coverage `unresolvedCallsites` byte-matches the committed golden. Threading the real
+    /// ledger would correctly produce `opaque` (and DROP the `gone.M()` callsite) — matching
+    /// PRODUCTION `analyzeWorkspace` — but DIVERGE from the stale golden. See the R3a-0
+    /// report: this golden staleness is an al-sem capture-harness concern, NOT a Rust bug.
     pub fn project_coverage_cross_app(
         &self,
         units: &[CoverageUnit],
@@ -321,9 +322,9 @@ impl L3Resolved {
     ) -> AnalysisCoverage {
         let ws = &self.workspace;
         let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-        // PARITY: the call resolution INSIDE coverage runs exactly as al-sem's
-        // resolveModel — primaryDependencies undefined ⇒ unfetched=false (member
-        // misses are external-target, never opaque).
+        // CAPTURE-ORDER PARITY: resolve with the EMPTY ledger the al-sem R2.5b capture used
+        // (stamps primaryDependencies AFTER resolve), so unresolvedCallsites byte-matches the
+        // committed golden. (Production al-sem threads the real ledger → gone.M() opaque.)
         let no_deps: Vec<DeclaredDependency> = Vec::new();
         let no_fetched: Vec<String> = Vec::new();
         let resolved = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
@@ -334,18 +335,12 @@ impl L3Resolved {
             .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
             .collect();
 
-        // REV3: mirror al-sem's `identity.apps` — workspace ("source") apps ONLY. The
-        // symbol-only dep rows are NOT carried into the opaqueApps filter (al-sem's
-        // identity.apps never gains them), so `opaqueApps` is faithfully `[]`.
-        let workspace_apps: Vec<(String, String)> = apps
-            .iter()
-            .filter(|(_, source_kind)| source_kind == "source")
-            .cloned()
-            .collect();
-
+        // FIXED (R3a-0, Fix 2): pass ALL apps (workspace "source" + each dep). The
+        // `symbol-only` filter in build_coverage now populates opaqueApps with the
+        // symbol-only dep app guids (al-sem's identity.apps now carries them).
         build_coverage(
             &ws.routines,
-            &workspace_apps,
+            apps,
             &resolved.edges,
             units,
             index_diagnostics,

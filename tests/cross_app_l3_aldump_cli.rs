@@ -35,13 +35,12 @@ fn aldump_l3_cross_app_emits_nonempty_resolution() {
         .as_array()
         .expect("callGraph.groups");
     let resolved_to_dep = groups.iter().any(|g| {
-        g["edges"].as_array().map_or(false, |edges| {
+        g["edges"].as_array().is_some_and(|edges| {
             edges.iter().any(|e| {
                 e["resolution"] == "resolved"
                     && e["to"]
                         .as_str()
-                        .map(|t| t.starts_with("dddddddd-0000-0000-0000-000000000001"))
-                        .unwrap_or(false)
+                        .is_some_and(|t| t.starts_with("dddddddd-0000-0000-0000-000000000001"))
             })
         })
     });
@@ -50,18 +49,21 @@ fn aldump_l3_cross_app_emits_nonempty_resolution() {
         "≥1 cross-app member call resolved to a dep routine"
     );
 
-    // coverage.opaqueApps is EXACTLY [] — FAITHFUL to a KNOWN al-sem latent bug (REV3):
-    // buildCoverage filters index.identity.apps by sourceKind==="symbol-only", but
-    // withDependencyArtifacts never populates identity.apps with the symbol-only deps, so
-    // opaqueApps is structurally always empty. The cross-app COVERAGE signal is instead
-    // the unresolvedCallsites resolution delta (the resolved cross-app member call above
-    // dropped OUT; the external-target member miss stays IN), proven in the R2.5b-d
-    // differential / oracle. The opaqueApps fix is deferred to a post-migration
-    // fix-then-freeze.
+    // coverage.opaqueApps now lists the symbol-only dep apps (R3a-0 Fix 2 — latent bug
+    // FIXED in al-sem `81d538a`+`f1650ba`): buildCoverage filters index.identity.apps by
+    // sourceKind=="symbol-only", and withDependencyArtifacts now stamps the dep
+    // AppIdentitys (with sourceKind) into identity.apps. The corpus's two deps are
+    // symbol-only, so opaqueApps carries them.
     let opaque = v["coverage"]["opaqueApps"].as_array().expect("opaqueApps");
     assert!(
-        opaque.is_empty(),
-        "opaqueApps == [] (faithful to the al-sem latent bug — REV3)"
+        !opaque.is_empty(),
+        "opaqueApps lists the symbol-only dep apps (R3a-0 Fix 2)"
+    );
+    assert!(
+        opaque
+            .iter()
+            .any(|a| a.as_str() == Some("dddddddd-0000-0000-0000-000000000001")),
+        "opaqueApps includes the symbol-only Lib Core dep"
     );
     // The cross-app coverage WIN is still observable: the external-target member miss
     // stays IN unresolvedCallsites (proving the unresolved multiset reflects cross-app

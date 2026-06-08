@@ -25,10 +25,14 @@
 //!     (LocalHelper) BOTH resolve identically to their EXACT dep StableRoutineIds —
 //!     the resolver IGNORES accessModifier (Rev 2 #2; a wrongly-added visibility gate
 //!     would drop these edges);
-//!   - the opaque-vs-external-target split matches the al-sem `primaryDependencies`
-//!     quirk: a member call to an ABSENT object is `external-target` (NEVER
-//!     member-opaque); ONLY the object-run form into an absent declared dep is
-//!     `opaque` (Rev 2 #2/#4 — a KNOWN al-sem latent bug, deliberately reproduced);
+//!   - the opaque-vs-external-target split matches the committed al-sem R2.5b cg GOLDEN
+//!     (captured with the EMPTY ledger — `primaryDependencies` stamped AFTER resolve):
+//!     a member call to an ABSENT object is `external-target`; ONLY the object-run form
+//!     into an absent declared dep is `opaque`. NOTE (R3a-0): PRODUCTION al-sem applies
+//!     Fix 1 (real ledger DURING resolve) and would classify the member miss `opaque`
+//!     for THIS corpus (it has an unfetched declared dep + `gone.M()`); the golden is
+//!     STALE on this point (an al-sem capture-harness concern). The production-correct
+//!     member-`opaque` resolver behavior is proven by `tests/r3a0_unfetched_dep_opaque.rs`;
 //!   - a member miss on a PRESENT dep object is `member-not-found`;
 //!   - a cross-app callsite's argumentBindings UPGRADED on resolution: the
 //!     `cu.Apply(localCust)` record-arg binding is `resolved` + `calleeParameterIsVar`
@@ -194,9 +198,12 @@ fn resolved_member_edges_are_four_distinct_dep_routines() {
 }
 
 // ============================================================================
-// 5. The opaque-vs-external-target split matches the al-sem primaryDependencies
-//    QUIRK: a MEMBER call to an absent object is `external-target` (NEVER member-
-//    opaque); ONLY the object-run form into an absent declared dep is `opaque`.
+// 5. The opaque-vs-external-target split matches the committed al-sem R2.5b cg GOLDEN
+//    (captured with the EMPTY ledger): a MEMBER call to an absent object is
+//    `external-target`; ONLY the object-run form into an absent declared dep is
+//    `opaque`. (PRODUCTION al-sem would classify the member miss `opaque` here — Fix 1;
+//    the golden is stale, see the header. tests/r3a0_unfetched_dep_opaque.rs proves the
+//    production member-opaque resolver behavior.)
 // ============================================================================
 
 #[test]
@@ -213,14 +220,15 @@ fn opaque_is_object_run_only_and_member_miss_is_external_target() {
         "the opaque edge is the OBJECT-RUN form (Codeunit.Run into an absent declared dep)",
     );
 
-    // NO member-call edge is `opaque` — the quirk holds.
+    // NO member-call edge is `opaque` in the GOLDEN-PARITY (empty-ledger) projection.
     let member_opaque = edges
         .iter()
         .filter(|e| e.resolution == "opaque" && e.dispatch_kind == "method")
         .count();
     assert_eq!(
         member_opaque, 0,
-        "NO member call is opaque — primaryDependencies-undefined-during-resolve quirk reproduced",
+        "NO member call is opaque in the empty-ledger projection (matches the committed golden; \
+         production al-sem applies Fix 1 → member-opaque, proven in r3a0_unfetched_dep_opaque.rs)",
     );
 
     // EXACTLY one `external-target` edge, and it is a MEMBER call to the absent obj.

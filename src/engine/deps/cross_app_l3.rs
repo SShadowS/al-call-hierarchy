@@ -336,16 +336,21 @@ impl CrossAppL3 {
         self.resolved.project_event_graph()
     }
 
-    /// Cross-app L3 coverage projection (R2.5b-d). `opaqueApps` is FAITHFULLY `[]`
-    /// even cross-app — mirroring an al-sem latent bug: `buildCoverage` reads
-    /// `index.identity.apps.filter(sourceKind == "symbol-only")`, but
-    /// `withDependencyArtifacts` appends deps to `index.apps` (the `App[]`, no
-    /// `sourceKind`) and leaves `identity.apps` UNCHANGED, so no symbol-only dep
-    /// `AppIdentity` is ever present (Rev 3). DEFERRED to a consolidated
-    /// post-migration fix-then-freeze. The observable cross-app coverage signal is
-    /// the `unresolvedCallsites`/`dynamicDispatchSites` multiset delta (cross-app
-    /// member calls that RESOLVED drop OUT; the external-target miss stays IN), and
-    /// `routinesTotal` counts dep routines.
+    /// Cross-app L3 coverage projection (R2.5b-d). `opaqueApps` lists the symbol-only
+    /// dep app guids (R3a-0 Fix 2, al-sem `81d538a`+`f1650ba`): `buildCoverage` reads
+    /// `index.identity.apps.filter(sourceKind == "symbol-only")`, and
+    /// `withDependencyArtifacts` now stamps the dep `AppIdentity`s (with `sourceKind`)
+    /// into `identity.apps`, so the symbol-only deps are present. The observable
+    /// cross-app coverage signal also includes the `unresolvedCallsites` /
+    /// `dynamicDispatchSites` multiset delta (cross-app member calls that RESOLVED drop
+    /// OUT; the external-target miss stays IN), and `routinesTotal` counts dep routines.
+    ///
+    /// NOTE (capture-order): the call resolution INSIDE this projection uses the EMPTY
+    /// ledger the al-sem R2.5b capture harness uses (it stamps `primaryDependencies`
+    /// AFTER `resolveModel`), so the `unresolvedCallsites` multiset byte-matches the
+    /// committed golden. Fix 1's member-`opaque` reclassification (which PRODUCTION
+    /// `analyzeWorkspace` applies, and which would DROP the `gone.M()` miss for this
+    /// corpus) is proven separately by `tests/r3a0_unfetched_dep_opaque.rs`.
     pub fn project_coverage(
         &self,
         units: &[crate::engine::l3::coverage::CoverageUnit],

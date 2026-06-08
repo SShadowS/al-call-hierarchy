@@ -18,14 +18,16 @@
 //! resolution is only observable post-resolve (the dep objects/routines enter the
 //! index/symbol table via withDependencyArtifacts).
 //!
-//! ## REV3 — `opaqueApps == []` is FAITHFUL to a KNOWN al-sem latent bug
+//! ## R3a-0 — `opaqueApps` reflects the symbol-only dep apps (latent bug FIXED)
 //!
-//! al-sem's `buildCoverage` filters `index.identity.apps` by `sourceKind==="symbol-only"`,
-//! but `withDependencyArtifacts` never populates `identity.apps` with the dep
-//! AppIdentities — so `opaqueApps` is structurally ALWAYS empty (source-only AND
-//! cross-app). The Rust `project_coverage_cross_app` mirrors this (passes only the
-//! workspace `"source"` apps). The differential asserts `opaqueApps == []` on BOTH sides;
-//! it is NOT a fail-on-zero matrix axis (the fix is deferred post-migration).
+//! al-sem's `buildCoverage` filters `index.identity.apps` by `sourceKind==="symbol-only"`.
+//! As of the R3a-0 semantic-oracle epoch (al-sem `81d538a`+`f1650ba`, Fix 2),
+//! `withDependencyArtifacts` stamps the dep `AppIdentity`s (with `sourceKind`) into
+//! `identity.apps`, so `opaqueApps` now lists the symbol-only dep app guids cross-app
+//! (source-only stays `[]` — no deps). The Rust `project_coverage_cross_app` mirrors this
+//! (passes ALL apps — workspace `"source"` + each dep — and lets the `symbol-only` filter
+//! populate it). The differential asserts the golden's non-empty `opaqueApps` on both
+//! sides; the matrix tracks the count as informational (the fix is shipped).
 //!
 //! ## CROSS-APP anti-degenerate matrix (fail-on-zero, REV3 — re-scoped OFF opaqueApps)
 //!
@@ -160,7 +162,7 @@ struct CrossAppCoverage {
     cross_app_resolved_absent: usize,
     /// external-target member misses present IN `unresolvedCallsites`.
     external_target_present: usize,
-    /// `opaqueApps` length — asserted `== 0` (faithful to the al-sem latent bug).
+    /// `opaqueApps` length — now reflects the symbol-only dep apps (R3a-0 Fix 2).
     opaque_apps_count: usize,
     /// total `unresolvedCallsites` multiset length (dups preserved).
     unresolved_count: usize,
@@ -420,7 +422,7 @@ fn differential_r2_5b_coverage_match_goldens() {
     // --- CROSS-APP resolution-delta matrix gate (fail-on-zero, REV3) --------
     eprintln!(
         "R2.5b-d cross-app resolution-delta matrix ({} fixture(s)): \
-         crossAppResolvedAbsent={} externalTargetPresent={} opaqueAppsCount={} (faithfully empty) \
+         crossAppResolvedAbsent={} externalTargetPresent={} opaqueAppsCount={} (symbol-only deps, R3a-0) \
          unresolvedCount={}",
         goldens.len(),
         rust_cov.cross_app_resolved_absent,
@@ -442,11 +444,13 @@ fn differential_r2_5b_coverage_match_goldens() {
          RESOLVE and drop out of unresolvedCallsites; the external-target member miss must \
          stay IN — REV3). Source-only `everything unresolved` green is a FAILURE here.",
     );
-    // REV3: `opaqueApps` is faithfully EMPTY (a KNOWN al-sem latent bug), NOT a gated axis.
+    // R3a-0 (Fix 2): `opaqueApps` now reflects the symbol-only dep apps. The corpus has
+    // two symbol-only deps (Lib Core / Lib Ext) → count 2. This is the fixed reality; the
+    // byte-parity diff against the golden's non-empty opaqueApps is the authoritative check.
     assert_eq!(
-        rust_cov.opaque_apps_count, 0,
-        "opaqueApps MUST be empty (faithful to the al-sem latent bug — buildCoverage reads \
-         identity.apps, which withDependencyArtifacts never populates with the symbol-only deps)",
+        rust_cov.opaque_apps_count, 2,
+        "opaqueApps MUST list the two symbol-only dep apps (R3a-0 Fix 2 — buildCoverage reads \
+         identity.apps, which withDependencyArtifacts now stamps with the symbol-only deps)",
     );
 
     // --- Allowlist gating (same semantics as R2a/R2.5b-rt/-cg/-eg) ----------

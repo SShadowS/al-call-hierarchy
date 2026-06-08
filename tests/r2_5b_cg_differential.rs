@@ -22,14 +22,22 @@
 //! modelInstanceId pinned to `r2.5b` on BOTH sides (the operationId/callsiteId carry
 //! that prefix; the StableRoutineId keys are modelInstanceId-independent).
 //!
-//! ## The opaque-vs-external-target QUIRK (Rev 2 #2/#4, reproduced EXACTLY)
+//! ## The opaque-vs-external-target split — CAPTURE-ORDER parity (R3a-0)
 //!
-//! al-sem stamps `primaryDependencies` AFTER `resolveModel`, so during resolve a
-//! member call to an ABSENT object is `external-target`, NEVER member-opaque. The
-//! ONLY genuine cross-app `opaque` is the OBJECT-RUN form into an absent declared
-//! dep (`Codeunit.Run`). `project_call_graph_cross_app` passes EMPTY declared/fetched
-//! into the member split to reproduce this (a KNOWN al-sem latent bug, deliberately
-//! mirrored — see `call_graph_projection.rs`).
+//! The committed al-sem R2.5b cg golden is captured with the EMPTY ledger: the al-sem
+//! R2.5b capture harness (`r2.5b-cross-app-capture.ts`) stamps `primaryDependencies`
+//! AFTER `resolveModel`, so during its capture a member call to an ABSENT object is
+//! `external-target`, NEVER member-opaque. `project_call_graph_cross_app` passes EMPTY
+//! declared/fetched into the member split to byte-match that golden.
+//!
+//! HOWEVER — PRODUCTION al-sem (post-R3a-0, `analyzeWorkspace`) stamps
+//! `primaryDependencies` BEFORE resolve (Fix 1), so for THIS corpus — which declares
+//! `Lib Absent` (unfetched) + has a `gone.M()` member miss — production classifies the
+//! member miss `opaque` and DROPS it from `unresolvedCallsites`. The committed golden is
+//! therefore STALE w.r.t. production (an al-sem capture-harness concern, see the R3a-0
+//! report). The ONLY ledger-independent genuine cross-app `opaque` is the OBJECT-RUN form
+//! (`Codeunit.Run` into an absent declared dep). The production member-`opaque` resolver
+//! behavior is proven by `tests/r3a0_unfetched_dep_opaque.rs`.
 //!
 //! ## CROSS-APP anti-degenerate matrix (fail-on-zero, Rev 2 #1/#4)
 //!

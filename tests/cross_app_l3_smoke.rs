@@ -3,9 +3,9 @@
 //! NON-EMPTY cross-app resolution: a member call resolves to a dep StableRoutineId
 //! (the internal + local dep callees resolve IDENTICALLY — no visibility gate); the
 //! named transitions are all present; a record var binds to a dep StableTableId;
-//! the ws→dep and dep→ws subscriber edges form; `opaqueApps` is `[]` (REV3 — faithful
-//! to a KNOWN al-sem latent bug; the cross-app coverage signal is the unresolved
-//! resolution delta instead).
+//! the ws→dep and dep→ws subscriber edges form; `opaqueApps` lists the symbol-only dep
+//! apps (R3a-0 Fix 2 — the latent bug is FIXED in al-sem `81d538a`+`f1650ba`;
+//! withDependencyArtifacts now stamps the dep AppIdentitys into identity.apps).
 //!
 //! This is the engine half of the Task-1 contract; the al-sem half lives in
 //! `test/contracts/r2.5b-cross-app-capture.test.ts`. The resolved cross-app edge
@@ -158,21 +158,20 @@ fn event_graph_forms_cross_app_subscriber_edges() {
 }
 
 #[test]
-fn coverage_opaque_apps_is_empty_faithful_to_al_sem_latent_bug() {
+fn coverage_opaque_apps_lists_symbol_only_deps() {
     let cross = build_cross_app_l3_from_workspace(&fixture(), "r2.5b").unwrap();
     let cov = cross.project_coverage_disk(&fixture());
 
-    // REV3: opaqueApps is structurally `[]` — FAITHFUL to a KNOWN al-sem latent bug
-    // (buildCoverage filters index.identity.apps by sourceKind==="symbol-only", but
-    // withDependencyArtifacts never populates identity.apps with the symbol-only deps).
-    // The cross-app COVERAGE signal is the unresolvedCallsites resolution delta instead
-    // (the R2.5b-d differential / oracle). The fix is deferred post-migration.
-    assert!(
-        cov.opaque_apps.is_empty(),
-        "opaqueApps == [] (faithful to the al-sem latent bug — REV3)"
+    // R3a-0 Fix 2 (al-sem `81d538a`+`f1650ba`): opaqueApps lists the symbol-only dep apps.
+    // buildCoverage filters index.identity.apps by sourceKind=="symbol-only", and
+    // withDependencyArtifacts now stamps the dep AppIdentitys (with sourceKind) into
+    // identity.apps. The corpus's two deps are symbol-only → both appear.
+    assert_eq!(
+        cov.opaque_apps,
+        vec![DEP_CORE.to_string(), DEP_OTHER.to_string()],
+        "opaqueApps lists the two symbol-only deps (Lib Core then Lib Ext) — R3a-0 Fix 2"
     );
-    // The dep ledger DOES carry the symbol-only deps (so a FIXED al-sem WOULD list them);
-    // the coverage path deliberately drops them to mirror al-sem's identity.apps.
+    // The dep ledger carries exactly these symbol-only deps (the source of opaqueApps).
     let symbol_only: Vec<&String> = cross
         .apps
         .iter()
@@ -182,6 +181,6 @@ fn coverage_opaque_apps_is_empty_faithful_to_al_sem_latent_bug() {
     assert!(
         symbol_only.iter().any(|g| g.as_str() == DEP_CORE)
             && symbol_only.iter().any(|g| g.as_str() == DEP_OTHER),
-        "the dep ledger carries both symbol-only deps (proving opaqueApps==[] is the bug, not a missing dep)"
+        "the dep ledger carries both symbol-only deps"
     );
 }
