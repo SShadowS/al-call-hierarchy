@@ -1,0 +1,73 @@
+{
+  "fixtureName": "ws-d51-pos",
+  "entryCount": 1,
+  "entries": [
+    {
+      "routineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "effects": [
+        {
+          "type": "ERROR_THROW",
+          "detail": {},
+          "provenance": "direct",
+          "evidence": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 13,
+            "column": 8,
+            "excerpt": "error-call"
+          },
+          "evidenceOperationId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/op0",
+          "viaPaths": [
+            []
+          ],
+          "viaPathsTruncated": false,
+          "factId": "752909d3c98199bf",
+          "canonicalKey": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed||operation|r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/op0|ERROR_THROW",
+          "linkSignature": ""
+        },
+        {
+          "type": "HTTP",
+          "detail": {
+            "method": "Post"
+          },
+          "provenance": "direct",
+          "evidence": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 12,
+            "column": 8,
+            "excerpt": "Client.Post"
+          },
+          "evidenceCallsiteId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs0",
+          "viaPaths": [
+            []
+          ],
+          "viaPathsTruncated": false,
+          "factId": "50a06c8d11bf3a4d",
+          "canonicalKey": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed||callsite|r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs0|HTTP",
+          "linkSignature": ""
+        },
+        {
+          "type": "UI_ERROR",
+          "detail": {},
+          "provenance": "direct",
+          "evidence": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 13,
+            "column": 8,
+            "excerpt": "Error"
+          },
+          "evidenceCallsiteId": "r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs1",
+          "viaPaths": [
+            []
+          ],
+          "viaPathsTruncated": false,
+          "factId": "9ac5fa19a8c30110",
+          "canonicalKey": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed||callsite|r0/042a94f9379e68e601586c172ee1295492e6cdfc11650cc208f33e0b1c174ebb/cs1|UI_ERROR",
+          "linkSignature": ""
+        }
+      ]
+    }
+  ]
+}
