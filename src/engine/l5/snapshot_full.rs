@@ -25,7 +25,7 @@ use indexmap::IndexMap;
 
 use crate::engine::gate::cbor::CborValue;
 use crate::engine::ids::{
-    canonical_routine_signature, object_signature_fingerprint, sha256_hex,
+    canonical_routine_signature, locale_compare, object_signature_fingerprint, sha256_hex,
     to_stable_routine_id_from_parts, ParamSpec,
 };
 use crate::engine::l3::l3_workspace::L3Resolved;
@@ -81,10 +81,10 @@ pub fn compose_full_snapshot(resolved: &L3Resolved, opts: &FullSnapshotOptions) 
     let event_declarations = to_cbor_value(&core.event_declarations);
     let root_classifications = to_cbor_value(&core.root_classifications);
 
-    // The cli-b dump always passes deterministic:true (the goldens pin `generatedAt`
-    // to the Unix epoch); the engine has no wall-clock dependency in this path.
-    let _ = opts.deterministic;
-    let generated_at = "1970-01-01T00:00:00Z".to_string();
+    // Honor `deterministic`: pinned epoch (the golden form) when true, else a live
+    // ISO-8601 timestamp via the shared gate helper. al-sem's `composeSnapshot`
+    // sets `generatedAt = deterministic ? "1970-01-01T00:00:00Z" : new Date()…`.
+    let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(opts.deterministic);
 
     // compose.ts:58-92 LITERAL order.
     let mut m: IndexMap<String, CborValue> = IndexMap::new();
@@ -354,7 +354,8 @@ fn project_apps(resolved: &L3Resolved) -> CborValue {
             ));
         }
     }
-    apps.sort_by(|a, b| a.0.cmp(&b.0));
+    // al-sem `projectApps`: `.sort((x,y) => x.appGuid.localeCompare(y.appGuid))`.
+    apps.sort_by(|a, b| locale_compare(&a.0, &b.0));
     let arr = apps
         .into_iter()
         .map(|(guid, publisher, name, version)| {
@@ -433,7 +434,8 @@ fn derive_contracts(resolved: &L3Resolved) -> CborValue {
         rows.push((stable_id, CborValue::Map(m)));
     }
 
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    // al-sem `deriveContracts`: `.sort((a,b) => a.stableId.localeCompare(b.stableId))`.
+    rows.sort_by(|a, b| locale_compare(&a.0, &b.0));
     CborValue::Array(rows.into_iter().map(|(_, v)| v).collect())
 }
 
@@ -580,7 +582,8 @@ fn derive_schema(resolved: &L3Resolved) -> CborValue {
         }
     }
 
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    // al-sem `deriveSchema`: `.sort((a,b) => a.stableId.localeCompare(b.stableId))`.
+    rows.sort_by(|a, b| locale_compare(&a.0, &b.0));
     CborValue::Array(rows.into_iter().map(|(_, v)| v).collect())
 }
 
@@ -689,7 +692,8 @@ fn derive_permissions(
         }
     }
 
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    // al-sem `derivePermissions`: `.sort((a,b) => permKey(a).localeCompare(permKey(b)))`.
+    rows.sort_by(|a, b| locale_compare(&a.0, &b.0));
     CborValue::Array(rows.into_iter().map(|(_, v)| v).collect())
 }
 
@@ -820,14 +824,26 @@ fn derive_inputs(workspace_dir: &std::path::Path) -> Vec<SnapshotInput> {
         }
     }
 
-    out.sort_by(|a, b| format!("{}|{}", a.kind, a.path).cmp(&format!("{}|{}", b.kind, b.path)));
+    // al-sem `deriveInputs`: `.sort((a,b) => `${a.kind}|${a.path}`.localeCompare(…))`.
+    out.sort_by(|a, b| {
+        locale_compare(
+            &format!("{}|{}", a.kind, a.path),
+            &format!("{}|{}", b.kind, b.path),
+        )
+    });
     out
 }
 
 /// SHA-256 over the sorted (kind, path, contentHash) triples + alsemVersion.
 fn compute_workspace_fingerprint(inputs: &[SnapshotInput], alsem_version: &str) -> String {
     let mut sorted: Vec<&SnapshotInput> = inputs.iter().collect();
-    sorted.sort_by(|a, b| format!("{}|{}", a.kind, a.path).cmp(&format!("{}|{}", b.kind, b.path)));
+    // al-sem `computeWorkspaceFingerprint`: same localeCompare(kind|path) sort.
+    sorted.sort_by(|a, b| {
+        locale_compare(
+            &format!("{}|{}", a.kind, a.path),
+            &format!("{}|{}", b.kind, b.path),
+        )
+    });
     let mut lines: Vec<String> = sorted
         .iter()
         .map(|i| format!("{}\t{}\t{}", i.kind, i.path, i.content_hash))
@@ -863,6 +879,11 @@ pub fn serialize_cbor(tree: &CborValue) -> Vec<u8> {
     crate::engine::gate::cbor::encode(tree)
 }
 
+/// gzip DEFLATE level for the `.cbor.gz` serializer — Bun's zlib default (6). The
+/// goldens were produced with `Bun.gzipSync` (level 6); the byte stream matches at
+/// this level via flate2's vendored zlib-ng.
+const GZIP_LEVEL: u32 = 6;
+
 /// CBOR + gzip — `serializeCborGz(snap)` with the gzip OS header byte normalized
 /// to 0x03 (Unix), level-6 DEFLATE (zlib-ng), header `1f 8b 08 00 00000000 00 03`.
 pub fn serialize_cbor_gz(tree: &CborValue) -> Vec<u8> {
@@ -871,7 +892,7 @@ pub fn serialize_cbor_gz(tree: &CborValue) -> Vec<u8> {
     use std::io::Write;
 
     let cbor = serialize_cbor(tree);
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::new(6));
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::new(GZIP_LEVEL));
     // Total over in-memory bytes; the writes cannot fail (Vec sink).
     let _ = encoder.write_all(&cbor);
     let mut out = encoder.finish().unwrap_or_default();
@@ -934,10 +955,10 @@ fn build_envelope(
         }
     }
 
-    // The cli-b dump is always deterministic (the goldens pin `generatedAt` to the
-    // Unix epoch). The engine has no wall-clock dependency in this path; a
-    // non-deterministic timestamp would be the caller's to inject.
-    let generated_at = "1970-01-01T00:00:00Z".to_string();
+    // Honor `deterministic`: pinned epoch when true (the golden form), else a live
+    // ISO-8601 timestamp — the SAME helper the analyze JSON envelope uses, so the
+    // `--deterministic` contract is identical across both envelopes.
+    let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(deterministic);
 
     let diags: Vec<CborValue> = diagnostics
         .iter()
@@ -978,15 +999,16 @@ pub struct ShardFile {
 }
 
 /// Split the snapshot into per-app shards + a manifest. `primary_only` drops
-/// dependency shards. `format` is "json" for the committed goldens.
+/// dependency shards. The committed goldens use the `json` format; each shard is a
+/// raw-JSON `CapabilitySnapshot` that inherits `generatedAt` from `tree` (so the
+/// determinism mode is ALREADY baked into the tree by `compose_full_snapshot` — no
+/// separate `deterministic` arg here). The manifest carries no diagnostics channel,
+/// so it takes none either.
 pub fn serialize_sharded(
     tree: &CborValue,
     alsem_version: &str,
-    deterministic: bool,
-    diagnostics: &[EnvelopeDiagnostic],
     primary_only: bool,
 ) -> Vec<ShardFile> {
-    let _ = (deterministic, diagnostics);
     let mut out: Vec<ShardFile> = Vec::new();
 
     let CborValue::Map(snap) = tree else {
@@ -1251,7 +1273,8 @@ fn encode_manifest(
         _ => String::new(),
     };
     let mut sorted = shards.to_vec();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    // al-sem shard manifest: `.sort((a,b) => a.appGuid.localeCompare(b.appGuid))`.
+    sorted.sort_by(|a, b| locale_compare(&a.0, &b.0));
 
     let mut m: IndexMap<String, CborValue> = IndexMap::new();
     m.insert(

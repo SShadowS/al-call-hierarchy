@@ -206,6 +206,91 @@ pub fn object_signature_fingerprint(object_type: &str, object_number: i64, name:
     sha256_hex(&format!("{object_type}|{object_number}|{name}"))
 }
 
+// ---------------------------------------------------------------------------
+// localeCompare-faithful collation for snapshot sort keys (cli-b binding rule).
+//
+// al-sem's snapshot derivers sort with `String.localeCompare` (ICU DUCET default
+// collation), NOT ordinal byte order. The two diverge for the snapshot alphabet:
+//   - punctuation: `:` collates BEFORE `#` BEFORE `|` (ICU), but byte order is the
+//     opposite (`#`=0x23 < `:`=0x3a < `|`=0x7c). So `a:` < `a#` in ICU but `a#` <
+//     `a:` by bytes — affecting stableId order (`Table:N` vs `Table:N#field`).
+//   - letters are CASE-INSENSITIVE at the primary level (lowercase before uppercase
+//     only as a tertiary tiebreak), so a mixed-case `.alpackages` filename `A.app`
+//     collates among the lowercase `a..z`, not before all of them — shifting both
+//     `inputs` order AND the workspaceFingerprint hash built over it.
+//
+// [`locale_compare`] reproduces ICU's order for the printable-ASCII alphabet that
+// AL identifiers / workspace paths use. The PRIMARY rank table below is the EXACT
+// `[...printableAscii].sort((a,b)=>a.localeCompare(b))` order from Bun
+// (oracle-pinned in `tests/encoder_vectors.rs`). Case is a TERTIARY tiebreak
+// (lowercase before uppercase), matching ICU multi-level collation.
+//
+// Characters outside printable ASCII (rare in AL identifiers / paths) fall back to
+// codepoint order shifted ABOVE the known alphabet, so they sort last
+// deterministically — a documented, conservative approximation.
+// ---------------------------------------------------------------------------
+
+/// Primary collation rank for one char (lower index = sorts earlier). The order is
+/// ICU's printable-ASCII DUCET order; each letter's lower/upper pair shares the SAME
+/// primary rank (case handled at the tertiary level).
+fn locale_primary_rank(c: char) -> u32 {
+    // ICU printable-ASCII order (from Bun's localeCompare); each entry is the
+    // primary-equivalence class. Letters pair lower+upper at one rank.
+    const PUNCT: &[char] = &[
+        ' ', '_', '-', ',', ';', ':', '!', '?', '.', '\'', '"', '(', ')', '[', ']', '{', '}', '@',
+        '*', '/', '\\', '&', '#', '%', '`', '^', '+', '<', '=', '>', '|', '~', '$',
+    ];
+    if let Some(i) = PUNCT.iter().position(|&p| p == c) {
+        return i as u32; // 0..=32
+    }
+    let punct_len = PUNCT.len() as u32; // 33
+    match c {
+        '0'..='9' => punct_len + (c as u32 - '0' as u32), // 33..=42
+        'a'..='z' => punct_len + 10 + (c as u32 - 'a' as u32), // 43..=68
+        'A'..='Z' => punct_len + 10 + (c as u32 - 'A' as u32), // same primary as lowercase
+        // Unknown char: sort last, deterministically, by codepoint above the table.
+        _ => 1_000_000 + c as u32,
+    }
+}
+
+/// Tertiary (case) weight — lowercase before uppercase (ICU default). Non-letters 0.
+fn locale_case_weight(c: char) -> u8 {
+    match c {
+        'A'..='Z' => 1,
+        _ => 0,
+    }
+}
+
+/// `a.localeCompare(b)` for the snapshot sort-key alphabet — two-level ICU collation
+/// (primary rank, then case tertiary), matching Bun's `String.localeCompare`. Use
+/// this (NOT `str::cmp`) at every snapshot deriver sort site.
+pub fn locale_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let ac: Vec<char> = a.chars().collect();
+    let bc: Vec<char> = b.chars().collect();
+    let n = ac.len().min(bc.len());
+    // Primary level.
+    for i in 0..n {
+        let pa = locale_primary_rank(ac[i]);
+        let pb = locale_primary_rank(bc[i]);
+        if pa != pb {
+            return pa.cmp(&pb);
+        }
+    }
+    if ac.len() != bc.len() {
+        return ac.len().cmp(&bc.len());
+    }
+    // Tertiary (case) level — only on a full primary tie.
+    for i in 0..n {
+        let ta = locale_case_weight(ac[i]);
+        let tb = locale_case_weight(bc[i]);
+        if ta != tb {
+            return ta.cmp(&tb);
+        }
+    }
+    Ordering::Equal
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +324,78 @@ mod tests {
         assert_eq!(
             sha256_hex(""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    // -- localeCompare oracle: ICU order for the snapshot sort-key alphabet --
+    //
+    // Each `assert_lt` mirrors a Bun `"a".localeCompare("b") < 0` result
+    // (oracle-pinned). The key divergences from ordinal `str::cmp`:
+    //   - `:` collates BEFORE `#` (ICU) though `#`(0x23) < `:`(0x3a) by bytes;
+    //   - letters are case-insensitive at the primary level (lowercase before
+    //     uppercase only as a tertiary tiebreak).
+
+    fn assert_lt(a: &str, b: &str) {
+        assert_eq!(
+            locale_compare(a, b),
+            std::cmp::Ordering::Less,
+            "expected localeCompare({a:?}, {b:?}) == Less"
+        );
+        assert_eq!(
+            locale_compare(b, a),
+            std::cmp::Ordering::Greater,
+            "expected localeCompare({b:?}, {a:?}) == Greater"
+        );
+    }
+
+    #[test]
+    fn locale_compare_colon_sorts_before_hash() {
+        // Bun: "a:".localeCompare("a#") < 0  (the StableTableId vs field-id case).
+        assert_lt("a:", "a#");
+        // The empty suffix sorts before the `#`-suffixed field id.
+        assert_lt("g:Table:50101", "g:Table:50101#1");
+        assert_lt("g:Table:50101#1", "g:Table:50101#2");
+        assert_lt("g:Table:50101#2", "g:Table:50101#K0");
+    }
+
+    #[test]
+    fn locale_compare_is_case_insensitive_primary() {
+        // Bun: a mixed-case `.alpackages` filename `A.app` collates AMONG the
+        // lowercase a..z (case is tertiary), NOT before all uppercase by byte order.
+        // Order: a.app < A.app < m.app < z.app.
+        assert_lt("a.app", "A.app");
+        assert_lt("A.app", "m.app");
+        assert_lt("m.app", "z.app");
+        // Tertiary: same primary, lowercase before uppercase.
+        assert_eq!(
+            locale_compare("codeunit", "CODEUNIT"),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn locale_compare_punct_and_digits_order() {
+        // ICU: `-` < `:` < `.` < `/` < `#` < `|`, all before digits, digits before letters.
+        assert_lt("a-", "a:");
+        assert_lt("a:", "a.");
+        assert_lt("a.", "a/");
+        assert_lt("a/", "a#");
+        assert_lt("a#", "a|");
+        assert_lt("a|", "a0");
+        assert_lt("a9", "aa");
+    }
+
+    #[test]
+    fn locale_compare_inputs_kind_path_order() {
+        // The `kind|path` join keys for the cli-b inputs deriver, ICU-sorted.
+        assert_lt("app-json|app.json", "dep-package|.alpackages/a.app");
+        assert_lt(
+            "dep-package|.alpackages/a.app",
+            "policy|al-sem.coverage.yaml",
+        );
+        assert_lt(
+            "policy|al-sem.coverage.yaml",
+            "roots-config|roots.config.json",
         );
     }
 }

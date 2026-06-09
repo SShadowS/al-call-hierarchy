@@ -17,6 +17,18 @@
 //!
 //! `#[ignore] refresh_goldens` shells `bun run scripts/dump-snapshot.ts` under
 //! `AL_SEM_DIR` to regenerate the goldens. Run only when intentionally updating.
+//!
+//! ## Tracked want — localeCompare coverage
+//!
+//! The cli-b corpus has NO `.alpackages` directory, so the `inputs` / workspace-
+//! fingerprint `localeCompare` sort (and the `#`-vs-`:` stableId collation) is
+//! corpus-invisible: every fixture's input list is a single `app-json` (or +
+//! `roots-config`), and the stableIds happen to ordinal-tie with ICU. The
+//! `locale_compare` comparator is oracle-pinned directly in `engine::ids::tests`
+//! (mixed-case + `#`/`:` ICU order). A future fixture with a `.alpackages/*.app`
+//! whose filename has mixed case (e.g. `Base.app`) would make the ICU sort
+//! corpus-VISIBLE in both the `inputs` order AND the `workspaceFingerprint` hash —
+//! WANT: add such a fixture to lock the comparator end-to-end through the goldens.
 
 use std::path::{Path, PathBuf};
 
@@ -295,11 +307,10 @@ fn cbor_gz_matches_goldens() {
 #[test]
 fn shards_match_goldens() {
     let (tree, _resolved, _ws_dir) = compose_for(SHARD_FIXTURE);
-    let diags: Vec<EnvelopeDiagnostic> = Vec::new();
     let shards_base = goldens_dir().join("shards").join(SHARD_FIXTURE);
 
     for (variant, primary_only) in [("all", false), ("primary", true)] {
-        let files = serialize_sharded(&tree, VERSION_OVERRIDE, true, &diags, primary_only);
+        let files = serialize_sharded(&tree, VERSION_OVERRIDE, primary_only);
         let dir = shards_base.join(variant);
         for f in &files {
             let golden_path = dir.join(&f.name);

@@ -239,10 +239,19 @@ impl SerializeMap for MapSer {
     type Ok = CborValue;
     type Error = CborSerError;
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), CborSerError> {
-        // Keys are text strings (the snapshot's maps are all string-keyed).
+        // Keys are text strings (the snapshot's maps are all string-keyed). The
+        // non-text fallback is unreachable-by-construction; the debug_assert ENFORCES
+        // that invariant rather than silently stringifying a non-text key.
         self.next_key = Some(match to_cbor_value(key) {
             CborValue::Text(s) => s,
-            other => format!("{other:?}"),
+            other => {
+                debug_assert!(
+                    false,
+                    "to_cbor MapSer: non-text map key encountered ({other:?}); \
+                     snapshot maps must be string-keyed"
+                );
+                format!("{other:?}")
+            }
         });
         Ok(())
     }

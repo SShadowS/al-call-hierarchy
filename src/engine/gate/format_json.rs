@@ -302,29 +302,9 @@ pub fn build_analyze_json(inputs: &JsonFormatInputs<'_>) -> String {
     payload.insert("summary".to_string(), serde_json::Value::Object(summary));
 
     // --- envelope ---
-    let generated_at = if inputs.deterministic {
-        // Pinned constant. al-sem's deterministic path uses the LITERAL string
-        // "1970-01-01T00:00:00Z" (20 bytes, NO milliseconds) — NOT `toISOString()`
-        // of epoch 0 (which would be the 24-byte ".000Z" form). The golden
-        // differential corpus pins this exact value; do not add milliseconds here.
-        "1970-01-01T00:00:00Z".to_string()
-    } else {
-        // ISO 8601 timestamp — non-deterministic (live) path. JS `new Date().toISOString()`
-        // emits 24 bytes WITH 3-digit milliseconds (`YYYY-MM-DDTHH:mm:ss.sssZ`); match
-        // that exactly so the live CLI's envelope is byte-faithful to al-sem.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = now.as_secs();
-        let ms = now.subsec_millis();
-        let s = secs % 60;
-        let m = (secs / 60) % 60;
-        let h = (secs / 3600) % 24;
-        let days = secs / 86400;
-        // Approximate calendar date from days since epoch (ignores leap seconds).
-        let (y, mo, d) = days_to_ymd(days);
-        format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.{ms:03}Z")
-    };
+    // Pinned `"1970-01-01T00:00:00Z"` (deterministic) or a live 24-byte
+    // `toISOString()`-shaped timestamp. Shared with the cli-b snapshot envelope.
+    let generated_at = pinned_or_now_iso8601(inputs.deterministic);
 
     let mut envelope = serde_json::Map::new();
     envelope.insert(
@@ -381,6 +361,30 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 
 fn is_leap(y: u64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// The envelope `generatedAt` value for a given determinism mode. `deterministic`
+/// → the LITERAL pinned `"1970-01-01T00:00:00Z"` (20 bytes, NO milliseconds — the
+/// form the golden corpus pins, NOT `toISOString()` of epoch 0). Non-deterministic
+/// → a live 24-byte `YYYY-MM-DDTHH:mm:ss.sssZ` timestamp matching JS
+/// `new Date().toISOString()`. Shared by the analyze JSON envelope and the cli-b
+/// capability-snapshot envelope so both honor `--deterministic` identically.
+pub fn pinned_or_now_iso8601(deterministic: bool) -> String {
+    if deterministic {
+        "1970-01-01T00:00:00Z".to_string()
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+        let ms = now.subsec_millis();
+        let s = secs % 60;
+        let m = (secs / 60) % 60;
+        let h = (secs / 3600) % 24;
+        let days = secs / 86400;
+        let (y, mo, d) = days_to_ymd(days);
+        format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.{ms:03}Z")
+    }
 }
 
 // ---------------------------------------------------------------------------

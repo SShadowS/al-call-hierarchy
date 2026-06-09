@@ -64,10 +64,7 @@ fn encode_into(value: &CborValue, out: &mut Vec<u8>) {
         CborValue::Bool(true) => out.push(0xf5),
         CborValue::Bool(false) => out.push(0xf4),
         CborValue::Int(n) => encode_int(*n, out),
-        CborValue::Float(f) => {
-            out.push(0xfb);
-            out.extend_from_slice(&f.to_be_bytes());
-        }
+        CborValue::Float(f) => encode_f64(*f, out),
         CborValue::Text(s) => encode_text(s, out),
         CborValue::Array(items) => {
             encode_array_header(items.len(), out);
@@ -78,11 +75,29 @@ fn encode_into(value: &CborValue, out: &mut Vec<u8>) {
         CborValue::Map(entries) => {
             // ALWAYS the non-canonical map-16 header: 0xb9 + (count as u16) BE,
             // even for 0/1 entries (proven against cbor-x).
+            //
+            // MUST-FIX 3 — guard the u16 truncation: an object with >65535 keys
+            // would silently wrap the count and corrupt the stream. Snapshot maps
+            // are bounded (a fixed field set + per-routine frame tables), so this is
+            // an invariant we ENFORCE, not hope for.
+            debug_assert!(
+                entries.len() <= u16::MAX as usize,
+                "cbor-x map-16 header: >65535 keys unsupported (got {})",
+                entries.len()
+            );
             out.push(0xb9);
             let count = entries.len() as u16;
             out.extend_from_slice(&count.to_be_bytes());
             for (k, v) in entries {
                 // Keys are ALWAYS text strings (smallest-length text header).
+                //
+                // SHOULD-FIX 4 — V8/cbor-x hoists integer-like STRING keys (e.g.
+                // "0", "42") to the FRONT in ascending numeric order before the
+                // insertion-order string keys. VERIFIED MOOT for the snapshot: every
+                // object key is a fixed field name or a guid-prefixed StableRoutineId
+                // (routineOrderFrames), none integer-like — so V8 iteration order ==
+                // insertion order here, and we emit insertion order directly. (A map
+                // with an integer-like key would need the hoisting; none exists.)
                 encode_text(k, out);
                 encode_into(v, out);
             }
@@ -90,21 +105,55 @@ fn encode_into(value: &CborValue, out: &mut Vec<u8>) {
     }
 }
 
-/// Encode an integer with the smallest CBOR major-0/major-1 header.
+/// Encode a numeric value cbor-x emits as a double — ALWAYS `0xfb` + f64 BE bytes
+/// (no float32/16). Used for genuine non-integer numbers AND for integers whose
+/// magnitude exceeds 2^32 (see [`encode_int`]). `-0.0` / NaN / ±Infinity would also
+/// land here as their f64 form, but are unreachable-by-construction: the snapshot
+/// has no non-integer numeric fields, and integer-valued `CborValue::Int` ≤ 2^32 in
+/// the corpus never produces them.
+fn encode_f64(f: f64, out: &mut Vec<u8>) {
+    out.push(0xfb);
+    out.extend_from_slice(&f.to_be_bytes());
+}
+
+/// Encode an integer the way cbor-x does. cbor-x NEVER emits the 8-byte int header
+/// (`0x1b` / `0x3b`): at `|n| > 2^32` it switches to a `0xfb` f64 (proven against
+/// cbor-x 1.6.4 — `2^32 → fb 41 f0 …`, `-2^32-1 → fb c1 f0 …`). So:
+///   - `0 <= n <= 2^32-1`            → smallest unsigned int ladder (`00`..`1a`).
+///   - `-(2^32) <= n < 0`            → smallest negative int ladder (`20`..`3a`).
+///   - `|n|` beyond those bounds     → `0xfb` + `(n as f64)` BE.
 fn encode_int(n: i64, out: &mut Vec<u8>) {
     if n >= 0 {
-        encode_uint_header(0x00, n as u64, out);
+        if (n as u64) <= 0xffff_ffff {
+            encode_uint_header(0x00, n as u64, out);
+        } else {
+            // > 2^32-1: cbor-x emits a double, not an 8-byte int.
+            encode_f64(n as f64, out);
+        }
     } else {
-        // major 1 encodes -1-n (i.e. the magnitude minus one).
+        // major 1 encodes -1-n (the magnitude minus one). The 4-byte negative
+        // header covers down to -(2^32) (mag 2^32-1 → `3a ff ff ff ff`); anything
+        // more negative (mag >= 2^32) becomes a double.
         let mag = (-(n + 1)) as u64;
-        encode_uint_header(0x20, mag, out);
+        if mag <= 0xffff_ffff {
+            encode_uint_header(0x20, mag, out);
+        } else {
+            encode_f64(n as f64, out);
+        }
     }
 }
 
-/// Emit `major | argument` using the smallest CBOR additional-info encoding.
-/// `major` is the major-type bits already shifted into the high 3 bits (e.g.
-/// `0x00` for unsigned, `0x20` for negative, `0x60` for text, `0x80` for array).
+/// Emit `major | argument` using the smallest CBOR additional-info encoding, for
+/// arguments that FIT in 32 bits. `major` is the major-type bits already in the
+/// high 3 bits (`0x00` unsigned, `0x20` negative, `0x60` text, `0x80` array). The
+/// caller guarantees `n <= 0xffff_ffff` — cbor-x never uses the 8-byte (`0x1b`)
+/// form (integers beyond 32 bits go through [`encode_f64`]), so there is no
+/// `0x1b` branch here.
 fn encode_uint_header(major: u8, n: u64, out: &mut Vec<u8>) {
+    debug_assert!(
+        n <= 0xffff_ffff,
+        "encode_uint_header: argument {n} exceeds 32 bits — must route through encode_f64"
+    );
     if n <= 23 {
         out.push(major | (n as u8));
     } else if n <= 0xff {
@@ -113,12 +162,9 @@ fn encode_uint_header(major: u8, n: u64, out: &mut Vec<u8>) {
     } else if n <= 0xffff {
         out.push(major | 0x19);
         out.extend_from_slice(&(n as u16).to_be_bytes());
-    } else if n <= 0xffff_ffff {
+    } else {
         out.push(major | 0x1a);
         out.extend_from_slice(&(n as u32).to_be_bytes());
-    } else {
-        out.push(major | 0x1b);
-        out.extend_from_slice(&n.to_be_bytes());
     }
 }
 
@@ -251,5 +297,65 @@ mod cbor_oracles {
         }
         let bytes = encode(&CborValue::Map(map));
         assert_eq!(hex(&bytes[..3]), "b9 00 18");
+    }
+
+    // -- MUST-FIX 1: integer >2^32 → f64 (cbor-x never emits the 8-byte int form) --
+
+    #[test]
+    fn integer_boundary_2pow32_switches_to_f64() {
+        // cbor-x 1.6.4:
+        //   2^32-1 (4294967295)  → 1a ff ff ff ff          (4-byte unsigned, kept)
+        //   2^32   (4294967296)  → fb 41 f0 00 00 00 00 00 00   (f64)
+        //   -2^32  (-4294967296) → 3a ff ff ff ff          (4-byte negative, kept)
+        //   -2^32-1(-4294967297) → fb c1 f0 00 00 00 10 00 00   (f64)
+        let v = m(&[
+            ("a", CborValue::Int(4_294_967_295)),
+            ("b", CborValue::Int(4_294_967_296)),
+            ("c", CborValue::Int(-4_294_967_296)),
+            ("d", CborValue::Int(-4_294_967_297)),
+        ]);
+        assert_eq!(
+            hex(&encode(&v)),
+            "b9 00 04 61 61 1a ff ff ff ff 61 62 fb 41 f0 00 00 00 00 00 00 \
+             61 63 3a ff ff ff ff 61 64 fb c1 f0 00 00 00 10 00 00"
+                .replace("             ", "")
+        );
+    }
+
+    // -- SHOULD-FIX 5: unexercised header branches (array >23, string >255, mid ints) --
+
+    #[test]
+    fn array_header_above_23_uses_98() {
+        // cbor-x: [0..30) → 98 1e + elements (the 1-byte-length array header).
+        let v = m(&[("a", CborValue::Array((0..30).map(CborValue::Int).collect()))]);
+        assert_eq!(
+            hex(&encode(&v)),
+            "b9 00 01 61 61 98 1e 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f \
+             10 11 12 13 14 15 16 17 18 18 18 19 18 1a 18 1b 18 1c 18 1d"
+                .replace("             ", "")
+        );
+    }
+
+    #[test]
+    fn string_header_above_255_uses_79() {
+        // cbor-x: a 300-byte string → 79 01 2c + 300 'x' bytes (2-byte-length text).
+        let s = "x".repeat(300);
+        let v = m(&[("s", CborValue::Text(s))]);
+        let bytes = encode(&v);
+        // header: b9 00 01  61 73 (key "s")  79 01 2c (text, len 300)
+        assert_eq!(hex(&bytes[..8]), "b9 00 01 61 73 79 01 2c");
+        // tail is 300 'x' (0x78) bytes.
+        assert_eq!(bytes.len(), 8 + 300);
+        assert!(bytes[8..].iter().all(|&b| b == 0x78));
+    }
+
+    #[test]
+    fn mid_range_int_headers() {
+        // cbor-x: {a:256,b:65536} → 19 01 00 (2-byte) / 1a 00 01 00 00 (4-byte).
+        let v = m(&[("a", CborValue::Int(256)), ("b", CborValue::Int(65536))]);
+        assert_eq!(
+            hex(&encode(&v)),
+            "b9 00 02 61 61 19 01 00 61 62 1a 00 01 00 00"
+        );
     }
 }
