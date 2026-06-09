@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-d50-neg",
+  "detectors": [
+    "d50-checked-run-implicit-commit"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

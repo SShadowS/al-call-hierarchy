@@ -1,0 +1,85 @@
+{
+  "fixtureName": "ws-d50-pos",
+  "detectors": [
+    "d50-checked-run-implicit-commit"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d50-checked-run-implicit-commit",
+      "id": "d50/11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01/cs0",
+      "rootCauseKey": "d50/11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01/cs0",
+      "title": "Codeunit.Run implicit commit within a posting span",
+      "rootCause": "A Codeunit.Run whose Boolean return value is used in RunWorkerChecked performs an implicit commit on successful return while PostDocument (a transaction-managing routine) is reachable in the routine-level implicit-commit span. Routine-level approximation — may include writes not proven to precede the implicit commit. Review whether the implicit commit splits a posting transaction.",
+      "severity": "info",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Posting.al",
+        "range": {
+          "startLine": 24,
+          "startColumn": 11,
+          "endLine": 24,
+          "endColumn": 47
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Posting.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 4,
+              "endLine": 19,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
+            "syntaxKind": "procedure"
+          },
+          "note": "transaction-managing routine: PostDocument"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Posting.al",
+            "range": {
+              "startLine": 24,
+              "startColumn": 11,
+              "endLine": 24,
+              "endColumn": 47
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#7cd26a13814a57bbaa2741a0d3e3102aca87ef2d0e3fdc5506b50fc874ac8f01",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Codeunit.Run implicit commit (on success) in RunWorkerChecked — return value consumed"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d50a:Codeunit:50200",
+        "11111111-0000-0000-0000-00000000d50a:Codeunit:50200"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d50a:Table:50200",
+        "11111111-0000-0000-0000-00000000d50a:Table:50201",
+        "11111111-0000-0000-0000-00000000d50a:Table:50202"
+      ],
+      "fixOptions": [
+        {
+          "description": "If atomicity matters, avoid the checked Run mid-transaction or restructure so the posting completes before the implicit commit.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "869747c165d80f10"
+    }
+  ]
+}

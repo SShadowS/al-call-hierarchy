@@ -106,6 +106,25 @@ const SMOKE: &[Smoke] = &[
     },
 ];
 
+/// R4-H per-detector fixtures (d50 checked-run-implicit-commit). d50 is OPT-IN
+/// (advisory, info/medium). ws-d50-pos → ≥1 finding (byte-matched); ws-d50-neg → 0
+/// findings (byte-matched, EXEMPT from anti-degenerate ≥1 check).
+const WAVE_H_POSITIVE: &[Smoke] = &[Smoke {
+    fixture: "ws-d50-pos",
+    wave: "R4-H",
+    detectors: &["d50-checked-run-implicit-commit"],
+    ported: true,
+    corpus_dir: None,
+}];
+
+const WAVE_H_NEGATIVES: &[Smoke] = &[Smoke {
+    fixture: "ws-d50-neg",
+    wave: "R4-H",
+    detectors: &["d50-checked-run-implicit-commit"],
+    ported: true,
+    corpus_dir: None,
+}];
+
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
 /// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
 /// ws-interface-dispatch + ws-member-call-resolution are d14 NEGATIVES (0 findings,
@@ -1257,6 +1276,20 @@ fn differential_r4_findings_match_goldens() {
     // R4-G explicit 0-count goldens (d14 + d46 negatives): byte-match END-TO-END
     // but do NOT push into ported_results (EXEMPT from the anti-degenerate ≥1).
     for smoke in WAVE_G_NEGATIVES {
+        run_smoke_entry(smoke, &registered_names, &mut all_divergences);
+    }
+
+    // --- R4-H positives (d50 checked-run-implicit-commit) ---------------------
+    for smoke in WAVE_H_POSITIVE {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+    // R4-H explicit 0-count goldens (d50 negative): byte-match END-TO-END but
+    // do NOT push into ported_results (EXEMPT from the anti-degenerate ≥1).
+    for smoke in WAVE_H_NEGATIVES {
         run_smoke_entry(smoke, &registered_names, &mut all_divergences);
     }
 
