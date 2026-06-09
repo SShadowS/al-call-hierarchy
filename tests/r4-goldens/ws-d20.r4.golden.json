@@ -74,7 +74,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "5036b64f5803aa28"
+      "fingerprint": "a9c0a45685e41b93"
     },
     {
       "detector": "d20-unreachable-after-exit",
@@ -145,7 +145,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "55757d43139d0eb2"
+      "fingerprint": "3da8dbb16f42d326"
     }
   ]
 }

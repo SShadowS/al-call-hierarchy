@@ -167,7 +167,7 @@
             "text": "Commit reachable from event subscriber (via callee) — OnAfterValidateTransitive is an event subscriber that transitively reaches Commit through its callees — the publisher cannot roll back the committed state if its work later fails."
           },
           "fingerprints": {
-            "al-sem/v1": "ecb16c55e6556a38"
+            "al-sem/v1": "37cac7de987e5da2"
           },
           "locations": [
             {
@@ -221,7 +221,7 @@
             "text": "Commit reachable from event subscriber — OnAfterPostDirect is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails."
           },
           "fingerprints": {
-            "al-sem/v1": "53b74b7062e43896"
+            "al-sem/v1": "5d43771b187fda7f"
           },
           "locations": [
             {

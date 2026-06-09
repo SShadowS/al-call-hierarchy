@@ -1118,9 +1118,9 @@ fn run_rust_cross_app(
 /// d13-member-call, d16-obsolete, d17-drift) byte-match their goldens END-TO-END:
 ///   - d13 carries no dep id in its rootCauseKey → fingerprint is stable.
 ///   - d16's rootCauseKey embeds the dep callee's INTERNAL id, BUT the Rust engine
-///     stabilizes it via `FingerprintIndex::build_with_dep_ids` (the dep-id → stable-id
-///     substitution) — so the fingerprint DOES byte-match. `KNOWN_DIVERGENCES` is []
-///     for these fixtures.
+///     stabilizes it via `FingerprintIndex::build` (the all-routines internal-id →
+///     stable-id substitution) — so the fingerprint DOES byte-match. `KNOWN_DIVERGENCES`
+///     is [] for these fixtures.
 ///   - d17 carries no dep id in its rootCauseKey → fingerprint is stable.
 ///
 /// Divergences are still routed through the KNOWN_DIVERGENCES allowlist (for future

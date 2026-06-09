@@ -167,7 +167,7 @@
             "text": "Missing SetLoadFields before a record retrieval — DoUpgrade runs Get on Setup and then accesses field(s) [description] — no SetLoadFields was set."
           },
           "fingerprints": {
-            "al-sem/v1": "26315dc7eec35485"
+            "al-sem/v1": "62e64f6036c712b8"
           },
           "locations": [
             {

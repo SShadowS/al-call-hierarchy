@@ -167,7 +167,7 @@
             "text": "External IO inside a loop — A repeat loop in ProcessAll reaches HTTP Send in SendOne on every iteration."
           },
           "fingerprints": {
-            "al-sem/v1": "226349a48960fe6b"
+            "al-sem/v1": "2ceb27da1c981caf"
           },
           "locations": [
             {
@@ -269,7 +269,7 @@
             "text": "External IO inside a loop — A repeat loop in ExportAll directly calls FILE IO on every iteration."
           },
           "fingerprints": {
-            "al-sem/v1": "8b8c663caceb80b8"
+            "al-sem/v1": "8d34f0d4cf0d4d4a"
           },
           "locations": [
             {

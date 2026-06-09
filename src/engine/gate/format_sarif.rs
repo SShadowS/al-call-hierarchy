@@ -6,7 +6,7 @@
 //! fields in declaration order, and `skip_serializing_if` reproduces the
 //! `undefined`-field omission (`logicalLocations` / `codeFlows` absent when empty).
 //!
-//! The static `RULES[]` array is ported verbatim (22 rules) in the same order.
+//! The static `RULES[]` array is ported verbatim (21 rules) in the same order.
 //!
 //! Determinism: the `results` array preserves the pre-sorted `FindingSummary` order
 //! (the findings come pre-sorted out of `run_detectors`); no map iteration leaks in.

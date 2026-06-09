@@ -76,7 +76,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "3a61d21ceef514ba"
+      "fingerprint": "82ae5f562e2d097b"
     },
     {
       "detector": "d40-transitive-load-missing",
@@ -149,7 +149,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "fb382a778e2913ad"
+      "fingerprint": "974b47a55ec7a521"
     }
   ]
 }

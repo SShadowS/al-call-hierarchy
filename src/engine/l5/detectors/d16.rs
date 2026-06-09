@@ -23,12 +23,11 @@ const DETECTOR: &str = "d16-obsolete-routine-call";
 
 pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
     let ws = &resolved.workspace;
-    // Cross-app build: dep routine ids are threaded in so any dep callee id embedded
-    // in the rootCauseKey is replaced with its stable id before hashing (mirrors
-    // al-sem's `depStableById` substitution). Source-only runs have an empty
-    // dep_routine_ids set → this collapses to the plain build, no fingerprint change.
-    let fp_index =
-        FingerprintIndex::build_with_dep_ids(&ws.routines, &ws.objects, &ctx.dep_routine_ids);
+    // Unified build: maps EVERY routine's internal id (source AND dep) → stable id,
+    // so any routine id embedded in the rootCauseKey is replaced with its stable id
+    // before hashing (mirrors al-sem's stabilizing substitution). The prior dep-only
+    // build is subsumed — dep routines are already in the all-routines map.
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
 

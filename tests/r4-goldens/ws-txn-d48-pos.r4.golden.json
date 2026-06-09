@@ -117,7 +117,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "f40350e597df6aff"
+      "fingerprint": "2ceb27da1c981caf"
     },
     {
       "detector": "d48-io-in-loop",
@@ -190,7 +190,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "6e16ef3d02d152a2"
+      "fingerprint": "8d34f0d4cf0d4d4a"
     }
   ]
 }

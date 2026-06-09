@@ -76,7 +76,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "f9882570c7a22ad2"
+      "fingerprint": "bdec731f19cb4510"
     },
     {
       "detector": "d34-commit-in-loop",
@@ -149,7 +149,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "364537eb5e2f2b73"
+      "fingerprint": "52b05acb79ffafd4"
     },
     {
       "detector": "d34-commit-in-loop",
@@ -222,7 +222,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "bc97bb4c4a83537f"
+      "fingerprint": "ff28c67e2c5c328d"
     }
   ]
 }

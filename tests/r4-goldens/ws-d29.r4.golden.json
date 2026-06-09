@@ -77,7 +77,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "a380a4c391adccf5"
+      "fingerprint": "a06eb9b2dad78e0e"
     },
     {
       "detector": "d29-subscriber-modify-on-event-record",
@@ -151,7 +151,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "589b4d281aa63dc7"
+      "fingerprint": "f20edf8246200b34"
     }
   ]
 }

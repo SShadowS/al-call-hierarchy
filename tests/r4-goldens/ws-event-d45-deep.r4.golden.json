@@ -74,7 +74,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "ba56b4ae9c53b7bb",
+      "fingerprint": "804690440b93eb15",
       "eventKind": "integration"
     },
     {
@@ -131,7 +131,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "3ac54e0bd34606b7",
+      "fingerprint": "5a049c8bdbd5d341",
       "eventKind": "integration"
     }
   ]

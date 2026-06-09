@@ -69,8 +69,13 @@ pub(crate) fn discover_al_files(workspace: &Path) -> std::io::Result<Vec<AlFile>
             let path = entry.path();
             let file_type = entry.file_type()?;
             if file_type.is_dir() {
-                let dname_lc = entry.file_name().to_string_lossy().to_lowercase();
-                if dname_lc == ".alpackages" || dname_lc == ".git" {
+                // Mirror al-sem `workspace.ts` SKIP_DIR_EXACT EXACTLY: skip
+                // `node_modules` and `.alpackages` by case-SENSITIVE exact match.
+                // `.git` is NOT skipped (al-sem walks it; the `.al` extension filter
+                // ignores its contents anyway). Matches the sibling `count_app_json`
+                // skip pair (modulo case — both walkers must agree on the pair).
+                let dname = entry.file_name().to_string_lossy().into_owned();
+                if dname == "node_modules" || dname == ".alpackages" {
                     continue;
                 }
                 stack.push(path);

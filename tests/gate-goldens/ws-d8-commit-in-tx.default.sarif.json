@@ -167,7 +167,7 @@
             "text": "Missing SetLoadFields before a record retrieval — PostSalesDoc runs Get on Header and then accesses field(s) [last posting date, no., status posted] — no SetLoadFields was set."
           },
           "fingerprints": {
-            "al-sem/v1": "5b683b08f0dace60"
+            "al-sem/v1": "aa64609e94d3aecf"
           },
           "locations": [
             {
@@ -269,7 +269,7 @@
             "text": "Commit inside a posting transaction span — HandlePosted calls Commit while reachable from PostSalesDoc, which writes 3 tables. A mid-transaction Commit breaks rollback semantics — if the surrounding operation later fails, the data is left half-written."
           },
           "fingerprints": {
-            "al-sem/v1": "d6cb54387a218da4"
+            "al-sem/v1": "dc5877f64fbaacd7"
           },
           "locations": [
             {
@@ -339,7 +339,7 @@
             "text": "Transaction span summary — Transaction ending at HandlePosted's Commit spans 3 routines, writes 3 known table(s), publishes 1 event(s). Consider whether all of this needs to be atomic."
           },
           "fingerprints": {
-            "al-sem/v1": "f82fce47e81c1186"
+            "al-sem/v1": "9bef4dcd57f24bdd"
           },
           "locations": [
             {
@@ -393,7 +393,7 @@
             "text": "Procedure parameter is never used — OnAfterPostSalesDoc declares parameter 'Header' (Record \"Sales Header\") at position 0 but the body never references it."
           },
           "fingerprints": {
-            "al-sem/v1": "5b19963123f97d3d"
+            "al-sem/v1": "8d01fd506e102f00"
           },
           "locations": [
             {
@@ -447,7 +447,7 @@
             "text": "Commit reachable from event subscriber — HandlePosted is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails."
           },
           "fingerprints": {
-            "al-sem/v1": "51c96e0902e95c73"
+            "al-sem/v1": "1bc4584bf1de491e"
           },
           "locations": [
             {
@@ -517,7 +517,7 @@
             "text": "Event subscribers expose table transitively from publisher — Publisher 323c302a83ac644b/cef6be65ffad540c497f12505e92be6971f278eddb0f9cf1180f61e12fe6ef20 dispatches to 1 subscriber(s) that write table 11111111-0000-0000-0000-00000000d80a/table/50100; reach=direct; publisherAlsoWrites=yes; subscriberCoverage=complete"
           },
           "fingerprints": {
-            "al-sem/v1": "18f3e3f0c343408e"
+            "al-sem/v1": "ba1ff2b8710a181d"
           },
           "locations": [
             {

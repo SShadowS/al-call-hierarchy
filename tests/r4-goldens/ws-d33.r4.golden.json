@@ -62,7 +62,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "6f50fa7d4b0edebe"
+      "fingerprint": "29fe6ff03e2089aa"
     },
     {
       "detector": "d33-unfiltered-bulk-write",
@@ -121,7 +121,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "571fcbe4871c254a"
+      "fingerprint": "c1d99ed0af1c6ac6"
     },
     {
       "detector": "d33-unfiltered-bulk-write",
@@ -180,7 +180,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "72d69b6cb7bcfe96"
+      "fingerprint": "a0ebda1cceaf21aa"
     }
   ]
 }

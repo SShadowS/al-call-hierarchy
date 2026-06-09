@@ -167,7 +167,7 @@
             "text": "Procedure parameter is never used — DoWork declares parameter '_n' (Integer) at position 0 but the body never references it."
           },
           "fingerprints": {
-            "al-sem/v1": "78c98607c6fbe158"
+            "al-sem/v1": "ca8240f5a8dbc5c2"
           },
           "locations": [
             {
@@ -221,7 +221,7 @@
             "text": "Procedure parameter is never used — Persist declares parameter '_n' (Integer) at position 0 but the body never references it."
           },
           "fingerprints": {
-            "al-sem/v1": "511bfe702d091533"
+            "al-sem/v1": "ec27544ca4d71533"
           },
           "locations": [
             {
@@ -275,7 +275,7 @@
             "text": "Commit inside a nested loop — NestedCommit calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely."
           },
           "fingerprints": {
-            "al-sem/v1": "c4dddc26353d66af"
+            "al-sem/v1": "bdec731f19cb4510"
           },
           "locations": [
             {
@@ -345,7 +345,7 @@
             "text": "Loop reaches a Commit through a callee — TransitiveCommit's for loop calls Persist, which commits — per-iteration commits break atomicity even when the Commit isn't visible at the loop site."
           },
           "fingerprints": {
-            "al-sem/v1": "64eaacb06ec33019"
+            "al-sem/v1": "52b05acb79ffafd4"
           },
           "locations": [
             {
@@ -415,7 +415,7 @@
             "text": "Commit inside a loop — DirectCommitInLoop calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely."
           },
           "fingerprints": {
-            "al-sem/v1": "0b9238cb4424c191"
+            "al-sem/v1": "ff28c67e2c5c328d"
           },
           "locations": [
             {

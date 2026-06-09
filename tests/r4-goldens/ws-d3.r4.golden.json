@@ -107,7 +107,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "8533c99a3a523256"
+      "fingerprint": "3e232e626981018e"
     },
     {
       "detector": "d3-missing-setloadfields",
@@ -182,7 +182,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "8c578f517f6995fa"
+      "fingerprint": "31fa791b690ec3d0"
     },
     {
       "detector": "d3-missing-setloadfields",
@@ -286,7 +286,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "84fd0cb8154efb0b"
+      "fingerprint": "e06cdc18f889ee13"
     }
   ]
 }

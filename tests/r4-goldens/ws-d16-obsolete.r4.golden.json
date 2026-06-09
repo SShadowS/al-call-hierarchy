@@ -61,7 +61,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "07a5af87f1e4b262"
+      "fingerprint": "844470c8b5083169"
     },
     {
       "detector": "d16-obsolete-routine-call",
@@ -119,7 +119,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "fb83a67da523d4da"
+      "fingerprint": "26658a362d552818"
     }
   ]
 }

@@ -59,7 +59,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "ccf950ca2e88a369"
+      "fingerprint": "37cac7de987e5da2"
     },
     {
       "detector": "d35-commit-in-event-subscriber",
@@ -131,7 +131,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "ea97463957cc94c1"
+      "fingerprint": "5d43771b187fda7f"
     }
   ]
 }

@@ -167,7 +167,7 @@
             "text": "Commit reachable from Install/Upgrade lifecycle trigger — OnInstallAppPerCompany is an Install codeunit trigger that reaches Commit — the platform's deploy transaction becomes non-atomic and cannot be rolled back if an error occurs after the Commit."
           },
           "fingerprints": {
-            "al-sem/v1": "bb49debe75c57538"
+            "al-sem/v1": "1ee058c974ab36e7"
           },
           "locations": [
             {
@@ -253,7 +253,7 @@
             "text": "Commit reachable from Install/Upgrade lifecycle trigger — OnUpgradePerCompany is an Upgrade codeunit trigger that reaches Commit — the platform's deploy transaction becomes non-atomic and cannot be rolled back if an error occurs after the Commit."
           },
           "fingerprints": {
-            "al-sem/v1": "33b4a689d242f9c5"
+            "al-sem/v1": "3cbdd68f4d6bd9c7"
           },
           "locations": [
             {

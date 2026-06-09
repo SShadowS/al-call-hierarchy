@@ -91,7 +91,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "4f6e7c58fb334057"
+      "fingerprint": "1ee058c974ab36e7"
     },
     {
       "detector": "d46-commit-in-lifecycle",
@@ -179,7 +179,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "a706dadbd2e6d4b3"
+      "fingerprint": "3cbdd68f4d6bd9c7"
     }
   ]
 }

@@ -146,7 +146,7 @@
           }
         ]
       ],
-      "fingerprint": "119171d2c174553c"
+      "fingerprint": "601a6e2d340941e9"
     },
     {
       "detector": "d1-db-op-in-loop",
@@ -221,7 +221,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "981ce3d7cc1eeb01"
+      "fingerprint": "9b2059da6d2ada3e"
     },
     {
       "detector": "d1-db-op-in-loop",
@@ -296,7 +296,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "f41b8ef25a822795"
+      "fingerprint": "b7e1ea0dfe372155"
     }
   ]
 }

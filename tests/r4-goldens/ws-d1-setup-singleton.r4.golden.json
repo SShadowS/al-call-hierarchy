@@ -78,7 +78,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "63670cdca564100a"
+      "fingerprint": "a8aad2257a77162e"
     },
     {
       "detector": "d1-db-op-in-loop",
@@ -153,7 +153,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "1dd98b74cce272d3"
+      "fingerprint": "d75486042e2af774"
     },
     {
       "detector": "d1-db-op-in-loop",
@@ -228,7 +228,7 @@
           "source": "tree-sitter"
         }
       ],
-      "fingerprint": "27ee4616bcb54696"
+      "fingerprint": "928ae2eeca1e6f98"
     }
   ]
 }

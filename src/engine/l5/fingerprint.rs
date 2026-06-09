@@ -12,88 +12,82 @@
 //! that routine's name (empty when unresolved). Uses plain UTF-8 sha256 (Node's
 //! `createHash("sha256").update(str)`), NOT the UTF-16 length-prefixed framing.
 //!
-//! ## Dep-id stabilization (cross-app runs)
+//! ## Routine-id stabilization (edit-stable fingerprint)
 //!
-//! For cross-app findings (e.g. d16), the `rootCauseKey` embeds the INTERNAL id of
-//! the dep callee (`${modelInstanceId}/${canonicalRoutineKeyHash}`). In al-sem this
-//! internal form was cache-dependent (the `modelInstanceId` encoded the cache version),
-//! so al-sem now substitutes the stable id (`${stableObjectId}#${sigHash}`) before
-//! hashing. The Rust engine pins `modelInstanceId = "r0"`, so the internal id is
-//! already reproducible, BUT we must mirror al-sem's substitution so both sides
-//! produce the SAME hash. We identify dep routines by membership in the
-//! `dep_routine_ids` set (routines whose `app_guid` is in the fetched dep set) and
-//! build a dep-internal-id → stable-id map. For source-only runs `dep_stable_map` is
-//! empty → this is a NO-OP and all existing source-only fingerprints are unchanged.
-
-use std::collections::{BTreeSet, HashMap};
+//! The `rootCauseKey` embeds INTERNAL routine ids — directly, or as the PREFIX of
+//! operation/callsite/loop ids (`${routineId}/suffix`). For SOURCE routines that
+//! internal id is `${modelInstanceId}/${keyHash}`; for DEPENDENCY routines it is
+//! `dep:<artifactKey>/<keyHash>`. Either form is unstable across edits/cache bumps:
+//! `modelInstanceId` is content-derived (shifts when any workspace `.al` file is
+//! added/removed/renamed) in the content-MII gate path, and `<artifactKey>` is
+//! cache-derived (drifts on every cache bump). Hashing either verbatim makes the
+//! fingerprint unstable for an identical logical finding.
+//!
+//! To match al-sem's NEW stabilized fingerprint (`src/projection/finding-fingerprint.ts`),
+//! we build a map from EVERY routine's internal id → its `StableRoutineId`
+//! (`${appGuid}:${objectType}:${objectNumber}#${normalizedSignatureHash}`) — for ALL
+//! routines, SOURCE and DEPENDENCY alike — and substitute every internal routine-id
+//! occurrence in the `rootCauseKey` before hashing. Because operation/callsite/loop
+//! ids carry the routine id as a prefix, replacing the routine-id substring preserves
+//! the `/suffix`. The result is `modelInstanceId`- and cache-INDEPENDENT (edit-stable).
+//!
+//! Routines whose `normalized_signature_hash` is empty are skipped (no stable form to
+//! swap to — `to_stable_routine_id_from_parts` would emit a degenerate trailing `#`).
+//! For the r0-pinned (r4 differential) path the engine pins `modelInstanceId = "r0"`,
+//! so source ids are already reproducible; the substitution still applies and both
+//! paths stabilize to the SAME `StableRoutineId`. This unifies the prior dep-only
+//! special case into one all-routines map.
 
 use crate::engine::ids::sha256_hex;
 use crate::engine::l3::l3_workspace::{L3Object, L3Routine};
 use crate::engine::l5::finding::Finding;
+use std::collections::HashMap;
 
 /// Per-model id indexes for the fingerprint (routine-by-internal-id +
-/// object-by-internal-id + dep-id stabilization map). Built once per run.
+/// object-by-internal-id + all-routines stabilization map). Built once per run.
 pub struct FingerprintIndex<'a> {
     routines_by_id: HashMap<&'a str, &'a L3Routine>,
     objects_by_id: HashMap<&'a str, &'a L3Object>,
-    /// Internal dep routine id → stable routine id, for cross-app runs.
-    /// EMPTY for source-only runs → `fingerprint_of` is a no-op change.
-    dep_stable_map: HashMap<String, String>,
+    /// EVERY routine's internal id → stable routine id (source AND dep). Used to
+    /// substitute internal routine-id occurrences in the `rootCauseKey` before
+    /// hashing, making the fingerprint edit-/cache-independent. EMPTY only for an
+    /// empty model → `fingerprint_of` is then a no-op.
+    stable_by_id: HashMap<String, String>,
 }
 
 impl<'a> FingerprintIndex<'a> {
-    /// Source-only build — no dep routine ids. All existing source-only callers
-    /// keep using this; the `dep_stable_map` is empty so `fingerprint_of` is
-    /// byte-identical to before.
+    /// Build the fingerprint index. Maps EVERY routine's internal id to its stable
+    /// id (source AND dependency) so that all internal routine-id occurrences in a
+    /// `rootCauseKey` are stabilized before hashing. Routines whose
+    /// `normalized_signature_hash` is empty are skipped (no stable form). This is
+    /// the single, unified path — there is no longer a dep-only variant.
     pub fn build(routines: &'a [L3Routine], objects: &'a [L3Object]) -> Self {
-        let routines_by_id = routines.iter().map(|r| (r.id.as_str(), r)).collect();
-        let objects_by_id = objects.iter().map(|o| (o.id.as_str(), o)).collect();
-        FingerprintIndex {
-            routines_by_id,
-            objects_by_id,
-            dep_stable_map: HashMap::new(),
-        }
-    }
-
-    /// Cross-app build — additionally accepts the dep routine id set so that any
-    /// dep internal id embedded in a `rootCauseKey` is replaced with its stable id
-    /// before hashing (mirrors al-sem's `depStableById` substitution). Source-only
-    /// callers should keep using `build`; cross-app detectors (d16) use this.
-    pub fn build_with_dep_ids(
-        routines: &'a [L3Routine],
-        objects: &'a [L3Object],
-        dep_routine_ids: &BTreeSet<String>,
-    ) -> Self {
         let routines_by_id: HashMap<&str, &L3Routine> =
             routines.iter().map(|r| (r.id.as_str(), r)).collect();
         let objects_by_id: HashMap<&str, &L3Object> =
             objects.iter().map(|o| (o.id.as_str(), o)).collect();
 
-        // Build the dep internal-id → stable-id substitution map. Only dep routines
-        // (those in dep_routine_ids) are included; source ids stay as-is.
-        let dep_stable_map: HashMap<String, String> = dep_routine_ids
+        // Map every routine's INTERNAL id → its modelInstanceId-/cache-independent
+        // StableRoutineId. Skip routines with an empty normalized_signature_hash:
+        // their stable form would be a degenerate trailing `#` (no stable form to
+        // swap to — mirrors al-sem skipping `normalizedSignatureHash === ""`).
+        let stable_by_id: HashMap<String, String> = routines
             .iter()
-            .filter_map(|dep_id| {
-                let r = routines_by_id.get(dep_id.as_str())?;
-                if r.stable_routine_id.is_empty() {
-                    None
-                } else {
-                    Some((dep_id.clone(), r.stable_routine_id.clone()))
-                }
-            })
+            .filter(|r| !r.normalized_signature_hash.is_empty())
+            .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
             .collect();
 
         FingerprintIndex {
             routines_by_id,
             objects_by_id,
-            dep_stable_map,
+            stable_by_id,
         }
     }
 
-    /// Compute the finding's fingerprint. For cross-app builds, dep internal ids in
-    /// `rootCauseKey` are replaced with stable ids before hashing (mirrors al-sem's
-    /// `depStableById` substitution — see module docs). Returns the first 16 hex
-    /// chars of `sha256(parts.join("|"))`.
+    /// Compute the finding's fingerprint. Internal routine ids in `rootCauseKey`
+    /// (directly, or as the prefix of operation/callsite/loop ids) are replaced with
+    /// their stable ids before hashing (mirrors al-sem's stabilizing substitution —
+    /// see module docs). Returns the first 16 hex chars of `sha256(parts.join("|"))`.
     pub fn fingerprint_of(&self, finding: &Finding) -> String {
         let routine = self
             .routines_by_id
@@ -106,17 +100,18 @@ impl<'a> FingerprintIndex<'a> {
         };
         let routine_name = routine.map(|r| r.name.clone()).unwrap_or_default();
 
-        // Stabilize any dep internal ids embedded in the rootCauseKey (mirrors
-        // al-sem's `depStableById` reduce). For source-only runs dep_stable_map is
-        // empty, so this branch is skipped and the key is used verbatim.
-        let stable_root_cause_key = if self.dep_stable_map.is_empty() {
+        // Stabilize every internal routine id embedded in the rootCauseKey (mirrors
+        // al-sem's stabilizing reduce). For an empty model stable_by_id is empty, so
+        // this branch is skipped and the key is used verbatim.
+        let stable_root_cause_key = if self.stable_by_id.is_empty() {
             finding.root_cause_key.clone()
         } else {
-            // Single left-to-right pass: try each dep id at each position. Sort by
-            // key-length desc so longer keys shadow shorter prefixes (same invariant
-            // as make_stable_finding_id_fn). The dep set is small (1–10 routines),
-            // so a linear scan per position is fine.
-            let mut sorted_entries: Vec<(&String, &String)> = self.dep_stable_map.iter().collect();
+            // Single left-to-right pass: try each routine id at each position. Sort
+            // by key-length desc so longer keys shadow shorter prefixes (same
+            // invariant as make_stable_finding_id_fn). Internal RoutineIds are
+            // fixed-structure (no id is a substring of another), so non-overlapping
+            // longest-first replacement is deterministic.
+            let mut sorted_entries: Vec<(&String, &String)> = self.stable_by_id.iter().collect();
             sorted_entries.sort_by(|a, b| {
                 b.0.len()
                     .cmp(&a.0.len())
@@ -136,8 +131,8 @@ impl<'a> FingerprintIndex<'a> {
                     }
                 }
                 // Advance by one Unicode scalar value (char-boundary-safe).
-                // dep ids are ASCII so this is always 1 byte in practice; the &str
-                // slice approach is safe even for non-ASCII rootCauseKeys.
+                // Routine ids are ASCII so this is always 1 byte in practice; the
+                // &str slice approach is safe even for non-ASCII rootCauseKeys.
                 let ch = key[pos..]
                     .chars()
                     .next()
@@ -166,8 +161,6 @@ impl<'a> FingerprintIndex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
     use crate::engine::ids::sha256_hex;
     use crate::engine::l3::l3_workspace::L3Routine;
@@ -229,7 +222,9 @@ mod tests {
             attributes_parsed: Vec::new(),
             app_guid: "app".to_string(),
             object_number: 1,
-            normalized_signature_hash: String::new(),
+            // Non-empty so the routine is included in the all-routines stable map
+            // (routines with an empty hash are skipped — no stable form).
+            normalized_signature_hash: "sig".to_string(),
             body_available: true,
             parse_incomplete: false,
             record_variables: Vec::new(),
@@ -276,11 +271,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Oracle 1 — source-only build: dep_stable_map is empty → fingerprint_of
-    // is a pure sha256 of the parts with the rootCauseKey unchanged.
+    // Oracle 1 — a rootCauseKey that embeds NO routine id is hashed verbatim
+    // (the only routine's id is not a substring of the key → no substitution).
     // -----------------------------------------------------------------------
     #[test]
-    fn source_only_fingerprint_is_sha256_of_parts() {
+    fn fingerprint_with_no_embedded_routine_id_is_sha256_of_parts() {
         let r = minimal_routine("r1", "obj/Codeunit/50100", "MyProc");
         let o = minimal_object("obj/Codeunit/50100", "Codeunit", 50100);
         let routines = vec![r];
@@ -301,7 +296,8 @@ mod tests {
         let fp2 = idx.fingerprint_of(&finding);
         assert_eq!(fp, fp2, "fingerprint must be deterministic");
 
-        // Verify manually: sha256("d17-min-version-drift|Codeunit/50100|MyProc||d17/some-guid")
+        // "r1" is not a substring of "d17/some-guid", so the key is verbatim:
+        // sha256("d17-min-version-drift|Codeunit/50100|MyProc||d17/some-guid")
         let expected_parts = "d17-min-version-drift|Codeunit/50100|MyProc||d17/some-guid";
         let expected = &sha256_hex(expected_parts)[..16];
         assert_eq!(
@@ -311,8 +307,8 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Oracle 2 — cross-app build: a dep id in rootCauseKey is replaced with
-    // its stable id before hashing; source ids stay as-is.
+    // Oracle 2 — a DEP routine id embedded in rootCauseKey is replaced with its
+    // stable id before hashing (the cross-app case, now via the unified build).
     // -----------------------------------------------------------------------
     #[test]
     fn dep_id_in_root_cause_key_is_substituted_with_stable_id() {
@@ -328,10 +324,9 @@ mod tests {
         r_ws.stable_routine_id = "ws_stable".to_string();
         let o_ws = minimal_object("ws/Codeunit/50100", "Codeunit", 50100);
 
-        let dep_ids: BTreeSet<String> = [internal_dep_id.to_string()].into_iter().collect();
         let routines2 = vec![r_dep.clone(), r_ws.clone()];
         let objects2 = vec![o.clone(), o_ws.clone()];
-        let idx = FingerprintIndex::build_with_dep_ids(&routines2, &objects2, &dep_ids);
+        let idx = FingerprintIndex::build(&routines2, &objects2);
 
         // rootCauseKey embeds the internal dep id (as d16 does)
         let root_cause_key = format!("d16/{internal_dep_id}");
@@ -350,34 +345,68 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Oracle 3 — source-only id in rootCauseKey is NOT substituted (no-op).
+    // Oracle 3 — a SOURCE routine id embedded in rootCauseKey is ALSO replaced
+    // with its stable id (the edit-stable fix: ALL routine ids stabilize).
     // -----------------------------------------------------------------------
     #[test]
-    fn source_id_in_root_cause_key_is_not_substituted() {
+    fn source_id_in_root_cause_key_is_substituted_with_stable_id() {
         let source_id = "r0/ws:src/caller.al/hash123";
+        let source_stable = "app:Codeunit:1#ws_stable_hash";
         let dep_id = "r0/dep:abc/hash456";
 
         let mut r_dep = minimal_routine(dep_id, "dep/Codeunit/99", "DepProc");
         r_dep.stable_routine_id = "dep_stable_id".to_string();
 
-        let r_ws = minimal_routine(source_id, "ws/Codeunit/1", "WsProc");
+        let mut r_ws = minimal_routine(source_id, "ws/Codeunit/1", "WsProc");
+        r_ws.stable_routine_id = source_stable.to_string();
         let o_ws = minimal_object("ws/Codeunit/1", "Codeunit", 1);
         let o_dep = minimal_object("dep/Codeunit/99", "Codeunit", 99);
 
-        let dep_ids: BTreeSet<String> = [dep_id.to_string()].into_iter().collect();
         let routines3 = vec![r_dep.clone(), r_ws.clone()];
         let objects3 = vec![o_dep.clone(), o_ws.clone()];
-        let idx = FingerprintIndex::build_with_dep_ids(&routines3, &objects3, &dep_ids);
+        let idx = FingerprintIndex::build(&routines3, &objects3);
 
-        // rootCauseKey that embeds a SOURCE id, NOT a dep id → no substitution
+        // rootCauseKey embeds a SOURCE id → now stabilized (edit-survival fix).
         let root_cause_key = format!("d16/{source_id}");
         let finding = dummy_finding("d16-obsolete-routine-call", &root_cause_key, source_id);
         let fp = idx.fingerprint_of(&finding);
 
-        // The key should be used verbatim (no substitution for the source id).
-        let expected_parts =
-            format!("d16-obsolete-routine-call|Codeunit/1|WsProc||d16/{source_id}");
+        // The source id is replaced with its stable form before hashing.
+        let stable_key = format!("d16/{source_stable}");
+        let expected_parts = format!("d16-obsolete-routine-call|Codeunit/1|WsProc||{stable_key}");
         let expected = &sha256_hex(&expected_parts)[..16];
-        assert_eq!(fp, expected, "source id must NOT be substituted");
+        assert_eq!(
+            fp, expected,
+            "source id must be substituted with stable id (edit-stable fix)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Oracle 4 — routines with an empty normalized_signature_hash are skipped
+    // (no stable form): their internal id stays verbatim in the rootCauseKey.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn routine_with_empty_sig_hash_is_not_substituted() {
+        let id = "r0/ws:src/x.al/h";
+        let mut r = minimal_routine(id, "ws/Codeunit/1", "WsProc");
+        r.normalized_signature_hash = String::new(); // skipped
+        r.stable_routine_id = "app:Codeunit:1#".to_string();
+        let o = minimal_object("ws/Codeunit/1", "Codeunit", 1);
+
+        let routines = vec![r];
+        let objects = vec![o];
+        let idx = FingerprintIndex::build(&routines, &objects);
+
+        let root_cause_key = format!("d16/{id}");
+        let finding = dummy_finding("d16-obsolete-routine-call", &root_cause_key, id);
+        let fp = idx.fingerprint_of(&finding);
+
+        // No stable form → key used verbatim.
+        let expected_parts = format!("d16-obsolete-routine-call|Codeunit/1|WsProc||d16/{id}");
+        let expected = &sha256_hex(&expected_parts)[..16];
+        assert_eq!(
+            fp, expected,
+            "routine with empty sig hash must not be substituted"
+        );
     }
 }

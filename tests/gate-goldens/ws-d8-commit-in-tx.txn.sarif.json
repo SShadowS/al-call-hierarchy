@@ -167,7 +167,7 @@
             "text": "Commit inside a posting transaction span — HandlePosted calls Commit while reachable from PostSalesDoc, which writes 3 tables. A mid-transaction Commit breaks rollback semantics — if the surrounding operation later fails, the data is left half-written."
           },
           "fingerprints": {
-            "al-sem/v1": "d6cb54387a218da4"
+            "al-sem/v1": "dc5877f64fbaacd7"
           },
           "locations": [
             {
@@ -237,7 +237,7 @@
             "text": "Commit reachable from event subscriber — HandlePosted is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails."
           },
           "fingerprints": {
-            "al-sem/v1": "51c96e0902e95c73"
+            "al-sem/v1": "1bc4584bf1de491e"
           },
           "locations": [
             {
