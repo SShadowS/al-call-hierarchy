@@ -705,6 +705,7 @@ mod tests {
                 routines: routines_slice,
             },
             root_classifications: vec![],
+            primary_app: None,
         };
 
         let output = detect_d50(&resolved, &ctx);

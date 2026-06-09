@@ -86,6 +86,7 @@ fn inline_suppress_args(disable_suppression: bool) -> AnalyzeArgs {
         baseline: None,
         update_baseline: false,
         disable_inline_suppression: disable_suppression,
+        group_by: None,
     }
 }
 
@@ -230,6 +231,7 @@ fn d8_args(baseline: Option<&str>, update: bool, fail_on: Option<&str>) -> Analy
         baseline: baseline.map(|s| s.to_string()),
         update_baseline: update,
         disable_inline_suppression: false,
+        group_by: None,
     }
 }
 

@@ -42,6 +42,28 @@ use crate::engine::l5::registry::run_detectors;
 pub enum OutputFormat {
     Sarif,
     PrSummary,
+    /// Rich terminal output (colour, grouping). The future Stage A1 formatter.
+    Terminal,
+    /// Machine-readable JSON envelope (the future Stage A2 formatter).
+    Json,
+    /// Self-contained HTML report (the future Stage A3 formatter).
+    Html,
+}
+
+/// The "not yet implemented" `Err` string for a stub formatter. Referenced from BOTH
+/// the main format match and the `empty_output_result` fallback so the wording cannot
+/// drift, and so A1–A3 only delete the arm in one conceptual place. Returns `None` for
+/// the already-implemented formats (Sarif / PrSummary).
+fn stub_not_implemented(fmt: OutputFormat) -> Option<String> {
+    let (name, stage) = match fmt {
+        OutputFormat::Terminal => ("terminal", "A1"),
+        OutputFormat::Json => ("json", "A2"),
+        OutputFormat::Html => ("html", "A3"),
+        OutputFormat::Sarif | OutputFormat::PrSummary => return None,
+    };
+    Some(format!(
+        "format '{name}' not yet implemented (stage {stage})"
+    ))
 }
 
 /// Parsed `analyze` arguments.
@@ -79,6 +101,11 @@ pub struct AnalyzeArgs {
     /// differential can capture the UN-suppressed SARIF (the +1 finding) — it has no CLI
     /// surface. Default `false` (suppression ON).
     pub disable_inline_suppression: bool,
+    /// `--group-by <object|routine|table|detector|file>` — controls how the
+    /// `terminal` formatter groups findings. Validated by the CLI before
+    /// entering the pipeline. `None` means no explicit grouping was requested
+    /// (the terminal formatter will use its default). Ignored by sarif/pr-summary/json/html.
+    pub group_by: Option<String>,
 }
 
 /// Read the workspace root `app.json` identity (`id` / `publisher` / `name` / `version`)
@@ -172,12 +199,12 @@ pub fn run_analyze_with_exit(
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
         // Fail-closed layout → empty output, clean preflight, clean exit.
-        None => return Ok(empty_output(args, &version)),
+        None => return empty_output_result(args, &version),
     };
     let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id) {
         Some(r) => r,
         // Fail-closed / unreadable workspace → empty output.
-        None => return Ok(empty_output(args, &version)),
+        None => return empty_output_result(args, &version),
     };
 
     // L4 + L5: run the selected detectors. Findings come pre-sorted by
@@ -291,6 +318,12 @@ pub fn run_analyze_with_exit(
             let apps = read_workspace_apps(ws_path);
             format_pr_summary(&paired, &resolved.workspace.routines, &apps)
         }
+        // Stubs — the actual formatters are wired in Stages A1–A3.
+        // The resolved model + raw findings are available on `resolved` / `paired`
+        // when those stages implement them; nothing is emitted here.
+        fmt @ (OutputFormat::Terminal | OutputFormat::Json | OutputFormat::Html) => {
+            return Err(stub_not_implemented(fmt).expect("stub format has a message"))
+        }
     };
 
     // --- dependency-coverage preflight (al-sem Task 2) ---
@@ -327,10 +360,21 @@ pub fn run_analyze_with_exit(
 
 /// The empty-output path for a fail-closed / unreadable workspace: empty findings ⇒
 /// empty SARIF or the "no findings" PR-summary; a clean preflight ⇒ exit CLEAN.
-fn empty_output(args: &AnalyzeArgs, version: &str) -> (String, u8, Option<String>) {
+/// The new stub formats (Terminal/Json/Html) are not reachable here from the real
+/// CLI (it validates format before entering the pipeline), but must be exhaustive.
+///
+/// `Err` is returned for stub formats so `run_analyze` / `run_analyze_with_exit`
+/// surface an obvious error even on an unreadable workspace — no silent pass.
+pub(crate) fn empty_output_result(
+    args: &AnalyzeArgs,
+    version: &str,
+) -> Result<(String, u8, Option<String>), String> {
     let out = match args.format {
         OutputFormat::Sarif => format_sarif(&[], &[], version),
         OutputFormat::PrSummary => format_pr_summary(&[], &[], &[]),
+        fmt @ (OutputFormat::Terminal | OutputFormat::Json | OutputFormat::Html) => {
+            return Err(stub_not_implemented(fmt).expect("stub format has a message"))
+        }
     };
-    (out, exit::CLEAN, None)
+    Ok((out, exit::CLEAN, None))
 }

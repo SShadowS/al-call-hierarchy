@@ -471,6 +471,7 @@ mod tests {
                 tables: Vec::new(),
             },
             root_classifications: Vec::new(),
+            primary_app: None,
         }
     }
 

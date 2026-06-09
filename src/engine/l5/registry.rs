@@ -105,6 +105,7 @@ pub(crate) fn run_detectors_cross_app(
     let resolved = L3Resolved {
         workspace: merged_workspace_view(base),
         root_classifications: Vec::new(),
+        primary_app: None,
     };
     let (findings, diagnostics, detector_stats) = run_each(&resolved, &ctx, detectors);
 

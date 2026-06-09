@@ -167,6 +167,7 @@ fn run_gate(workspace: &str, preset: Option<&str>, detector: Option<&str>) -> St
         baseline: None,
         update_baseline: false,
         disable_inline_suppression: false,
+        group_by: None,
     };
     run_analyze(&args, "engine-default").expect("run_analyze")
 }

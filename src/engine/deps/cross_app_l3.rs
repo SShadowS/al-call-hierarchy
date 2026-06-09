@@ -397,6 +397,11 @@ fn build_cross_app_l3_impl(
         resolved: L3Resolved {
             workspace: ws,
             root_classifications,
+            // Cross-app path: primary_app is populated separately via the
+            // workspace app.json that the gate's `read_workspace_apps` reads.
+            // The cross-app L3 constructor has no workspace path here
+            // (it receives a pre-assembled workspace), so primary_app = None.
+            primary_app: None,
         },
         declared_dep_app_guids: declared_dep_app_guids.to_vec(),
         fetched_app_guids,

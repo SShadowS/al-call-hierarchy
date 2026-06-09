@@ -886,11 +886,13 @@ pub fn assemble_and_resolve(
     let mut workspace = assemble_workspace(files, app_guid, model_instance_id);
     resolve(&mut workspace);
     // Inline path: no disk `roots.config.json` ⇒ AST-only classifications.
+    // No disk `app.json` ⇒ primary_app = None.
     let root_classifications =
         crate::engine::root_classification::compute_root_classifications(&workspace, None);
     L3Resolved {
         workspace,
         root_classifications,
+        primary_app: None,
     }
 }
 
@@ -1012,9 +1014,14 @@ pub fn assemble_and_resolve_workspace(
         // index.ts: `loadRootsConfig(workspaceRoot)`).
         let root_classifications =
             crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
+        // Disk-backed path: read the primary app's identity from `app.json`.
+        // Mirrors al-sem `model.identity.primaryApp`. Never throws — returns None
+        // on unreadable / malformed app.json (fail-closed / engine-never-throws).
+        let primary_app = read_primary_app_from_disk(workspace);
         L3Resolved {
             workspace: ws,
             root_classifications,
+            primary_app,
         }
     };
     // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
@@ -1066,6 +1073,41 @@ pub fn assemble_l3_workspace_from_disk(
 /// Disk-backed convenience with the default model-instance id (`r0`).
 pub fn assemble_and_resolve_workspace_default(workspace: &std::path::Path) -> Option<L3Resolved> {
     assemble_and_resolve_workspace(workspace, MODEL_INSTANCE_ID_DEFAULT)
+}
+
+/// Read the primary app's identity from the workspace root `app.json`.
+/// Mirrors `run::read_workspace_apps` but returns `Option<App>` instead of `Vec<App>`.
+/// Engine-never-throws: returns `None` on any read/parse failure.
+fn read_primary_app_from_disk(
+    workspace: &std::path::Path,
+) -> Option<crate::engine::gate::app_attribution::App> {
+    let text = std::fs::read_to_string(workspace.join("app.json")).ok()?;
+    let v = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let app_guid = v
+        .get("id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())?;
+    let publisher = v
+        .get("publisher")
+        .and_then(|x| x.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let name = v
+        .get("name")
+        .and_then(|x| x.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let version = v
+        .get("version")
+        .and_then(|x| x.as_str())
+        .unwrap_or("0.0.0.0")
+        .to_string();
+    Some(crate::engine::gate::app_attribution::App {
+        app_guid: app_guid.to_string(),
+        publisher,
+        name,
+        version,
+    })
 }
 
 /// Run the three L3 resolve sub-steps over an assembled workspace IN ORDER:
@@ -1128,6 +1170,14 @@ pub struct L3Resolved {
     /// disk config populate the AST-only set (empty config). Consumed by the L5
     /// `DetectorContext` (d50/d51) and the R4-F stable projection.
     pub root_classifications: Vec<crate::engine::root_classification::RootClassification>,
+    /// The primary app's identity (`model.identity.primaryApp`): name / publisher /
+    /// version read from the workspace `app.json`. Populated by the disk-backed
+    /// assembly path (`assemble_and_resolve_workspace`); `None` in the inline /
+    /// cross-app constructors (no disk `app.json` to read). Consumed by the html
+    /// formatter's masthead/title (Stage A3) and any future envelope that needs the
+    /// primary app description. Additive — `L3Resolved` is NOT serialized into any
+    /// golden surface, so adding this field never moves a golden.
+    pub primary_app: Option<crate::engine::gate::app_attribution::App>,
 }
 
 // ---------------------------------------------------------------------------
