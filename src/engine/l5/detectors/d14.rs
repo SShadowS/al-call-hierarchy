@@ -72,6 +72,9 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
+    let mut skipped_non_local = 0u64;
+    let mut skipped_property_expression_host = 0u64;
 
     for r in &ws.routines {
         // roleOf(r) === "primary": source-only ⇒ always true.
@@ -80,6 +83,7 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         }
         candidates_considered += 1;
         if reachable.contains(&r.id) {
+            skipped_other += 1;
             continue;
         }
         // `local` is always flaggable; `internal` only when no app is granted
@@ -91,18 +95,22 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         let access_flaggable = access == Some("local")
             || (access == Some("internal") && !ctx.internal_reachable_externally);
         if !access_flaggable {
+            skipped_non_local += 1;
             continue;
         }
         let obj = ctx.objects_by_id.get(r.object_id.as_str()).copied();
         if let Some(obj) = obj {
             if ends_with_test_ci(&obj.name) {
+                skipped_other += 1;
                 continue;
             }
             if OBJECT_TYPES_WITHOUT_FULL_CALL_GRAPH.contains(&obj.object_type.as_str()) {
+                skipped_property_expression_host += 1;
                 continue;
             }
         }
         if roots.contains(&r.id) {
+            skipped_other += 1;
             continue;
         }
 
@@ -165,13 +173,13 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
+    stats.add_skip("nonLocal", skipped_non_local);
+    stats.add_skip("propertyExpressionHost", skipped_property_expression_host);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }
 

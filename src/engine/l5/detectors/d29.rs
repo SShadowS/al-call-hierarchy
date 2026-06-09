@@ -75,6 +75,8 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_non_modify_event = 0u64;
+    let mut skipped_no_record_param = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -93,6 +95,7 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
 
         let evt = event_name(&routine.attributes_parsed);
         if !is_modify_event(evt.as_deref()) {
+            skipped_non_modify_event += 1;
             continue;
         }
 
@@ -103,6 +106,7 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             .map(|p| p.name.to_lowercase())
             .collect();
         if record_param_names.is_empty() {
+            skipped_no_record_param += 1;
             continue;
         }
         candidates_considered += 1;
@@ -124,14 +128,10 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("nonModifyEvent", skipped_non_modify_event);
+    stats.add_skip("noRecordParam", skipped_no_record_param);
+    DetectorOutput { findings, stats }
 }
 
 fn emit(

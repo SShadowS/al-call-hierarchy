@@ -340,6 +340,8 @@ pub fn detect_d43(
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates = 0usize;
+    let mut skipped_no_guard = 0u64;
+    let mut skipped_no_setter = 0u64;
 
     // Substrate guard: no conditionReference anywhere AND ≥1 event subscriber → bail.
     let saw_any_condition_ref = ws
@@ -356,11 +358,7 @@ pub fn detect_d43(
         // the byte-parity surface, so we just bail with zero findings.
         return DetectorOutput {
             findings: Vec::new(),
-            stats: DetectorStats {
-                detector: DETECTOR.to_string(),
-                candidates_considered: 0,
-                findings_emitted: 0,
-            },
+            stats: DetectorStats::new(DETECTOR, 0, 0),
         };
     }
 
@@ -376,9 +374,11 @@ pub fn detect_d43(
     let sites = enumerate_dispatch_sites(ctx, &ctx.routine_by_id);
     for site in &sites {
         if site.post_call_guards.is_empty() {
+            skipped_no_guard += 1;
             continue;
         }
         if site.guarded_tables_written.is_empty() {
+            skipped_no_guard += 1;
             continue;
         }
         let subs = ctx
@@ -397,6 +397,7 @@ pub fn detect_d43(
             }
         }
         if setters.is_empty() {
+            skipped_no_setter += 1;
             continue;
         }
 
@@ -551,12 +552,7 @@ pub fn detect_d43(
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered: candidates,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates, emitted);
+    stats.add_skip("other", skipped_no_guard + skipped_no_setter);
+    DetectorOutput { findings, stats }
 }

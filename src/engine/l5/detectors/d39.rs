@@ -30,6 +30,7 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_caller_persists = 0u64;
 
     for callee in &ws.routines {
         if !callee.body_available {
@@ -116,6 +117,7 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                         && before_anchor(&cs.source_anchor, &op.source_anchor)
                 });
                 if persisted_after {
+                    skipped_caller_persists += 1;
                     continue; // callerPersists
                 }
 
@@ -197,12 +199,7 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("callerPersists", skipped_caller_persists);
+    DetectorOutput { findings, stats }
 }

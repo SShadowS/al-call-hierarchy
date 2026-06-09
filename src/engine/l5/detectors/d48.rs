@@ -299,6 +299,9 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_opaque_callee = 0u64;
+    let mut skipped_dynamic_dispatch = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ always true.
@@ -306,6 +309,7 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -416,9 +420,11 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     .find(|e| e.callsite_id.as_deref() == Some(cs.id.as_str()))
             });
             let Some(edge) = edge else {
-                continue; // opaque callee
+                skipped_opaque_callee += 1;
+                continue;
             };
             if edge.kind == "interface" || edge.kind == "dynamic" {
+                skipped_dynamic_dispatch += 1;
                 continue;
             }
             if !routine_touches_external_io(ctx.summaries.get(&edge.to)) {
@@ -552,13 +558,13 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     let count = emitted.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, count);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("opaqueCallee", skipped_opaque_callee);
+    stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
     DetectorOutput {
         findings: emitted,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: count,
-        },
+        stats,
     }
 }
 

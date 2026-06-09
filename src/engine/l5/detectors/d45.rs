@@ -216,10 +216,6 @@ pub fn detect_d45(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = kept.len();
     DetectorOutput {
         findings: kept,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered: candidates,
-            findings_emitted: emitted,
-        },
+        stats: DetectorStats::new(DETECTOR, candidates, emitted),
     }
 }

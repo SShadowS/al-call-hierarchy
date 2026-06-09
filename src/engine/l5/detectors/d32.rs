@@ -89,6 +89,11 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_non_local = 0u64;
+    let mut skipped_no_boolean_params = 0u64;
+    let mut skipped_too_few_callers = 0u64;
+    let mut skipped_unresolved_or_mixed_edges = 0u64;
+    let mut skipped_varies = 0u64;
 
     for callee in &ws.routines {
         // roleOf(callee) !== "primary" → skip. Source-only: every routine is
@@ -102,6 +107,7 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         }
         // access_modifier == Some("local") only.
         if callee.access_modifier.as_deref() != Some("local") {
+            skipped_non_local += 1;
             continue;
         }
 
@@ -112,6 +118,7 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             .filter(|p| has_boolean_word(&p.type_text))
             .collect();
         if bool_params.is_empty() {
+            skipped_no_boolean_params += 1;
             continue;
         }
 
@@ -125,11 +132,13 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         let direct_edges: Vec<_> = incoming.iter().filter(|e| e.kind == "direct").collect();
 
         if direct_edges.len() < 2 {
+            skipped_too_few_callers += 1;
             continue;
         }
 
         // Any non-direct edge → mixed → bail.
         if incoming.iter().any(|e| e.kind != "direct") {
+            skipped_unresolved_or_mixed_edges += 1;
             continue;
         }
 
@@ -196,6 +205,7 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             }
 
             if bailed {
+                skipped_varies += 1;
                 continue;
             }
 
@@ -218,14 +228,13 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("nonLocal", skipped_non_local);
+    stats.add_skip("noBooleanParams", skipped_no_boolean_params);
+    stats.add_skip("tooFewCallers", skipped_too_few_callers);
+    stats.add_skip("unresolvedOrMixedEdges", skipped_unresolved_or_mixed_edges);
+    stats.add_skip("varies", skipped_varies);
+    DetectorOutput { findings, stats }
 }
 
 fn emit(

@@ -25,6 +25,7 @@ pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for span in &ctx.transaction_spans {
         // §B: checked-run-implicit seeds are for D50 only — D9 ignores them.
@@ -38,6 +39,7 @@ pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         candidates_considered += 1;
 
         if span.routines_in_span.len() < MIN_INTERESTING_ROUTINES {
+            skipped_other += 1;
             continue;
         }
 
@@ -45,6 +47,7 @@ pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         let effects_are_interesting =
             table_count >= MIN_INTERESTING_TABLES || !span.coverage_complete;
         if !effects_are_interesting {
+            skipped_other += 1;
             continue;
         }
 
@@ -115,12 +118,10 @@ pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

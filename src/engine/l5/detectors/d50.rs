@@ -179,6 +179,7 @@ pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for span in &ctx.transaction_spans {
         // D50 only consumes CheckedRunImplicit seeds — D8/D9 own ExplicitCommit.
@@ -200,9 +201,7 @@ pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             .collect();
 
         if managers.is_empty() {
-            // No transaction-managing routine in the span → not a d50 candidate.
-            // (al-sem tracks a `skipped.other` stat here; the Rust DetectorStats
-            // surface omits the `skipped` map, so nothing to record.)
+            skipped_other += 1;
             continue;
         }
 
@@ -368,13 +367,11 @@ pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     let count = emitted.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, count);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings: emitted,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: count,
-        },
+        stats,
     }
 }
 

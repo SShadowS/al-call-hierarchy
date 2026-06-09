@@ -36,6 +36,8 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_parameter = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -44,6 +46,7 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -62,6 +65,7 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             }
             let var_key = op.record_variable_name.to_lowercase();
             if param_record_names.contains(&var_key) {
+                skipped_parameter += 1;
                 continue;
             }
 
@@ -141,12 +145,8 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("parameter", skipped_parameter);
+    DetectorOutput { findings, stats }
 }

@@ -28,6 +28,8 @@ pub fn detect_d19(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_trigger = 0u64;
+    let mut skipped_event_subscriber = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -40,9 +42,11 @@ pub fn detect_d19(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
         }
         // procedure only — skip triggers + event subscribers.
         if routine.kind == "trigger" {
+            skipped_trigger += 1;
             continue;
         }
         if routine.kind == "event-subscriber" {
+            skipped_event_subscriber += 1;
             continue;
         }
         if routine.parameters.is_empty() {
@@ -125,12 +129,11 @@ pub fn detect_d19(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("trigger", skipped_trigger);
+    stats.add_skip("eventSubscriber", skipped_event_subscriber);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

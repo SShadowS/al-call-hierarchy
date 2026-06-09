@@ -154,10 +154,6 @@ pub fn detect_d49(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let count = emitted.len();
     DetectorOutput {
         findings: emitted,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: count,
-        },
+        stats: DetectorStats::new(DETECTOR, candidates_considered, count),
     }
 }

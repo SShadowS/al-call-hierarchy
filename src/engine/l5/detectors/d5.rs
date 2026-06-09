@@ -38,6 +38,7 @@ pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -49,6 +50,7 @@ pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         candidates_considered += 1;
+        let findings_before = findings.len();
 
         // Map loopId → record variable that drives the loop (identified via Next()).
         // Next() is always emitted inside the loop body (loopStack non-empty);
@@ -202,17 +204,18 @@ pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
             finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
             findings.push(finding);
         }
+        if findings.len() == findings_before {
+            skipped_other += 1;
+        }
     }
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

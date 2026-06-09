@@ -47,6 +47,11 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_persisted = 0u64;
+    let mut skipped_helper_may_persist = 0u64;
+    let mut skipped_helper_persists_unknown = 0u64;
+    let mut skipped_temp_record = 0u64;
+    let mut skipped_parameter = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -73,15 +78,18 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             // op.tempState.kind === "known" && op.tempState.value === true
             if let Some(ts) = &op.temp_state {
                 if ts.kind == "known" && ts.value == Some(true) {
+                    skipped_temp_record += 1;
                     continue;
                 }
             }
             if param_record_names.contains(&var_key) {
+                skipped_parameter += 1;
                 continue;
             }
 
             // Walk subsequent ops in source order, persistence vs reset.
             if later_persisted(&routine.record_operations, &var_key, op) == "persisted" {
+                skipped_persisted += 1;
                 continue;
             }
 
@@ -95,7 +103,12 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 &op.source_anchor,
                 ctx,
             );
-            if helper_verdict == "suppress-may-persist" || helper_verdict == "suppress-unknown" {
+            if helper_verdict == "suppress-may-persist" {
+                skipped_helper_may_persist += 1;
+                continue;
+            }
+            if helper_verdict == "suppress-unknown" {
+                skipped_helper_persists_unknown += 1;
                 continue;
             }
             // "do-not-suppress" — fall through to emit.
@@ -107,14 +120,13 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("persisted", skipped_persisted);
+    stats.add_skip("helperMayPersist", skipped_helper_may_persist);
+    stats.add_skip("helperPersistsUnknown", skipped_helper_persists_unknown);
+    stats.add_skip("tempRecord", skipped_temp_record);
+    stats.add_skip("parameter", skipped_parameter);
+    DetectorOutput { findings, stats }
 }
 
 /// Iterate ops in source order on the same record var, after the Validate; the first

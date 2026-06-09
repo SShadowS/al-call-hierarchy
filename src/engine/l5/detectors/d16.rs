@@ -30,6 +30,7 @@ pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     let mut froms: Vec<&String> = ctx.graph.edges_by_from.keys().collect();
     froms.sort();
@@ -50,6 +51,7 @@ pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
             let attrs = parse_routine_attributes(&callee.attributes_parsed);
             let Some(obsolete_state) = attrs.obsolete_state else {
+                skipped_other += 1;
                 continue;
             };
 
@@ -123,12 +125,10 @@ pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

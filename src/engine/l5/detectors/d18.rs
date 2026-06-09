@@ -48,6 +48,8 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut findings: Vec<Finding> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_non_literal = 0u64;
+    let mut skipped_temp_record = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -75,6 +77,7 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             // Skip temporary records.
             if let Some(ts) = &op.temp_state {
                 if ts.kind == "known" && ts.value == Some(true) {
+                    skipped_temp_record += 1;
                     continue;
                 }
             }
@@ -90,6 +93,7 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             // Value arguments are everything after the field name (index 1+).
             let value_args = &infos[1..];
             if !value_args.iter().all(is_literal_expression) {
+                skipped_non_literal += 1;
                 continue;
             }
 
@@ -212,12 +216,11 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("nonLiteralArgs", skipped_non_literal);
+    stats.add_skip("tempRecord", skipped_temp_record);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

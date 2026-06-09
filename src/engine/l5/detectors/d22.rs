@@ -30,6 +30,8 @@ pub fn detect_d22(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_unresolved_table = 0u64;
+    let mut skipped_parameter = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" — source-only, every routine is primary.
@@ -60,6 +62,7 @@ pub fn detect_d22(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
             // Skip by-var parameter records.
             if param_record_names.contains(&record_var_key) {
+                skipped_parameter += 1;
                 continue;
             }
 
@@ -69,13 +72,19 @@ pub fn detect_d22(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 .and_then(|rv| rv.table_id.as_deref())
             {
                 Some(id) => id,
-                None => continue,
+                None => {
+                    skipped_unresolved_table += 1;
+                    continue;
+                }
             };
 
             // Look up the table in the context index.
             let table = match ctx.table_by_id.get(table_id) {
                 Some(t) => *t,
-                None => continue,
+                None => {
+                    skipped_unresolved_table += 1;
+                    continue;
+                }
             };
 
             // Find the field in the table (case-insensitive).
@@ -180,14 +189,10 @@ pub fn detect_d22(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("unresolvedTable", skipped_unresolved_table);
+    stats.add_skip("parameter", skipped_parameter);
+    DetectorOutput { findings, stats }
 }
 
 /// Returns true if there is a `CalcFields` op on `record_var_key` strictly

@@ -219,6 +219,7 @@ pub fn detect_d46(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ always true.
@@ -230,6 +231,7 @@ pub fn detect_d46(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
 
@@ -335,12 +337,10 @@ pub fn detect_d46(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     let count = emitted.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, count);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     DetectorOutput {
         findings: emitted,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: count,
-        },
+        stats,
     }
 }

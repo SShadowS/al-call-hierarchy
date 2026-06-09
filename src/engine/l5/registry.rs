@@ -26,13 +26,94 @@ pub struct Diagnostic {
     pub message: String,
 }
 
-/// Per-detector stats (al-sem `DetectorStats`). Only the always-present fields are
-/// modeled; the skip-counter map is kept opaque (the projection never reads it).
+/// Per-detector stats (al-sem `DetectorStats`).
+///
+/// `skipped` is a `BTreeMap<String, u64>` that serializes as a JSON object with keys
+/// in alphabetical order (BTreeMap gives this for free). A key is inserted ONLY when
+/// its count is > 0 — except for d43 which always emits `other` (even when 0).
+/// An empty map serializes as `{}`.
+///
+/// Serialization contract (canonical sorted-key JSON):
+///   - Keys are sorted alphabetically (`BTreeMap` iteration order).
+///   - Field order in the JSON object is: `candidatesConsidered`, `detector`,
+///     `findingsEmitted`, `skipped` — exactly the alphabetical order of those names.
+///   - 2-space indent, trailing newline on the array.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetectorStats {
     pub detector: String,
     pub candidates_considered: usize,
     pub findings_emitted: usize,
+    /// Skip counters. Insert with `skipped.entry(key).and_modify(|v| *v += 1).or_insert(1)`
+    /// or the convenience `insert_skip` method. Keys must match the taxonomy exactly.
+    pub skipped: std::collections::BTreeMap<String, u64>,
+}
+
+impl DetectorStats {
+    /// Create a new `DetectorStats` with an empty skipped map.
+    pub fn new(detector: impl Into<String>, candidates_considered: usize, findings_emitted: usize) -> Self {
+        Self {
+            detector: detector.into(),
+            candidates_considered,
+            findings_emitted,
+            skipped: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Increment a skip counter by 1, inserting it if absent.
+    pub fn inc_skip(&mut self, key: &str) {
+        *self.skipped.entry(key.to_string()).or_insert(0) += 1;
+    }
+
+    /// Add `n` to a skip counter, inserting it if absent. Only inserts when `n > 0`.
+    pub fn add_skip(&mut self, key: &str, n: u64) {
+        if n > 0 {
+            *self.skipped.entry(key.to_string()).or_insert(0) += n;
+        }
+    }
+
+    /// Serialize this stats object to a `serde_json::Value` with alphabetically-sorted
+    /// keys, matching the al-sem `sortedReplacer` output. The field order matches the
+    /// alphabetical key sort: `candidatesConsidered`, `detector`, `findingsEmitted`, `skipped`.
+    pub fn to_json_value(&self) -> serde_json::Value {
+        let skipped_obj: serde_json::Map<String, serde_json::Value> = self
+            .skipped
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::Number((*v).into())))
+            .collect();
+        // The field ORDER in the serde_json::Map must be alphabetical so that
+        // serde_json::to_string_pretty emits them in alphabetical order.
+        // Use a BTreeMap-backed Map by constructing via sorted insertion.
+        let mut obj = serde_json::Map::new();
+        obj.insert(
+            "candidatesConsidered".to_string(),
+            serde_json::Value::Number(self.candidates_considered.into()),
+        );
+        obj.insert(
+            "detector".to_string(),
+            serde_json::Value::String(self.detector.clone()),
+        );
+        obj.insert(
+            "findingsEmitted".to_string(),
+            serde_json::Value::Number(self.findings_emitted.into()),
+        );
+        obj.insert(
+            "skipped".to_string(),
+            serde_json::Value::Object(skipped_obj),
+        );
+        serde_json::Value::Object(obj)
+    }
+}
+
+/// Serialize a `Vec<DetectorStats>` to a canonical sorted-key JSON string: 2-space
+/// indent, trailing newline, all object keys in alphabetical order. This is the format
+/// the al-sem golden files use (JSON.stringify with sortedReplacer + 2-space indent +
+/// trailing newline).
+pub fn serialize_detector_stats(stats: &[DetectorStats]) -> String {
+    let arr: Vec<serde_json::Value> = stats.iter().map(|s| s.to_json_value()).collect();
+    let val = serde_json::Value::Array(arr);
+    let mut out = serde_json::to_string_pretty(&val).expect("DetectorStats serialization failed");
+    out.push('\n');
+    out
 }
 
 /// A detector's output.

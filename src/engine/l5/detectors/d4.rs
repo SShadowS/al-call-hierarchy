@@ -36,6 +36,7 @@ pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -47,6 +48,7 @@ pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         candidates_considered += 1;
+        let findings_before = findings.len();
 
         for loop_info in &routine.loops {
             // Collect lookup ops inside THIS loop with a string-like literal key.
@@ -175,18 +177,20 @@ pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
                 findings.push(finding);
             }
         }
+        // skippedOther: routines where no findings were emitted.
+        if findings.len() == findings_before {
+            skipped_other += 1;
+        }
     }
 
     // Within-detector sort by compareStrings(a.id, b.id) (byte order).
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

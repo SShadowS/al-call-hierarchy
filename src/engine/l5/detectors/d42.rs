@@ -103,6 +103,9 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_caller_full = 0u64;
+    let mut skipped_callee_requires_none = 0u64;
+    let mut skipped_callee_unknown = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -151,14 +154,20 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                                 .find(|r| r.parameter_index == binding.parameter_index)
                         }) {
                         Some(r) => r,
-                        None => continue, // skippedCalleeUnknown
+                        None => {
+                            skipped_callee_unknown += 1;
+                            continue;
+                        }
                     };
                 // RF = callee.requiredLoadedFieldsAtEntry — non-empty concrete list.
                 // al-sem: `RF === "unknown" || RF.length === 0` → skip. Full never
                 // occurs for this field; treat conservatively as the skip path.
                 let rf: Vec<String> = match &callee_role.required_loaded_fields_at_entry {
                     FieldList::Known(names) if !names.is_empty() => names.clone(),
-                    _ => continue, // skippedCalleeRequiresNone
+                    _ => {
+                        skipped_callee_requires_none += 1;
+                        continue;
+                    }
                 };
 
                 // Caller-side LF — two-tier resolution.
@@ -188,7 +197,10 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
                 let loaded = match lf {
                     Some(Narrow::Unknown) | None => continue,
-                    Some(Narrow::Full) => continue, // skippedCallerFull
+                    Some(Narrow::Full) => {
+                        skipped_caller_full += 1;
+                        continue;
+                    }
                     Some(Narrow::Known(fields)) => fields,
                 };
                 let missing: Vec<String> = rf
@@ -283,12 +295,9 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("callerFull", skipped_caller_full);
+    stats.add_skip("calleeRequiresNone", skipped_callee_requires_none);
+    stats.add_skip("calleeUnknown", skipped_callee_unknown);
+    DetectorOutput { findings, stats }
 }

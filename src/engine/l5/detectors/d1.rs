@@ -495,6 +495,9 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_opaque_callee = 0u64;
+    let mut skipped_dynamic_dispatch = 0u64;
 
     let policy = D1Policy {
         routine_by_id: &ctx.routine_by_id,
@@ -510,7 +513,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             continue;
         }
         if routine.parse_incomplete {
-            // skippedParseIncomplete (stats not emitted in the R4 surface).
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -604,9 +607,11 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             });
             let Some(edge) = edge else {
                 // No resolved edge — opaque callee.
+                skipped_opaque_callee += 1;
                 continue;
             };
             if edge.kind == "interface" || edge.kind == "dynamic" {
+                skipped_dynamic_dispatch += 1;
                 continue;
             }
             let Some(callee_summary) = ctx.summaries.get(&edge.to) else {
@@ -703,22 +708,39 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     }
     let mut merged = merge_by_terminal(deduped);
     // Fingerprint AFTER merge — affectedObjects/affectedTables are unioned.
+    // Also count setup-singleton downgrades (rootCause contains "Setup singleton").
+    let mut downgraded_setup_singleton = 0u64;
     for f in &mut merged {
         f.fingerprint = Some(fp_index.fingerprint_of(f));
+        if f.root_cause.contains("Setup singleton") {
+            downgraded_setup_singleton += 1;
+        }
     }
+    // downgradedToInfo: direct in-loop ops that are known-temp (severity forced to "info").
+    // Count the known-temp direct ops (those that entered severity_for with is_known_temp=true).
+    // al-sem counts these as they are added to findings (before dedup/merge).
+    // In the Rust path, severity "info" from is_known_temp is already baked into the finding;
+    // we count them from the merged findings whose severity is "info" due to temp (but
+    // setup-singletons also get "info" — exclude those). Use the same rootCause marker: "temporary record".
+    let downgraded_to_info = merged
+        .iter()
+        .filter(|f| f.severity == "info" && f.root_cause.contains("temporary record"))
+        .count() as u64;
     // merge_by_terminal already sorts by compareStrings(id); the explicit final
     // sort by id (al-sem `sorted = merged.sort(...)`) is a no-op duplicate but
     // kept for faithfulness.
     merged.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = merged.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("opaqueCallee", skipped_opaque_callee);
+    stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("downgradedToInfo", downgraded_to_info);
+    stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
     DetectorOutput {
         findings: merged,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }
 

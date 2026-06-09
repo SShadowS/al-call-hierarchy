@@ -40,6 +40,7 @@ pub fn detect_d12(
     }
 
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for ev in &ctx.event_graph.events {
         if ev.event_kind != "integration" {
@@ -56,6 +57,7 @@ pub fn detect_d12(
         // primary, so this never skips (mirrors al-sem semantics).
         candidates_considered += 1;
         if subs_by_event.get(ev.id.as_str()).copied().unwrap_or(0) > 0 {
+            skipped_other += 1;
             continue;
         }
 
@@ -115,12 +117,10 @@ pub fn detect_d12(
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

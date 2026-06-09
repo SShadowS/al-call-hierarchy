@@ -29,6 +29,7 @@ pub fn detect_d35(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_commit_free_subscriber = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ every routine is primary.
@@ -54,6 +55,7 @@ pub fn detect_d35(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         };
 
         if summary_commits == "no" {
+            skipped_commit_free_subscriber += 1;
             continue;
         }
 
@@ -165,12 +167,7 @@ pub fn detect_d35(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("commitFreeSubscriber", skipped_commit_free_subscriber);
+    DetectorOutput { findings, stats }
 }

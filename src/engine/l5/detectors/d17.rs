@@ -77,11 +77,7 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     if declared.is_empty() {
         return DetectorOutput {
             findings,
-            stats: DetectorStats {
-                detector: DETECTOR.to_string(),
-                candidates_considered: 0,
-                findings_emitted: 0,
-            },
+            stats: DetectorStats::new(DETECTOR, 0, 0),
         };
     }
 
@@ -140,21 +136,27 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
     for dep in declared {
         candidates_considered += 1;
         let Some(resolved_version) = ctx.app_versions.get(&dep.app_guid) else {
+            skipped_other += 1;
             continue;
         };
         if cmp_version(resolved_version, &dep.min_version) <= 0 {
+            skipped_other += 1;
             continue;
         }
         if !called_dep_guids.contains(&dep.app_guid) {
+            skipped_other += 1;
             continue;
         }
         let Some(sample) = sample_by_dep.get(&dep.app_guid) else {
+            skipped_other += 1;
             continue;
         };
         let Some(caller_routine) = ctx.routine_by_id.get(sample.caller_routine_id.as_str()) else {
+            skipped_other += 1;
             continue;
         };
 
@@ -216,13 +218,11 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }
 

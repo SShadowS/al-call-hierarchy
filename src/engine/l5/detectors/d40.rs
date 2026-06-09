@@ -54,6 +54,11 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_unresolved = 0u64;
+    let mut skipped_implicit_rec = 0u64;
+    let mut skipped_temp_record = 0u64;
+    let mut skipped_caller_loaded = 0u64;
+    let mut skipped_callee_unknown = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -79,7 +84,10 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         for cs in &routine.call_sites {
             let edge = match ctx.resolved_call_edge_by_callsite.get(&cs.id) {
                 Some(e) => e,
-                None => continue, // skippedUnresolved
+                None => {
+                    skipped_unresolved += 1;
+                    continue;
+                }
             };
             let to = match &edge.to {
                 Some(t) => t,
@@ -94,18 +102,21 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             for (i, binding) in cs.argument_bindings.iter().enumerate() {
                 // C2(a): implicit-rec narrowing — checked BEFORE bindingResolution.
                 if binding.source_kind == "implicit-rec" {
-                    continue; // skippedImplicitRec
+                    skipped_implicit_rec += 1;
+                    continue;
                 }
                 let binding_resolution = upgraded
                     .and_then(|u| u.get(i))
                     .map(|u| u.binding_resolution.as_str());
                 if binding_resolution != Some("resolved") {
-                    continue; // skippedUnresolved
+                    skipped_unresolved += 1;
+                    continue;
                 }
                 // sourceTempState known/true → temp record, no DB load concept.
                 if let Some(ts) = &binding.source_temp_state {
                     if ts.kind == "known" && ts.value == Some(true) {
-                        continue; // skippedTempRecord
+                        skipped_temp_record += 1;
+                        continue;
                     }
                 }
                 let callee_role =
@@ -118,7 +129,10 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                                 .find(|r| r.parameter_index == binding.parameter_index)
                         }) {
                         Some(r) => r,
-                        None => continue, // skippedCalleeUnknown
+                        None => {
+                            skipped_callee_unknown += 1;
+                            continue;
+                        }
                     };
                 if callee_role.requires_loaded_at_entry != EffectPresence::Yes {
                     continue;
@@ -142,7 +156,8 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     }
                 });
                 if loaded_before {
-                    continue; // skippedCallerLoaded
+                    skipped_caller_loaded += 1;
+                    continue;
                 }
 
                 let mutates = callee_role.mutates_before_load == EffectPresence::Yes;
@@ -225,12 +240,11 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("unresolved", skipped_unresolved);
+    stats.add_skip("implicitRec", skipped_implicit_rec);
+    stats.add_skip("tempRecord", skipped_temp_record);
+    stats.add_skip("callerLoaded", skipped_caller_loaded);
+    stats.add_skip("calleeUnknown", skipped_callee_unknown);
+    DetectorOutput { findings, stats }
 }

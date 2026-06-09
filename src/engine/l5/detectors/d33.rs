@@ -35,6 +35,11 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_filtered = 0u64;
+    let mut skipped_temp_record = 0u64;
+    let mut skipped_parameter = 0u64;
+    let mut skipped_unresolved_table = 0u64;
+    let mut skipped_parse_incomplete = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" — source-only, every routine is primary.
@@ -42,6 +47,7 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
 
@@ -63,12 +69,14 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             // Skip temporary records.
             if let Some(ts) = &op.temp_state {
                 if ts.kind == "known" && ts.value == Some(true) {
+                    skipped_temp_record += 1;
                     continue;
                 }
             }
 
             // Skip by-var parameter records.
             if param_record_names.contains(&var_key) {
+                skipped_parameter += 1;
                 continue;
             }
 
@@ -76,12 +84,14 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             let table_id = match &op.table_id {
                 Some(id) => id.clone(),
                 None => {
+                    skipped_unresolved_table += 1;
                     continue;
                 }
             };
 
             // Check whether a narrowing filter was applied before this op.
             if was_filtered_before(&routine.record_operations, &var_key, op) {
+                skipped_filtered += 1;
                 continue;
             }
 
@@ -165,14 +175,13 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("filtered", skipped_filtered);
+    stats.add_skip("tempRecord", skipped_temp_record);
+    stats.add_skip("parameter", skipped_parameter);
+    stats.add_skip("unresolvedTable", skipped_unresolved_table);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    DetectorOutput { findings, stats }
 }
 
 /// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE

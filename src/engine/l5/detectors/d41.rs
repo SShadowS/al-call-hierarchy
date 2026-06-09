@@ -45,6 +45,9 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_no_prior_filter = 0u64;
+    let mut skipped_no_post_use = 0u64;
+    let mut skipped_re_filtered = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -111,7 +114,10 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 });
                 let first_prior_filter = match first_prior_filter {
                     Some(op) => *op,
-                    None => continue, // skippedNoPriorFilter
+                    None => {
+                        skipped_no_prior_filter += 1;
+                        continue;
+                    }
                 };
 
                 // (3) Any filter-sensitive op AFTER the callsite?
@@ -121,7 +127,10 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 });
                 let first_sensitive = match first_sensitive {
                     Some(op) => *op,
-                    None => continue, // skippedNoPostUse
+                    None => {
+                        skipped_no_post_use += 1;
+                        continue;
+                    }
                 };
 
                 // (4) Re-filter between callsite and the sensitive op?
@@ -131,7 +140,8 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                         && before_anchor(&op.source_anchor, &first_sensitive.source_anchor)
                 });
                 if re_filtered {
-                    continue; // skippedReFiltered
+                    skipped_re_filtered += 1;
+                    continue;
                 }
 
                 let path = vec![
@@ -213,12 +223,9 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("noPriorFilter", skipped_no_prior_filter);
+    stats.add_skip("noPostUse", skipped_no_post_use);
+    stats.add_skip("reFiltered", skipped_re_filtered);
+    DetectorOutput { findings, stats }
 }

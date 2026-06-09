@@ -134,6 +134,9 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_temporary_record = 0u64;
+    let mut skipped_unknown_reads = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -141,6 +144,7 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -161,6 +165,7 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             // recVar?.tempState.kind === "known" && recVar.tempState.value === true
             if let Some(rv) = rec_var {
                 if rv.temp_state_known_value() == Some(true) {
+                    skipped_temporary_record += 1;
                     continue;
                 }
             }
@@ -308,7 +313,7 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     // which d3 must never produce) if a future change ever emits it.
                     crate::engine::l4::summary::FieldList::Unknown
                     | crate::engine::l4::summary::FieldList::Full => {
-                        // skippedUnknownReads++
+                        skipped_unknown_reads += 1;
                         continue;
                     }
                     crate::engine::l4::summary::FieldList::Known(ids) => ids.clone(),
@@ -476,12 +481,12 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     deduped.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = deduped.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("temporaryRecord", skipped_temporary_record);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("unknownReads", skipped_unknown_reads);
     DetectorOutput {
         findings: deduped,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

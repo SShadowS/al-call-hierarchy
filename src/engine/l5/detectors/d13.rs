@@ -30,6 +30,7 @@ pub fn detect_d13(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut findings: Vec<Finding> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     // Deterministic walk: collect edges into a sorted order so candidate counting +
     // dedup are stable; final sort by id makes output order independent regardless.
@@ -58,11 +59,13 @@ pub fn detect_d13(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             };
             // Only flag cross-app boundaries.
             if caller_obj.app_guid == callee_obj.app_guid {
+                skipped_other += 1;
                 continue;
             }
 
             let attrs = parse_routine_attributes(&callee.attributes_parsed);
             if !attrs.internal_proc && callee.access_modifier.as_deref() != Some("internal") {
+                skipped_other += 1;
                 continue;
             }
 
@@ -138,12 +141,10 @@ pub fn detect_d13(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

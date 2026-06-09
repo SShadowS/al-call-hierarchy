@@ -35,6 +35,8 @@ pub fn detect_d34(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_suppressed_by_direct = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ every routine is primary.
@@ -42,6 +44,7 @@ pub fn detect_d34(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -117,6 +120,7 @@ pub fn detect_d34(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 .iter()
                 .any(|s| s.kind == "commit" && s.loop_stack.iter().any(|l| l == &loop_info.id));
             if has_direct_on_same_loop {
+                skipped_suppressed_by_direct += 1;
                 continue;
             }
 
@@ -145,14 +149,10 @@ pub fn detect_d34(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("suppressedByDirect", skipped_suppressed_by_direct);
+    DetectorOutput { findings, stats }
 }
 
 fn emit_direct(

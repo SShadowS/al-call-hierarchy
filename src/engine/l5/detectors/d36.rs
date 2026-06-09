@@ -32,6 +32,10 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_has_later_load = 0u64;
+    let mut skipped_no_prior_load = 0u64;
+    let mut skipped_temp_record = 0u64;
+    let mut skipped_parameter = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -62,12 +66,14 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             // Skip temporary records.
             if let Some(ts) = &op.temp_state {
                 if ts.kind == "known" && ts.value == Some(true) {
+                    skipped_temp_record += 1;
                     continue;
                 }
             }
 
             // Skip by-var parameter records.
             if param_record_names.contains(&var_key) {
+                skipped_parameter += 1;
                 continue;
             }
 
@@ -78,6 +84,7 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                     && before_anchor(&other.source_anchor, &op.source_anchor)
             });
             if !has_prior_load {
+                skipped_no_prior_load += 1;
                 continue;
             }
 
@@ -89,6 +96,7 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                     && before_anchor(&op.source_anchor, &other.source_anchor)
             });
             if has_later_load {
+                skipped_has_later_load += 1;
                 continue;
             }
 
@@ -161,12 +169,10 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("hasLaterLoad", skipped_has_later_load);
+    stats.add_skip("noPriorLoad", skipped_no_prior_load);
+    stats.add_skip("tempRecord", skipped_temp_record);
+    stats.add_skip("parameter", skipped_parameter);
+    DetectorOutput { findings, stats }
 }

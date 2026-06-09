@@ -58,6 +58,7 @@ pub fn detect_d8(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_other = 0u64;
 
     for span in &ctx.transaction_spans {
         // §B: checked-run-implicit seeds are for D50 only — D8 ignores them.
@@ -79,6 +80,7 @@ pub fn detect_d8(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             .map(|id| id.as_str())
             .collect();
         if managers.is_empty() {
+            skipped_other += 1;
             continue;
         }
 
@@ -183,12 +185,10 @@ pub fn detect_d8(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     deduped.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = deduped.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("other", skipped_other);
     DetectorOutput {
         findings: deduped,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }

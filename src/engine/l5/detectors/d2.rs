@@ -290,6 +290,10 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
+    let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_opaque_callee = 0u64;
+    let mut skipped_dynamic_dispatch = 0u64;
+    let mut unresolved_subscriber = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ always true.
@@ -297,6 +301,7 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             continue;
         }
         if routine.parse_incomplete {
+            skipped_parse_incomplete += 1;
             continue;
         }
         candidates_considered += 1;
@@ -312,9 +317,11 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     .find(|e| e.callsite_id.as_deref() == Some(cs.id.as_str()))
             });
             let Some(edge) = edge else {
+                skipped_opaque_callee += 1;
                 continue; // opaque callee
             };
             if edge.kind == "interface" || edge.kind == "dynamic" {
+                skipped_dynamic_dispatch += 1;
                 continue;
             }
             if !publisher_routine_ids.contains(edge.to.as_str()) {
@@ -368,6 +375,7 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     all_resolved = false;
                 }
                 let Some(sub_routine) = ctx.routine_by_id.get(sub_edge.to.as_str()).copied() else {
+                    unresolved_subscriber += 1;
                     continue; // unresolvedSubscriber
                 };
                 if !sub_routine.body_available {
@@ -509,13 +517,14 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     merged.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = merged.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("opaqueCallee", skipped_opaque_callee);
+    stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
+    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("unresolvedSubscriber", unresolved_subscriber);
     DetectorOutput {
         findings: merged,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats,
     }
 }
 

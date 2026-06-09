@@ -40,9 +40,14 @@ pub fn detect_d38(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         .collect();
 
     let mut candidates_considered = 0usize;
+    let mut skipped_unresolved = 0u64;
+    let mut skipped_no_publisher_routine = 0u64;
+    let mut skipped_publisher_missing = 0u64;
+    let mut skipped_publisher_not_obsolete = 0u64;
 
     for edge in &ctx.event_graph.edges {
         if edge.resolution != "resolved" {
+            skipped_unresolved += 1;
             continue;
         }
         let Some(subscriber) = ctx.routine_by_id.get(edge.subscriber_routine_id.as_str()) else {
@@ -58,9 +63,11 @@ pub fn detect_d38(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             continue;
         };
         let Some(publisher_routine_id) = &event.publisher_routine_id else {
+            skipped_no_publisher_routine += 1;
             continue;
         };
         let Some(publisher) = ctx.routine_by_id.get(publisher_routine_id.as_str()) else {
+            skipped_publisher_missing += 1;
             continue;
         };
         let publisher: &L3Routine = publisher;
@@ -68,6 +75,7 @@ pub fn detect_d38(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
         let attrs = parse_routine_attributes(&publisher.attributes_parsed);
         let Some(obsolete_state) = attrs.obsolete_state else {
+            skipped_publisher_not_obsolete += 1;
             continue;
         };
 
@@ -166,12 +174,10 @@ pub fn detect_d38(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
-        findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
-    }
+    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
+    stats.add_skip("unresolved", skipped_unresolved);
+    stats.add_skip("noPublisherRoutine", skipped_no_publisher_routine);
+    stats.add_skip("publisherMissing", skipped_publisher_missing);
+    stats.add_skip("publisherNotObsolete", skipped_publisher_not_obsolete);
+    DetectorOutput { findings, stats }
 }

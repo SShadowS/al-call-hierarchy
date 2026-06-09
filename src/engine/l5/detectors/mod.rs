@@ -124,10 +124,18 @@ where
     (kept, truncated_count)
 }
 
-/// The registered detector list. Re-sorted findings come out of `run_detectors`;
-/// registration order does not affect output. Grows one detector per wave.
+/// The registered detector list, in the EXACT order of al-sem's ALL_DETECTORS
+/// (DEFAULT_DETECTORS first, then OPT_IN_DETECTORS). This order governs the
+/// `detectorStats` array for the `all` slot; the `default` slot is a subset in this
+/// same order (as `select_detectors` filters by name while preserving registry order).
+///
+/// DEFAULT order (34): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
+///   d16, d17, d18, d19, d20, d21, d22, d29, d32, d33, d34, d35, d36, d37, d38,
+///   d39, d41, d42, d43, d44, d45.
+/// OPT_IN order (7):  d40, d46, d47, d48, d49, d50, d51.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
+        // --- DEFAULT_DETECTORS (34, in al-sem registry order) ---
         Detector {
             name: "d1-db-op-in-loop".to_string(),
             run: d1::detect_d1,
@@ -145,16 +153,20 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d4::detect_d4,
         },
         Detector {
-            name: "d48-io-in-loop".to_string(),
-            run: d48::detect_d48,
-        },
-        Detector {
             name: "d5-set-based-opportunity".to_string(),
             run: d5::detect_d5,
         },
         Detector {
             name: "d7-recursive-event-expansion".to_string(),
             run: d7::detect_d7,
+        },
+        Detector {
+            name: "d8-commit-in-transaction".to_string(),
+            run: d8::detect_d8,
+        },
+        Detector {
+            name: "d9-transaction-span-summary".to_string(),
+            run: d9::detect_d9,
         },
         Detector {
             name: "d10-self-modifying-loop".to_string(),
@@ -217,6 +229,14 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d33::detect_d33,
         },
         Detector {
+            name: "d34-commit-in-loop".to_string(),
+            run: d34::detect_d34,
+        },
+        Detector {
+            name: "d35-commit-in-event-subscriber".to_string(),
+            run: d35::detect_d35,
+        },
+        Detector {
             name: "d36-late-setloadfields".to_string(),
             run: d36::detect_d36,
         },
@@ -232,13 +252,6 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d39-record-left-dirty-across-chain".to_string(),
             run: d39::detect_d39,
         },
-        // d40 is OPT-IN in al-sem (kept out of the default registry there). The
-        // R4 differential filters findings by detector name, so registering it
-        // here only surfaces d40 when explicitly requested by a fixture.
-        Detector {
-            name: "d40-transitive-load-missing".to_string(),
-            run: d40::detect_d40,
-        },
         Detector {
             name: "d41-transitive-filter-loss".to_string(),
             run: d41::detect_d41,
@@ -246,22 +259,6 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d42-cross-call-wrong-setloadfields".to_string(),
             run: d42::detect_d42,
-        },
-        Detector {
-            name: "d8-commit-in-transaction".to_string(),
-            run: d8::detect_d8,
-        },
-        Detector {
-            name: "d9-transaction-span-summary".to_string(),
-            run: d9::detect_d9,
-        },
-        Detector {
-            name: "d34-commit-in-loop".to_string(),
-            run: d34::detect_d34,
-        },
-        Detector {
-            name: "d35-commit-in-event-subscriber".to_string(),
-            run: d35::detect_d35,
         },
         Detector {
             name: "d43-event-ishandled-skip".to_string(),
@@ -275,34 +272,41 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d45-event-transitive-table-exposure".to_string(),
             run: d45::detect_d45,
         },
-        // d46 is OPT-IN in al-sem (kept out of the default registry there). Like
-        // d40, the R4 differential filters findings by detector name, so registering
-        // it here only surfaces d46 when explicitly requested by a fixture.
+        // --- OPT_IN_DETECTORS (7, in al-sem registry order) ---
+        // d40: OPT-IN in al-sem (transitive-load-missing).
+        Detector {
+            name: "d40-transitive-load-missing".to_string(),
+            run: d40::detect_d40,
+        },
+        // d46: OPT-IN in al-sem (commit-in-lifecycle).
         Detector {
             name: "d46-commit-in-lifecycle".to_string(),
             run: d46::detect_d46,
         },
-        // d47/d49/d51 (R4-F Stage-5b). d47/d49 are DEFAULT in al-sem; d51 is OPT-IN.
-        // The R4 differential filters findings by detector name, so registering all
-        // three only surfaces them when a fixture explicitly requests them.
+        // d47: OPT-IN (io-unsafe-txn, surfaced by transaction-integrity preset).
         Detector {
             name: "d47-io-unsafe-txn".to_string(),
             run: d47::detect_d47,
         },
+        // d48: OPT-IN (io-in-loop, surfaced by transaction-integrity preset).
+        Detector {
+            name: "d48-io-in-loop".to_string(),
+            run: d48::detect_d48,
+        },
+        // d49: OPT-IN (uncommitted-write-before-ui, surfaced by transaction-integrity preset).
         Detector {
             name: "d49-uncommitted-write-before-ui".to_string(),
             run: d49::detect_d49,
         },
-        Detector {
-            name: "d51-retry-side-effect-duplication".to_string(),
-            run: d51::detect_d51,
-        },
-        // d50 is OPT-IN in al-sem (advisory, info/medium). Like d40/d46, the R4
-        // differential filters findings by detector name, so registering it here
-        // only surfaces d50 when a fixture explicitly requests it.
+        // d50: OPT-IN (checked-run-implicit-commit, advisory info/medium).
         Detector {
             name: "d50-checked-run-implicit-commit".to_string(),
             run: d50::detect_d50,
+        },
+        // d51: OPT-IN (retry-side-effect-duplication).
+        Detector {
+            name: "d51-retry-side-effect-duplication".to_string(),
+            run: d51::detect_d51,
         },
     ]
 }

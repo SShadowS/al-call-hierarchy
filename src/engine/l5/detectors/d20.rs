@@ -121,10 +121,6 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let emitted = findings.len();
     DetectorOutput {
         findings,
-        stats: DetectorStats {
-            detector: DETECTOR.to_string(),
-            candidates_considered,
-            findings_emitted: emitted,
-        },
+        stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
     }
 }
