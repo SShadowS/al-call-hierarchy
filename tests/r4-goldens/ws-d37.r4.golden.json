@@ -1,0 +1,186 @@
+{
+  "fixtureName": "ws-d37",
+  "detectors": [
+    "d37-validate-without-persist"
+  ],
+  "findingCount": 3,
+  "findings": [
+    {
+      "detector": "d37-validate-without-persist",
+      "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/op1",
+      "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/op1",
+      "title": "Validate changes are not persisted",
+      "rootCause": "ValidateThenReload calls Validate on Customer but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 27,
+          "startColumn": 8,
+          "endLine": 27,
+          "endColumn": 40
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 27,
+              "startColumn": 8,
+              "endLine": 27,
+              "endColumn": 40
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Validate on Customer with no later Modify/Insert before the record is reloaded or the routine exits",
+          "operationId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d370:Codeunit:51400"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d370:Table:51400"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add Customer.Modify() after the Validate (or Customer.Insert() if the record is new). If the Validate is intentional (only running validation logic, not persisting), document the intent.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ba62a748f37b2974"
+    },
+    {
+      "detector": "d37-validate-without-persist",
+      "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/op1",
+      "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/op1",
+      "title": "Validate changes are not persisted",
+      "rootCause": "ValidateThenNonPersistingHelper calls Validate on Cust but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 64,
+          "startColumn": 8,
+          "endLine": 64,
+          "endColumn": 32
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 64,
+              "startColumn": 8,
+              "endLine": 64,
+              "endColumn": 32
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Validate on Cust with no later Modify/Insert before the record is reloaded or the routine exits",
+          "operationId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d370:Codeunit:51400"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d370:Table:51400"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add Cust.Modify() after the Validate (or Cust.Insert() if the record is new). If the Validate is intentional (only running validation logic, not persisting), document the intent.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "bfa1c09a397f112c"
+    },
+    {
+      "detector": "d37-validate-without-persist",
+      "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/op1",
+      "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/op1",
+      "title": "Validate changes are not persisted",
+      "rootCause": "ValidateWithoutModify calls Validate on Customer but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 8,
+          "endLine": 8,
+          "endColumn": 40
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 8,
+              "endLine": 8,
+              "endColumn": 40
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Validate on Customer with no later Modify/Insert before the record is reloaded or the routine exits",
+          "operationId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d370:Codeunit:51400"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d370:Table:51400"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add Customer.Modify() after the Validate (or Customer.Insert() if the record is new). If the Validate is intentional (only running validation logic, not persisting), document the intent.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "b2c8d8d7d0dc6f99"
+    }
+  ]
+}

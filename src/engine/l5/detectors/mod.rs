@@ -13,12 +13,15 @@ pub mod d20;
 pub mod d21;
 pub mod d22;
 pub mod d29;
+pub mod d3;
 pub mod d32;
 pub mod d33;
 pub mod d34;
 pub mod d35;
 pub mod d36;
+pub mod d37;
 pub mod d38;
+pub mod d39;
 pub mod d4;
 pub mod d43;
 pub mod d44;
@@ -121,6 +124,10 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d2::detect_d2,
         },
         Detector {
+            name: "d3-missing-setloadfields".to_string(),
+            run: d3::detect_d3,
+        },
+        Detector {
             name: "d4-repeated-lookup-in-loop".to_string(),
             run: d4::detect_d4,
         },
@@ -185,8 +192,16 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d36::detect_d36,
         },
         Detector {
+            name: "d37-validate-without-persist".to_string(),
+            run: d37::detect_d37,
+        },
+        Detector {
             name: "d38-subscriber-to-obsolete-event".to_string(),
             run: d38::detect_d38,
+        },
+        Detector {
+            name: "d39-record-left-dirty-across-chain".to_string(),
+            run: d39::detect_d39,
         },
         Detector {
             name: "d8-commit-in-transaction".to_string(),

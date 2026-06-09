@@ -94,6 +94,24 @@ pub struct L3RecordVariable {
     /// The 0-based parameter index when `is_parameter` is true.
     /// Required by the R3a-2 summary engine (`recVar.parameterIndex`).
     pub parameter_index: Option<u32>,
+    /// Temp-state of this record variable (from the L2 body walk). al-sem d3 reads
+    /// `recVar.tempState` to skip temporary records (SetLoadFields has no SQL
+    /// benefit for in-memory temp records). Additive L2→L3 forward — the L3
+    /// record-type projection is field-allowlisted, so this never reaches an
+    /// R0–R3 golden. Forwarded verbatim from `PRecordVariable.temp_state`.
+    pub temp_state: crate::engine::l2::features::PTempState,
+}
+
+impl L3RecordVariable {
+    /// `recVar.tempState.kind === "known" ? recVar.tempState.value : None`.
+    /// Returns `Some(value)` only when the temp state is concretely known.
+    pub fn temp_state_known_value(&self) -> Option<bool> {
+        if self.temp_state.kind == "known" {
+            self.temp_state.value
+        } else {
+            None
+        }
+    }
 }
 
 /// A record operation with its (post-resolve) resolved internal table id.
@@ -654,6 +672,7 @@ fn project_file(
                     table_id: None,
                     is_parameter: rv.is_parameter,
                     parameter_index: rv.parameter_index,
+                    temp_state: rv.temp_state.clone(),
                 })
                 .collect();
             let record_operations = features

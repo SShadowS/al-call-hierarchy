@@ -87,7 +87,7 @@ const SMOKE: &[Smoke] = &[
         fixture: "ws-d3",
         wave: "R4-E",
         detectors: &["d3-missing-setloadfields"],
-        ported: false,
+        ported: true,
         corpus_dir: None,
     },
     Smoke {
@@ -257,6 +257,27 @@ const WAVE_D: &[Smoke] = &[
         fixture: "ws-d32",
         wave: "R4-D",
         detectors: &["d32-constant-boolean-parameter"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-E per-detector positive fixtures (record-flow — parameterRoles). ws-d3's smoke
+/// entry already byte-matches above; d37/d39 are the new per-detector entries.
+/// d37: ws-d37 (3 findings — Validate without persist). d39: ws-d39 (1 finding —
+/// record left dirty across a call chain via the reverse call graph).
+const WAVE_E: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d37",
+        wave: "R4-E",
+        detectors: &["d37-validate-without-persist"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d39",
+        wave: "R4-E",
+        detectors: &["d39-record-left-dirty-across-chain"],
         ported: true,
         corpus_dir: None,
     },
@@ -586,6 +607,30 @@ const NEGATIVES: &[NegativeAssertion] = &[
         detector: "d45-event-transitive-table-exposure",
         neutral_fixture: "ws-event-ishandled",
     },
+    // d3: ws-d36 has Get/FindSet retrievals WITH SetLoadFields ops — deriveLoadStates
+    // runs the full load-state machine, but every retrieval's loaded set covers its
+    // accessed fields (no uncovered same-routine field access in any window), so the
+    // missing/incomplete determination is silent and the detector emits 0.
+    NegativeAssertion {
+        detector: "d3-missing-setloadfields",
+        neutral_fixture: "ws-d36",
+    },
+    // d37: ws-d39 contains a Validate op, but it is on a BY-VAR PARAMETER record
+    // (ValidatesAndExits validates its `var Customer` parameter) — the parameter-record
+    // suppression fires (the caller may persist after returning), so the detector
+    // exercises its gate and emits 0.
+    NegativeAssertion {
+        detector: "d37-validate-without-persist",
+        neutral_fixture: "ws-d39",
+    },
+    // d39: ws-d37 has Validate-without-persist routines (so parameterRoles are
+    // computed), but NONE forward a Validate-dirty record by-var across a call chain
+    // to a primary callee with dirtyAtExit === "yes" — the reverse-call-graph walk
+    // finds no qualifying caller/callee pair, so the detector emits 0.
+    NegativeAssertion {
+        detector: "d39-record-left-dirty-across-chain",
+        neutral_fixture: "ws-d37",
+    },
 ];
 
 fn repo_root() -> PathBuf {
@@ -883,6 +928,15 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- R4-E per-detector fixtures (record-flow — parameterRoles) ------------
+    for smoke in WAVE_E {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
     // --- D1 per-detector fixtures (path-walker substrate) ---------------------
     for smoke in WAVE_D1 {
         if let Some((matched, count)) =
@@ -1065,6 +1119,7 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_B.iter())
         .chain(WAVE_C.iter())
         .chain(WAVE_D.iter())
+        .chain(WAVE_E.iter())
         .chain(WAVE_D1.iter())
         .chain(std::iter::once(&WAVE_D1_NEGATIVE))
         .chain(WAVE_D2.iter())

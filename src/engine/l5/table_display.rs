@@ -96,6 +96,11 @@ mod tests {
             table_id: None,
             is_parameter: false,
             parameter_index: None,
+            temp_state: crate::engine::l2::features::PTempState {
+                kind: "unknown".to_string(),
+                value: None,
+                parameter_index: None,
+            },
         }
     }
 

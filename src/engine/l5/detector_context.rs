@@ -17,7 +17,9 @@
 use std::collections::{BTreeSet, HashMap};
 
 use crate::engine::l2::features::PCallSite;
-use crate::engine::l3::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
+use crate::engine::l3::call_resolver::{
+    resolve_calls, CallEdge, DeclaredDependency, UpgradedBinding,
+};
 use crate::engine::l3::event_graph::build_event_graph;
 use crate::engine::l3::event_graph::{EventGraph, EventSymbol};
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine, L3Table};
@@ -27,7 +29,7 @@ use crate::engine::l4::capability_cone::{
 };
 use crate::engine::l4::combined_graph::{build_combined_graph, CombinedGraph};
 use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
-use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
+use crate::engine::l4::summary::{dedupe_uncertainties, RecordRoleSummary, Uncertainty};
 use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
 use crate::engine::l5::event_flow::{build_event_flow_indexes, EventFlowIndexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
@@ -74,6 +76,21 @@ pub struct DetectorContext<'a> {
     /// here — deterministic, one pass over `event_graph.events`/`.edges`, matching
     /// how `event_graph`/`transaction_spans` are already eager.
     pub event_flow_indexes: EventFlowIndexes,
+    /// The CORE `RoutineSummary.parameter_roles` (`RecordRoleSummary[]`) per
+    /// routine, keyed by internal RoutineId. al-sem detectors read this as
+    /// `routine.summary.parameterRoles`; the Rust `FullRoutineSummary`
+    /// (`ctx.summaries`) DROPPED parameter_roles, so d37/d39 read them here.
+    /// Harvested from the SAME recomputed core summaries the `uncertainties_by_node`
+    /// harvest uses — NOT recomputed. Absent ⇒ no record-parameter roles.
+    pub parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>>,
+    /// The post-upgrade argument bindings per callsite (the resolver's
+    /// `upgradeBindings` side table). The L3 `PCallArgumentBinding` carries the
+    /// SOURCE-side fields (sourceKind / sourceVariableName / sourceRecordVariableId
+    /// / callerSourceParameterIsVar / argumentAnchor / parameterIndex), but NOT the
+    /// upgraded `bindingResolution` / `calleeParameterIsVar` — those live here,
+    /// index-aligned with `call_site.argument_bindings`. d37/d39 join the two by
+    /// position to read `binding.bindingResolution` / `binding.calleeParameterIsVar`.
+    pub upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>>,
     // TODO(R4-F/G): reachable_roots + internal_reachable_externally (D14),
     // get_ordering_facts() (D47).
 }
@@ -228,6 +245,18 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // uncertainties FIRST, then the combined-graph edge uncertainties (converted
     // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
     // then sorts by key, matching al-sem's `dedupeUncertainties`.
+    // Harvest the CORE parameter_roles per routine from the SAME recomputed core
+    // summaries (d37/d39 read these as `routine.summary.parameterRoles`). Done in
+    // the same pass so we never recompute the core summaries.
+    let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
+    for r in &ws.routines {
+        if let Some(s) = core_summaries.get(&r.id) {
+            if !s.parameter_roles.is_empty() {
+                parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
+            }
+        }
+    }
+
     let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
     for r in &ws.routines {
         let from_summary: &[Uncertainty] = core_summaries
@@ -256,6 +285,12 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         }
     }
 
+    // Expose the resolver's post-upgrade bindings (the `upgradeBindings` side
+    // table) keyed by callsite id — the join target for d37/d39 which read
+    // `binding.bindingResolution` / `binding.calleeParameterIsVar`.
+    let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
+        calls.upgraded_bindings.clone();
+
     DetectorContext {
         graph,
         event_graph,
@@ -271,5 +306,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         call_site_by_id,
         summaries,
         event_flow_indexes,
+        parameter_roles_by_routine,
+        upgraded_bindings_by_callsite,
     }
 }
