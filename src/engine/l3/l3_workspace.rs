@@ -49,6 +49,14 @@ pub struct L3Object {
     /// Implemented interfaces (Codeunit / Enum / Interface): `Some([])` known-none,
     /// `Some([...])` listed, `None` unknown. Other object types: `None`.
     pub implements_interfaces: Option<Vec<String>>,
+    /// Object `Subtype` property (Codeunit only; e.g. "Install" / "Upgrade" /
+    /// "Test"), else `None`. Additive L2→L3 forward — L3Object is NOT
+    /// Serialize-derived into any gate surface (R0–R3 goldens are field-allowlisted
+    /// projections), so adding this never touches a golden. Populated at L3 assembly
+    /// (native path) from the `Subtype` property; dep objects forward the ABI
+    /// projection's `object_subtype` (it DOES expose it for Codeunits — native+ABI
+    /// agree on shape). Consumed by d46 to classify lifecycle objects.
+    pub object_subtype: Option<String>,
 }
 
 /// A workspace field (the L3-relevant subset of al-sem's `Field`).
@@ -578,6 +586,14 @@ fn project_file(
             } else {
                 None
             };
+        // Object `Subtype` — Codeunit only (object-indexer.ts parity / L2
+        // `extract_object_metadata`). d46 reads this to classify Install/Upgrade
+        // lifecycle codeunits.
+        let object_subtype = if object_type == "Codeunit" {
+            read_object_property(decl, "Subtype", source)
+        } else {
+            None
+        };
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -588,6 +604,7 @@ fn project_file(
             source_table_name: source_table_name.clone(),
             extends_target_name,
             implements_interfaces,
+            object_subtype,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {

@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-txn-d46-neg",
+  "detectors": [
+    "d46-commit-in-lifecycle"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

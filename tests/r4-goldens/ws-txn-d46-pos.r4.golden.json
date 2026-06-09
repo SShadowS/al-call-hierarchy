@@ -1,0 +1,185 @@
+{
+  "fixtureName": "ws-txn-d46-pos",
+  "detectors": [
+    "d46-commit-in-lifecycle"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d46-commit-in-lifecycle",
+      "id": "d46/11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d/11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op3",
+      "rootCauseKey": "d46/11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+      "title": "Commit reachable from Install/Upgrade lifecycle trigger",
+      "rootCause": "OnInstallAppPerCompany is an Install codeunit trigger that reaches Commit — the platform's deploy transaction becomes non-atomic and cannot be rolled back if an error occurs after the Commit.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/InstallCU.al",
+        "range": {
+          "startLine": 21,
+          "startColumn": 4,
+          "endLine": 24,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "syntaxKind": "trigger_declaration"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/InstallCU.al",
+            "range": {
+              "startLine": 21,
+              "startColumn": 4,
+              "endLine": 24,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+            "syntaxKind": "trigger_declaration"
+          },
+          "note": "OnInstallAppPerCompany (Install trigger)"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/InstallCU.al",
+            "range": {
+              "startLine": 23,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 17
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls DoSetup",
+          "callsiteId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/InstallCU.al",
+            "range": {
+              "startLine": 34,
+              "startColumn": 8,
+              "endLine": 34,
+              "endColumn": 16
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit",
+          "operationId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb/op3"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50001"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the Commit from the install/upgrade path. The platform wraps the Install/Upgrade trigger in its own transaction — an explicit Commit breaks that guarantee.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4f6e7c58fb334057"
+    },
+    {
+      "detector": "d46-commit-in-lifecycle",
+      "id": "d46/11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e/op2",
+      "rootCauseKey": "d46/11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+      "title": "Commit reachable from Install/Upgrade lifecycle trigger",
+      "rootCause": "OnUpgradePerCompany is an Upgrade codeunit trigger that reaches Commit — the platform's deploy transaction becomes non-atomic and cannot be rolled back if an error occurs after the Commit.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/UpgradeCU.al",
+        "range": {
+          "startLine": 4,
+          "startColumn": 4,
+          "endLine": 7,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "syntaxKind": "trigger_declaration"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/UpgradeCU.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+            "syntaxKind": "trigger_declaration"
+          },
+          "note": "OnUpgradePerCompany (Upgrade trigger)"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/UpgradeCU.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 19
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls DoUpgrade",
+          "callsiteId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/UpgradeCU.al",
+            "range": {
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 16
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit",
+          "operationId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e/op2"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50002"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the Commit from the install/upgrade path. The platform wraps the Install/Upgrade trigger in its own transaction — an explicit Commit breaks that guarantee.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a706dadbd2e6d4b3"
+    }
+  ]
+}

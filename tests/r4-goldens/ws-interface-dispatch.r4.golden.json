@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-interface-dispatch",
+  "detectors": [
+    "d14-dead-routine"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

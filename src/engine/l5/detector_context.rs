@@ -10,9 +10,13 @@
 //! DEFERRED to later waves (TODO):
 //!   - the lazy `get_event_flow_indexes()` hook (D43/D44/D45)
 //!   - the lazy `get_ordering_facts()` hook (D47)
-//!   - `reachable_roots` + `internal_reachable_externally` (D14)
 //!
 //! d4 reads none of these; later detector waves add them as they land.
+//!
+//! The R4-G wave wired `reachable_roots` + `internal_reachable_externally` (D14):
+//! `reachable_roots` is built via `entry_points::find_reachable_roots` over the
+//! `access_modifiers` map harvested from `L3Routine.access_modifier`;
+//! `internal_reachable_externally` DEFAULTS to `false` (see field doc).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -31,6 +35,7 @@ use crate::engine::l4::combined_graph::{build_combined_graph, CombinedGraph};
 use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
 use crate::engine::l4::summary::{dedupe_uncertainties, RecordRoleSummary, Uncertainty};
 use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
+use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{build_event_flow_indexes, EventFlowIndexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::{build_reverse_call_graph, ReverseCallGraph};
@@ -91,8 +96,24 @@ pub struct DetectorContext<'a> {
     /// index-aligned with `call_site.argument_bindings`. d37/d39 join the two by
     /// position to read `binding.bindingResolution` / `binding.calleeParameterIsVar`.
     pub upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>>,
-    // TODO(R4-F/G): reachable_roots + internal_reachable_externally (D14),
-    // get_ordering_facts() (D47).
+    /// The D14 forward-reachability root set — entry points (trigger /
+    /// event-subscriber) PLUS the procedures al-sem cannot prove app-scoped
+    /// (non-`local`; `internal` only when `internal_reachable_externally`). Built
+    /// by `entry_points::find_reachable_roots` over the `access_modifiers` map
+    /// harvested from `L3Routine.access_modifier`. Sorted; d14 BFS-seeds from it.
+    pub reachable_roots: BTreeSet<String>,
+    /// al-sem `(model.identity.primaryInternalsVisibleTo?.length ?? 0) > 0` — true
+    /// when some other app is granted `internal` access (so `internal` procedures
+    /// stay external API surface and are NOT flaggable as dead).
+    ///
+    /// DEFAULTS to `false`: the Rust model does NOT carry `primaryInternalsVisibleTo`
+    /// and the source-only fixtures never set `internalsVisibleTo`. This is the
+    /// source-only common case (no granted consumer ⇒ `internal` is app-scoped ⇒
+    /// flaggable).
+    /// TODO(R4-G+): if any fixture ever sets `internalsVisibleTo`, forward
+    /// `primaryInternalsVisibleTo` from the L3 identity and replace this default.
+    pub internal_reachable_externally: bool,
+    // TODO(R4-F): get_ordering_facts() (D47).
 }
 
 /// Build the shared context. Runs the SOURCE-ONLY L3→L4 substrate (symbols →
@@ -169,6 +190,35 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         crate::engine::l5::entry_points::find_entry_points(&ws.routines, &dep_routine_ids)
             .into_iter()
             .collect();
+
+    // D14 reachable-roots wiring. Build the RoutineId → AccessModifier map from
+    // `L3Routine.access_modifier` ("local"/"internal"/"protected"/None). al-sem maps
+    // "local" → Local, "internal" → Internal, "protected"/None/anything-else →
+    // Public (default-access). A routine with NO entry is treated as Public by
+    // `find_reachable_roots`, so we only need to insert the non-Public cases — but we
+    // insert all parsed modifiers explicitly for clarity.
+    let mut access_modifiers: HashMap<String, AccessModifier> = HashMap::new();
+    for r in &ws.routines {
+        let access = match r.access_modifier.as_deref() {
+            Some("local") => AccessModifier::Local,
+            Some("internal") => AccessModifier::Internal,
+            // "protected" / None / any other value → public (al-sem default-access).
+            _ => AccessModifier::Public,
+        };
+        access_modifiers.insert(r.id.clone(), access);
+    }
+    // See `DetectorContext::internal_reachable_externally` doc: defaults to false
+    // (the Rust model carries no `primaryInternalsVisibleTo`; source-only fixtures
+    // never set `internalsVisibleTo`).
+    let internal_reachable_externally = false;
+    let reachable_roots: BTreeSet<String> = crate::engine::l5::entry_points::find_reachable_roots(
+        &ws.routines,
+        &dep_routine_ids,
+        &access_modifiers,
+        internal_reachable_externally,
+    )
+    .into_iter()
+    .collect();
 
     let transaction_spans = compute_transaction_spans(
         &ws.routines,
@@ -308,5 +358,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         event_flow_indexes,
         parameter_roles_by_routine,
         upgraded_bindings_by_callsite,
+        reachable_roots,
+        internal_reachable_externally,
     }
 }

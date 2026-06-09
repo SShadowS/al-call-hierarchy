@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-member-call-resolution",
+  "detectors": [
+    "d14-dead-routine"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

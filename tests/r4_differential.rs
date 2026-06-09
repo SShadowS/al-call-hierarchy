@@ -101,7 +101,56 @@ const SMOKE: &[Smoke] = &[
         fixture: "ws-d14-dead-routine",
         wave: "R4-G",
         detectors: &["d14-dead-routine"],
-        ported: false,
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
+/// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
+/// ws-interface-dispatch + ws-member-call-resolution are d14 NEGATIVES (0 findings,
+/// byte-matched END-TO-END). d46: ws-txn-d46-pos (2 findings) + ws-txn-d46-neg
+/// (0 findings, the explicit negative). The two 0-count goldens are byte-matched
+/// END-TO-END but EXEMPT from the anti-degenerate ≥1 check (handled by NOT pushing
+/// them into ported_results).
+const WAVE_G_POSITIVE: &[Smoke] = &[
+    // d46: Install + Upgrade lifecycle triggers each reach Commit (2 findings).
+    Smoke {
+        fixture: "ws-txn-d46-pos",
+        wave: "R4-G",
+        detectors: &["d46-commit-in-lifecycle"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-G explicit 0-count goldens (byte-matched END-TO-END, EXEMPT from ≥1).
+/// - ws-interface-dispatch: d14 negative — interface dispatch keeps the callee
+///   reachable, so no routine is dead.
+/// - ws-member-call-resolution: d14 negative — member calls resolve to reachable
+///   routines.
+/// - ws-txn-d46-neg: d46 negative — a normal codeunit (no Install/Upgrade subtype)
+///   that commits; the lifecycle gate suppresses it.
+const WAVE_G_NEGATIVES: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-interface-dispatch",
+        wave: "R4-G",
+        detectors: &["d14-dead-routine"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-member-call-resolution",
+        wave: "R4-G",
+        detectors: &["d14-dead-routine"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d46-neg",
+        wave: "R4-G",
+        detectors: &["d46-commit-in-lifecycle"],
+        ported: true,
         corpus_dir: None,
     },
 ];
@@ -1039,6 +1088,20 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- R4-G positives (d46; d14's positive is the SMOKE entry above) ---------
+    for smoke in WAVE_G_POSITIVE {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+    // R4-G explicit 0-count goldens (d14 + d46 negatives): byte-match END-TO-END
+    // but do NOT push into ported_results (EXEMPT from the anti-degenerate ≥1).
+    for smoke in WAVE_G_NEGATIVES {
+        run_smoke_entry(smoke, &registered_names, &mut all_divergences);
+    }
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -1186,6 +1249,9 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_D2.iter())
         .chain(WAVE_D48.iter())
         .chain(std::iter::once(&WAVE_D48_NEGATIVE))
+        .chain(WAVE_R4_EVENT.iter())
+        .chain(WAVE_G_POSITIVE.iter())
+        .chain(WAVE_G_NEGATIVES.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

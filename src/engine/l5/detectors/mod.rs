@@ -6,6 +6,7 @@ pub mod d1;
 pub mod d10;
 pub mod d11;
 pub mod d12;
+pub mod d14;
 pub mod d18;
 pub mod d19;
 pub mod d2;
@@ -29,6 +30,7 @@ pub mod d42;
 pub mod d43;
 pub mod d44;
 pub mod d45;
+pub mod d46;
 pub mod d48;
 pub mod d5;
 pub mod d7;
@@ -159,6 +161,10 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d12::detect_d12,
         },
         Detector {
+            name: "d14-dead-routine".to_string(),
+            run: d14::detect_d14,
+        },
+        Detector {
             name: "d18-constant-filter-in-loop".to_string(),
             run: d18::detect_d18,
         },
@@ -248,6 +254,13 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d45-event-transitive-table-exposure".to_string(),
             run: d45::detect_d45,
+        },
+        // d46 is OPT-IN in al-sem (kept out of the default registry there). Like
+        // d40, the R4 differential filters findings by detector name, so registering
+        // it here only surfaces d46 when explicitly requested by a fixture.
+        Detector {
+            name: "d46-commit-in-lifecycle".to_string(),
+            run: d46::detect_d46,
         },
     ]
 }

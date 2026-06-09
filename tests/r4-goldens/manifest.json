@@ -8,10 +8,10 @@
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r4-0",
-  "fixtureCount": 48,
-  "positiveCount": 45,
-  "negativeCount": 3,
-  "totalFindings": 68,
+  "fixtureCount": 52,
+  "positiveCount": 46,
+  "negativeCount": 6,
+  "totalFindings": 70,
   "waves": [
     {
       "wave": "R4-A",
@@ -495,6 +495,42 @@
       ],
       "findingCount": 1,
       "isPositive": true
+    },
+    {
+      "fixture": "ws-interface-dispatch",
+      "goldenFile": "ws-interface-dispatch.r4.golden.json",
+      "detectors": [
+        "d14-dead-routine"
+      ],
+      "findingCount": 0,
+      "isPositive": false
+    },
+    {
+      "fixture": "ws-member-call-resolution",
+      "goldenFile": "ws-member-call-resolution.r4.golden.json",
+      "detectors": [
+        "d14-dead-routine"
+      ],
+      "findingCount": 0,
+      "isPositive": false
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "goldenFile": "ws-txn-d46-pos.r4.golden.json",
+      "detectors": [
+        "d46-commit-in-lifecycle"
+      ],
+      "findingCount": 2,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "goldenFile": "ws-txn-d46-neg.r4.golden.json",
+      "detectors": [
+        "d46-commit-in-lifecycle"
+      ],
+      "findingCount": 0,
+      "isPositive": false
     }
   ]
 }
