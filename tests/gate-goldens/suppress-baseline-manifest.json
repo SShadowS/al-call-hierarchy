@@ -1,0 +1,46 @@
+{
+  "description": "Stage-3a gate goldens — inline-suppression + baseline behaviors. These goldens document the full gate pipeline including suppression layers. The Rust engine must byte-match SARIF output after applying equivalent al-sem-ignore pragmas and baseline files.",
+  "capturePoint": "analyzeWorkspace({deterministic:true}) → projectFinding/filterFindings → scope=primary → applyBaseline → applyInlineSuppressions → formatSarif/formatPrSummary",
+  "alsemVersionOverride": "gate-sarif-v1",
+  "inlineSuppressionMatchingRule": "// al-sem-ignore <detectorId>[: reason] suppresses a finding whose primaryLocation.line (1-based) equals directiveLine OR directiveLine+1. Same-line OR immediately-following-line (no blank line gap allowed). Keyed by (file, detectorId) — column-position-agnostic.",
+  "baselineByteStability": "saveBaseline() pins generatedAt=new Date(0).toISOString()='1970-01-01T00:00:00.000Z'. fingerprints are sorted+deduped. With deterministic:true analysis, .baseline.json is fully byte-stable across runs. generatedAt is the ONLY volatile field (but it is pinned to epoch = non-volatile for these goldens).",
+  "alSemGitSha": "f21d0053fb4b128f7e55afa8ba775516bcd51941",
+  "stageA": {
+    "fixture": "ws-inline-suppress",
+    "detectors": "DEFAULT_DETECTORS + d47-io-unsafe-txn",
+    "unsuppressedResultCount": 7,
+    "suppressedResultCount": 6,
+    "suppressedFindingCount": 1,
+    "keptFindingCount": 6,
+    "antiDegenerate": "suppressed > 0 (pragma removes ≥1 finding); unsuppressed > suppressed",
+    "goldens": [
+      "ws-inline-suppress.suppressed.sarif.json",
+      "ws-inline-suppress.unsuppressed.sarif.json",
+      "ws-inline-suppress.suppressed.prsummary.md"
+    ]
+  },
+  "stageB": {
+    "fixture": "ws-d8-commit-in-tx",
+    "detectors": "transaction-integrity preset",
+    "fingerprintCount": 2,
+    "fullBaselinedResultCount": 0,
+    "partialBaselinedResultCount": 1,
+    "exitCodes_failOnCritical": {
+      "noBaseline": 0,
+      "fullBaseline": 0,
+      "partialBaseline": 0
+    },
+    "exitCodes_failOnHigh": {
+      "noBaseline": 1,
+      "fullBaseline": 0,
+      "partialBaseline": 1
+    },
+    "antiDegenerate": "full-baseline→0 results; partial-baseline≥1 result; round-trip byte-stable",
+    "goldens": [
+      "ws-d8-commit-in-tx.baseline.json",
+      "ws-d8-commit-in-tx.baselined.sarif.json",
+      "ws-d8-commit-in-tx.partial-baseline.json",
+      "ws-d8-commit-in-tx.partial-baselined.sarif.json"
+    ]
+  }
+}

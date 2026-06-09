@@ -164,6 +164,9 @@ fn run_gate(workspace: &str, preset: Option<&str>, detector: Option<&str>) -> St
         sarif_version_override: Some(PIN_VERSION.to_string()),
         fail_on: None,
         require_dependencies: false,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
     };
     run_analyze(&args, "engine-default").expect("run_analyze")
 }

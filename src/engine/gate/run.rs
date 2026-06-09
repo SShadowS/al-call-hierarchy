@@ -24,10 +24,12 @@
 use std::path::Path;
 
 use crate::engine::gate::app_attribution::App;
+use crate::engine::gate::baseline::{apply_baseline, load_baseline, save_baseline};
 use crate::engine::gate::exit_code::{compute_finding_exit, exit};
 use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
+use crate::engine::gate::inline_suppression::{apply_inline_suppressions, build_suppression_map};
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::preflight::evaluate_preflight;
 use crate::engine::gate::presets::resolve_analyze_detectors;
@@ -66,6 +68,17 @@ pub struct AnalyzeArgs {
     pub fail_on: Option<String>,
     /// `--require-dependencies` — make a degraded preflight FAIL (exit 4).
     pub require_dependencies: bool,
+    /// `--baseline <path>` — when `Some`, load the baseline fingerprint set and drop any
+    /// finding whose fingerprint is in it BEFORE inline suppression (Stage 3b).
+    pub baseline: Option<String>,
+    /// `--update-baseline` — when set together with `baseline`, write the current
+    /// post-filter/scope/limit finding set to the baseline file (the new floor).
+    pub update_baseline: bool,
+    /// Disable inline `// al-sem-ignore` suppression. al-sem applies inline suppression
+    /// unconditionally (default-ON, like a compiler pragma); this flag exists ONLY so the
+    /// differential can capture the UN-suppressed SARIF (the +1 finding) — it has no CLI
+    /// surface. Default `false` (suppression ON).
+    pub disable_inline_suppression: bool,
 }
 
 /// Read the workspace root `app.json` identity (`id` / `publisher` / `name` / `version`)
@@ -216,6 +229,54 @@ pub fn run_analyze_with_exit(
     // --- limit: first N (after scope). Order-preserving prefix. ---
     if let Some(n) = args.limit {
         paired.truncate(n);
+    }
+
+    // --- baseline suppression (al-sem index.ts:296-302) ---
+    // Load the baseline fingerprint set (empty when no --baseline). Drop any finding
+    // whose fingerprint is in it. --update-baseline saves the CURRENT (post-limit) set —
+    // the new floor — BEFORE the drop, matching al-sem (`saveBaseline(path, limited)`).
+    if let Some(path) = &args.baseline {
+        if args.update_baseline {
+            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+            // Engine-never-throws: a write failure is surfaced as Err to the caller,
+            // which the bin maps to a config/IO error message.
+            save_baseline(Path::new(path), &summaries)
+                .map_err(|e| format!("failed to write baseline '{path}': {e}"))?;
+        }
+        // A malformed baseline (exists but not valid JSON / non-array fingerprints) is
+        // an analysis-failure, not a config error: al-sem's loadBaseline throws and the
+        // CLI catch emits "al-sem: analysis failure — <msg>" + exits 2.  We surface
+        // this as an Err tagged with the "analysis failure — " prefix so the bin can
+        // distinguish it from config errors (exit 3) and use exit 2 instead.
+        let baseline =
+            load_baseline(Path::new(path)).map_err(|e| format!("analysis failure — {e}"))?;
+        let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+        let kept_ids: std::collections::HashSet<String> = apply_baseline(&summaries, &baseline)
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        paired.retain(|(s, _)| kept_ids.contains(&s.id));
+    }
+
+    // --- inline al-sem-ignore suppression (default-ON, al-sem index.ts:304-319) ---
+    // Parsed from workspace source files on disk; only ws: units are scanned. The kept
+    // set after this is `newFindings` — the set the exit gate and all formats use.
+    if !args.disable_inline_suppression {
+        let unit_ids: std::collections::HashSet<String> = paired
+            .iter()
+            .map(|(s, _)| s.primary_location.file.clone())
+            .collect();
+        let suppression_map = build_suppression_map(ws_path, unit_ids.iter().map(|s| s.as_str()));
+        let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+        let outcome = apply_inline_suppressions(&summaries, &suppression_map);
+        // outcome.kept holds indices into `summaries` (= into `paired`); retain them.
+        let keep: std::collections::HashSet<usize> = outcome.kept.into_iter().collect();
+        let mut i = 0usize;
+        paired.retain(|_| {
+            let k = keep.contains(&i);
+            i += 1;
+            k
+        });
     }
 
     // --- format ---

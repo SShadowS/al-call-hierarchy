@@ -121,6 +121,14 @@ pub fn select_detectors(names: &[String]) -> Result<Vec<Detector>, String> {
 /// - neither → the DEFAULT detector set.
 ///
 /// Returns the resolved `Detector` list. `--preset` + `--detector` together is an error.
+///
+/// TODO(wirein): opt-in-union detector selection (--detector non-default → run ALL then
+/// filter) for production-CLI fidelity — gate preset path is byte-equivalent so deferred.
+/// al-sem index.ts:197-208: when `--detector` names a NON-default detector, al-sem runs
+/// ALL_DETECTORS then filterFindings allow-lists to the requested set.  The gate PRESET
+/// path is byte-equivalent (the preset already selects the right set), so this is NOT a
+/// gate bug.  But `alsem analyze --detector <non-default-id>` would under-run vs al-sem.
+/// Implement when the gate gains a production-CLI surface for opt-in detectors.
 pub fn resolve_analyze_detectors(
     preset: Option<&str>,
     detector: Option<&str>,

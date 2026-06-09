@@ -1,0 +1,22 @@
+{
+  "description": "Stage-3a exit-code transitions for inline-suppression and baseline. noBaseline: exit code when NO baseline is applied and findings are present. fullBaseline: exit code when ALL findings are baselined (0 new findings). partialBaseline: exit code when only SOME findings are baselined (≥1 new finding). ws-d8 findings are 'high' severity (not critical): fail-on=critical → CLEAN always; fail-on=high → 1 (noBaseline/partial) or 0 (fullBaseline) — the 1→0 transition.",
+  "ws-d8-commit-in-tx": {
+    "txn": {
+      "fail-on=critical": {
+        "noBaseline": 0,
+        "fullBaseline": 0,
+        "partialBaseline": 0
+      },
+      "fail-on=high": {
+        "noBaseline": 1,
+        "fullBaseline": 0,
+        "partialBaseline": 1
+      }
+    }
+  },
+  "ws-inline-suppress": {
+    "suppressedCount": 1,
+    "keptCount": 6,
+    "unsuppressedCount": 7
+  }
+}

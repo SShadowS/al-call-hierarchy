@@ -89,6 +89,14 @@ struct AnalyzeCli {
     /// Make a degraded dependency-coverage preflight FAIL (exit 4).
     #[arg(long = "require-dependencies", default_value_t = false)]
     require_dependencies: bool,
+
+    /// Path to a baseline file: findings whose fingerprint is listed are suppressed.
+    #[arg(long = "baseline")]
+    baseline: Option<String>,
+
+    /// Rewrite the --baseline file from the current findings (the new floor), then apply it.
+    #[arg(long = "update-baseline", default_value_t = false)]
+    update_baseline: bool,
 }
 
 fn main() -> ExitCode {
@@ -154,6 +162,9 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         sarif_version_override: a.sarif_version_override,
         fail_on,
         require_dependencies: a.require_dependencies,
+        baseline: a.baseline,
+        update_baseline: a.update_baseline,
+        disable_inline_suppression: false,
     };
 
     match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
@@ -169,8 +180,17 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
             ExitCode::from(exit_code)
         }
         Err(msg) => {
-            eprintln!("al-sem: {msg}");
-            ExitCode::from(3)
+            // "analysis failure — …" is tagged by run.rs for errors that al-sem maps to
+            // EXIT.ANALYSIS_FAILURE (2) — e.g. a malformed baseline file that would throw
+            // inside al-sem's loadBaseline and be caught by the analyze-action catch block.
+            // All other Err strings are config/usage errors → EXIT.CONFIG_ERROR (3).
+            if msg.starts_with("analysis failure — ") {
+                eprintln!("al-sem: {msg}");
+                ExitCode::from(2)
+            } else {
+                eprintln!("al-sem: {msg}");
+                ExitCode::from(3)
+            }
         }
     }
 }

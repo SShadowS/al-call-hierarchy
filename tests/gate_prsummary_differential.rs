@@ -168,6 +168,9 @@ fn make_args(
         sarif_version_override: None,
         fail_on: fail_on.map(|s| s.to_string()),
         require_dependencies,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
     }
 }
 
@@ -549,6 +552,9 @@ fn oracle_parse_fail_on_error_is_err() {
         sarif_version_override: None,
         fail_on: Some("not-a-severity".to_string()), // Invalid — but we pass it raw
         require_dependencies: false,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
     };
     // The pipeline itself does NOT validate fail_on — the bin/CLI does (parse_fail_on).
     // However compute_finding_exit with an unknown severity falls back to sev_rank=0,
