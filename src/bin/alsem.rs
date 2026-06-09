@@ -17,6 +17,7 @@ use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
 use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
+use al_call_hierarchy::engine::l5::digest_cli::run_digest_pipeline;
 use clap::{Parser, Subcommand};
 
 /// The engine's default (unpinned) SARIF `driver.version`. The differential always
@@ -41,6 +42,8 @@ struct Cli {
 enum Commands {
     /// Analyze an AL workspace and emit findings (Stage 1: --format sarif).
     Analyze(AnalyzeCli),
+    /// Digest an AL workspace: changed-root effect summary (cli-b/b1).
+    Digest(DigestCli),
 }
 
 #[derive(Parser)]
@@ -112,14 +115,151 @@ struct AnalyzeCli {
     dump_model: bool,
 }
 
+/// `DigestCli` — arguments for `alsem digest <ws>`.
+#[derive(Parser)]
+struct DigestCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Workspace-relative source file(s) to treat as changed.
+    /// May be repeated. Mutually exclusive with --order (rejected).
+    #[arg(long = "file", action = clap::ArgAction::Append)]
+    file: Vec<String>,
+
+    /// Routine stable IDs or display names to treat as changed roots.
+    #[arg(long = "routine", action = clap::ArgAction::Append)]
+    routine: Vec<String>,
+
+    /// Read a unified diff from a file (or `-` for stdin) to resolve changed roots.
+    #[arg(long = "diff")]
+    diff: Option<String>,
+
+    /// Maximum number of via-paths per effect (reserved; wired but not yet honoured).
+    #[arg(long = "max-paths")]
+    max_paths: Option<usize>,
+
+    /// Output format: json | human. Defaults to json.
+    #[arg(long = "format", default_value = "json")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// NOT SUPPORTED: the digest command does not support ordering output.
+    #[arg(long, default_value_t = false, hide = true)]
+    order: bool,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Commands::Analyze(a) => run_analyze_cmd(a),
+        Commands::Digest(d) => run_digest_cmd(d),
     }
 }
 
 const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "file"];
+
+// ── digest command ──────────────────────────────────────────────────────────
+
+/// The exact stderr message emitted when `--order` is used with `digest`.
+const ORDER_REJECTION: &str =
+    "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
+
+fn run_digest_cmd(d: DigestCli) -> ExitCode {
+    // Reject --order (CONFIG_ERROR, matching --dump-model pattern)
+    if d.order {
+        eprintln!("{ORDER_REJECTION}");
+        return ExitCode::from(exit::CONFIG_ERROR);
+    }
+
+    // Validate --format
+    const VALID_DIGEST_FORMATS: &[&str] = &["json", "human"];
+    if !VALID_DIGEST_FORMATS.contains(&d.format.as_str()) {
+        eprintln!(
+            "al-sem: invalid --format '{}'. Expected one of: {}",
+            d.format,
+            VALID_DIGEST_FORMATS.join(", ")
+        );
+        return ExitCode::from(exit::CONFIG_ERROR);
+    }
+
+    // Read diff input
+    let diff_text: Option<String> = match d.diff.as_deref() {
+        None => None,
+        Some("-") => {
+            // stdin: buffer all of it
+            use std::io::Read;
+            let mut buf = String::new();
+            if std::io::stdin().read_to_string(&mut buf).is_err() {
+                eprintln!("al-sem: digest: failed to read diff from stdin");
+                return ExitCode::from(exit::CONFIG_ERROR);
+            }
+            Some(buf)
+        }
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("al-sem: digest: could not read diff file '{path}': {e}");
+                return ExitCode::from(exit::CONFIG_ERROR);
+            }
+        },
+    };
+
+    let changed_files = if d.file.is_empty() { None } else { Some(d.file) };
+    let changed_routines = if d.routine.is_empty() { None } else { Some(d.routine) };
+
+    let workspace = std::path::Path::new(&d.workspace);
+
+    match run_digest_pipeline(
+        workspace,
+        changed_files,
+        changed_routines,
+        diff_text,
+        DEFAULT_ALSEM_VERSION,
+        d.deterministic,
+        d.max_paths,
+    ) {
+        Err(msg) => {
+            // "at least one of …" → clean exit 2 (no changed input)
+            if msg.contains("at least one of") {
+                eprintln!("al-sem: {msg}");
+                return ExitCode::from(2);
+            }
+            eprintln!("al-sem: {msg}");
+            ExitCode::from(3)
+        }
+        Ok(result) => {
+            let output = if d.format == "human" {
+                result.human_text
+            } else {
+                result.json_text
+            };
+
+            // Write output
+            let write_result = if let Some(ref out_path) = d.out {
+                std::fs::write(out_path, &output).map_err(|e| format!("{e}"))
+            } else {
+                use std::io::Write;
+                std::io::stdout()
+                    .write_all(output.as_bytes())
+                    .map_err(|e| format!("{e}"))
+            };
+
+            if let Err(e) = write_result {
+                eprintln!("al-sem: digest: write error: {e}");
+                return ExitCode::from(1);
+            }
+
+            ExitCode::from(result.exit_code)
+        }
+    }
+}
 
 /// The exact stderr message emitted when `--dump-model` is used. The full-model JSON
 /// dump (>500MB) is an intentional, documented out-of-scope divergence — the Rust

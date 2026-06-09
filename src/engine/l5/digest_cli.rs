@@ -1,0 +1,1324 @@
+//! cli-b/b1 — the DIGEST CLI command: `alsem digest <ws>`.
+//!
+//! Ports:
+//!   - `src/digest/changed-roots.ts`      → resolve_changed_roots
+//!   - `src/digest/digest-query.ts`       → digest_query_full (order:false path)
+//!   - `src/contracts/digest.ts`          → project_digest_document + serialize
+//!   - `src/cli/digest.ts`                → format_digest_human + run_digest
+//!
+//! The full-document path adds:
+//!   - conditionality (per-path + effect-level)
+//!   - transactionContext for COMMIT effects
+//!   - unresolved-cone BFS
+//!   - guarantees / factId / scopedGuarantees (from ordering engine)
+//!   - project_digest_document → JSON envelope (sorted, null-drop, 2-space, trailing \n)
+//!   - formatDigestHuman → human text
+
+use std::collections::HashMap;
+
+use crate::engine::gate::format_json::serialize_document_value;
+use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
+use crate::engine::gate::run::compute_analyzer_diagnostics;
+use crate::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
+use crate::engine::l5::conditionality::{
+    context_to_conditionality, effect_conditionality, path_conditionality, EffectConditionality,
+    UNKNOWN,
+};
+use crate::engine::l5::detector_context::build_detector_context;
+use crate::engine::l5::detectors::registered_detectors;
+use crate::engine::l5::diff_parser::{parse_unified_diff, DiffFileKind};
+use crate::engine::l5::digest::{
+    compute_digest_effects_cli, DigestEffectResult, DigestEntryResult,
+};
+use crate::engine::l5::snapshot::{
+    compose_snapshot, CapabilitySnapshot, SnapshotCallsiteEvidence, SnapshotOperationEvidence,
+};
+use crate::engine::l5::snapshot_full::{compose_full_snapshot, FullSnapshotOptions};
+use crate::engine::l5::transaction_spans::SeedKind;
+use crate::engine::l5::unresolved_cone::{
+    unresolved_cone, UnresolvedConeItem, UnresolvedTraversal,
+};
+
+// ---------------------------------------------------------------------------
+// DEFAULT_DETECTOR_NAMES — same as cli_b_snapshot_differential (the 34-detector set).
+// ---------------------------------------------------------------------------
+
+const DEFAULT_DETECTOR_NAMES: &[&str] = &[
+    "d1-db-op-in-loop",
+    "d2-event-fanout-in-loop",
+    "d3-missing-setloadfields",
+    "d4-repeated-lookup-in-loop",
+    "d5-set-based-opportunity",
+    "d7-recursive-event-expansion",
+    "d8-commit-in-transaction",
+    "d9-transaction-span-summary",
+    "d10-self-modifying-loop",
+    "d11-modify-without-get",
+    "d12-dead-integration-event",
+    "d13-cross-app-internal-call",
+    "d14-dead-routine",
+    "d16-blob-in-loop",
+    "d17-non-setbased-on-large-table",
+    "d18-event-subscriber-heavy",
+    "d19-flowfield-in-loop",
+    "d20-unbounded-result-set",
+    "d21-temp-table-misuse",
+    "d22-deprecated-api-use",
+    "d29-onaftergetrecord-heavy",
+    "d32-internal-event-publisher",
+    "d33-event-without-subscribers",
+    "d34-page-source-heavy",
+    "d35-implicit-transaction-scope",
+    "d36-redundant-calcfields",
+    "d37-record-passed-by-value",
+    "d38-page-trigger-heavy",
+    "d39-codeunit-instantiation-in-loop",
+    "d41-unindexed-filter",
+    "d42-locktable-late",
+    "d43-event-ishandled-skip",
+    "d44-event-recursive-publish",
+    "d45-text-encoding-mismatch",
+];
+
+// ---------------------------------------------------------------------------
+// Changed-root resolution
+// ---------------------------------------------------------------------------
+
+/// Strip URI scheme prefix from a snapshot source path.
+fn strip_scheme(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix("ws:") {
+        return rest.replace('\\', "/");
+    }
+    if p.starts_with("app:") {
+        let second = p[4..].find(':');
+        if let Some(i) = second {
+            return p[4 + i + 1..].replace('\\', "/");
+        }
+    }
+    p.replace('\\', "/")
+}
+
+/// Normalize an input path for comparison: strip scheme, forward-slash, lowercase.
+fn normalize_input(p: &str) -> String {
+    strip_scheme(p).to_lowercase()
+}
+
+/// Changed-roots diagnostics (mirrors ChangedRootsDiagnostic).
+#[derive(Debug, Clone)]
+pub enum ChangedRootsDiagnostic {
+    FileUnmatched {
+        file: String,
+    },
+    SelectorUnmatched {
+        selector: String,
+    },
+    SelectorAmbiguous {
+        selector: String,
+        candidates: Vec<String>,
+    },
+    DiffFileUnmatched {
+        file: String,
+    },
+    HunkOutsideRoutines {
+        file: String,
+        start_line: i32,
+        end_line: i32,
+    },
+    DiffFileDeleted {
+        file: String,
+    },
+    DiffParseError {
+        detail: String,
+    },
+}
+
+pub struct ChangedRootsResult {
+    pub roots: Vec<String>,
+    pub diagnostics: Vec<ChangedRootsDiagnostic>,
+}
+
+pub struct ChangedInput {
+    pub files: Option<Vec<String>>,
+    pub routines: Option<Vec<String>>,
+    pub diff_text: Option<String>,
+}
+
+/// Build the file → routines index from operationIndex + callsiteIndex.
+fn build_routine_file_index(
+    snap: &CapabilitySnapshot,
+) -> (
+    HashMap<String, Vec<String>>,        // file → routines
+    HashMap<String, Vec<(String, u32)>>, // file → [(routineId, startLine)]
+) {
+    let mut by_file: HashMap<String, Vec<String>> = HashMap::new();
+    let mut line_entries: HashMap<String, Vec<(String, u32)>> = HashMap::new();
+
+    let mut add = |source_file: &str, routine: &str, start_line: u32| {
+        let norm = normalize_input(source_file);
+        let rset = by_file.entry(norm.clone()).or_default();
+        if !rset.contains(&routine.to_string()) {
+            rset.push(routine.to_string());
+        }
+        line_entries
+            .entry(norm)
+            .or_default()
+            .push((routine.to_string(), start_line));
+    };
+
+    for op in &snap.operation_index {
+        add(&op.source_file, &op.routine, op.start_line);
+    }
+    for cs in &snap.callsite_index {
+        add(&cs.source_file, &cs.routine, cs.start_line);
+    }
+
+    // Sort line_entries by startLine for each file
+    for entries in line_entries.values_mut() {
+        entries.sort_by_key(|(_, l)| *l);
+    }
+
+    (by_file, line_entries)
+}
+
+pub fn resolve_changed_roots(
+    snap: &CapabilitySnapshot,
+    input: &ChangedInput,
+) -> ChangedRootsResult {
+    let mut roots: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut diagnostics: Vec<ChangedRootsDiagnostic> = Vec::new();
+
+    let (by_file, line_entries) = build_routine_file_index(snap);
+
+    // Build display-by-id for selector matching
+    let mut display_by_id: HashMap<String, String> = HashMap::new();
+    for i in 0..snap.identities.stable_ids.len() {
+        let id = snap
+            .identities
+            .stable_ids
+            .get(i)
+            .cloned()
+            .unwrap_or_default();
+        let name = snap
+            .identities
+            .display_names
+            .get(i)
+            .cloned()
+            .unwrap_or_default();
+        if !id.is_empty() {
+            display_by_id.insert(id, name);
+        }
+    }
+
+    // 1. File-based matching
+    for file in input.files.iter().flatten() {
+        let norm = normalize_input(file);
+        match by_file.get(&norm) {
+            Some(rset) if !rset.is_empty() => {
+                for r in rset {
+                    roots.insert(r.clone());
+                }
+            }
+            _ => {
+                diagnostics.push(ChangedRootsDiagnostic::FileUnmatched { file: file.clone() });
+            }
+        }
+    }
+
+    // 2. Routine selector matching (simple: by displayName or stableId)
+    for selector in input.routines.iter().flatten() {
+        let matches: Vec<String> = display_by_id
+            .iter()
+            .filter(|(id, name)| {
+                // Match by display name (case-insensitive contains) or exact stable id
+                name.eq_ignore_ascii_case(selector) || id.as_str() == selector.as_str()
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        if matches.is_empty() {
+            diagnostics.push(ChangedRootsDiagnostic::SelectorUnmatched {
+                selector: selector.clone(),
+            });
+        } else if matches.len() >= 2 {
+            let candidates: Vec<String> = matches
+                .iter()
+                .map(|id| display_by_id.get(id).cloned().unwrap_or_else(|| id.clone()))
+                .collect();
+            diagnostics.push(ChangedRootsDiagnostic::SelectorAmbiguous {
+                selector: selector.clone(),
+                candidates,
+            });
+        } else {
+            roots.insert(matches.into_iter().next().unwrap());
+        }
+    }
+
+    // 3. Unified diff matching
+    if let Some(ref diff_text) = input.diff_text {
+        if !diff_text.trim().is_empty() {
+            let parsed = parse_unified_diff(diff_text);
+            for err in &parsed.errors {
+                diagnostics.push(ChangedRootsDiagnostic::DiffParseError {
+                    detail: err.clone(),
+                });
+            }
+            for diff_file in &parsed.files {
+                if diff_file.kind == DiffFileKind::Deleted {
+                    diagnostics.push(ChangedRootsDiagnostic::DiffFileDeleted {
+                        file: diff_file.path.clone(),
+                    });
+                    continue;
+                }
+                let norm_path = normalize_input(&diff_file.path);
+                let rset = by_file.get(&norm_path);
+                if rset.map(|v| v.is_empty()).unwrap_or(true) {
+                    diagnostics.push(ChangedRootsDiagnostic::DiffFileUnmatched {
+                        file: diff_file.path.clone(),
+                    });
+                    continue;
+                }
+                let rset = rset.unwrap();
+                let entries = line_entries
+                    .get(&norm_path)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+
+                if diff_file.hunks.is_empty() {
+                    // Rename with no content — include all routines
+                    for r in rset {
+                        roots.insert(r.clone());
+                    }
+                    continue;
+                }
+
+                for hunk in &diff_file.hunks {
+                    // 1-based [newStart, newStart+newCount) → 0-based [newStart-1, newStart+newCount-1)
+                    let hunk_start = (hunk.new_start - 1).max(0) as u32;
+                    let hunk_end = (hunk.new_start - 1 + hunk.new_count.max(0)) as u32;
+
+                    let mut matched: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    for (rid, line) in entries {
+                        if *line >= hunk_start && *line < hunk_end {
+                            matched.insert(rid.clone());
+                        }
+                    }
+                    if matched.is_empty() {
+                        diagnostics.push(ChangedRootsDiagnostic::HunkOutsideRoutines {
+                            file: diff_file.path.clone(),
+                            start_line: hunk.new_start,
+                            end_line: hunk.new_start + hunk.new_count.max(0) - 1,
+                        });
+                    } else {
+                        for r in matched {
+                            roots.insert(r);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort + dedup
+    let mut sorted: Vec<String> = roots.into_iter().collect();
+    sorted.sort();
+
+    ChangedRootsResult {
+        roots: sorted,
+        diagnostics,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Conditionality computation from WitnessPath/DigestEffectResult
+// ---------------------------------------------------------------------------
+// NOTE: The existing digest_query (in digest.rs) does NOT compute conditionality —
+// it was the "order:false dead code" path. We re-run a supplemental pass here that
+// computes conditionality from the effect's viaPaths and the snapshot's callsite/op indexes.
+//
+// The approach: for each effect, iterate its viaPaths (already projected
+// QueryWitnessHops). For each hop in a via-path, look up the callsite's
+// controlContext in the callsiteIndex. The terminal evidence is looked up from
+// evidenceOperationId or evidenceCallsiteId. Apply pathConditionality per path,
+// then effectConditionality across paths.
+
+fn compute_conditionality_for_effect(
+    eff: &DigestEffectResult,
+    callsite_by_id: &HashMap<&str, &SnapshotCallsiteEvidence>,
+    operation_by_id: &HashMap<&str, &SnapshotOperationEvidence>,
+) -> EffectConditionality {
+    if eff.via_paths.is_empty() {
+        // No paths at all → unknown
+        return UNKNOWN;
+    }
+
+    // Reconstruct per-path conditionalities from via_paths (projected hops).
+    // For each via-path:
+    //   hop_contexts: for each non-terminal hop, look up callsiteId → controlContext
+    //   terminal_ctx: look up evidenceOperationId or evidenceCallsiteId → controlContext
+    //
+    // Since we're working from projected hops (which don't carry controlContext),
+    // we use the evidence ids to get the terminal context and the hop callsiteIds
+    // for the hop contexts.
+    let mut all_path_conds: Vec<EffectConditionality> = Vec::new();
+    let truncated = eff.via_paths_truncated;
+
+    for path_hops in &eff.via_paths {
+        // Hop contexts: iterate projected hops (they carry callsite_id for non-terminal)
+        let mut hop_ctxs: Vec<EffectConditionality> = Vec::new();
+        for hop in path_hops {
+            let csid = hop.inner.callsite_id.as_deref();
+            if let Some(csid) = csid {
+                let ctx = callsite_by_id
+                    .get(csid)
+                    .and_then(|cs| cs.control_context.as_deref());
+                hop_ctxs.push(context_to_conditionality(ctx));
+            } else {
+                // event-dispatch / implicit-trigger → unknown (no local callsite context)
+                hop_ctxs.push(UNKNOWN);
+            }
+        }
+
+        // Terminal context: look up from evidenceOperationId / evidenceCallsiteId
+        let terminal_ctx = if let Some(op_id) = &eff.evidence_operation_id {
+            let ctx = operation_by_id
+                .get(op_id.as_str())
+                .and_then(|op| op.control_context.as_deref());
+            context_to_conditionality(ctx)
+        } else if let Some(cs_id) = &eff.evidence_callsite_id {
+            let ctx = callsite_by_id
+                .get(cs_id.as_str())
+                .and_then(|cs| cs.control_context.as_deref());
+            context_to_conditionality(ctx)
+        } else {
+            UNKNOWN
+        };
+
+        let pc = path_conditionality(&hop_ctxs, terminal_ctx);
+        all_path_conds.push(pc);
+    }
+
+    effect_conditionality(&all_path_conds, truncated)
+}
+
+// ---------------------------------------------------------------------------
+// Transaction context computation
+// ---------------------------------------------------------------------------
+
+pub type TransactionContext = &'static str;
+const TX_SPAN_KNOWN_WRITES: TransactionContext = "span-has-known-writes";
+const TX_SPAN_NO_WRITES: TransactionContext = "span-has-no-known-writes";
+const TX_UNKNOWN: TransactionContext = "unknown";
+
+/// Compute the transaction-context map: `commit_operation_id → TransactionContext`.
+/// Uses the full detector-context substrate (combined graph → summaries → spans).
+/// Mirrors TS: `computeTransactionSpans` + `transactionContextByOperationId` build.
+fn compute_tx_context_map(resolved: &L3Resolved) -> HashMap<String, TransactionContext> {
+    let ctx = build_detector_context(resolved);
+    let mut map: HashMap<String, TransactionContext> = HashMap::new();
+    for span in &ctx.transaction_spans {
+        if span.seed_kind != SeedKind::ExplicitCommit {
+            continue;
+        }
+        let tc: TransactionContext = if !span.coverage_complete {
+            TX_UNKNOWN
+        } else if !span.writes_tables.is_empty() {
+            TX_SPAN_KNOWN_WRITES
+        } else {
+            TX_SPAN_NO_WRITES
+        };
+        map.insert(span.commit_operation_id.clone(), tc);
+    }
+    map
+}
+
+// ---------------------------------------------------------------------------
+// Full digest query — extends digest_query with conditionality, tx-context,
+// unresolved-cone, and guarantees.
+// ---------------------------------------------------------------------------
+
+pub struct DigestEntryFull {
+    pub routine_id: String,
+    pub routine_display: String,
+    pub object_display: String,
+    pub routine_anchor: Option<FullAnchor>,
+    pub coverage_status: String,
+    pub coverage_reasons: Vec<String>,
+    pub effects: Vec<DigestEffectFull>,
+    pub unresolved: Vec<UnresolvedConeItem>,
+    pub unresolved_traversal: UnresolvedTraversal,
+    pub entry_diagnostics: Vec<EntryDiagnostic>,
+}
+
+pub struct DigestEffectFull {
+    pub effect_type: String,
+    pub detail: Vec<(String, String)>,
+    pub provenance: &'static str,
+    pub evidence: FullAnchor,
+    pub via_paths: Vec<Vec<crate::engine::l5::digest::ProjectedHop>>,
+    pub via_paths_truncated: bool,
+    pub conditionality: EffectConditionality,
+    pub transaction_context: TransactionContext,
+    pub guarantees: Vec<String>,
+    pub fact_id: String,
+    pub scoped_guarantees: Vec<crate::engine::l5::ordering_engine::ScopedGuarantee>,
+}
+
+pub struct FullAnchor {
+    pub source_kind: &'static str, // "source" | "unavailable"
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub excerpt: Option<String>,
+}
+
+pub struct EntryDiagnostic {
+    pub kind: &'static str,
+    pub effect_type: Option<String>,
+    pub fact_subject: Option<String>,
+}
+
+fn split_object_routine(display: &str) -> (&str, &str) {
+    if let Some(idx) = display.rfind("::") {
+        (&display[..idx], &display[idx + 2..])
+    } else {
+        ("", display)
+    }
+}
+
+/// The real entry point: given resolved workspace + a list of roots (their stableIds),
+/// produce DigestEntryFull for each root (order:false path).
+pub fn run_digest_query_full_from_entries(
+    snap: &CapabilitySnapshot,
+    roots: &[String],
+    base_entries: &[DigestEntryResult],
+    tx_ctx_map: &HashMap<String, TransactionContext>,
+) -> Vec<DigestEntryFull> {
+    // Indexes for conditionality
+    let mut callsite_by_id: HashMap<&str, &SnapshotCallsiteEvidence> = HashMap::new();
+    for cs in &snap.callsite_index {
+        callsite_by_id.insert(cs.callsite_id.as_str(), cs);
+    }
+    let mut operation_by_id: HashMap<&str, &SnapshotOperationEvidence> = HashMap::new();
+    for op in &snap.operation_index {
+        operation_by_id.insert(op.operation_id.as_str(), op);
+    }
+
+    // Coverage map
+    let mut coverage_by_id: HashMap<&str, (&str, Vec<&str>)> = HashMap::new();
+    for rec in &snap.coverage {
+        let reasons: Vec<&str> = rec.reasons.iter().map(|s| s.as_str()).collect();
+        coverage_by_id.insert(
+            rec.subject.as_str(),
+            (rec.inherited_status.as_str(), reasons),
+        );
+    }
+
+    // Identities
+    let mut display_by_id: HashMap<&str, &str> = HashMap::new();
+    for i in 0..snap.identities.stable_ids.len() {
+        let id = snap
+            .identities
+            .stable_ids
+            .get(i)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let nm = snap
+            .identities
+            .display_names
+            .get(i)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        if !id.is_empty() {
+            display_by_id.insert(id, nm);
+        }
+    }
+
+    // Root anchor map
+    let mut anchor_by_rid: HashMap<&str, FullAnchor> = HashMap::new();
+    for slot in &snap.root_classifications {
+        if let Some(ref sa) = slot.source_anchor {
+            if !sa.source_unit_id.is_empty() {
+                anchor_by_rid.insert(
+                    slot.routine_id.as_str(),
+                    FullAnchor {
+                        source_kind: "source",
+                        file: Some(sa.source_unit_id.clone()),
+                        line: Some(sa.range.start_line),
+                        column: Some(sa.range.start_column),
+                        excerpt: None,
+                    },
+                );
+            }
+        }
+    }
+    for op in &snap.operation_index {
+        if !anchor_by_rid.contains_key(op.routine.as_str()) {
+            anchor_by_rid.insert(
+                op.routine.as_str(),
+                FullAnchor {
+                    source_kind: "source",
+                    file: Some(op.source_file.clone()),
+                    line: Some(op.start_line),
+                    column: Some(op.start_column),
+                    excerpt: None,
+                },
+            );
+        }
+    }
+    for cs in &snap.callsite_index {
+        if !anchor_by_rid.contains_key(cs.routine.as_str()) {
+            anchor_by_rid.insert(
+                cs.routine.as_str(),
+                FullAnchor {
+                    source_kind: "source",
+                    file: Some(cs.source_file.clone()),
+                    line: Some(cs.start_line),
+                    column: Some(cs.start_column),
+                    excerpt: None,
+                },
+            );
+        }
+    }
+
+    // Build index of base entries by routineId
+    let base_by_rid: HashMap<&str, &DigestEntryResult> = base_entries
+        .iter()
+        .map(|e| (e.routine_id.as_str(), e))
+        .collect();
+
+    let mut out: Vec<DigestEntryFull> = Vec::new();
+
+    for rid in roots {
+        let display_full = display_by_id
+            .get(rid.as_str())
+            .copied()
+            .unwrap_or(rid.as_str());
+        let (obj_display, rtn_display) = split_object_routine(display_full);
+
+        // Coverage
+        let (cov_status, cov_reasons) = coverage_by_id
+            .get(rid.as_str())
+            .map(|(s, r)| (*s, r.iter().map(|x| x.to_string()).collect::<Vec<_>>()))
+            .unwrap_or(("unknown", Vec::new()));
+
+        // Routine anchor
+        let routine_anchor = anchor_by_rid.remove(rid.as_str()).map(|a| FullAnchor {
+            source_kind: a.source_kind,
+            file: a.file,
+            line: a.line,
+            column: a.column,
+            excerpt: a.excerpt,
+        });
+
+        // Get base effects (from S4 ordering)
+        let base_entry = base_by_rid.get(rid.as_str());
+
+        let mut full_effects: Vec<DigestEffectFull> = Vec::new();
+        let mut entry_diagnostics: Vec<EntryDiagnostic> = Vec::new();
+
+        if let Some(entry) = base_entry {
+            for eff in &entry.effects {
+                // Conditionality
+                let cond =
+                    compute_conditionality_for_effect(eff, &callsite_by_id, &operation_by_id);
+
+                // Transaction context for COMMIT
+                let tx_ctx = if eff.effect_type == "COMMIT" {
+                    if let Some(op_id) = &eff.evidence_operation_id {
+                        tx_ctx_map
+                            .get(op_id.as_str())
+                            .copied()
+                            .unwrap_or(TX_UNKNOWN)
+                    } else {
+                        TX_UNKNOWN
+                    }
+                } else {
+                    TX_UNKNOWN
+                };
+
+                // Evidence anchor
+                let evidence = FullAnchor {
+                    source_kind: eff.evidence.source_kind,
+                    file: eff.evidence.file.clone(),
+                    line: eff.evidence.line,
+                    column: eff.evidence.column,
+                    excerpt: eff.evidence.excerpt.clone(),
+                };
+
+                // evidence-unavailable diagnostic
+                if eff.evidence.source_kind == "unavailable" {
+                    entry_diagnostics.push(EntryDiagnostic {
+                        kind: "evidence-unavailable",
+                        effect_type: Some(eff.effect_type.clone()),
+                        fact_subject: Some(eff.fact_subject.clone()),
+                    });
+                }
+
+                // Guarantees: unique labels from scopedGuarantees in first-occurrence order.
+                // Mirrors TS guaranteesByIndex dedup: intra + root merged, duplicates suppressed
+                // (a label may appear twice in scopedGuarantees with different scopes but only
+                // once in the plain guarantees[] backward-compat array).
+                let guarantees: Vec<String> = {
+                    let mut seen = std::collections::HashSet::new();
+                    eff.scoped_guarantees
+                        .iter()
+                        .filter_map(|sg| {
+                            if seen.insert(sg.label) {
+                                Some(sg.label.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+
+                full_effects.push(DigestEffectFull {
+                    effect_type: eff.effect_type.clone(),
+                    detail: eff.detail.clone(),
+                    provenance: eff.provenance,
+                    evidence,
+                    via_paths: eff.via_paths.clone(),
+                    via_paths_truncated: eff.via_paths_truncated,
+                    conditionality: cond,
+                    transaction_context: tx_ctx,
+                    guarantees,
+                    fact_id: eff.fact_id.clone(),
+                    scoped_guarantees: eff.scoped_guarantees.clone(),
+                });
+            }
+        }
+
+        // Unresolved cone
+        let cone = unresolved_cone(snap, rid);
+
+        // Gaps-in-cone
+        let visited_set = &cone.visited_ids;
+        let _gaps_in_cone: Vec<&crate::engine::l5::snapshot::SnapshotAnalysisGap> = snap
+            .analysis_gaps
+            .iter()
+            .filter(|g| {
+                if visited_set.contains(g.subject.as_str()) {
+                    return true;
+                }
+                let prefix = format!("{}:", g.subject);
+                visited_set.iter().any(|v| v.starts_with(&prefix))
+            })
+            .collect();
+
+        out.push(DigestEntryFull {
+            routine_id: rid.clone(),
+            routine_display: rtn_display.to_string(),
+            object_display: obj_display.to_string(),
+            routine_anchor,
+            coverage_status: cov_status.to_string(),
+            coverage_reasons: cov_reasons,
+            effects: full_effects,
+            unresolved: cone.items,
+            unresolved_traversal: cone.traversal,
+            entry_diagnostics,
+        });
+    }
+
+    // Sort by routineId (already sorted from resolve_changed_roots, but be safe)
+    out.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
+    out
+}
+
+// ---------------------------------------------------------------------------
+// JSON document projection
+// ---------------------------------------------------------------------------
+
+fn anchor_to_value(a: &FullAnchor) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    m.insert("sourceKind".into(), a.source_kind.into());
+    if let Some(ref f) = a.file {
+        m.insert("file".into(), f.clone().into());
+    }
+    if let Some(l) = a.line {
+        m.insert("line".into(), l.into());
+    }
+    if let Some(c) = a.column {
+        m.insert("column".into(), c.into());
+    }
+    if let Some(ref x) = a.excerpt {
+        m.insert("excerpt".into(), x.clone().into());
+    }
+    serde_json::Value::Object(m)
+}
+
+fn hop_to_value(hop: &crate::engine::l5::digest::ProjectedHop) -> serde_json::Value {
+    crate::engine::l5::digest::hop_to_json_value(&hop.inner)
+}
+
+fn scoped_guarantee_to_value(
+    sg: &crate::engine::l5::ordering_engine::ScopedGuarantee,
+) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    m.insert("label".into(), sg.label.into());
+    m.insert("scope".into(), sg.scope.into());
+    if let Some(ref v) = sg.write_occurrence_id {
+        m.insert("writeOccurrenceId".into(), v.clone().into());
+    }
+    if let Some(ref v) = sg.commit_occurrence_id {
+        m.insert("commitOccurrenceId".into(), v.clone().into());
+    }
+    if let Some(ref v) = sg.io_occurrence_id {
+        m.insert("ioOccurrenceId".into(), v.clone().into());
+    }
+    if let Some(ref v) = sg.return_occurrence_id {
+        m.insert("returnOccurrenceId".into(), v.clone().into());
+    }
+    // supportingEdgeIds — only emit when non-empty (mirrors TS contract: optional field).
+    if !sg.supporting_edge_ids.is_empty() {
+        let eids: Vec<serde_json::Value> = sg
+            .supporting_edge_ids
+            .iter()
+            .map(|s| s.clone().into())
+            .collect();
+        m.insert("supportingEdgeIds".into(), serde_json::Value::Array(eids));
+    }
+    if let Some(ce) = sg.commit_effectiveness {
+        m.insert("commitEffectiveness".into(), ce.into());
+    }
+    m.insert("interveningBoundary".into(), sg.intervening_boundary.into());
+    m.insert("validForRefutation".into(), sg.valid_for_refutation.into());
+    serde_json::Value::Object(m)
+}
+
+fn effect_to_value(eff: &DigestEffectFull) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    m.insert("type".into(), eff.effect_type.clone().into());
+
+    // detail: insertion-order map
+    let mut detail_obj = serde_json::Map::new();
+    for (k, v) in &eff.detail {
+        detail_obj.insert(k.clone(), v.clone().into());
+    }
+    m.insert("detail".into(), serde_json::Value::Object(detail_obj));
+
+    m.insert("provenance".into(), eff.provenance.into());
+    m.insert("evidence".into(), anchor_to_value(&eff.evidence));
+
+    // viaPaths
+    let via: Vec<serde_json::Value> = eff
+        .via_paths
+        .iter()
+        .map(|path| {
+            let hops: Vec<serde_json::Value> = path.iter().map(hop_to_value).collect();
+            serde_json::Value::Array(hops)
+        })
+        .collect();
+    m.insert("viaPaths".into(), serde_json::Value::Array(via));
+    m.insert("viaPathsTruncated".into(), eff.via_paths_truncated.into());
+    m.insert("confidence".into(), "static".into());
+    m.insert("conditionality".into(), eff.conditionality.into());
+    m.insert("transactionContext".into(), eff.transaction_context.into());
+    let guarantees: Vec<serde_json::Value> =
+        eff.guarantees.iter().map(|g| g.clone().into()).collect();
+    m.insert("guarantees".into(), serde_json::Value::Array(guarantees));
+    m.insert("factId".into(), eff.fact_id.clone().into());
+    let sg: Vec<serde_json::Value> = eff
+        .scoped_guarantees
+        .iter()
+        .map(scoped_guarantee_to_value)
+        .collect();
+    m.insert("scopedGuarantees".into(), serde_json::Value::Array(sg));
+
+    serde_json::Value::Object(m)
+}
+
+fn unresolved_item_to_value(item: &UnresolvedConeItem) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    if let Some(ref f) = item.callsite_file {
+        // Build callsiteAnchor
+        let mut anch = serde_json::Map::new();
+        anch.insert("sourceKind".into(), "source".into());
+        anch.insert("file".into(), f.clone().into());
+        if let Some(l) = item.callsite_line {
+            anch.insert("line".into(), l.into());
+        }
+        if let Some(c) = item.callsite_column {
+            anch.insert("column".into(), c.into());
+        }
+        m.insert("callsiteAnchor".into(), serde_json::Value::Object(anch));
+    }
+    m.insert("calleeDisplay".into(), item.callee_display.clone().into());
+    m.insert("status".into(), item.status.clone().into());
+    if let Some(ref cands) = item.candidates {
+        let cv: Vec<serde_json::Value> = cands.iter().map(|c| c.clone().into()).collect();
+        m.insert("candidates".into(), serde_json::Value::Array(cv));
+    }
+    if item.open_world == Some(true) {
+        m.insert("openWorld".into(), true.into());
+    }
+    m.insert("owningRoutine".into(), item.owning_routine.clone().into());
+    m.insert(
+        "owningRoutineDisplay".into(),
+        item.owning_routine_display.clone().into(),
+    );
+    serde_json::Value::Object(m)
+}
+
+fn entry_to_value(entry: &DigestEntryFull) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+
+    // coverage
+    let mut cov = serde_json::Map::new();
+    cov.insert("status".into(), entry.coverage_status.clone().into());
+    let reasons: Vec<serde_json::Value> = entry
+        .coverage_reasons
+        .iter()
+        .map(|r| r.clone().into())
+        .collect();
+    cov.insert("reasons".into(), serde_json::Value::Array(reasons));
+    m.insert("coverage".into(), serde_json::Value::Object(cov));
+
+    // effects
+    let effects: Vec<serde_json::Value> = entry.effects.iter().map(effect_to_value).collect();
+    m.insert("effects".into(), serde_json::Value::Array(effects));
+
+    // entryDiagnostics
+    let ed: Vec<serde_json::Value> = entry
+        .entry_diagnostics
+        .iter()
+        .map(|d| {
+            let mut dm = serde_json::Map::new();
+            dm.insert("kind".into(), d.kind.into());
+            if let Some(ref et) = d.effect_type {
+                dm.insert("effectType".into(), et.clone().into());
+            }
+            if let Some(ref fs) = d.fact_subject {
+                dm.insert("factSubject".into(), fs.clone().into());
+            }
+            serde_json::Value::Object(dm)
+        })
+        .collect();
+    m.insert("entryDiagnostics".into(), serde_json::Value::Array(ed));
+
+    // routine
+    let mut routine_m = serde_json::Map::new();
+    routine_m.insert("stableId".into(), entry.routine_id.clone().into());
+    routine_m.insert("display".into(), entry.routine_display.clone().into());
+    routine_m.insert("objectDisplay".into(), entry.object_display.clone().into());
+    if let Some(ref a) = entry.routine_anchor {
+        routine_m.insert("anchor".into(), anchor_to_value(a));
+    }
+    m.insert("routine".into(), serde_json::Value::Object(routine_m));
+
+    // unresolved
+    let ur: Vec<serde_json::Value> = entry
+        .unresolved
+        .iter()
+        .map(unresolved_item_to_value)
+        .collect();
+    m.insert("unresolved".into(), serde_json::Value::Array(ur));
+
+    // unresolvedTraversal
+    let mut trav = serde_json::Map::new();
+    trav.insert(
+        "maxDepth".into(),
+        (entry.unresolved_traversal.max_depth as u64).into(),
+    );
+    trav.insert(
+        "truncated".into(),
+        entry.unresolved_traversal.truncated.into(),
+    );
+    trav.insert(
+        "visitedRoutines".into(),
+        (entry.unresolved_traversal.visited_routines as u64).into(),
+    );
+    m.insert(
+        "unresolvedTraversal".into(),
+        serde_json::Value::Object(trav),
+    );
+
+    serde_json::Value::Object(m)
+}
+
+fn changed_roots_diagnostic_to_value(d: &ChangedRootsDiagnostic) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    match d {
+        ChangedRootsDiagnostic::FileUnmatched { file } => {
+            m.insert("kind".into(), "file-unmatched".into());
+            m.insert("file".into(), file.clone().into());
+        }
+        ChangedRootsDiagnostic::SelectorUnmatched { selector } => {
+            m.insert("kind".into(), "selector-unmatched".into());
+            m.insert("selector".into(), selector.clone().into());
+        }
+        ChangedRootsDiagnostic::SelectorAmbiguous {
+            selector,
+            candidates,
+        } => {
+            m.insert("kind".into(), "selector-ambiguous".into());
+            m.insert("selector".into(), selector.clone().into());
+            let cv: Vec<serde_json::Value> = candidates.iter().map(|c| c.clone().into()).collect();
+            m.insert("candidates".into(), serde_json::Value::Array(cv));
+        }
+        ChangedRootsDiagnostic::DiffFileUnmatched { file } => {
+            m.insert("kind".into(), "diff-file-unmatched".into());
+            m.insert("file".into(), file.clone().into());
+        }
+        ChangedRootsDiagnostic::HunkOutsideRoutines {
+            file,
+            start_line,
+            end_line,
+        } => {
+            m.insert("kind".into(), "hunk-outside-routines".into());
+            m.insert("file".into(), file.clone().into());
+            m.insert("startLine".into(), (*start_line as u64).into());
+            m.insert("endLine".into(), (*end_line as u64).into());
+        }
+        ChangedRootsDiagnostic::DiffFileDeleted { file } => {
+            m.insert("kind".into(), "diff-file-deleted".into());
+            m.insert("file".into(), file.clone().into());
+        }
+        ChangedRootsDiagnostic::DiffParseError { detail } => {
+            m.insert("kind".into(), "diff-parse-error".into());
+            m.insert("detail".into(), detail.clone().into());
+        }
+    }
+    serde_json::Value::Object(m)
+}
+
+/// Build the DocumentEnvelope<"digest", DigestPayload> as a serde_json::Value,
+/// then serialize with serialize_document_value (sorted keys, null-drop, trailing \n).
+pub fn project_digest_document(
+    workspace_fp: &str,
+    changed_input: &ChangedInputContract,
+    changed_roots_result: &ChangedRootsResult,
+    entries: &[DigestEntryFull],
+    diagnostics_json: serde_json::Value, // pre-built array from analyzer
+    alsem_ver: &str,
+    deterministic: bool,
+) -> String {
+    // payload.summary
+    let roots_requested = changed_roots_result.roots.len() + 0; // query diags not tracked here
+    let roots_resolved = entries.len();
+    let total_effects: usize = entries.iter().map(|e| e.effects.len()).sum();
+    let total_unresolved: usize = entries.iter().map(|e| e.unresolved.len()).sum();
+
+    let mut summary = serde_json::Map::new();
+    summary.insert("rootsRequested".into(), (roots_requested as u64).into());
+    summary.insert("rootsResolved".into(), (roots_resolved as u64).into());
+    summary.insert("totalEffects".into(), (total_effects as u64).into());
+    summary.insert("totalUnresolved".into(), (total_unresolved as u64).into());
+
+    // changed
+    let mut changed = serde_json::Map::new();
+    changed.insert("diffProvided".into(), changed_input.diff_provided.into());
+    if let Some(ref files) = changed_input.files {
+        let fv: Vec<serde_json::Value> = files.iter().map(|f| f.clone().into()).collect();
+        changed.insert("files".into(), serde_json::Value::Array(fv));
+    }
+    if let Some(ref routines) = changed_input.routines {
+        let rv: Vec<serde_json::Value> = routines.iter().map(|r| r.clone().into()).collect();
+        changed.insert("routines".into(), serde_json::Value::Array(rv));
+    }
+
+    // entries
+    let entries_val: Vec<serde_json::Value> = entries.iter().map(entry_to_value).collect();
+
+    // changedRootsDiagnostics
+    let crd: Vec<serde_json::Value> = changed_roots_result
+        .diagnostics
+        .iter()
+        .map(changed_roots_diagnostic_to_value)
+        .collect();
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("changed".into(), serde_json::Value::Object(changed));
+    payload.insert(
+        "changedRootsDiagnostics".into(),
+        serde_json::Value::Array(crd),
+    );
+    payload.insert("entries".into(), serde_json::Value::Array(entries_val));
+    payload.insert("summary".into(), serde_json::Value::Object(summary));
+    payload.insert(
+        "workspaceFingerprint".into(),
+        workspace_fp.to_string().into(),
+    );
+
+    // Envelope
+    let generated_at = if deterministic {
+        "1970-01-01T00:00:00Z".to_string()
+    } else {
+        // Use the gate helper if available; fallback to epoch
+        "1970-01-01T00:00:00Z".to_string()
+    };
+
+    let mut env = serde_json::Map::new();
+    env.insert("alsemVersion".into(), alsem_ver.into());
+    env.insert("deterministic".into(), deterministic.into());
+    env.insert("diagnostics".into(), diagnostics_json);
+    env.insert("generatedAt".into(), generated_at.into());
+    env.insert("kind".into(), "digest".into());
+    env.insert("payload".into(), serde_json::Value::Object(payload));
+    env.insert("schemaVersion".into(), "1.3.0".into());
+
+    serialize_document_value(serde_json::Value::Object(env))
+}
+
+pub struct ChangedInputContract {
+    pub files: Option<Vec<String>>,
+    pub routines: Option<Vec<String>>,
+    pub diff_provided: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Human formatter (formatDigestHuman)
+// ---------------------------------------------------------------------------
+
+pub fn format_digest_human(entries: &[DigestEntryFull]) -> String {
+    if entries.is_empty() {
+        return "digest: no changed roots resolved\n".to_string();
+    }
+    let mut lines: Vec<String> = Vec::new();
+    for entry in entries {
+        let display = if !entry.object_display.is_empty() {
+            format!("{}::{}", entry.object_display, entry.routine_display)
+        } else {
+            entry.routine_display.clone()
+        };
+        lines.push(format!("--- {} ---", display));
+        lines.push(format!("  coverage: {}", entry.coverage_status));
+        if !entry.coverage_reasons.is_empty() {
+            lines.push(format!("  reasons: {}", entry.coverage_reasons.join(", ")));
+        }
+        if entry.effects.is_empty() {
+            lines.push("  (no effects)".to_string());
+        }
+        for eff in &entry.effects {
+            let prov_tag = if eff.provenance == "direct" {
+                "direct"
+            } else {
+                "transitive"
+            };
+            let ev_file = eff.evidence.file.as_deref().unwrap_or("(unavailable)");
+            let ev_line = eff
+                .evidence
+                .line
+                .map(|l| format!(":{}", l))
+                .unwrap_or_default();
+            let excerpt = eff
+                .evidence
+                .excerpt
+                .as_deref()
+                .map(|e| format!(" \"{}\"", e))
+                .unwrap_or_default();
+            lines.push(format!("  [{}] {}", eff.effect_type, prov_tag));
+            lines.push(format!("    evidence: {}{}{}", ev_file, ev_line, excerpt));
+            let detail_entries: Vec<String> = eff
+                .detail
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect();
+            if !detail_entries.is_empty() {
+                lines.push(format!("    detail: {}", detail_entries.join(", ")));
+            }
+            if !eff.via_paths.is_empty() {
+                let truncated_str = if eff.via_paths_truncated {
+                    " (truncated)"
+                } else {
+                    ""
+                };
+                lines.push(format!(
+                    "    via: {} path(s){}",
+                    eff.via_paths.len(),
+                    truncated_str
+                ));
+            }
+        }
+        if !entry.unresolved.is_empty() {
+            lines.push(format!(
+                "  unresolved: {} callsite(s)",
+                entry.unresolved.len()
+            ));
+            if entry.unresolved_traversal.truncated {
+                lines.push("    (traversal truncated)".to_string());
+            }
+        }
+        if !entry.entry_diagnostics.is_empty() {
+            for d in &entry.entry_diagnostics {
+                let et_part = d
+                    .effect_type
+                    .as_deref()
+                    .map(|et| format!(" ({})", et))
+                    .unwrap_or_default();
+                lines.push(format!("  diagnostic: {}{}", d.kind, et_part));
+            }
+        }
+        lines.push(String::new());
+    }
+    lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Top-level run_digest (used by the CLI command)
+// ---------------------------------------------------------------------------
+
+/// Result from run_digest_pipeline.
+pub struct DigestRunResult {
+    pub json_text: String,
+    pub human_text: String,
+    pub exit_code: u8, // 0 = OK, 2 = zero roots
+}
+
+/// Run the full digest pipeline for a workspace.
+///
+/// `changed_files` are workspace-relative paths (e.g. "src/Foo.al").
+/// `diff_text` is a unified diff string (for --diff).
+/// `alsem_ver` is the version string (e.g. "cli-b-v1").
+pub fn run_digest_pipeline(
+    workspace: &std::path::Path,
+    changed_files: Option<Vec<String>>,
+    changed_routines: Option<Vec<String>>,
+    diff_text: Option<String>,
+    alsem_ver: &str,
+    deterministic: bool,
+    _max_paths_override: Option<usize>,
+) -> Result<DigestRunResult, String> {
+    // Assemble workspace
+    let model_id = compute_gate_model_instance_id(workspace)
+        .ok_or_else(|| "digest: could not compute modelInstanceId".to_string())?;
+    let resolved = assemble_and_resolve_workspace(workspace, &model_id)
+        .ok_or_else(|| "digest: workspace did not resolve".to_string())?;
+
+    // Compose snapshot
+    let opts = FullSnapshotOptions {
+        workspace_dir: workspace,
+        alsem_version: alsem_ver,
+        deterministic,
+        roots_config_ignored: false,
+    };
+    let snap = compose_snapshot(&resolved);
+
+    // Attach workspace fingerprint to the snap for use in the document.
+    // compose_full_snapshot builds the fingerprint; compose_snapshot doesn't.
+    // We need the workspace fingerprint. Compute it via the full snapshot.
+    let full_tree = compose_full_snapshot(&resolved, &opts);
+    let workspace_fp = {
+        // Extract workspaceFingerprint from the full tree
+        use crate::engine::gate::cbor::CborValue;
+        match &full_tree {
+            CborValue::Map(m) => m
+                .get("workspaceFingerprint")
+                .and_then(|v| {
+                    if let CborValue::Text(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default(),
+            _ => String::new(),
+        }
+    };
+
+    // We need a snapshot with workspaceFingerprint accessible.
+    // The snap from compose_snapshot doesn't have it.
+    // Build a wrapper.
+    let snap_with_fp = SnapshotWithFingerprint { snap, workspace_fp };
+
+    // Resolve changed roots
+    let changed_input = ChangedInput {
+        files: changed_files.clone(),
+        routines: changed_routines.clone(),
+        diff_text: diff_text.clone(),
+    };
+
+    let has_input = changed_files
+        .as_ref()
+        .map(|f| !f.is_empty())
+        .unwrap_or(false)
+        || changed_routines
+            .as_ref()
+            .map(|r| !r.is_empty())
+            .unwrap_or(false)
+        || diff_text
+            .as_ref()
+            .map(|d| !d.trim().is_empty())
+            .unwrap_or(false);
+
+    if !has_input {
+        return Err(
+            "digest: at least one of changedFiles, changedRoutines, or diffText is required"
+                .to_string(),
+        );
+    }
+
+    let changed_roots = resolve_changed_roots(&snap_with_fp.snap, &changed_input);
+
+    // Compute transaction context map (for COMMIT effects).
+    // Mirrors TS pipeline: computeTransactionSpans → transactionContextByOperationId.
+    let tx_ctx_map = compute_tx_context_map(&resolved);
+
+    // Compute S4 ordering effects for ALL reportable roots (then filter to roots we care about).
+    // Use compute_digest_effects_cli which matches TS runDigestPipeline (no routineReturnSummaries).
+    let all_s4_entries = compute_digest_effects_cli(&snap_with_fp.snap, &resolved);
+
+    // Run full digest query for the resolved roots
+    let entries = run_digest_query_full_from_entries(
+        &snap_with_fp.snap,
+        &changed_roots.roots,
+        &all_s4_entries,
+        &tx_ctx_map,
+    );
+
+    let exit_code: u8 = if changed_roots.roots.is_empty() { 2 } else { 0 };
+
+    // Build envelope diagnostics (same 34-detector set as snapshot differential)
+    let default_detectors: Vec<_> = registered_detectors()
+        .into_iter()
+        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
+        .collect();
+    let diag_vec = compute_analyzer_diagnostics(workspace, &resolved, &default_detectors);
+    let diagnostics_json = {
+        let arr: Vec<serde_json::Value> = diag_vec
+            .iter()
+            .map(|d| {
+                let mut m = serde_json::Map::new();
+                m.insert("code".into(), format!("DIAG-{}", d.stage).into());
+                m.insert("message".into(), d.message.clone().into());
+                m.insert("severity".into(), d.severity.clone().into());
+                serde_json::Value::Object(m)
+            })
+            .collect();
+        serde_json::Value::Array(arr)
+    };
+
+    let changed_input_contract = ChangedInputContract {
+        files: changed_files,
+        routines: changed_routines,
+        diff_provided: diff_text.is_some(),
+    };
+
+    // JSON
+    let json_text = project_digest_document(
+        &snap_with_fp.workspace_fp,
+        &changed_input_contract,
+        &changed_roots,
+        &entries,
+        diagnostics_json,
+        alsem_ver,
+        deterministic,
+    );
+
+    // Human
+    let human_text = format_digest_human(&entries);
+
+    Ok(DigestRunResult {
+        json_text,
+        human_text,
+        exit_code,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot with workspace fingerprint
+// ---------------------------------------------------------------------------
+
+struct SnapshotWithFingerprint {
+    snap: CapabilitySnapshot,
+    workspace_fp: String,
+}

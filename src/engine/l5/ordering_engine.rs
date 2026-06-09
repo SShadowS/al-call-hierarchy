@@ -19,7 +19,8 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::ids::sha256_hex;
 use crate::engine::l5::digest::QueryWitnessHop;
 use crate::engine::l5::ordering::{
-    build_hb_edges, dom, may_co_execute, ordered_before, HBEdge, OrderedOp, Quantifier,
+    build_hb_edges, dom, dominates_return, may_co_execute, ordered_before, HBEdge, OrderedOp,
+    Quantifier,
 };
 use crate::engine::l5::ordering_inter::{
     error_escapes_chain, inter_hb, io_direction, reconstruct_call_chains, reconstruct_frame_chain,
@@ -57,6 +58,9 @@ pub struct OrderingEffectInput {
     pub via_paths_truncated: bool,
     pub temp_state: Option<SnapTempState>,
     pub occurrence_id: String,
+    /// Effect-level conditionality — used by COMMIT_ON_SUCCESS_PATH rule.
+    /// Pre-computed before the ordering call (mirrors TS eff.conditionality field).
+    pub conditionality: &'static str,
 }
 
 // ---------------------------------------------------------------------------
@@ -327,13 +331,14 @@ pub fn compute_ordering(
         })
         .collect();
 
-    // RETURN node occurrence id (unused for the 5 relevant labels but kept for fidelity).
-    let _return_occurrence_id = sha256_hex(&format!("{routine_id}|RETURN"))[..16].to_string();
+    // RETURN node occurrence id — used for COMMIT_DOMINATES_RETURN root-scope.
+    let return_occurrence_id = sha256_hex(&format!("{routine_id}|RETURN"))[..16].to_string();
 
     // ====================================================================
-    // Intra-routine (owning-routine scope) labels — only the RELEVANT subset:
-    //   EXTERNAL_IO_BEFORE_COMMIT, WRITE_PENDING_AT_EXTERNAL_IO, WRITE_PENDING_AT_UI.
-    // (COMMIT_REACHABLE / COMMIT_* / WRITE_COMMITTED_* are DEAD — OMITTED.)
+    // Intra-routine (owning-routine scope) labels:
+    //   COMMIT_REACHABLE, COMMIT_ON_SUCCESS_PATH, COMMIT_DOMINATES_RETURN,
+    //   WRITE_COMMITTED_BEFORE_RETURN, EXTERNAL_IO_BEFORE_COMMIT,
+    //   WRITE_PENDING_AT_EXTERNAL_IO, WRITE_PENDING_AT_UI.
     // ====================================================================
     let intra_labels_by_index: Vec<Vec<&'static str>> = occurrences
         .iter()
@@ -341,9 +346,13 @@ pub fn compute_ordering(
         .map(|(idx, occ)| {
             let mut labels: Vec<&'static str> = Vec::new();
             let Some(op) = occ.ordered_op.as_ref() else {
-                return labels; // ORDERING_UNKNOWN is dead — emit nothing.
+                // No order index available → ORDERING_UNKNOWN (mirrors TS occ.orderedOp === null).
+                labels.push("ORDERING_UNKNOWN");
+                return labels;
             };
             let Some(owner) = resolve_owning_routine(&effects[idx]) else {
+                // Cannot resolve owning routine → ORDERING_UNKNOWN (mirrors TS ownerRoutine === undefined).
+                labels.push("ORDERING_UNKNOWN");
                 return labels;
             };
             let group_idxs: Vec<usize> = groups
@@ -363,6 +372,67 @@ pub fn compute_ordering(
                 .copied()
                 .filter(|&i| is_db_write(&occurrences[i].effect_type))
                 .collect();
+
+            // COMMIT_REACHABLE: any commit occurrence exists in this routine group.
+            let has_any_commit = !commit_idxs.is_empty();
+            if has_any_commit {
+                labels.push("COMMIT_REACHABLE");
+            }
+
+            // COMMIT_ON_SUCCESS_PATH (on COMMIT effects):
+            // any commit in the group has conditionality = "unconditional-on-success".
+            // Mirrors TS: `commitOccs.some(o => o.conditionality === "unconditional-on-success")`.
+            if occ.effect_type == "COMMIT" {
+                let has_commit_on_success = commit_idxs
+                    .iter()
+                    .any(|&ci| effects[ci].conditionality == "unconditional-on-success");
+                if has_commit_on_success {
+                    labels.push("COMMIT_ON_SUCCESS_PATH");
+                }
+            }
+
+            // COMMIT_DOMINATES_RETURN (on COMMIT effects): this commit dominates return.
+            if occ.effect_type == "COMMIT" && dominates_return(op) {
+                labels.push("COMMIT_DOMINATES_RETURN");
+            }
+
+            // WRITE_COMMITTED_BEFORE_RETURN (on COMMIT effects):
+            // dominatesReturn(op) AND there is a write w with dom(w, op) AND
+            // the nearest commit after w (by orderId) is this commit.
+            if occ.effect_type == "COMMIT" && dominates_return(op) {
+                // nearest_commit_after(write_occ): find commit with smallest orderId > write's orderId.
+                let nearest_commit_after = |write_op_id: u32| -> Option<String> {
+                    let mut nearest_id: Option<u32> = None;
+                    let mut nearest_occ_id: Option<String> = None;
+                    for &ci in &commit_idxs {
+                        let Some(cop) = occurrences[ci].ordered_op.as_ref() else {
+                            continue;
+                        };
+                        if cop.order_id > write_op_id {
+                            if nearest_id.map(|n| cop.order_id < n).unwrap_or(true) {
+                                nearest_id = Some(cop.order_id);
+                                nearest_occ_id = Some(occurrences[ci].occurrence_id.clone());
+                            }
+                        }
+                    }
+                    nearest_occ_id
+                };
+
+                let has_write_committed = write_idxs.iter().any(|&wi| {
+                    let w_occ = &occurrences[wi];
+                    let Some(write_op) = w_occ.ordered_op.as_ref() else {
+                        return false;
+                    };
+                    if !dom(write_op, op) {
+                        return false;
+                    }
+                    let nearest = nearest_commit_after(write_op.order_id);
+                    nearest.as_deref() == Some(&occ.occurrence_id)
+                });
+                if has_write_committed {
+                    labels.push("WRITE_COMMITTED_BEFORE_RETURN");
+                }
+            }
 
             // EXTERNAL_IO_BEFORE_COMMIT (on IO effects).
             if is_external_io(&occ.effect_type) {
@@ -754,24 +824,53 @@ pub fn compute_ordering(
         let commit_occ = &occurrences[commit_idx];
         let commit_chain = occurrence_chains[commit_idx].as_ref().unwrap();
 
-        // (COMMIT_DOMINATES_RETURN / WRITE_COMMITTED_* labels are DEAD — but
-        // commitEffectiveness must still be graded for EXTERNAL_IO_BEFORE_COMMIT.)
-        let _commit_dom_root = {
-            // DEAD on order:false — gates only COMMIT_DOMINATES_RETURN /
-            // WRITE_COMMITTED_* labels which are excluded from the 5 RELEVANT_LABELS
-            // and never emitted.  The inter-dominance DFS helpers
-            // (op_dominates_root_return / find_unique_dominating_chain /
-            // cross_hop_dominates_root_return / preceding_callsite_always_errors) are
-            // kept for fidelity and exercised by `cross_hop_dominates_root_return`
-            // unit tests in ordering_inter.rs, but this particular stub is hardcoded
-            // false and never executed against a golden.  Do not wire it into a live
-            // label without first re-enabling the dead label blocks.
-            let _ = (
-                &check_callee_returnability,
-                &preceding_callsite_always_errors,
+        // Compute commitDomRoot — mirrors TS commitDomRoot condition exactly.
+        let chain_complete = commit_chain.chain.path_enumeration == "complete";
+        let commit_callee_check = check_callee_returnability(&commit_chain.terminal_routine_id);
+        let commit_is_root_local = commit_chain.terminal_routine_id == routine_id;
+        let commit_innermost_frame_id: i64 = commit_occ
+            .ordered_op
+            .as_ref()
+            .and_then(|op| op.frame_chain.last())
+            .map(|f| f.frame_id)
+            .unwrap_or(0);
+        let commit_blocked = commit_is_root_local
+            && commit_occ.ordered_op.is_some()
+            && preceding_callsite_always_errors(
+                commit_occ
+                    .ordered_op
+                    .as_ref()
+                    .map(|op| op.order_id)
+                    .unwrap_or(0),
+                commit_innermost_frame_id,
             );
-            false
-        };
+        let commit_dom_root = chain_complete
+            && commit_callee_check != "no-edge"
+            && !commit_blocked
+            && commit_occ.ordered_op.is_some()
+            && crate::engine::l5::ordering_inter::cross_hop_dominates_root_return(
+                commit_chain,
+                routine_id,
+                snap,
+                callsite_by_id,
+            );
+
+        // Root-scope COMMIT_DOMINATES_RETURN.
+        if commit_dom_root {
+            root_scoped[commit_idx].push(ScopedGuarantee {
+                label: "COMMIT_DOMINATES_RETURN",
+                scope: "root",
+                write_occurrence_id: None,
+                commit_occurrence_id: Some(commit_occ.occurrence_id.clone()),
+                io_occurrence_id: None,
+                return_occurrence_id: Some(return_occurrence_id.clone()),
+                supporting_edge_ids: Vec::new(),
+                commit_effectiveness: None,
+                intervening_boundary: "none",
+                valid_for_refutation: true,
+            });
+        }
+
         let commit_effectiveness = grade_commit_effectiveness(commit_occ, commit_chain);
 
         // Root-scope EXTERNAL_IO_BEFORE_COMMIT: first IO with a cross-hop edge io→commit.

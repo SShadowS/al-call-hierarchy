@@ -73,5 +73,12 @@ pub mod ordering_inter;
 // projection. Wraps the Stage-4 ordering engine. Additive.
 pub mod ordering_facts;
 
+// cli-b/b1 — DIGEST CLI support modules (unresolved-cone BFS, conditionality
+// lattice, unified-diff parser, digest CLI pipeline).
+pub mod conditionality;
+pub mod diff_parser;
+pub mod digest_cli;
+pub mod unresolved_cone;
+
 #[cfg(test)]
 mod test_support;

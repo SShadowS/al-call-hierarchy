@@ -1676,6 +1676,9 @@ pub struct DigestEffectResult {
     pub via_paths: Vec<Vec<ProjectedHop>>,
     pub via_paths_truncated: bool,
     pub fact_id: String,
+    /// The originating CapabilityFact's subject stable id — used for the
+    /// evidence-unavailable diagnostic's `factSubject` field.
+    pub fact_subject: String,
     pub canonical_key: String,
     pub link_signature: String,
     /// Sort key fields (evidence.file, evidence.line) — for the effects sort.
@@ -1764,6 +1767,8 @@ fn digest_query(
             /// S4-internal (NOT serialized in the digest-effects golden): the
             /// originating table-write fact's tempState (for the physical-write filter).
             temp_state: Option<SnapTempState>,
+            /// The fact's subject (stable id) — used for the evidence-unavailable diagnostic.
+            fact_subject: String,
         }
         let mut effect_map: Vec<(String, AccumulatedEffect)> = Vec::new();
 
@@ -1875,6 +1880,7 @@ fn digest_query(
                         had_truncation,
                         all_paths: projected_paths,
                         temp_state: fact_temp_state,
+                        fact_subject: fact.subject.clone(),
                     },
                 ));
             }
@@ -1926,6 +1932,7 @@ fn digest_query(
                     .collect(),
                 via_paths_truncated: acc.had_truncation,
                 fact_id: String::new(), // filled below (after sort, via seenCanonicalKeys)
+                fact_subject: acc.fact_subject,
                 canonical_key,
                 link_signature,
                 sort_file,
@@ -1962,11 +1969,53 @@ fn digest_query(
             eff.fact_id = occ_id;
         }
 
-        // S4: compute_ordering — attach scopedGuarantees per effect (parallel to effects).
-        // Only runs the ordering engine when summaries are supplied (the S4 path);
-        // the S3-only digest-effects projection passes None → scopedGuarantees stay empty
-        // (and are not serialized by the S3 projection anyway).
-        if let Some(summaries) = return_summaries {
+        // S4: compute_ordering — ALWAYS runs the ordering engine (mirrors TS digestQuery which
+        // always calls computeOrdering regardless of whether routineReturnSummaries is provided).
+        // return_summaries is forwarded as-is to compute_ordering; when None, the engine
+        // degrades gracefully (checkCalleeReturnability → "ok"; errorEscapesChain → false).
+        {
+            // Pre-compute conditionality for each effect (needed by COMMIT_ON_SUCCESS_PATH).
+            // Mirrors `computeConditionalityForEffect` from digest-query.ts.
+            let compute_eff_conditionality = |e: &DigestEffectResult| -> &'static str {
+                use crate::engine::l5::conditionality::{
+                    context_to_conditionality, effect_conditionality, path_conditionality, UNKNOWN,
+                };
+                if e.via_paths.is_empty() {
+                    return UNKNOWN;
+                }
+                let cs_idx: HashMap<&str, Option<&str>> = snap
+                    .callsite_index
+                    .iter()
+                    .map(|cs| (cs.callsite_id.as_str(), cs.control_context.as_deref()))
+                    .collect();
+                let op_idx: HashMap<&str, Option<&str>> = snap
+                    .operation_index
+                    .iter()
+                    .map(|op| (op.operation_id.as_str(), op.control_context.as_deref()))
+                    .collect();
+                let terminal_ctx = if let Some(op_id) = &e.evidence_operation_id {
+                    context_to_conditionality(op_idx.get(op_id.as_str()).copied().flatten())
+                } else if let Some(cs_id) = &e.evidence_callsite_id {
+                    context_to_conditionality(cs_idx.get(cs_id.as_str()).copied().flatten())
+                } else {
+                    UNKNOWN
+                };
+                let mut all_path_conds = Vec::new();
+                for path_hops in &e.via_paths {
+                    let mut hop_ctxs: Vec<&'static str> = Vec::new();
+                    for hop in path_hops {
+                        let csid = hop.inner.callsite_id.as_deref();
+                        if let Some(csid) = csid {
+                            let ctx = cs_idx.get(csid).copied().flatten();
+                            hop_ctxs.push(context_to_conditionality(ctx));
+                        } else {
+                            hop_ctxs.push(UNKNOWN);
+                        }
+                    }
+                    all_path_conds.push(path_conditionality(&hop_ctxs, terminal_ctx));
+                }
+                effect_conditionality(&all_path_conds, e.via_paths_truncated)
+            };
             let ordering_inputs: Vec<crate::engine::l5::ordering_engine::OrderingEffectInput> =
                 effects
                     .iter()
@@ -1983,6 +2032,7 @@ fn digest_query(
                             via_paths_truncated: e.via_paths_truncated,
                             temp_state: e.temp_state.clone(),
                             occurrence_id: e.fact_id.clone(),
+                            conditionality: compute_eff_conditionality(e),
                         },
                     )
                     .collect();
@@ -1991,7 +2041,7 @@ fn digest_query(
                 &ordering_inputs,
                 snap,
                 &callsite_by_id_str,
-                Some(summaries),
+                return_summaries,
                 isolated_event_ids,
             );
             for (i, eff) in effects.iter_mut().enumerate() {
@@ -2206,6 +2256,12 @@ impl Serialize for AnchorSer<'_> {
     }
 }
 
+/// Public helper for digest_cli: convert a `QueryWitnessHop` to a `serde_json::Value`
+/// using the same field ordering as `HopSer`. Used by `project_digest_document`.
+pub fn hop_to_json_value(hop: &QueryWitnessHop) -> serde_json::Value {
+    serde_json::to_value(HopSer(hop)).unwrap_or(serde_json::Value::Null)
+}
+
 /// Ordered effect serialize — FIXED key order: type, detail, provenance, evidence,
 /// [evidenceOperationId], [evidenceCallsiteId], viaPaths, viaPathsTruncated, factId,
 /// canonicalKey, linkSignature.
@@ -2280,6 +2336,10 @@ pub fn compute_digest_effects(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
 /// Compute the per-root digest effects WITH S4 ordering (scopedGuarantees attached).
 /// Mirrors `computeOrderingFacts`: composeSnapshot + computeReturnSummaries +
 /// isolatedEventIds + digestQuery(order:false).
+///
+/// Used by R4-F tests and any caller that needs summaries. For the CLI-B digest pipeline
+/// use `compute_digest_effects_cli` instead (matches TS `runDigestPipeline` which does
+/// NOT pass routineReturnSummaries to digestQuery).
 pub fn compute_digest_effects_with_ordering(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
     let snap = compose_snapshot(resolved);
     let roots = reportable_roots(resolved);
@@ -2294,6 +2354,27 @@ pub fn compute_digest_effects_with_ordering(resolved: &L3Resolved) -> Vec<Digest
         Some(&isolated)
     };
     digest_query(&snap, &roots, Some(&summaries), isolated_opt)
+}
+
+/// Compute the per-root digest effects for the CLI-B digest pipeline.
+///
+/// Mirrors TS `runDigestPipeline → digestQuery({order:false})` exactly: S4 ordering
+/// is computed but `routineReturnSummaries` is NOT passed (the TS CLI path doesn't
+/// pass them, so `errorEscapesChain` always returns false and `IO_BEFORE_ESCAPING_ERROR`
+/// / any error-escape-based labels never fire from this path).
+pub fn compute_digest_effects_cli(
+    snap: &CapabilitySnapshot,
+    resolved: &L3Resolved,
+) -> Vec<DigestEntryResult> {
+    let roots = reportable_roots(resolved);
+    let isolated = crate::engine::l3::event_graph::isolated_event_ids(&resolved.workspace.routines);
+    let isolated_opt = if isolated.is_empty() {
+        None
+    } else {
+        Some(&isolated)
+    };
+    // No routineReturnSummaries — matches TS runDigestPipeline behavior.
+    digest_query(snap, &roots, None, isolated_opt)
 }
 
 /// Project the R4-F digest-effects differential document, PRETTY-serialized with a
