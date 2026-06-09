@@ -1,0 +1,126 @@
+//! D9 — Transaction span summary. Port of al-sem
+//! `src/detectors/d9-transaction-span-summary.ts`.
+//!
+//! For each non-trivial ExplicitCommit transaction span (≥2 routines AND (≥2 tables OR
+//! !coverage_complete)), emit an info-level finding describing what the span covers.
+//! Aimed at code review / agent context, not a bug to fix.
+//!
+//! Within-detector sort by `a.id.cmp(&b.id)` (byte order).
+
+use crate::engine::l3::l3_workspace::L3Resolved;
+use crate::engine::l5::confidence::to_confidence;
+use crate::engine::l5::detector_context::DetectorContext;
+use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::fingerprint::FingerprintIndex;
+use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::transaction_spans::SeedKind;
+
+const DETECTOR: &str = "d9-transaction-span-summary";
+const MIN_INTERESTING_ROUTINES: usize = 2;
+const MIN_INTERESTING_TABLES: usize = 2;
+
+pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+    let ws = &resolved.workspace;
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut candidates_considered = 0usize;
+
+    for span in &ctx.transaction_spans {
+        // §B: checked-run-implicit seeds are for D50 only — D9 ignores them.
+        if span.seed_kind != SeedKind::ExplicitCommit {
+            continue;
+        }
+        let Some(commit_routine) = ctx.routine_by_id.get(span.commit_routine_id.as_str()) else {
+            continue;
+        };
+        // roleOf(routine) === "primary": source-only ⇒ every routine is primary.
+        candidates_considered += 1;
+
+        if span.routines_in_span.len() < MIN_INTERESTING_ROUTINES {
+            continue;
+        }
+
+        let table_count = span.writes_tables.len();
+        let effects_are_interesting =
+            table_count >= MIN_INTERESTING_TABLES || !span.coverage_complete;
+        if !effects_are_interesting {
+            continue;
+        }
+
+        // Single evidence step: commit routine with operationId.
+        let commit_anchor = anchor_of(&commit_routine.source_anchor, commit_routine);
+        let path = vec![EvidenceStep {
+            routine_id: commit_routine.id.clone(),
+            operation_id: Some(span.commit_operation_id.clone()),
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: commit_anchor.clone(),
+            note: "Commit at end of span".to_string(),
+        }];
+
+        // tableDesc: "writes {n} known table(s)" if n>0 else ("writes tables (effect scope unknown)"
+        // if !coverage_complete else "writes tables").
+        let table_desc = if !span.writes_tables.is_empty() {
+            format!("writes {} known table(s)", span.writes_tables.len())
+        } else if !span.coverage_complete {
+            "writes tables (effect scope unknown)".to_string()
+        } else {
+            "writes tables".to_string()
+        };
+
+        let confidence: FindingConfidence = to_confidence(&[], "possible");
+        let id = format!("d9/{}", span.commit_operation_id);
+        let root_cause_key = id.clone();
+
+        let mut finding = Finding {
+            id,
+            root_cause_key,
+            detector: DETECTOR.to_string(),
+            title: "Transaction span summary".to_string(),
+            root_cause: format!(
+                "Transaction ending at {}'s Commit spans {} routines, {}, publishes {} event(s). \
+                 Consider whether all of this needs to be atomic.",
+                commit_routine.name,
+                span.routines_in_span.len(),
+                table_desc,
+                span.publishes_events.len()
+            ),
+            severity: "info".to_string(),
+            confidence,
+            primary_location: commit_anchor,
+            evidence_path: path,
+            additional_paths: None,
+            affected_objects: vec![commit_routine.object_id.clone()],
+            affected_tables: span.writes_tables.clone(),
+            fix_options: vec![FixOption {
+                description: "If the span includes operations that are logically independent, \
+                              split them into separate transactions with their own Commit boundaries."
+                    .to_string(),
+                safety: "low".to_string(),
+            }],
+            provenance: vec![Evidence {
+                source: "tree-sitter".to_string(),
+                note: None,
+            }],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+        };
+        finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
+        findings.push(finding);
+    }
+
+    findings.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let emitted = findings.len();
+    DetectorOutput {
+        findings,
+        stats: DetectorStats {
+            detector: DETECTOR.to_string(),
+            candidates_considered,
+            findings_emitted: emitted,
+        },
+    }
+}

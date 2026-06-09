@@ -1,0 +1,228 @@
+{
+  "fixtureName": "ws-d34",
+  "detectors": [
+    "d34-commit-in-loop"
+  ],
+  "findingCount": 3,
+  "findings": [
+    {
+      "detector": "d34-commit-in-loop",
+      "id": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/loop1/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/op0",
+      "rootCauseKey": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/loop1/11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/op0",
+      "title": "Commit inside a nested loop",
+      "rootCause": "NestedCommit calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.",
+      "severity": "critical",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 21,
+          "startColumn": 16,
+          "endLine": 21,
+          "endColumn": 24
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 20,
+              "startColumn": 12,
+              "endLine": 21,
+              "endColumn": 25
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/loop1"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 21,
+              "startColumn": 16,
+              "endLine": 21,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit (loop depth 2)",
+          "operationId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "f9882570c7a22ad2"
+    },
+    {
+      "detector": "d34-commit-in-loop",
+      "id": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/loop0/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/cs0",
+      "rootCauseKey": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/loop0/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/cs0",
+      "title": "Loop reaches a Commit through a callee",
+      "rootCause": "TransitiveCommit's for loop calls Persist, which commits — per-iteration commits break atomicity even when the Commit isn't visible at the loop site.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 30,
+          "startColumn": 12,
+          "endLine": 30,
+          "endColumn": 22
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 30,
+              "endColumn": 23
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 30,
+              "startColumn": 12,
+              "endLine": 30,
+              "endColumn": 22
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls Persist (transitively commits)",
+          "callsiteId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Verify the callee really needs to Commit. If the loop is correct as written, hoist the work that requires a Commit (or the Commit itself) outside the loop.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "364537eb5e2f2b73"
+    },
+    {
+      "detector": "d34-commit-in-loop",
+      "id": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/loop0/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/op0",
+      "rootCauseKey": "d34/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/loop0/11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/op0",
+      "title": "Commit inside a loop",
+      "rootCause": "DirectCommitInLoop calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 12,
+          "endLine": 9,
+          "endColumn": 20
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 12
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 12,
+              "endLine": 9,
+              "endColumn": 20
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit",
+          "operationId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "bc97bb4c4a83537f"
+    }
+  ]
+}

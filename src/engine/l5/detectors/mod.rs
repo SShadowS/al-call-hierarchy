@@ -1,6 +1,6 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
-//! d22/d33 (R4-B).
+//! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D).
 
 pub mod d10;
 pub mod d11;
@@ -12,11 +12,15 @@ pub mod d21;
 pub mod d22;
 pub mod d29;
 pub mod d33;
+pub mod d34;
+pub mod d35;
 pub mod d36;
 pub mod d38;
 pub mod d4;
 pub mod d5;
 pub mod d7;
+pub mod d8;
+pub mod d9;
 
 use crate::engine::l2::features::{PAnchor, PExpressionInfo};
 use crate::engine::l3::l3_workspace::L3Routine;
@@ -126,6 +130,22 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d38-subscriber-to-obsolete-event".to_string(),
             run: d38::detect_d38,
+        },
+        Detector {
+            name: "d8-commit-in-transaction".to_string(),
+            run: d8::detect_d8,
+        },
+        Detector {
+            name: "d9-transaction-span-summary".to_string(),
+            run: d9::detect_d9,
+        },
+        Detector {
+            name: "d34-commit-in-loop".to_string(),
+            run: d34::detect_d34,
+        },
+        Detector {
+            name: "d35-commit-in-event-subscriber".to_string(),
+            run: d35::detect_d35,
         },
     ]
 }

@@ -39,11 +39,18 @@ const R4_TEST_NAME: &str = "differential_r4_findings_match_goldens";
 /// A smoke entry — the wave representative fixtures (one per substrate wave).
 /// These are kept from R4-0 for continuity; the per-detector fixtures below are the
 /// actual byte-match entries for R4-A.
+///
+/// `corpus_dir` — when `Some`, the corpus directory to run against (may differ from
+/// the golden name / `fixture`). Used when one workspace produces multiple per-detector
+/// goldens (e.g. d9 reuses the `ws-d8-commit-in-tx` corpus but has its own golden).
+/// When `None` the corpus directory equals `fixture`.
 struct Smoke {
     fixture: &'static str,
     wave: &'static str,
     detectors: &'static [&'static str],
     ported: bool,
+    /// Optional: the corpus dir to run. Defaults to `fixture` when `None`.
+    corpus_dir: Option<&'static str>,
 }
 
 /// The wave-representative smoke set (one per substrate wave).
@@ -53,42 +60,49 @@ const SMOKE: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d4-repeated-lookup-in-loop"],
         ported: true,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-d22",
         wave: "R4-B",
         detectors: &["d22-flowfield-without-calcfields"],
         ported: true,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-d12-dead-event",
         wave: "R4-C",
         detectors: &["d12-dead-integration-event"],
         ported: true,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-d8-commit-in-tx",
         wave: "R4-D",
         detectors: &["d8-commit-in-transaction"],
-        ported: false,
+        ported: true,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-d3",
         wave: "R4-E",
         detectors: &["d3-missing-setloadfields"],
         ported: false,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-txn-d47-pos-http-nocommit",
         wave: "R4-F",
         detectors: &["d47-io-unsafe-txn"],
         ported: false,
+        corpus_dir: None,
     },
     Smoke {
         fixture: "ws-d14-dead-routine",
         wave: "R4-G",
         detectors: &["d14-dead-routine"],
         ported: false,
+        corpus_dir: None,
     },
 ];
 
@@ -100,6 +114,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d5-set-based-opportunity"],
         ported: true,
+        corpus_dir: None,
     },
     // d10: self-modifying loop
     Smoke {
@@ -107,6 +122,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d10-self-modifying-loop"],
         ported: true,
+        corpus_dir: None,
     },
     // d11: modify without get (no-get positive)
     Smoke {
@@ -114,6 +130,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d11-modify-without-get"],
         ported: true,
+        corpus_dir: None,
     },
     // d11: modify without get (modifyall+init, second positive fixture)
     Smoke {
@@ -121,6 +138,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d11-modify-without-get"],
         ported: true,
+        corpus_dir: None,
     },
     // d18: constant filter in loop
     Smoke {
@@ -128,6 +146,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d18-constant-filter-in-loop"],
         ported: true,
+        corpus_dir: None,
     },
     // d21: read without load
     Smoke {
@@ -135,6 +154,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d21-read-without-load"],
         ported: true,
+        corpus_dir: None,
     },
     // d36: SetLoadFields placed after the load
     Smoke {
@@ -142,6 +162,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d36-late-setloadfields"],
         ported: true,
+        corpus_dir: None,
     },
     // d19: unused procedure parameter
     Smoke {
@@ -149,6 +170,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d19-unused-parameter"],
         ported: true,
+        corpus_dir: None,
     },
     // d20: unreachable statement after unconditional exit
     Smoke {
@@ -156,6 +178,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d20-unreachable-after-exit"],
         ported: true,
+        corpus_dir: None,
     },
     // d29: event subscriber mutates the inbound record
     Smoke {
@@ -163,6 +186,7 @@ const WAVE_A: &[Smoke] = &[
         wave: "R4-A",
         detectors: &["d29-subscriber-modify-on-event-record"],
         ported: true,
+        corpus_dir: None,
     },
 ];
 
@@ -174,6 +198,7 @@ const WAVE_B: &[Smoke] = &[
         wave: "R4-B",
         detectors: &["d33-unfiltered-bulk-write"],
         ported: true,
+        corpus_dir: None,
     },
 ];
 
@@ -187,6 +212,7 @@ const WAVE_C: &[Smoke] = &[
         wave: "R4-C",
         detectors: &["d7-recursive-event-expansion"],
         ported: true,
+        corpus_dir: None,
     },
     // d38: primary subscriber bound to an [Obsolete] publisher event (2 findings).
     Smoke {
@@ -194,6 +220,37 @@ const WAVE_C: &[Smoke] = &[
         wave: "R4-C",
         detectors: &["d38-subscriber-to-obsolete-event"],
         ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-D per-detector positive fixtures (transaction-span / commit-reachability).
+/// d8's smoke entry already byte-matches above; d9/d34/d35 are the new per-detector
+/// entries. d9 reuses the ws-d8-commit-in-tx corpus (same workspace, different golden).
+const WAVE_D: &[Smoke] = &[
+    // d9: transaction span summary (info-level; reuses d8's corpus dir).
+    Smoke {
+        fixture: "ws-d8-commit-in-tx-d9",
+        wave: "R4-D",
+        detectors: &["d9-transaction-span-summary"],
+        ported: true,
+        corpus_dir: Some("ws-d8-commit-in-tx"),
+    },
+    // d34: Commit inside a loop (direct + transitive; 3 findings).
+    Smoke {
+        fixture: "ws-d34",
+        wave: "R4-D",
+        detectors: &["d34-commit-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // d35: Commit reachable from event subscriber (direct + transitive; 2 findings).
+    Smoke {
+        fixture: "ws-d35",
+        wave: "R4-D",
+        detectors: &["d35-commit-in-event-subscriber"],
+        ported: true,
+        corpus_dir: None,
     },
 ];
 
@@ -299,6 +356,31 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d38-subscriber-to-obsolete-event",
         neutral_fixture: "ws-d12-dead-event",
+    },
+    // d8: ws-d4-repeated-get has no Commit operations at all — no transaction spans
+    // are seeded, so the posting-span check never fires and the detector emits 0.
+    NegativeAssertion {
+        detector: "d8-commit-in-transaction",
+        neutral_fixture: "ws-d4-repeated-get",
+    },
+    // d9: ws-d4-repeated-get has no transaction spans (no Commit) — the
+    // span-summary check never fires and the detector emits 0.
+    NegativeAssertion {
+        detector: "d9-transaction-span-summary",
+        neutral_fixture: "ws-d4-repeated-get",
+    },
+    // d34: ws-d35 has a Commit inside an event subscriber but that subscriber's body
+    // has no loop at all — the in-loop gate suppresses every commit operation, so 0.
+    NegativeAssertion {
+        detector: "d34-commit-in-loop",
+        neutral_fixture: "ws-d35",
+    },
+    // d35: ws-d34 has Commits inside loops and a Persist callee that commits, but NO
+    // [EventSubscriber] routine — the subscriber-kind gate suppresses every
+    // candidate, so 0.
+    NegativeAssertion {
+        detector: "d35-commit-in-event-subscriber",
+        neutral_fixture: "ws-d34",
     },
 ];
 
@@ -424,19 +506,24 @@ fn diff_value(fixture: &str, path: &str, golden: &Value, rust: &Value, out: &mut
 
 /// Run the Rust source-only L5 pass for one fixture over the REGISTERED detectors,
 /// projecting the envelope with the given detector list (findings filtered to that set).
-fn run_rust(fixture: &str, detector_names: &[&str]) -> R4FindingsProjection {
-    let fixture_dir = corpus_dir().join(fixture);
+///
+/// `golden_name` is the `fixtureName` stamped into the projection envelope (must match
+/// the golden file's `fixtureName` field for byte parity). `source_dir` is the corpus
+/// directory to actually parse — when a golden covers a subset of a larger workspace
+/// (e.g. d9 reuses `ws-d8-commit-in-tx`), these two differ.
+fn run_rust(golden_name: &str, source_dir: &str, detector_names: &[&str]) -> R4FindingsProjection {
+    let fixture_dir = corpus_dir().join(source_dir);
     assert!(
         fixture_dir.is_dir(),
-        "R4 golden for {fixture} has no matching in-repo fixture at {} (offline corpus incomplete)",
+        "R4 golden for {golden_name} has no matching in-repo fixture at {} (offline corpus incomplete)",
         fixture_dir.display()
     );
     let names: Vec<String> = detector_names.iter().map(|s| s.to_string()).collect();
     let detectors = registered_detectors();
     match assemble_and_resolve_workspace_default(&fixture_dir) {
-        Some(resolved) => project_r4_findings(&resolved, &detectors, fixture, &names),
+        Some(resolved) => project_r4_findings(&resolved, &detectors, golden_name, &names),
         None => R4FindingsProjection {
-            fixture_name: fixture.to_string(),
+            fixture_name: golden_name.to_string(),
             detectors: names,
             finding_count: 0,
             findings: vec![],
@@ -490,7 +577,8 @@ fn run_smoke_entry(
     let _: R4FindingsProjection = serde_json::from_value(golden_json.clone())
         .unwrap_or_else(|e| panic!("R4 golden {} not R4FindingsProjection: {e}", smoke.fixture));
 
-    let rust = run_rust(smoke.fixture, smoke.detectors);
+    let source_dir = smoke.corpus_dir.unwrap_or(smoke.fixture);
+    let rust = run_rust(smoke.fixture, source_dir, smoke.detectors);
 
     if smoke.ported {
         let rust_text = pretty_with_newline(&rust);
@@ -575,6 +663,15 @@ fn differential_r4_findings_match_goldens() {
 
     // --- R4-C per-detector fixtures -------------------------------------------
     for smoke in WAVE_C {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
+    // --- R4-D per-detector fixtures -------------------------------------------
+    for smoke in WAVE_D {
         if let Some((matched, count)) =
             run_smoke_entry(smoke, &registered_names, &mut all_divergences)
         {
@@ -683,12 +780,13 @@ fn differential_r4_findings_match_goldens() {
     );
 
     eprintln!(
-        "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C wave fixture(s); {} ported (all byte-matched); \
-         {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
+        "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C + {} R4-D wave fixture(s); \
+         {} ported (all byte-matched); {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
         WAVE_A.len(),
         WAVE_B.len(),
         WAVE_C.len(),
+        WAVE_D.len(),
         ported_results.len(),
         NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
@@ -712,12 +810,13 @@ fn refresh_r4_goldens_from_al_sem() {
     let dst = goldens_dir();
     std::fs::create_dir_all(&dst).expect("mk r4 goldens dir");
     let mut copied = 0usize;
-    // Smoke + wave-A + wave-B + wave-C fixtures
+    // Smoke + wave-A + wave-B + wave-C + wave-D fixtures
     let all_fixtures: Vec<&str> = SMOKE
         .iter()
         .chain(WAVE_A.iter())
         .chain(WAVE_B.iter())
         .chain(WAVE_C.iter())
+        .chain(WAVE_D.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

@@ -1,0 +1,137 @@
+{
+  "fixtureName": "ws-d35",
+  "detectors": [
+    "d35-commit-in-event-subscriber"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d35-commit-in-event-subscriber",
+      "id": "d35/11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050/transitive",
+      "rootCauseKey": "d35/11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+      "title": "Commit reachable from event subscriber (via callee)",
+      "rootCause": "OnAfterValidateTransitive is an event subscriber that transitively reaches Commit through its callees — the publisher cannot roll back the committed state if its work later fails.",
+      "severity": "high",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 11,
+          "startColumn": 4,
+          "endLine": 14,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 11,
+              "startColumn": 4,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] OnAfterValidateTransitive transitively commits (mayCommit(summary) == \"yes\")"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ccf950ca2e88a369"
+    },
+    {
+      "detector": "d35-commit-in-event-subscriber",
+      "id": "d35/11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f/11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f/op0",
+      "rootCauseKey": "d35/11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+      "title": "Commit reachable from event subscriber",
+      "rootCause": "OnAfterPostDirect is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 6,
+          "startColumn": 8,
+          "endLine": 6,
+          "endColumn": 16
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] OnAfterPostDirect"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 6,
+              "endColumn": 16
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Commit",
+          "operationId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d350:Codeunit:51100"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ea97463957cc94c1"
+    }
+  ]
+}
