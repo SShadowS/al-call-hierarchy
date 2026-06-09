@@ -91,6 +91,11 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
         // dependency page classifies as `api-page` (mirrors the `object_subtype`
         // forward above and al-sem dependency-projection.ts).
         page_type: o.page_type.clone(),
+        // The ABI projection DOES carry `inherent_commit_behavior` (projection.rs:121,
+        // symbol_reference.rs:99) in canonical lower-case form — forward it so native
+        // + ABI agree on the L3Object shape. Consumed by return_summary to merge
+        // object-level commit behavior into each dep routine's commitBehavior.
+        inherent_commit_behavior: o.inherent_commit_behavior.clone(),
     }
 }
 

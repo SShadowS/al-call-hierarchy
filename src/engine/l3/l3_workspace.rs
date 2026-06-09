@@ -66,6 +66,16 @@ pub struct L3Object {
     /// fixture in the R4-F corpus exercises it). Consumed by R4-F
     /// `root_classification::kinds_for` to classify `api-page` roots.
     pub page_type: Option<String>,
+    /// Object `InherentCommitBehavior` property (Codeunit / Table /
+    /// TableExtension only). Canonical lower-case member: "ignore" | "error" |
+    /// "allow". `None` when absent or an unrecognised value. Additive L2→L3
+    /// forward — L3Object is NOT Serialize-derived into any gate surface, so
+    /// adding this never touches a golden. Populated at L3 assembly (native
+    /// path) from the `InherentCommitBehavior` property; dep objects forward the
+    /// ABI projection's `inherent_commit_behavior` (it carries the same canonical
+    /// lower-case form). Consumed by R4-F `return_summary` to merge the
+    /// object-level commit behavior into each routine's `commitBehavior`.
+    pub inherent_commit_behavior: Option<String>,
 }
 
 /// A workspace field (the L3-relevant subset of al-sem's `Field`).
@@ -611,6 +621,27 @@ fn project_file(
         } else {
             None
         };
+        // Object `InherentCommitBehavior` — Codeunit / Table / TableExtension only
+        // (object-indexer.ts parity). The raw value is a qualified_enum_value like
+        // "InherentCommitBehavior::Ignore"; extract the member after "::", then
+        // lower-case. Unrecognised values → None (conservative).
+        let inherent_commit_behavior = if object_type == "Codeunit"
+            || object_type == "Table"
+            || object_type == "TableExtension"
+        {
+            read_object_property(decl, "InherentCommitBehavior", source).and_then(|raw| {
+                let sep = raw.rfind("::").map(|i| i + 2).unwrap_or(0);
+                let member = raw[sep..].to_lowercase();
+                match member.as_str() {
+                    "ignore" => Some("ignore".to_string()),
+                    "error" => Some("error".to_string()),
+                    "allow" => Some("allow".to_string()),
+                    _ => None,
+                }
+            })
+        } else {
+            None
+        };
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -623,6 +654,7 @@ fn project_file(
             implements_interfaces,
             object_subtype,
             page_type,
+            inherent_commit_behavior,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
