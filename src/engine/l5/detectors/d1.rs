@@ -498,6 +498,11 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let mut skipped_parse_incomplete = 0u64;
     let mut skipped_opaque_callee = 0u64;
     let mut skipped_dynamic_dispatch = 0u64;
+    // downgradedToInfo: counted PER DIRECT IN-LOOP OP, PRE-merge, in the direct-op
+    // branch only (mirrors d1.ts:320-322). NOT reconstructed post-merge by rootCause
+    // text — that would under-count when ≥2 temp ops merge into one finding and
+    // over-count transitive (callee-terminal) temp findings TS never counts.
+    let mut downgraded_to_info = 0u64;
 
     let policy = D1Policy {
         routine_by_id: &ctx.routine_by_id,
@@ -508,7 +513,12 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     };
 
     for routine in &ws.routines {
-        // roleOf(routine) === "primary": source-only ⇒ always true.
+        // roleOf(routine) === "primary": source-only ⇒ always true, so the
+        // `roleOf(r) !== "primary"` candidate gate was dropped. TRACKED LATENT GAP
+        // (applies to ALL primary-scoped default detectors): in cross-app mode this
+        // gate's absence would overcount dependency routines in candidatesConsidered.
+        // A1's corpus is source-only (all-primary), so it's not exercised; to be
+        // locked with a cross-app stats fixture in a later pass.
         if !routine.body_available {
             continue;
         }
@@ -552,6 +562,11 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             let Some(loop_info) = loop_by_id.get(representative_loop).copied() else {
                 continue;
             };
+            // d1.ts:320-322 — known-temp direct op ⇒ severity forced to "info".
+            // Count it here, PER OP, before the finding is built (NOT post-merge).
+            if is_known_temp(op) {
+                downgraded_to_info += 1;
+            }
 
             let loop_step = EvidenceStep {
                 routine_id: routine.id.clone(),
@@ -707,25 +722,18 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         deduped.push(f);
     }
     let mut merged = merge_by_terminal(deduped);
-    // Fingerprint AFTER merge — affectedObjects/affectedTables are unioned.
-    // Also count setup-singleton downgrades (rootCause contains "Setup singleton").
+    // downgradedSetupSingleton: counted POST-merge by rootCause text — TS counts THAT
+    // one post-merge too (d1.ts:439), so the text filter is correct here.
     let mut downgraded_setup_singleton = 0u64;
     for f in &mut merged {
-        f.fingerprint = Some(fp_index.fingerprint_of(f));
         if f.root_cause.contains("Setup singleton") {
             downgraded_setup_singleton += 1;
         }
     }
-    // downgradedToInfo: direct in-loop ops that are known-temp (severity forced to "info").
-    // Count the known-temp direct ops (those that entered severity_for with is_known_temp=true).
-    // al-sem counts these as they are added to findings (before dedup/merge).
-    // In the Rust path, severity "info" from is_known_temp is already baked into the finding;
-    // we count them from the merged findings whose severity is "info" due to temp (but
-    // setup-singletons also get "info" — exclude those). Use the same rootCause marker: "temporary record".
-    let downgraded_to_info = merged
-        .iter()
-        .filter(|f| f.severity == "info" && f.root_cause.contains("temporary record"))
-        .count() as u64;
+    // Fingerprint AFTER merge — affectedObjects/affectedTables are unioned.
+    for f in &mut merged {
+        f.fingerprint = Some(fp_index.fingerprint_of(f));
+    }
     // merge_by_terminal already sorts by compareStrings(id); the explicit final
     // sort by id (al-sem `sorted = merged.sort(...)`) is a no-op duplicate but
     // kept for faithfulness.

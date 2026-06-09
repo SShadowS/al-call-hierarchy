@@ -30,8 +30,8 @@ pub struct Diagnostic {
 ///
 /// `skipped` is a `BTreeMap<String, u64>` that serializes as a JSON object with keys
 /// in alphabetical order (BTreeMap gives this for free). A key is inserted ONLY when
-/// its count is > 0 — except for d43 which always emits `other` (even when 0).
-/// An empty map serializes as `{}`.
+/// its count is > 0 — this present-iff-nonzero rule is UNIVERSAL across all detectors
+/// (d43 was normalized to it too; its golden shows `{}`). An empty map serializes as `{}`.
 ///
 /// Serialization contract (canonical sorted-key JSON):
 ///   - Keys are sorted alphabetically (`BTreeMap` iteration order).
@@ -43,25 +43,24 @@ pub struct DetectorStats {
     pub detector: String,
     pub candidates_considered: usize,
     pub findings_emitted: usize,
-    /// Skip counters. Insert with `skipped.entry(key).and_modify(|v| *v += 1).or_insert(1)`
-    /// or the convenience `insert_skip` method. Keys must match the taxonomy exactly.
+    /// Skip counters. Insert via the `add_skip` method (present-iff-nonzero). Keys must
+    /// match the taxonomy exactly.
     pub skipped: std::collections::BTreeMap<String, u64>,
 }
 
 impl DetectorStats {
     /// Create a new `DetectorStats` with an empty skipped map.
-    pub fn new(detector: impl Into<String>, candidates_considered: usize, findings_emitted: usize) -> Self {
+    pub fn new(
+        detector: impl Into<String>,
+        candidates_considered: usize,
+        findings_emitted: usize,
+    ) -> Self {
         Self {
             detector: detector.into(),
             candidates_considered,
             findings_emitted,
             skipped: std::collections::BTreeMap::new(),
         }
-    }
-
-    /// Increment a skip counter by 1, inserting it if absent.
-    pub fn inc_skip(&mut self, key: &str) {
-        *self.skipped.entry(key.to_string()).or_insert(0) += 1;
     }
 
     /// Add `n` to a skip counter, inserting it if absent. Only inserts when `n > 0`.
@@ -72,17 +71,21 @@ impl DetectorStats {
     }
 
     /// Serialize this stats object to a `serde_json::Value` with alphabetically-sorted
-    /// keys, matching the al-sem `sortedReplacer` output. The field order matches the
+    /// keys, matching the al-sem `sortedReplacer` output. The field order is the
     /// alphabetical key sort: `candidatesConsidered`, `detector`, `findingsEmitted`, `skipped`.
+    ///
+    /// Correctness does NOT depend on the insertion order below: `serde_json::Map` is
+    /// `BTreeMap`-backed (this crate does not enable the `preserve_order` feature), so it
+    /// sorts keys automatically on serialization. If a future maintainer enables
+    /// `preserve_order` (making `Map` an `IndexMap`), THIS code would then emit keys in
+    /// insertion order — and would need explicit alphabetical insertion (which it already
+    /// happens to do) plus the `skipped_obj` map to be sorted too.
     pub fn to_json_value(&self) -> serde_json::Value {
         let skipped_obj: serde_json::Map<String, serde_json::Value> = self
             .skipped
             .iter()
             .map(|(k, v)| (k.clone(), serde_json::Value::Number((*v).into())))
             .collect();
-        // The field ORDER in the serde_json::Map must be alphabetical so that
-        // serde_json::to_string_pretty emits them in alphabetical order.
-        // Use a BTreeMap-backed Map by constructing via sorted insertion.
         let mut obj = serde_json::Map::new();
         obj.insert(
             "candidatesConsidered".to_string(),
