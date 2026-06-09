@@ -50,5 +50,10 @@ pub mod fingerprint;
 pub mod path_walker;
 pub mod registry;
 
+// R4-F Stage-2b — the CapabilitySnapshot CONSUMED-CORE port (composeSnapshot's
+// ordering-facts subset). Re-projects the R3a source-only base into the snapshot
+// shape + the R4-F stable projection. Additive — no detector/gate depends on it.
+pub mod snapshot;
+
 #[cfg(test)]
 mod test_support;

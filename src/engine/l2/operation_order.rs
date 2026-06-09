@@ -76,18 +76,22 @@ pub struct ScopeFrame {
     #[serde(rename = "parentFrameId")]
     pub parent_frame_id: i64,
     pub kind: String,
+    // Field order MUST match al-sem operation-order.ts key-insertion order:
+    // branchAlwaysTerminates (line 67), branchMayFallThrough (68), branchTerminatesBy
+    // (70, LAST + conditional). A swap is byte-invisible until a branch frame carries
+    // branchTerminatesBy (always-terminating branch with a known `by`).
     #[serde(
         rename = "branchAlwaysTerminates",
         skip_serializing_if = "Option::is_none"
     )]
     pub branch_always_terminates: Option<bool>,
-    #[serde(rename = "branchTerminatesBy", skip_serializing_if = "Option::is_none")]
-    pub branch_terminates_by: Option<String>,
     #[serde(
         rename = "branchMayFallThrough",
         skip_serializing_if = "Option::is_none"
     )]
     pub branch_may_fall_through: Option<bool>,
+    #[serde(rename = "branchTerminatesBy", skip_serializing_if = "Option::is_none")]
+    pub branch_terminates_by: Option<String>,
 }
 
 /// The operation-order maps + frame table for a routine.

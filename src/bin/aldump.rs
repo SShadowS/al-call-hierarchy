@@ -49,7 +49,7 @@ fn usage() -> ExitCode {
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
          --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
          --r3a5-cross-app-summary | --r4-findings | --r4f-root-classifications | \
-         --r4f-return-summaries] \
+         --r4f-return-summaries | --r4f-snapshot] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -72,6 +72,7 @@ fn main() -> ExitCode {
     let mut r4_findings = false;
     let mut r4f_root_classifications = false;
     let mut r4f_return_summaries = false;
+    let mut r4f_snapshot = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -142,6 +143,10 @@ fn main() -> ExitCode {
             r4f_return_summaries = true;
             continue;
         }
+        if arg == "--r4f-snapshot" {
+            r4f_snapshot = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -166,6 +171,7 @@ fn main() -> ExitCode {
         r4_findings,
         r4f_root_classifications,
         r4f_return_summaries,
+        r4f_snapshot,
     ]
     .iter()
     .filter(|f| **f)
@@ -391,6 +397,41 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if r4f_snapshot {
+        // R4-F SNAPSHOT (Stage-2b): run the SOURCE-ONLY L0→L3 pipeline, then compose
+        // + project the CapabilitySnapshot CONSUMED-CORE (composeSnapshot's
+        // ordering-facts subset) in the SAME shape/key-order as the al-sem
+        // `<fixture>.snapshot.golden.json`. The projection re-projects the R3a
+        // source-only base (cone facts / typed edges / event graph / coverage /
+        // root classifications). Fail-closed/empty layout → an empty projection.
+        let fixture_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                let json = al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot(
+                    &resolved,
+                    &fixture_name,
+                );
+                // `project_r4f_snapshot` already appends a trailing newline.
+                print!("{json}");
+                return ExitCode::SUCCESS;
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F snapshot projection",
+                    workspace.display()
+                );
+                println!(
+                    "{{\n  \"fixtureName\": {}\n}}",
+                    serde_json::json!(fixture_name)
+                );
+                return ExitCode::SUCCESS;
+            }
+        }
     }
 
     if r4f_root_classifications {

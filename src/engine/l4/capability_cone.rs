@@ -294,7 +294,16 @@ fn classify_value_source(
                 .as_deref()
                 .map(strip_double_quotes)
                 .map(|s| s.to_string());
-            let member = info.member.clone().or_else(|| info.value.clone());
+            // al-sem value-source.ts: `info.member ?? info.value ?? ""` — the `?? ""`
+            // floor means `member` is ALWAYS a string (worst case ""), so it is always
+            // serialized. Without the floor, a qualified_enum_value/database_reference
+            // whose ExpressionInfo carries neither member nor value would omit the key
+            // where al-sem emits "". (Corpus-invisible: corpus enum refs are well-formed.)
+            let member = info
+                .member
+                .clone()
+                .or_else(|| info.value.clone())
+                .or(Some(String::new()));
             ValueSource::Enum {
                 enum_name: enum_name.unwrap_or_default(),
                 member,
@@ -1183,7 +1192,7 @@ fn value_source_json(vs: &Option<ValueSource>) -> String {
     }
 }
 
-fn value_source_to_json(vs: &ValueSource) -> serde_json::Value {
+pub(crate) fn value_source_to_json(vs: &ValueSource) -> serde_json::Value {
     use serde_json::json;
     match vs {
         ValueSource::Literal { value } => json!({"kind":"literal","value":value}),
@@ -1218,7 +1227,7 @@ fn extra_json(extra: &Option<CapabilityExtra>) -> String {
     }
 }
 
-fn extra_to_json(e: &CapabilityExtra) -> serde_json::Value {
+pub(crate) fn extra_to_json(e: &CapabilityExtra) -> serde_json::Value {
     use serde_json::json;
     match e {
         CapabilityExtra::Table {
@@ -2875,6 +2884,114 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
     summaries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
 
     R3a3Projection { summaries }
+}
+
+// ===========================================================================
+// R4-F Stage-2b — SOURCE-ONLY cone/graph BASE for the CapabilitySnapshot.
+//
+// The snapshot's consumed-core derivers (capabilityFacts / typedEdges /
+// operation+callsite evidence / callsiteResolutions / coverage / eventDeclarations)
+// all RE-PROJECT the SAME source-only R3a-3 substrate the cone path assembles. This
+// helper exposes that substrate's RAW (internal-id) parts so `engine::l5::snapshot`
+// reshapes + rewrites-to-stable + sorts WITHOUT re-deriving any fact/edge/cone.
+//
+// Mirrors the inline assembly of `project_r3a3` (resolve_calls → build_event_graph
+// → build_combined_graph → direct_facts_for_routine + uncertainty-folded coverage →
+// compose_cone_over_graph), but returns the parts instead of projecting them.
+// ===========================================================================
+
+/// The RAW source-only L4 cone/graph base — every internal-id part the R4-F
+/// snapshot derivers consume. Built by `build_r3a3_source_only_base`.
+pub struct R3a3SourceBase {
+    /// Workspace routines (clone) — the universe + per-routine features.
+    pub ws_routines: Vec<L3Routine>,
+    /// The combined graph (typed edges + call substrate).
+    pub graph: CombinedGraph,
+    /// The resolved call edges (for the callsite-resolution ledger).
+    pub calls: crate::engine::l3::call_resolver::ResolvedCalls,
+    /// The event graph (publisher symbols + subscriber edges).
+    pub event_graph: EventGraph,
+    /// Per-routine RAW direct capability facts (full, ordered — NOT deduped).
+    pub direct_full: HashMap<String, Vec<CapabilityFact>>,
+    /// Per-routine cone result (inherited facts + coverage), internal-id form.
+    pub cones: HashMap<String, ConeResultPub>,
+    /// Internal RoutineId → StableRoutineId.
+    pub routine_to_stable: HashMap<String, String>,
+}
+
+/// Assemble the RAW source-only cone/graph base (mirrors `project_r3a3`'s inline
+/// assembly, returning the parts). Fail-closed callers get an empty base via the
+/// resolved workspace having zero routines.
+pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
+    let ws: &L3Workspace = &resolved.workspace;
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let event_graph: EventGraph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    // Publisher events indexed by routine (for the publisher-fact injection).
+    let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
+    for evt in &event_graph.events {
+        if let Some(pr) = &evt.publisher_routine_id {
+            publisher_events_by_routine
+                .entry(pr.clone())
+                .or_default()
+                .push(evt);
+        }
+    }
+
+    // Per-routine UNCERTAINTY-DERIVED coverage reasons (summary-runner.ts:565-596).
+    let uncertainty_reasons = compute_uncertainty_coverage_reasons(ws, &graph, &calls);
+
+    // Per-routine direct facts (full) + uncertainty-folded direct coverage.
+    let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+    let mut direct_coverage: HashMap<String, (String, Vec<String>)> = HashMap::new();
+    let empty_pub: Vec<&EventSymbol> = Vec::new();
+    for r in &ws.routines {
+        let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
+        let (facts, mut status, reasons) = direct_facts_for_routine(r, pubs);
+
+        // Fold uncertainty-derived coverage reasons (identical to project_r3a3).
+        let mut reason_set: BTreeSet<String> = reasons.iter().cloned().collect();
+        let base_len = reason_set.len();
+        if let Some(extra_reasons) = uncertainty_reasons.get(&r.id) {
+            for rr in extra_reasons {
+                reason_set.insert(rr.clone());
+            }
+        }
+        let final_reasons: Vec<String> = if reason_set.len() > base_len {
+            if status == "complete" {
+                status = "partial".to_string();
+            }
+            reason_set.into_iter().collect()
+        } else {
+            reasons.clone()
+        };
+
+        direct_coverage.insert(r.id.clone(), (status, final_reasons));
+        direct_full.insert(r.id.clone(), facts);
+    }
+
+    let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
+    let cones = compose_cone_over_graph(&graph, &nodes, &direct_full, &direct_coverage);
+
+    let routine_to_stable: HashMap<String, String> = ws
+        .routines
+        .iter()
+        .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
+        .collect();
+
+    R3a3SourceBase {
+        ws_routines: ws.routines.clone(),
+        graph,
+        calls,
+        event_graph,
+        direct_full,
+        cones,
+        routine_to_stable,
+    }
 }
 
 /// The R3a-3 PROJECTION TAIL — project the per-routine cone results into the

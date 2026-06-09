@@ -1,0 +1,476 @@
+{
+  "fixtureName": "ws-txn-d47-event-pos",
+  "capabilityFactCount": 10,
+  "typedEdgeCount": 2,
+  "operationIndexCount": 2,
+  "callsiteIndexCount": 2,
+  "callsiteResolutionCount": 2,
+  "analysisGapCount": 0,
+  "coverageCount": 3,
+  "eventDeclarationCount": 2,
+  "rootClassificationCount": 2,
+  "hasRoutineOrderFrames": true,
+  "snapshot": {
+    "identities": {
+      "stableIds": [
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50000",
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50001",
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "11111111-0000-0000-0000-0000000d4720:Table:50100"
+      ],
+      "displayNames": [
+        "D47 Evt Publisher",
+        "ProcessAndNotify",
+        "OnAfterProcess",
+        "D47 Evt Subscriber",
+        "HandleAfterProcess",
+        "D47 Evt Rec"
+      ]
+    },
+    "capabilityFacts": [
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "op": "modify",
+        "resourceKind": "table",
+        "resourceId": "11111111-0000-0000-0000-0000000d4720/table/50100",
+        "confidence": "static",
+        "provenance": "direct",
+        "via": "self",
+        "witnessOperationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op1",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Modify",
+          "recordVariableId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/rv/rec",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "op": "publish",
+        "resourceKind": "event",
+        "resourceId": "11111111-0000-0000-0000-0000000d4720/Codeunit/50000/event/onafterprocess",
+        "confidence": "static",
+        "provenance": "inherited",
+        "via": "call",
+        "extra": {
+          "kind": "event",
+          "eventClass": "Integration"
+        },
+        "witnessCallsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0"
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "op": "read",
+        "resourceKind": "table",
+        "resourceId": "11111111-0000-0000-0000-0000000d4720/table/50100",
+        "confidence": "static",
+        "provenance": "direct",
+        "via": "self",
+        "witnessOperationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op0",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/rv/rec",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "op": "send",
+        "resourceKind": "http",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/notify"
+        },
+        "confidence": "static",
+        "provenance": "inherited",
+        "via": "call",
+        "witnessCallsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0",
+        "extra": {
+          "kind": "http",
+          "method": "Post",
+          "bodyArgSource": {
+            "kind": "constant-var",
+            "varName": "content",
+            "initializer": {
+              "kind": "unknown"
+            }
+          }
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "op": "subscribe",
+        "resourceKind": "event",
+        "confidence": "static",
+        "provenance": "inherited",
+        "via": "call",
+        "extra": {
+          "kind": "event",
+          "eventClass": "Integration"
+        },
+        "witnessCallsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0"
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "op": "publish",
+        "resourceKind": "event",
+        "resourceId": "11111111-0000-0000-0000-0000000d4720/Codeunit/50000/event/onafterprocess",
+        "confidence": "static",
+        "provenance": "direct",
+        "via": "self",
+        "extra": {
+          "kind": "event",
+          "eventClass": "Integration"
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "op": "send",
+        "resourceKind": "http",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/notify"
+        },
+        "confidence": "static",
+        "provenance": "inherited",
+        "via": "event-dispatch",
+        "extra": {
+          "kind": "http",
+          "method": "Post",
+          "bodyArgSource": {
+            "kind": "constant-var",
+            "varName": "content",
+            "initializer": {
+              "kind": "unknown"
+            }
+          }
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "op": "subscribe",
+        "resourceKind": "event",
+        "confidence": "static",
+        "provenance": "inherited",
+        "via": "event-dispatch",
+        "extra": {
+          "kind": "event",
+          "eventClass": "Integration"
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "op": "send",
+        "resourceKind": "http",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/notify"
+        },
+        "confidence": "static",
+        "provenance": "direct",
+        "via": "self",
+        "witnessCallsiteId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3/cs0",
+        "extra": {
+          "kind": "http",
+          "method": "Post",
+          "bodyArgSource": {
+            "kind": "constant-var",
+            "varName": "content",
+            "initializer": {
+              "kind": "unknown"
+            }
+          }
+        }
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "op": "subscribe",
+        "resourceKind": "event",
+        "confidence": "static",
+        "provenance": "direct",
+        "via": "self",
+        "extra": {
+          "kind": "event",
+          "eventClass": "Integration"
+        }
+      }
+    ],
+    "typedEdges": [
+      {
+        "kind": "direct-call",
+        "callsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0",
+        "from": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "to": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "sourceAnchor": {
+          "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+          "range": {
+            "startLine": 15,
+            "startColumn": 8,
+            "endLine": 15,
+            "endColumn": 24
+          },
+          "enclosingRoutineId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8",
+          "syntaxKind": "call_expression"
+        },
+        "edgeId": "05fd99d1d5aa47f1"
+      },
+      {
+        "kind": "event-dispatch",
+        "from": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "to": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "eventId": "11111111-0000-0000-0000-0000000d4720/Codeunit/50000/event/onafterprocess",
+        "publishAnchor": {
+          "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+          "range": {
+            "startLine": 19,
+            "startColumn": 4,
+            "endLine": 21,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/8ecd741f61ab0d2e54f53d737d95b2f4bd6f9ec711ba71c9d1ade8f050239b50",
+          "syntaxKind": "procedure"
+        },
+        "subscriberAnchor": {
+          "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+          "range": {
+            "startLine": 3,
+            "startColumn": 4,
+            "endLine": 10,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3",
+          "syntaxKind": "procedure"
+        },
+        "edgeId": "e67f578c4a1297f2"
+      }
+    ],
+    "operationIndex": [
+      {
+        "operationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op0",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "sourceFile": "ws:src/Publisher.Codeunit.al",
+        "startLine": 12,
+        "startColumn": 8,
+        "endLine": 12,
+        "endColumn": 22,
+        "displayText": "Rec.Get",
+        "controlContext": "top-level",
+        "order": {
+          "orderId": 0,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "dominatesSuccessReturn": true
+        }
+      },
+      {
+        "operationId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/op1",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "sourceFile": "ws:src/Publisher.Codeunit.al",
+        "startLine": 14,
+        "startColumn": 8,
+        "endLine": 14,
+        "endColumn": 20,
+        "displayText": "Rec.Modify",
+        "controlContext": "top-level",
+        "order": {
+          "orderId": 1,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "dominatesSuccessReturn": true
+        }
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "callsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "sourceFile": "ws:src/Publisher.Codeunit.al",
+        "startLine": 15,
+        "startColumn": 8,
+        "endLine": 15,
+        "endColumn": 24,
+        "calleeDisplay": "OnAfterProcess",
+        "controlContext": "top-level",
+        "order": {
+          "orderId": 2,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "dominatesSuccessReturn": true
+        }
+      },
+      {
+        "callsiteId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3/cs0",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "sourceFile": "ws:src/Subscriber.Codeunit.al",
+        "startLine": 9,
+        "startColumn": 8,
+        "endLine": 9,
+        "endColumn": 65,
+        "calleeDisplay": "Client.Post",
+        "controlContext": "top-level",
+        "order": {
+          "orderId": 0,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "dominatesSuccessReturn": true
+        }
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "callsiteId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8/cs0",
+        "from": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "calleeDisplay": "OnAfterProcess",
+        "dispatchKind": "direct",
+        "status": "resolved",
+        "resolvedEdges": [
+          "05fd99d1d5aa47f1"
+        ]
+      },
+      {
+        "callsiteId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3/cs0",
+        "from": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "calleeDisplay": "Client.Post",
+        "dispatchKind": "method",
+        "status": "unresolved-receiver-type",
+        "resolvedEdges": []
+      }
+    ],
+    "analysisGaps": [],
+    "coverage": [
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "unknownTargets": []
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "unknownTargets": []
+      },
+      {
+        "subject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [
+      {
+        "kind": "publisher",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "eventId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000::OnAfterProcess::d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "sourceAnchor": {
+          "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+          "range": {
+            "startLine": 19,
+            "startColumn": 4,
+            "endLine": 21,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/8ecd741f61ab0d2e54f53d737d95b2f4bd6f9ec711ba71c9d1ade8f050239b50",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "kind": "subscriber",
+        "routine": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "eventId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000::OnAfterProcess::d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1",
+        "binding": {
+          "publisherObject": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000",
+          "eventName": "OnAfterProcess"
+        },
+        "sourceAnchor": {
+          "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+          "range": {
+            "startLine": 3,
+            "startColumn": 4,
+            "endLine": 10,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "rootClassifications": [
+      {
+        "routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "kinds": [
+          "public-procedure"
+        ],
+        "externallyReachable": true,
+        "source": "ast",
+        "confidence": "static",
+        "sourceAnchor": {
+          "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+          "range": {
+            "startLine": 8,
+            "startColumn": 4,
+            "endLine": 16,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/4e3e888e63bce330dfce9c26ca1d6036c6e285add05714dc15caacda3593ecb8",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
+        "kinds": [
+          "event-subscriber"
+        ],
+        "externallyReachable": true,
+        "source": "ast",
+        "confidence": "static",
+        "sourceAnchor": {
+          "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+          "range": {
+            "startLine": 3,
+            "startColumn": 4,
+            "endLine": 10,
+            "endColumn": 8
+          },
+          "enclosingRoutineId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#d0a450b21f8ea380958c1bfed3418cca2c74830fa0ce77fa007a2e8a51673ea1": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ],
+      "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae": [
+        {
+          "frameId": 0,
+          "parentFrameId": -1,
+          "kind": "block"
+        }
+      ]
+    }
+  }
+}
