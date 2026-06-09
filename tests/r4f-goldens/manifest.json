@@ -1,0 +1,50 @@
+{
+  "description": "R4-F Stage-0a RootClassification[] golden — stable projection of model.rootClassifications from analyzeWorkspace(deterministic: true) per ws-* fixture. Comparison surface for the al-sem → Rust root-classification parity differential. All ids in stable form (StableRoutineId). sourceAnchor omitted (validated at snapshot stage). See scripts/r4f-root-classification-projection.ts.",
+  "capturePoint": "post-classifyRoots+overlayConfigRoots: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0'}) → model.rootClassifications → projectRootClassifications",
+  "note": "Covers job-queue-entrypoint (config), public-procedure (AST), event-subscriber (AST), and trigger kinds. sourceAnchor omitted for lightweight differential. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
+  "alSemGitSha": "94a8b550683ec5d0f08d454eeeea387c9d88305f",
+  "treeSitterAlTag": "v2.5.2-shim",
+  "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
+  "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
+  "modelInstanceId": "r0",
+  "alsemVersion": "r4-f-stage0a",
+  "fixtureCount": 7,
+  "totalClassifications": 8,
+  "fixtures": [
+    {
+      "fixture": "ws-d51-jobqueue",
+      "goldenFile": "ws-d51-jobqueue.rootclass.golden.json",
+      "classificationCount": 1
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "goldenFile": "ws-d51-pos.rootclass.golden.json",
+      "classificationCount": 1
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "goldenFile": "ws-d51-neg.rootclass.golden.json",
+      "classificationCount": 1
+    },
+    {
+      "fixture": "ws-d50-pos",
+      "goldenFile": "ws-d50-pos.rootclass.golden.json",
+      "classificationCount": 1
+    },
+    {
+      "fixture": "ws-d50-neg",
+      "goldenFile": "ws-d50-neg.rootclass.golden.json",
+      "classificationCount": 1
+    },
+    {
+      "fixture": "ws-txn-d47-event-pos",
+      "goldenFile": "ws-txn-d47-event-pos.rootclass.golden.json",
+      "classificationCount": 2
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "goldenFile": "ws-txn-d47-pos-http-nocommit.rootclass.golden.json",
+      "classificationCount": 1
+    }
+  ]
+}

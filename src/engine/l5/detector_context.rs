@@ -113,6 +113,13 @@ pub struct DetectorContext<'a> {
     /// TODO(R4-G+): if any fixture ever sets `internalsVisibleTo`, forward
     /// `primaryInternalsVisibleTo` from the L3 identity and replace this default.
     pub internal_reachable_externally: bool,
+    /// R4-F root classifications (`model.rootClassifications`), keyed by INTERNAL
+    /// RoutineId — d50/d51 look these up exactly like al-sem's
+    /// `model.rootClassifications.find(r => r.routineId === routine.id)`. Carried
+    /// verbatim from the resolved workspace (AST classifier + roots.config
+    /// overlay). Empty when the resolve path produced no classifications.
+    pub root_classifications_by_routine:
+        HashMap<String, crate::engine::root_classification::RootClassification>,
     // TODO(R4-F): get_ordering_facts() (D47).
 }
 
@@ -341,6 +348,16 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
         calls.upgraded_bindings.clone();
 
+    // R4-F root classifications — keyed by internal RoutineId for d50/d51 lookup.
+    let root_classifications_by_routine: HashMap<
+        String,
+        crate::engine::root_classification::RootClassification,
+    > = resolved
+        .root_classifications
+        .iter()
+        .map(|rc| (rc.routine_id.clone(), rc.clone()))
+        .collect();
+
     DetectorContext {
         graph,
         event_graph,
@@ -360,5 +377,6 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         upgraded_bindings_by_callsite,
         reachable_roots,
         internal_reachable_externally,
+        root_classifications_by_routine,
     }
 }

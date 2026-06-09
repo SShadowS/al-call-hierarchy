@@ -57,6 +57,15 @@ pub struct L3Object {
     /// projection's `object_subtype` (it DOES expose it for Codeunits — native+ABI
     /// agree on shape). Consumed by d46 to classify lifecycle objects.
     pub object_subtype: Option<String>,
+    /// Object `PageType` property (Page / PageExtension only; e.g. "API" /
+    /// "Card" / "List"), else `None`. Additive L2→L3 forward — L3Object is NOT
+    /// Serialize-derived into any gate surface (R0–R3 goldens are
+    /// field-allowlisted projections), so adding this never touches a golden.
+    /// Populated at L3 assembly (native path) from the `PageType` property; dep
+    /// objects use `None` (the ABI projection does not expose it — no API-page
+    /// fixture in the R4-F corpus exercises it). Consumed by R4-F
+    /// `root_classification::kinds_for` to classify `api-page` roots.
+    pub page_type: Option<String>,
 }
 
 /// A workspace field (the L3-relevant subset of al-sem's `Field`).
@@ -594,6 +603,14 @@ fn project_file(
         } else {
             None
         };
+        // Object `PageType` — Page / PageExtension only (object-indexer.ts
+        // `pageType` parity). R4-F `root_classification` reads this to classify
+        // `api-page` roots (PageType == "API", case-insensitive).
+        let page_type = if object_type == "Page" || object_type == "PageExtension" {
+            read_object_property(decl, "PageType", source)
+        } else {
+            None
+        };
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -605,6 +622,7 @@ fn project_file(
             extends_target_name,
             implements_interfaces,
             object_subtype,
+            page_type,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
@@ -835,7 +853,13 @@ pub fn assemble_and_resolve(
 ) -> L3Resolved {
     let mut workspace = assemble_workspace(files, app_guid, model_instance_id);
     resolve(&mut workspace);
-    L3Resolved { workspace }
+    // Inline path: no disk `roots.config.json` ⇒ AST-only classifications.
+    let root_classifications =
+        crate::engine::root_classification::compute_root_classifications(&workspace, None);
+    L3Resolved {
+        workspace,
+        root_classifications,
+    }
 }
 
 /// Assemble the workspace L3 model from inline `(name, source)` files WITHOUT
@@ -951,7 +975,15 @@ pub fn assemble_and_resolve_workspace(
     let resolved = {
         let mut ws = assemble_l3_workspace_from_disk(workspace, model_instance_id)?;
         resolve(&mut ws);
-        L3Resolved { workspace: ws }
+        // R4-F: classify AST roots, then overlay `<workspace>/roots.config.json`.
+        // `workspace` is the root where the config lives (mirrors al-sem's
+        // index.ts: `loadRootsConfig(workspaceRoot)`).
+        let root_classifications =
+            crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
+        L3Resolved {
+            workspace: ws,
+            root_classifications,
+        }
     };
     // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
     if resolved.workspace.objects.is_empty() && resolved.workspace.routines.is_empty() {
@@ -1057,6 +1089,13 @@ pub fn to_stable_table_id(internal: &str) -> String {
 /// surface compares.
 pub struct L3Resolved {
     pub workspace: L3Workspace,
+    /// R4-F root classifications (`model.rootClassifications`): the AST root
+    /// classifier overlaid with any `<workspace>/roots.config.json`. Computed at
+    /// the disk-backed resolve entry (`assemble_and_resolve_workspace`, where the
+    /// workspace root is known); the inline / cross-app constructors that have no
+    /// disk config populate the AST-only set (empty config). Consumed by the L5
+    /// `DetectorContext` (d50/d51) and the R4-F stable projection.
+    pub root_classifications: Vec<crate::engine::root_classification::RootClassification>,
 }
 
 // ---------------------------------------------------------------------------

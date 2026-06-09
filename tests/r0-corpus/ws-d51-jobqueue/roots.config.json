@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"roots": [
+		{
+			"id": "post-then-error-jobqueue",
+			"target": {
+				"objectId": "aaaabbbb-cccc-dddd-eeee-000000000d51/Codeunit/50101",
+				"routineName": "PostThenError"
+			},
+			"kinds": ["job-queue-entrypoint"],
+			"note": "Processed by a Job Queue Entry; failed attempts are retried."
+		}
+	]
+}

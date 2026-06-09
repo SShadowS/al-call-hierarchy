@@ -86,6 +86,11 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
         // The ABI projection DOES carry `object_subtype` (projection.rs:116) —
         // forward it so native + ABI agree on the L3Object shape (d46 reads it).
         object_subtype: o.object_subtype.clone(),
+        // The ABI projection DOES carry `page_type` (projection.rs) — forward it so
+        // native + ABI agree on the L3Object shape and a cross-app `PageType=API`
+        // dependency page classifies as `api-page` (mirrors the `object_subtype`
+        // forward above and al-sem dependency-projection.ts).
+        page_type: o.page_type.clone(),
     }
 }
 
@@ -303,8 +308,16 @@ pub fn build_cross_app_l3(
     //    merge_extension_fields). Same `resolve` the native path runs — no new algo.
     resolve(&mut ws);
 
+    // R4-F: classify AST roots over the MERGED whole, then overlay
+    // `<workspace>/roots.config.json` (config lives at the workspace root).
+    let root_classifications =
+        crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
+
     Some(CrossAppL3 {
-        resolved: L3Resolved { workspace: ws },
+        resolved: L3Resolved {
+            workspace: ws,
+            root_classifications,
+        },
         declared_dep_app_guids: declared_dep_app_guids.to_vec(),
         fetched_app_guids,
         apps,

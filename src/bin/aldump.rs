@@ -48,7 +48,7 @@ fn usage() -> ExitCode {
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
          --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
-         --r3a5-cross-app-summary | --r4-findings] \
+         --r3a5-cross-app-summary | --r4-findings | --r4f-root-classifications] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -69,6 +69,7 @@ fn main() -> ExitCode {
     let mut r3a4_dep_hooks = false;
     let mut r3a5_cross_app_summary = false;
     let mut r4_findings = false;
+    let mut r4f_root_classifications = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -131,6 +132,10 @@ fn main() -> ExitCode {
             r4_findings = true;
             continue;
         }
+        if arg == "--r4f-root-classifications" {
+            r4f_root_classifications = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -153,6 +158,7 @@ fn main() -> ExitCode {
         r3a4_dep_hooks,
         r3a5_cross_app_summary,
         r4_findings,
+        r4f_root_classifications,
     ]
     .iter()
     .filter(|f| **f)
@@ -333,6 +339,49 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize R4 findings projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if r4f_root_classifications {
+        // R4-F ROOT CLASSIFICATIONS: run the SOURCE-ONLY L0→L3 pipeline (which now
+        // classifies AST roots + overlays `<workspace>/roots.config.json`), then
+        // emit the STABLE RootClassification projection in the SAME shape/key-order
+        // as the al-sem `<fixture>.rootclass.golden.json`. Fail-closed/empty layout
+        // → an empty projection (never throws).
+        let fixture_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let projection = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                al_call_hierarchy::engine::root_classification::project_r4f_root_classifications(
+                    &resolved,
+                    &fixture_name,
+                )
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F root-classification projection",
+                    workspace.display()
+                );
+                al_call_hierarchy::engine::root_classification::R4FRootClassProjection {
+                    fixture_name,
+                    classification_count: 0,
+                    classifications: vec![],
+                }
+            }
+        };
+        return match serde_json::to_string_pretty(&projection) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!(
+                    "aldump: error: failed to serialize R4-F root-classification projection: {e}"
+                );
                 ExitCode::FAILURE
             }
         };
