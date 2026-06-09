@@ -16,8 +16,14 @@
 //! ## compareStrings
 //! All string comparisons that mirror al-sem's `compareStrings` use Rust `str::cmp`
 //! (byte-order). For the BMP-only identifier strings in the corpus this is identical
-//! to JS's UTF-16 code-unit order. The task spec requires the engine's existing
-//! comparator — `str::cmp` is correct for these strings.
+//! to JS's UTF-16 code-unit order, so the goldens byte-match.
+//!
+//! TRACKED FOLLOW-UP (engine-wide UTF-16 `compareStrings`): al-sem's `compareStrings`
+//! is true UTF-16 code-unit order. For non-BMP scalars (astral plane, e.g. emoji)
+//! Rust `str::cmp` (UTF-8 byte order) DIVERGES from JS. When the engine-wide swap to a
+//! shared UTF-16 comparator lands, these sites must use `a.encode_utf16().cmp(b.encode_utf16())`
+//! (true UTF-16 code-unit order) — NOT byte order, which would still diverge for non-BMP.
+//! No corpus string exercises this today; behavior is intentionally left as `str::cmp`.
 
 use indexmap::IndexMap;
 
@@ -182,6 +188,12 @@ fn render_single(f: &FindingSummary, lines: &mut Vec<String>) {
     if let Some(ref tl) = f.terminal_location {
         lines.push(format!("    terminal: {}", loc_str(tl)));
     }
+    // TS uses a bare truthy check (`f.confidence.cappedBy ? ...`). The `!is_empty()`
+    // guard is equivalent because `cappedBy` is NEVER `[]` — producers emit `undefined`
+    // (None) or a non-empty array (confidence.ts:64 / path-merge.ts:106). An empty array
+    // would diverge from TS's ` (capped by )`; the guard keeps the safer behavior and is
+    // consistent with `render_rolled`. NOT sorted here (TS `renderSingle` joins as-is —
+    // only `renderRolled` sorts its deduped union).
     let cap_str = match &f.confidence_capped_by {
         Some(cb) if !cb.is_empty() => format!(" (capped by {})", cb.join(", ")),
         _ => String::new(),
@@ -367,7 +379,10 @@ pub enum GroupBy {
 
 impl GroupBy {
     /// Parse from the string value stored in `AnalyzeArgs::group_by`.
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Named `parse` (not `from_str`) to avoid the `std::str::FromStr` trait
+    /// convention collision — `FromStr::from_str` returns `Result`, this returns
+    /// `Option`, and the inherent name trips clippy `should_implement_trait`.
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "object" => Some(GroupBy::Object),
             "routine" => Some(GroupBy::Routine),
@@ -606,5 +621,183 @@ mod tests {
         assert_eq!(groups[0].1, 2);
         assert_eq!(groups[1].0, "d2");
         assert_eq!(groups[1].1, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Render sub-branch oracles — these branches are NOT exercised by the 27
+    // differential goldens (corpus-invisible). They read correct on inspection;
+    // these tests lock them against regression (same discipline as A1/A2 oracles).
+    // -----------------------------------------------------------------------
+
+    /// Build a `FindingLocation` with object + routine names (so `loc_str`
+    /// emits the ` in Obj :: Rtn` suffix).
+    fn loc(file: &str, line: u32, col: u32) -> FindingLocation {
+        FindingLocation {
+            file: file.to_string(),
+            line,
+            column: col,
+            object_id: Some("11111111/Codeunit/50000".to_string()),
+            object_name: Some("Obj".to_string()),
+            routine_id: Some("rid".to_string()),
+            routine_name: Some("Rtn".to_string()),
+        }
+    }
+
+    /// Oracle 1: render_single emits the `terminal:` line when terminal_location is Some.
+    #[test]
+    fn oracle_render_single_terminal_line() {
+        let mut f = make_finding("f1", "d1", "high", "ws:src/A.al", 10, 5, vec![]);
+        f.primary_location = loc("ws:src/A.al", 10, 5);
+        f.terminal_location = Some(loc("ws:src/B.al", 20, 7));
+        let mut lines = Vec::new();
+        render_single(&f, &mut lines);
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == "    terminal: ws:src/B.al:20:7 in Obj :: Rtn"),
+            "expected terminal: line, got:\n{lines:#?}"
+        );
+    }
+
+    /// Oracle 2: path_count == 2 → SINGULAR "1 other path" (not "paths").
+    #[test]
+    fn oracle_render_single_singular_other_path() {
+        let mut f = make_finding("f1", "d1", "high", "ws:src/A.al", 10, 5, vec![]);
+        f.path_count = 2;
+        let mut lines = Vec::new();
+        render_single(&f, &mut lines);
+        let line = lines
+            .iter()
+            .find(|l| l.contains("also reached from"))
+            .expect("expected 'also reached from' line");
+        assert!(
+            line.contains("1 other path ") && !line.contains("other paths"),
+            "expected SINGULAR '1 other path', got: {line:?}"
+        );
+    }
+
+    /// Oracle 3: render_single capped-by suffix (comma-joined, join-as-is order).
+    #[test]
+    fn oracle_render_single_capped_by() {
+        let mut f = make_finding("f1", "d1", "high", "ws:src/A.al", 10, 5, vec![]);
+        f.confidence_level = "possible".to_string();
+        // TS renderSingle does NOT sort — joins in array order. Use a non-sorted
+        // order to prove we mirror the join-as-is behavior.
+        f.confidence_capped_by = Some(vec!["zeta".to_string(), "alpha".to_string()]);
+        let mut lines = Vec::new();
+        render_single(&f, &mut lines);
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == "    confidence: possible (capped by zeta, alpha)"),
+            "expected join-as-is capped-by suffix, got:\n{lines:#?}"
+        );
+    }
+
+    /// Build a rolled group from contributors directly (canonical = first).
+    fn rolled_from(contributors: Vec<FindingSummary>) -> (FindingLocation, Vec<FindingSummary>) {
+        let primary = contributors[0].primary_location.clone();
+        (primary, contributors)
+    }
+
+    /// Oracle 4: render_rolled worst-confidence selection.
+    #[test]
+    fn oracle_render_rolled_worst_confidence() {
+        // Case A: includes "confirmed" + "possible" → worst (lowest in order found
+        // first: confirmed) — al-sem `order.find` returns the FIRST level present in
+        // [confirmed, likely, possible], i.e. the BEST present, labeled "worst-case".
+        let mut a1 = make_finding("a1", "d1", "high", "ws:src/A.al", 1, 1, vec![]);
+        a1.confidence_level = "confirmed".to_string();
+        let mut a2 = make_finding("a2", "d2", "high", "ws:src/A.al", 1, 1, vec![]);
+        a2.confidence_level = "possible".to_string();
+        let (loc_a, contrib_a) = rolled_from(vec![a1, a2]);
+        let mut lines = Vec::new();
+        render_rolled(&loc_a, &contrib_a, &mut lines);
+        assert!(
+            lines.iter().any(|l| l == "    confidence: confirmed"),
+            "case A: expected 'confidence: confirmed', got:\n{lines:#?}"
+        );
+
+        // Case B: only "possible" present → "possible".
+        let mut b1 = make_finding("b1", "d1", "high", "ws:src/A.al", 1, 1, vec![]);
+        b1.confidence_level = "possible".to_string();
+        let mut b2 = make_finding("b2", "d2", "high", "ws:src/A.al", 1, 1, vec![]);
+        b2.confidence_level = "possible".to_string();
+        let (loc_b, contrib_b) = rolled_from(vec![b1, b2]);
+        let mut lines_b = Vec::new();
+        render_rolled(&loc_b, &contrib_b, &mut lines_b);
+        assert!(
+            lines_b.iter().any(|l| l == "    confidence: possible"),
+            "case B: expected 'confidence: possible', got:\n{lines_b:#?}"
+        );
+
+        // Case C: all-unknown confidence levels → unwrap_or("possible") fallback.
+        let mut c1 = make_finding("c1", "d1", "high", "ws:src/A.al", 1, 1, vec![]);
+        c1.confidence_level = "weird".to_string();
+        let mut c2 = make_finding("c2", "d2", "high", "ws:src/A.al", 1, 1, vec![]);
+        c2.confidence_level = "alsoweird".to_string();
+        let (loc_c, contrib_c) = rolled_from(vec![c1, c2]);
+        let mut lines_c = Vec::new();
+        render_rolled(&loc_c, &contrib_c, &mut lines_c);
+        assert!(
+            lines_c.iter().any(|l| l == "    confidence: possible"),
+            "case C: expected fallback 'confidence: possible', got:\n{lines_c:#?}"
+        );
+    }
+
+    /// Oracle 5: render_rolled SAFETY_RANK reorder (high → medium → low).
+    #[test]
+    fn oracle_render_rolled_safety_reorder() {
+        // Contributors added in low/high/medium order; fix options must come out
+        // ordered high → medium → low.
+        let mut c_low = make_finding("clow", "d-low", "high", "ws:src/A.al", 1, 1, vec![]);
+        c_low.fix_hint = Some(("LOW FIX".to_string(), "low".to_string()));
+        let mut c_high = make_finding("chigh", "d-high", "high", "ws:src/A.al", 1, 1, vec![]);
+        c_high.fix_hint = Some(("HIGH FIX".to_string(), "high".to_string()));
+        let mut c_med = make_finding("cmed", "d-med", "high", "ws:src/A.al", 1, 1, vec![]);
+        c_med.fix_hint = Some(("MED FIX".to_string(), "medium".to_string()));
+        let (loc_r, contrib) = rolled_from(vec![c_low, c_high, c_med]);
+        let mut lines = Vec::new();
+        render_rolled(&loc_r, &contrib, &mut lines);
+        // Find the fix-option lines (after the "fix options (safest first):" header).
+        let header_idx = lines
+            .iter()
+            .position(|l| l == "    fix options (safest first):")
+            .expect("expected fix options header");
+        let fix_lines = &lines[header_idx + 1..];
+        assert_eq!(
+            fix_lines[0], "      \u{2022} (high) HIGH FIX  [d-high]",
+            "first fix must be high-safety"
+        );
+        assert_eq!(
+            fix_lines[1], "      \u{2022} (medium) MED FIX  [d-med]",
+            "second fix must be medium-safety"
+        );
+        assert_eq!(
+            fix_lines[2], "      \u{2022} (low) LOW FIX  [d-low]",
+            "third fix must be low-safety"
+        );
+    }
+
+    /// Oracle 6: render_rolled cappedBy union — deduped + sorted across contributors.
+    #[test]
+    fn oracle_render_rolled_capped_by_union() {
+        let mut c1 = make_finding("c1", "d1", "high", "ws:src/A.al", 1, 1, vec![]);
+        c1.confidence_level = "likely".to_string();
+        c1.confidence_capped_by = Some(vec!["zeta".to_string(), "beta".to_string()]);
+        let mut c2 = make_finding("c2", "d2", "high", "ws:src/A.al", 1, 1, vec![]);
+        c2.confidence_level = "likely".to_string();
+        // overlapping "beta" (dedup) + new "alpha".
+        c2.confidence_capped_by = Some(vec!["beta".to_string(), "alpha".to_string()]);
+        let (loc_r, contrib) = rolled_from(vec![c1, c2]);
+        let mut lines = Vec::new();
+        render_rolled(&loc_r, &contrib, &mut lines);
+        // Union deduped {zeta, beta, alpha} → sorted → alpha, beta, zeta.
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == "    confidence: likely (capped by alpha, beta, zeta)"),
+            "expected deduped+sorted union, got:\n{lines:#?}"
+        );
     }
 }

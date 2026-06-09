@@ -391,7 +391,7 @@ pub fn run_analyze_with_exit(
             let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
             // group-by path: only when format==terminal AND group_by is set.
             if let Some(ref by_str) = args.group_by {
-                if let Some(by) = GroupBy::from_str(by_str) {
+                if let Some(by) = GroupBy::parse(by_str) {
                     format_terminal_grouped(&summaries, &coverage, by)
                 } else {
                     // Invalid group_by — the CLI validates this, so treat as plain.
