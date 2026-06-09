@@ -41,6 +41,10 @@ pub mod table_display;
 pub mod confidence;
 pub mod detector_context;
 pub mod detectors;
+// Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
+// event-flow detectors consume. NO detectors yet — index + query + fan-out +
+// chain-walk substrate only.
+pub mod event_flow;
 pub mod finding;
 pub mod fingerprint;
 pub mod path_walker;

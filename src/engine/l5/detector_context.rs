@@ -29,6 +29,7 @@ use crate::engine::l4::combined_graph::{build_combined_graph, CombinedGraph};
 use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
 use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
 use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
+use crate::engine::l5::event_flow::{build_event_flow_indexes, EventFlowIndexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::{build_reverse_call_graph, ReverseCallGraph};
 use crate::engine::l5::transaction_spans::{compute_transaction_spans, TransactionSpan};
@@ -67,8 +68,14 @@ pub struct DetectorContext<'a> {
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
     pub summaries: HashMap<String, FullRoutineSummary>,
-    // TODO(R4-C/D/G): reachable_roots + internal_reachable_externally (D14),
-    // get_event_flow_indexes() (D43/D44/D45), get_ordering_facts() (D47).
+    /// The shared event-flow indexes (publisher/subscriber lookup tables) the
+    /// d43/d44/d45 event-flow detectors consume. al-sem builds this LAZILY
+    /// (`ctx.getEventFlowIndexes()`, memoized); the Rust port builds it EAGERLY
+    /// here — deterministic, one pass over `event_graph.events`/`.edges`, matching
+    /// how `event_graph`/`transaction_spans` are already eager.
+    pub event_flow_indexes: EventFlowIndexes,
+    // TODO(R4-F/G): reachable_roots + internal_reachable_externally (D14),
+    // get_ordering_facts() (D47).
 }
 
 /// Build the shared context. Runs the SOURCE-ONLY L3→L4 substrate (symbols →
@@ -152,6 +159,11 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         &reverse_call_graph,
         &summaries,
     );
+
+    // Event-flow indexes — built eagerly from the L3 event graph + routine set +
+    // dep set (source-only ⇒ empty dep set ⇒ every routine primary). Consumes
+    // `event_graph` by reference before it is moved into the struct.
+    let event_flow_indexes = build_event_flow_indexes(&event_graph, &ws.routines, &dep_routine_ids);
 
     let mut resolved_call_edge_by_callsite: HashMap<String, CallEdge> = HashMap::new();
     for ce in &calls.edges {
@@ -258,5 +270,6 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         uncertainties_by_node,
         call_site_by_id,
         summaries,
+        event_flow_indexes,
     }
 }
