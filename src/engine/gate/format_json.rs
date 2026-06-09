@@ -39,6 +39,14 @@ pub fn sort_and_drop_nulls(value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
             // Collect, drop nulls, sort by key, recurse into values.
+            //
+            // NULL-vs-UNDEFINED ASSUMPTION (mirrors al-sem `sortedReplacer`, which
+            // drops `undefined` but KEEPS `null`): this engine NEVER builds a genuine
+            // JSON `null` into the analyze payload — every optional field is ABSENT
+            // (the `if let Some(..)` insert pattern) when undefined, never inserted as
+            // `Value::Null`. So dropping nulls here is equivalent to JS's undefined-drop.
+            // If a future field is legitimately `null`-valued (not absent-when-missing),
+            // this drop would silently squelch it — revisit then.
             let mut pairs: Vec<(String, serde_json::Value)> = map
                 .into_iter()
                 .filter(|(_, v)| !v.is_null())
@@ -295,21 +303,27 @@ pub fn build_analyze_json(inputs: &JsonFormatInputs<'_>) -> String {
 
     // --- envelope ---
     let generated_at = if inputs.deterministic {
+        // Pinned constant. al-sem's deterministic path uses the LITERAL string
+        // "1970-01-01T00:00:00Z" (20 bytes, NO milliseconds) — NOT `toISOString()`
+        // of epoch 0 (which would be the 24-byte ".000Z" form). The golden
+        // differential corpus pins this exact value; do not add milliseconds here.
         "1970-01-01T00:00:00Z".to_string()
     } else {
-        // ISO 8601 timestamp — non-deterministic path (tests always use deterministic).
+        // ISO 8601 timestamp — non-deterministic (live) path. JS `new Date().toISOString()`
+        // emits 24 bytes WITH 3-digit milliseconds (`YYYY-MM-DDTHH:mm:ss.sssZ`); match
+        // that exactly so the live CLI's envelope is byte-faithful to al-sem.
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        // Format as RFC 3339 / ISO 8601: YYYY-MM-DDTHH:MM:SSZ
         let secs = now.as_secs();
+        let ms = now.subsec_millis();
         let s = secs % 60;
         let m = (secs / 60) % 60;
         let h = (secs / 3600) % 24;
         let days = secs / 86400;
         // Approximate calendar date from days since epoch (ignores leap seconds).
         let (y, mo, d) = days_to_ymd(days);
-        format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+        format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.{ms:03}Z")
     };
 
     let mut envelope = serde_json::Map::new();

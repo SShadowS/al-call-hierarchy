@@ -127,7 +127,15 @@ pub(crate) fn read_root_app_guid(workspace: &Path) -> Option<String> {
 /// Count `app.json` files anywhere under `workspace`, EXCLUDING `node_modules`
 /// and `.alpackages` (case-insensitive). Mirrors al-sem `SKIP_DIR_EXACT`.
 pub(crate) fn count_app_json(workspace: &Path) -> usize {
-    let mut count = 0usize;
+    count_app_json_paths(workspace).len()
+}
+
+/// Collect the absolute paths of every `app.json` anywhere under `workspace`,
+/// EXCLUDING `node_modules` and `.alpackages` (case-insensitive). Mirrors al-sem
+/// `SKIP_DIR_EXACT`. Used by the gate's `workspace_diagnostics` to reproduce the
+/// provider's multi-app fail-closed message (which sorts these paths).
+pub(crate) fn count_app_json_paths(workspace: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut stack = vec![workspace.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -146,11 +154,11 @@ pub(crate) fn count_app_json(workspace: &Path) -> usize {
             } else if ftype.is_file()
                 && entry.file_name().to_string_lossy().to_lowercase() == "app.json"
             {
-                count += 1;
+                paths.push(entry.path());
             }
         }
     }
-    count
+    paths
 }
 
 // ---------------------------------------------------------------------------

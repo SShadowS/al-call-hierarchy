@@ -216,19 +216,47 @@ pub fn run_analyze_with_exit(
     // role-scoped out (source-only ⇒ no-op).
     let run = run_detectors(&resolved, &detectors);
     // Capture diagnostics + detector stats for the Json formatter (consumed after filtering).
-    // Merge infra diagnostics (e.g. kinds-mismatch from roots.config.json overlay) with
-    // detector-emitted diagnostics (e.g. d43 substrate guard) — mirrors al-sem's flat
-    // `result.diagnostics` which combines all diagnostic sources.
+    //
+    // al-sem `analyzeWorkspace` (src/index.ts:287-297) concatenates SIX diagnostic
+    // sources, IN THIS ORDER, into the flat `result.diagnostics` the JSON envelope
+    // serializes:
+    //   1. workspace.diagnostics  — provider (remapped "discover") + index/parse
+    //   2. depArtifacts.diagnostics — dependency-artifact resolution
+    //   3. summarizeDiagnostics   — L4 `computeSummaries`
+    //   4. loadedRootsConfig.diagnostics — roots.config.json LOADER (parse/schema)
+    //   5. overlayDiagnostics     — roots.config.json OVERLAY (kinds-mismatch)
+    //   6. detectDiagnostics      — L5 detector-emitted (e.g. d43 substrate guard)
+    //
+    // Each source preserves a deterministic (insertion / sorted-file) order — no
+    // HashMap/HashSet iteration leaks into this concatenation (the determinism
+    // contract). `infra_diagnostics` is the OVERLAY source (5); `run.diagnostics`
+    // is DETECT (6). The TS-order #1 (workspace) goes FIRST so it precedes overlay.
     let run_diagnostics: Vec<crate::engine::l5::registry::Diagnostic> = {
-        let mut all: Vec<crate::engine::l5::registry::Diagnostic> = resolved
-            .infra_diagnostics
-            .iter()
-            .map(|d| crate::engine::l5::registry::Diagnostic {
+        let mut all: Vec<crate::engine::l5::registry::Diagnostic> = Vec::new();
+        // (1) workspace.diagnostics — provider (discover) + index, computed from disk.
+        all.extend(
+            crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path),
+        );
+        // (2) depArtifacts.diagnostics — TRACKED GAP: the gate's source-only pipeline
+        //     does not resolve `.app` dependency artifacts, so this source is always
+        //     empty here. (When dep resolution is wired into the gate, emit it in this
+        //     slot so a dep diagnostic lands in TS order before summarize.)
+        // (3) summarizeDiagnostics — TRACKED GAP: L4 `computeSummaries` runs inside
+        //     `run_detectors`'s DetectorContext and currently surfaces no diagnostics
+        //     to the gate. Slotted here for TS order when it does.
+        // (4) loadedRootsConfig.diagnostics — TRACKED GAP: the roots.config.json LOADER
+        //     diagnostics (parse/schema errors) are not yet surfaced separately from the
+        //     OVERLAY diagnostics by `compute_root_classifications`. The overlay
+        //     diagnostics (5) below cover the kinds-mismatch case the corpus exercises.
+        // (5) overlayDiagnostics — roots.config.json overlay (kinds-mismatch warnings).
+        all.extend(resolved.infra_diagnostics.iter().map(|d| {
+            crate::engine::l5::registry::Diagnostic {
                 severity: d.severity.clone(),
                 stage: d.stage.clone(),
                 message: d.message.clone(),
-            })
-            .collect();
+            }
+        }));
+        // (6) detectDiagnostics — L5 detector-emitted (d43 substrate guard, ...).
         all.extend(run.diagnostics.iter().cloned());
         all
     };
@@ -400,6 +428,14 @@ pub fn run_analyze_with_exit(
 /// empty SARIF or the "no findings" PR-summary or a zero-findings Json envelope;
 /// a clean preflight ⇒ exit CLEAN.
 ///
+/// `ws` is the workspace root: the JSON envelope's `diagnostics` array is populated
+/// with the real PROVIDER (fail-closed, remapped to `stage:"discover"`) + index
+/// diagnostics for this path — al-sem's `workspace.diagnostics` (index.ts:157-173).
+/// This is load-bearing: fail-closed (multi-app / id-less / unreadable `app.json`)
+/// is a documented core behavior, and dropping its diagnostics would silently hide
+/// WHY the model is empty. SARIF / PR-summary carry no diagnostics array, so they
+/// are unaffected (parity with al-sem, whose SARIF/pr-summary likewise omit them).
+///
 /// `Err` is returned for stub formats (Terminal/Html) so `run_analyze` /
 /// `run_analyze_with_exit` surface an obvious error — no silent pass.
 pub(crate) fn empty_output_result(
@@ -410,7 +446,8 @@ pub(crate) fn empty_output_result(
         OutputFormat::Sarif => format_sarif(&[], &[], version),
         OutputFormat::PrSummary => format_pr_summary(&[], &[], &[]),
         OutputFormat::Json => {
-            // Empty envelope: zero findings, zero stats, zero coverage.
+            // Empty envelope: zero findings, zero stats, zero coverage — but the
+            // real provider/index diagnostics (fail-closed reasons) are threaded.
             let empty_coverage = crate::engine::l3::coverage::AnalysisCoverage {
                 source_units_total: 0,
                 source_units_parsed: 0,
@@ -421,9 +458,12 @@ pub(crate) fn empty_output_result(
                 unresolved_callsites: vec![],
                 dynamic_dispatch_sites: vec![],
             };
+            let ws_path = Path::new(&args.workspace);
+            let diagnostics =
+                crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
             build_analyze_json(&JsonFormatInputs {
                 findings: &[],
-                diagnostics: &[],
+                diagnostics: &diagnostics,
                 detector_stats: &[],
                 coverage: &empty_coverage,
                 deterministic: args.deterministic,

@@ -25,3 +25,4 @@ pub mod presets;
 pub mod projection;
 pub mod run;
 pub mod version;
+pub mod workspace_diagnostics;

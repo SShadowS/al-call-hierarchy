@@ -398,6 +398,235 @@ fn envelope_fields_are_correct() {
 }
 
 // ---------------------------------------------------------------------------
+// Native oracles for the diagnostics projection + threading (corpus-invisible)
+// ---------------------------------------------------------------------------
+
+/// (a) Direct `project_diagnostics` oracle: each `Diagnostic{severity,stage,message}`
+/// projects to EXACTLY `{code:"DIAG-<stage>", severity, message}` — no anchor /
+/// subject / sourceRef leaks through. Covers stages parse/discover/detect and
+/// severities error/warning/info.
+#[test]
+fn project_diagnostics_shape_oracle() {
+    use al_call_hierarchy::engine::gate::format_json::project_diagnostics;
+    use al_call_hierarchy::engine::l5::registry::Diagnostic;
+
+    let diags = vec![
+        Diagnostic {
+            severity: "error".to_string(),
+            stage: "parse".to_string(),
+            message: "boom".to_string(),
+        },
+        Diagnostic {
+            severity: "warning".to_string(),
+            stage: "discover".to_string(),
+            message: "multi-app".to_string(),
+        },
+        Diagnostic {
+            severity: "info".to_string(),
+            stage: "detect".to_string(),
+            message: "guard".to_string(),
+        },
+    ];
+
+    let projected = project_diagnostics(&diags);
+    let arr = projected.as_array().expect("diagnostics is an array");
+    assert_eq!(arr.len(), 3, "all three diagnostics projected, in order");
+
+    // Element 0: parse/error/boom.
+    assert_eq!(arr[0]["code"], "DIAG-parse");
+    assert_eq!(arr[0]["severity"], "error");
+    assert_eq!(arr[0]["message"], "boom");
+    // Element 1: discover/warning.
+    assert_eq!(arr[1]["code"], "DIAG-discover");
+    assert_eq!(arr[1]["severity"], "warning");
+    assert_eq!(arr[1]["message"], "multi-app");
+    // Element 2: detect/info.
+    assert_eq!(arr[2]["code"], "DIAG-detect");
+    assert_eq!(arr[2]["severity"], "info");
+    assert_eq!(arr[2]["message"], "guard");
+
+    // Exactly three keys per element — NO anchor / subject / sourceRef.
+    for el in arr {
+        let obj = el.as_object().expect("each diagnostic is an object");
+        let mut keys: Vec<&str> = obj.keys().map(|s| s.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["code", "message", "severity"],
+            "diagnostic must carry ONLY code/message/severity (no anchor/subject/sourceRef)"
+        );
+    }
+}
+
+/// Create a unique scratch dir for a fail-closed / malformed workspace oracle.
+fn scratch_ws(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "alsem-cli-a-json-{tag}-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create scratch ws dir");
+    dir
+}
+
+/// Run the JSON pipeline directly over an arbitrary workspace path (not a corpus
+/// fixture). Caller sets `AL_SEM_VERSION_OVERRIDE` and holds `ENV_LOCK`.
+fn run_json_path(ws: &PathBuf, detector_csv: &str) -> String {
+    let args = AnalyzeArgs {
+        workspace: ws.to_string_lossy().to_string(),
+        min_severity: None,
+        detector: Some(detector_csv.to_string()),
+        preset: None,
+        scope: Scope::Primary,
+        limit: None,
+        format: OutputFormat::Json,
+        sarif_version_override: None,
+        fail_on: None,
+        require_dependencies: false,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
+        group_by: None,
+        deterministic: true,
+    };
+    match run_analyze_with_exit(&args, "engine-default") {
+        Ok((out, _, _)) => format!("{out}\n"),
+        Err(e) => panic!("{TEST_NAME}: run_analyze failed for {}: {e}", ws.display()),
+    }
+}
+
+/// (b) Fail-closed oracle: a MULTI-APP workspace (two `app.json` files) produces
+/// an empty model, but its envelope `diagnostics` MUST contain the provider error
+/// projected as `DIAG-discover`. This proves `empty_output_result` now threads the
+/// real provider diagnostics (it previously hardcoded `diagnostics:&[]` — so before
+/// the fix this assertion FAILS: the array was empty).
+#[test]
+fn fail_closed_multi_app_emits_discover_diagnostic() {
+    let ws = scratch_ws("multiapp");
+    // Root app.json WITH a valid id (so the only fail-closed trigger is multi-app).
+    std::fs::write(
+        ws.join("app.json"),
+        r#"{"id":"11111111-1111-1111-1111-111111111111","name":"A","publisher":"P","version":"1.0.0.0"}"#,
+    )
+    .unwrap();
+    // A NESTED second app.json → multi-app fail-closed.
+    let sub = ws.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(
+        sub.join("app.json"),
+        r#"{"id":"22222222-2222-2222-2222-222222222222","name":"B","publisher":"P","version":"1.0.0.0"}"#,
+    )
+    .unwrap();
+    // One .al file so the workspace looks real.
+    std::fs::write(ws.join("Foo.al"), "codeunit 50100 Foo { }").unwrap();
+
+    let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE);
+    let out = run_json_path(&ws, &default_csv);
+    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    let _ = std::fs::remove_dir_all(&ws);
+
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let diags = v["diagnostics"].as_array().expect("diagnostics array");
+    assert!(
+        !diags.is_empty(),
+        "fail-closed multi-app MUST emit ≥1 diagnostic (empty_output_result must thread provider diagnostics)"
+    );
+    let has_multi_app_discover = diags.iter().any(|d| {
+        d["code"] == "DIAG-discover"
+            && d["severity"] == "error"
+            && d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("multi-app source workspace unsupported"))
+    });
+    assert!(
+        has_multi_app_discover,
+        "expected a DIAG-discover error for the multi-app workspace; got {diags:?}"
+    );
+    // Empty model ⇒ zero findings.
+    assert_eq!(
+        v["payload"]["findings"].as_array().map(|a| a.len()),
+        Some(0),
+        "fail-closed workspace yields zero findings"
+    );
+}
+
+/// (b') Fail-closed oracle: an id-LESS root `app.json` (readable JSON, no `id`)
+/// also fails closed with a `DIAG-discover` error.
+#[test]
+fn fail_closed_idless_app_json_emits_discover_diagnostic() {
+    let ws = scratch_ws("idless");
+    std::fs::write(
+        ws.join("app.json"),
+        r#"{"name":"A","publisher":"P","version":"1.0.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(ws.join("Foo.al"), "codeunit 50100 Foo { }").unwrap();
+
+    let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE);
+    let out = run_json_path(&ws, &default_csv);
+    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    let _ = std::fs::remove_dir_all(&ws);
+
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let diags = v["diagnostics"].as_array().expect("diagnostics array");
+    let has_idless_discover = diags.iter().any(|d| {
+        d["code"] == "DIAG-discover"
+            && d["severity"] == "error"
+            && d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("has no string `id`"))
+    });
+    assert!(
+        has_idless_discover,
+        "expected a DIAG-discover error for the id-less root app.json; got {diags:?}"
+    );
+}
+
+/// (c) Malformed-`.al` oracle: a SOUND workspace (valid root app.json) whose single
+/// `.al` file contains NO object declaration surfaces a `DIAG-index` "No object
+/// declaration found" diagnostic (al-sem `indexer.ts:56-63`). This is the
+/// cheaply-reachable index-stage diagnostic. (The model is then empty ⇒ fail-closed
+/// empty output, but the index diagnostic is preserved.)
+#[test]
+fn no_object_declaration_emits_index_diagnostic() {
+    let ws = scratch_ws("noobj");
+    std::fs::write(
+        ws.join("app.json"),
+        r#"{"id":"33333333-3333-3333-3333-333333333333","name":"A","publisher":"P","version":"1.0.0.0"}"#,
+    )
+    .unwrap();
+    // A .al file with NO object declaration (just a comment) → "No object declaration found".
+    std::fs::write(ws.join("Empty.al"), "// just a comment, no object\n").unwrap();
+
+    let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE);
+    let out = run_json_path(&ws, &default_csv);
+    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    let _ = std::fs::remove_dir_all(&ws);
+
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let diags = v["diagnostics"].as_array().expect("diagnostics array");
+    let has_index_diag = diags.iter().any(|d| {
+        d["code"] == "DIAG-index"
+            && d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("No object declaration found in Empty.al"))
+    });
+    assert!(
+        has_index_diag,
+        "expected a DIAG-index 'No object declaration found' diagnostic; got {diags:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Refresh test (ignored — only run explicitly)
 // ---------------------------------------------------------------------------
 
