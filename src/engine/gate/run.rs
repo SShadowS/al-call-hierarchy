@@ -27,6 +27,7 @@ use crate::engine::gate::app_attribution::App;
 use crate::engine::gate::baseline::{apply_baseline, load_baseline, save_baseline};
 use crate::engine::gate::exit_code::{compute_finding_exit, exit};
 use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
+use crate::engine::gate::format_html::{format_html, HtmlFormatInputs};
 use crate::engine::gate::format_json::{build_analyze_json, JsonFormatInputs};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
@@ -51,23 +52,6 @@ pub enum OutputFormat {
     Json,
     /// Self-contained HTML report (the future Stage A3 formatter).
     Html,
-}
-
-/// The "not yet implemented" `Err` string for a stub formatter. Referenced from BOTH
-/// the main format match and the `empty_output_result` fallback so the wording cannot
-/// drift, and so A1–A3 only delete the arm in one conceptual place. Returns `None` for
-/// the already-implemented formats (Sarif / PrSummary / Json).
-fn stub_not_implemented(fmt: OutputFormat) -> Option<String> {
-    let (name, stage) = match fmt {
-        OutputFormat::Html => ("html", "A3"),
-        OutputFormat::Sarif
-        | OutputFormat::PrSummary
-        | OutputFormat::Json
-        | OutputFormat::Terminal => return None,
-    };
-    Some(format!(
-        "format '{name}' not yet implemented (stage {stage})"
-    ))
 }
 
 /// Parsed `analyze` arguments.
@@ -401,11 +385,14 @@ pub fn run_analyze_with_exit(
                 format_terminal(&summaries, &coverage, &run_diagnostics)
             }
         }
-        // Stubs — the actual formatters are wired in Stages A1–A3.
-        // The resolved model + raw findings are available on `resolved` / `paired`
-        // when those stages implement them; nothing is emitted here.
-        fmt @ OutputFormat::Html => {
-            return Err(stub_not_implemented(fmt).expect("stub format has a message"))
+        OutputFormat::Html => {
+            let primary_app = resolved.primary_app.as_ref();
+            format_html(&HtmlFormatInputs {
+                findings: &paired,
+                resolved: &resolved,
+                coverage: &coverage,
+                primary_app,
+            })
         }
     };
 
@@ -504,8 +491,39 @@ pub(crate) fn empty_output_result(
                 crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
             format_terminal(&[], &empty_coverage, &diagnostics)
         }
-        fmt @ OutputFormat::Html => {
-            return Err(stub_not_implemented(fmt).expect("stub format has a message"))
+        OutputFormat::Html => {
+            // Empty workspace → zero findings + zero coverage HTML report.
+            let empty_coverage = crate::engine::l3::coverage::AnalysisCoverage {
+                source_units_total: 0,
+                source_units_parsed: 0,
+                routines_total: 0,
+                routines_body_available: 0,
+                routines_parse_incomplete: vec![],
+                opaque_apps: vec![],
+                unresolved_callsites: vec![],
+                dynamic_dispatch_sites: vec![],
+            };
+            // For fail-closed HTML, we need an empty resolved model.
+            // The assemble_and_resolve_workspace failed, so build a minimal one.
+            let ws_path = Path::new(&args.workspace);
+            let primary_app = read_workspace_apps(ws_path).into_iter().next();
+            // Build an empty L3Resolved for the HTML formatter.
+            let empty_resolved = crate::engine::l3::l3_workspace::L3Resolved {
+                workspace: crate::engine::l3::l3_workspace::L3Workspace {
+                    objects: vec![],
+                    tables: vec![],
+                    routines: vec![],
+                },
+                root_classifications: vec![],
+                primary_app: primary_app.clone(),
+                infra_diagnostics: vec![],
+            };
+            format_html(&HtmlFormatInputs {
+                findings: &[],
+                resolved: &empty_resolved,
+                coverage: &empty_coverage,
+                primary_app: primary_app.as_ref(),
+            })
         }
     };
     Ok((out, exit::CLEAN, None))

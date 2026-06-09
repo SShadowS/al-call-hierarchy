@@ -308,10 +308,10 @@ mod tests {
         assert_eq!(code, 3);
     }
 
-    /// The remaining stub formats (Terminal/Html) return `Err` from the pipeline. We drive a
-    /// REAL fixture workspace so the primary format-match stub arm is exercised (NOT the
-    /// fail-closed empty_output path). The Err is then asserted explicitly.
-    /// Json is now implemented (Stage A2) so it is NOT included here.
+    /// All production formats (Terminal/Html) return `Ok` from the pipeline. We drive a
+    /// REAL fixture workspace so the primary format-match arm is exercised (NOT the
+    /// fail-closed empty_output path).
+    /// Json is implemented (Stage A2), Terminal (Stage A3), Html (Stage A4).
     #[test]
     fn stub_formats_return_err() {
         use al_call_hierarchy::engine::gate::filter::Scope;
@@ -329,7 +329,7 @@ mod tests {
             ws.display()
         );
 
-        // Terminal is now implemented (Stage A3) — it must succeed, not return Err.
+        // Terminal is implemented (Stage A3) — must succeed.
         {
             let args = AnalyzeArgs {
                 workspace: ws.to_string_lossy().to_string(),
@@ -354,8 +354,8 @@ mod tests {
                 "Terminal format must succeed (Stage A3 implemented); got: {result:?}"
             );
         }
-        // Html is still a stub — must return Err.
-        for fmt in [OutputFormat::Html] {
+        // Html is implemented (Stage A4) — must succeed.
+        {
             let args = AnalyzeArgs {
                 workspace: ws.to_string_lossy().to_string(),
                 min_severity: None,
@@ -363,7 +363,7 @@ mod tests {
                 preset: Some("transaction-integrity".to_string()),
                 scope: Scope::Primary,
                 limit: None,
-                format: fmt,
+                format: OutputFormat::Html,
                 sarif_version_override: None,
                 fail_on: None,
                 require_dependencies: false,
@@ -375,8 +375,8 @@ mod tests {
             };
             let result = run_analyze_with_exit(&args, "test");
             assert!(
-                result.is_err(),
-                "stub format {fmt:?} must return Err from the pipeline (not yet implemented)"
+                result.is_ok(),
+                "Html format must succeed (Stage A4 implemented); got: {result:?}"
             );
         }
     }

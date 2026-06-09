@@ -15,6 +15,7 @@ pub mod app_attribution;
 pub mod baseline;
 pub mod exit_code;
 pub mod filter;
+pub mod format_html;
 pub mod format_json;
 pub mod format_pr_summary;
 pub mod format_sarif;
