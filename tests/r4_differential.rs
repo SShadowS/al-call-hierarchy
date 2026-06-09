@@ -252,6 +252,14 @@ const WAVE_D: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    // d32: Boolean parameter always passed the same literal (1 finding).
+    Smoke {
+        fixture: "ws-d32",
+        wave: "R4-D",
+        detectors: &["d32-constant-boolean-parameter"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// A negative assertion: the given detector must produce 0 findings over the
@@ -381,6 +389,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d35-commit-in-event-subscriber",
         neutral_fixture: "ws-d34",
+    },
+    // d32: ws-d19 has a `local` event-subscriber (kind == "event-subscriber", not
+    // "procedure") and public procedures with no Boolean params — the kind gate and
+    // the boolean-param gate both suppress every candidate, so 0.
+    NegativeAssertion {
+        detector: "d32-constant-boolean-parameter",
+        neutral_fixture: "ws-d19",
     },
 ];
 

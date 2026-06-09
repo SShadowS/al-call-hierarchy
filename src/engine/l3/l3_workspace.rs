@@ -203,6 +203,13 @@ pub struct L3Routine {
     /// Declared parameters (in order) — drives arity + var-ness + arg-type
     /// disambiguation. Empty for trigger routines with no parameter list.
     pub parameters: Vec<L3Parameter>,
+    /// Access modifier from the L2 projection (`local`/`internal`/`protected`; None
+    /// = default/public). Additive field — L3Routine is NOT Serialize-derived into
+    /// any gate surface (R0–R3 goldens are field-allowlisted projections), so adding
+    /// this never touches a golden. Populated by the native assembly path from
+    /// `classify_access_modifier`; dep routines use `None` (ABI does not expose it).
+    /// Consumed by d32 (scope gate: `local` only).
+    pub access_modifier: Option<String>,
     /// Declared return type text (`type_specification` text), if any — used by
     /// `inferCallExprReturnType` for overload arg-type disambiguation.
     pub return_type: Option<String>,
@@ -719,6 +726,9 @@ fn project_file(
                     .into_iter()
                     .filter_map(|v| serde_json::from_value(v).ok())
                     .collect();
+            // d32 scope gate: access modifier (`local`/`internal`/`protected`; None = public).
+            let access_modifier =
+                crate::engine::l2::l2_workspace::classify_access_modifier(routine, source);
 
             workspace.routines.push(L3Routine {
                 id: routine_id,
@@ -738,6 +748,7 @@ fn project_file(
                 field_accesses,
                 variables,
                 parameters,
+                access_modifier,
                 return_type,
                 call_sites,
                 operation_sites,

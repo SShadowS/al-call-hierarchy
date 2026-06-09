@@ -1,6 +1,6 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
-//! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D).
+//! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave).
 
 pub mod d10;
 pub mod d11;
@@ -11,6 +11,7 @@ pub mod d20;
 pub mod d21;
 pub mod d22;
 pub mod d29;
+pub mod d32;
 pub mod d33;
 pub mod d34;
 pub mod d35;
@@ -118,6 +119,10 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d29-subscriber-modify-on-event-record".to_string(),
             run: d29::detect_d29,
+        },
+        Detector {
+            name: "d32-constant-boolean-parameter".to_string(),
+            run: d32::detect_d32,
         },
         Detector {
             name: "d33-unfiltered-bulk-write".to_string(),

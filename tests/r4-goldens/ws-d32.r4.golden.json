@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-d32",
+  "detectors": [
+    "d32-constant-boolean-parameter"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d32-constant-boolean-parameter",
+      "id": "d32/11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61/p0",
+      "rootCauseKey": "d32/11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61/p0",
+      "title": "Boolean parameter is always passed the same literal",
+      "rootCause": "Helper declares Boolean parameter 'AlwaysTrue' at position 0, but all 2 resolved primary-app callers pass `true` — the parameter is dead.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 4,
+          "endLine": 14,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 4,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61",
+            "syntaxKind": "procedure"
+          },
+          "note": "local procedure Helper(AlwaysTrue: Boolean) — parameter at position 0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d320:Codeunit:51500"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Flatten the procedure: assume 'AlwaysTrue = true' at every site, simplify the body, and remove the parameter. If the parameter is intended for future use, leave a TODO documenting it.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "782814ea025ef768"
+    }
+  ]
+}

@@ -164,6 +164,13 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         field_accesses: Vec::new(),
         variables: Vec::new(),
         parameters,
+        // The ABI symbol reference DOES expose access modifiers (`IsInternal`/`IsLocal`),
+        // and `project_abi_to_index` already computes `ProjectedRoutine.access_modifier`
+        // from them — faithful to al-sem `dependency-projection.ts`, which populates a dep
+        // routine's `accessModifier`. Forward it (byte-invariant today: L3Routine.access_modifier
+        // is not serialized into any gate, and d32 skips bodyless dep routines — but d13
+        // cross-app-internal-call WILL read it, so dropping it would mis-scope d13 later).
+        access_modifier: r.access_modifier.clone(),
         return_type: r.return_type.clone(),
         call_sites: Vec::new(),
         operation_sites: Vec::new(),

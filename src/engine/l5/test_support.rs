@@ -85,6 +85,7 @@ pub fn routine(id: &str, kind: &str) -> L3Routine {
         field_accesses: Vec::new(),
         variables: Vec::new(),
         parameters: Vec::new(),
+        access_modifier: None,
         return_type: None,
         call_sites: Vec::new(),
         operation_sites: Vec::new(),

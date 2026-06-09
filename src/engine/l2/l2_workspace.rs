@@ -323,7 +323,8 @@ pub fn collect_attributes(node: Node, source: &str) -> (Vec<String>, Vec<serde_j
 
 /// `classifyAccessModifier` — the `modifier` field on a `procedure` node
 /// (`local`/`internal`/`protected`); None for triggers / default-access.
-fn classify_access_modifier(node: Node, source: &str) -> Option<String> {
+/// `pub(crate)` so the L3 assembly path can call it directly (d32 scope gate).
+pub(crate) fn classify_access_modifier(node: Node, source: &str) -> Option<String> {
     if node.kind() != "procedure" {
         return None;
     }
