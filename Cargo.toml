@@ -112,6 +112,13 @@ required-features = ["telemetry"]
 name = "aldump"
 path = "src/bin/aldump.rs"
 
+# The future al-sem production CLI (Rust port). Stage 1: the `analyze` GATE path
+# (projection + filters + SARIF) byte-matching the al-sem TS gate goldens. Additive;
+# separate from `aldump` and the LSP surface.
+[[bin]]
+name = "alsem"
+path = "src/bin/alsem.rs"
+
 [[bench]]
 name = "telemetry_hot_path"
 harness = false

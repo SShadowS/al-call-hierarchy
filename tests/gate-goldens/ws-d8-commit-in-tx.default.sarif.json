@@ -1,0 +1,570 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "al-sem",
+          "version": "gate-sarif-v1",
+          "informationUri": "https://github.com/SShadowS/al-sem",
+          "rules": [
+            {
+              "id": "d1-db-op-in-loop",
+              "name": "DbOpInLoop",
+              "shortDescription": {
+                "text": "Database operation inside a loop"
+              }
+            },
+            {
+              "id": "d2-event-fanout-in-loop",
+              "name": "EventFanoutInLoop",
+              "shortDescription": {
+                "text": "Event raised inside a loop with DB-touching subscribers"
+              }
+            },
+            {
+              "id": "d3-missing-setloadfields",
+              "name": "MissingSetLoadFields",
+              "shortDescription": {
+                "text": "Missing SetLoadFields before record retrieval"
+              }
+            },
+            {
+              "id": "d4-repeated-lookup-in-loop",
+              "name": "RepeatedLookupInLoop",
+              "shortDescription": {
+                "text": "Repeated identical lookup inside a loop"
+              }
+            },
+            {
+              "id": "d5-set-based-opportunity",
+              "name": "SetBasedOpportunity",
+              "shortDescription": {
+                "text": "Loop-and-Modify candidate for ModifyAll"
+              }
+            },
+            {
+              "id": "d7-recursive-event-expansion",
+              "name": "RecursiveEventExpansion",
+              "shortDescription": {
+                "text": "Event subscriber chain forms a cycle"
+              }
+            },
+            {
+              "id": "d8-commit-in-transaction",
+              "name": "CommitInTransaction",
+              "shortDescription": {
+                "text": "Commit inside a posting transaction span"
+              }
+            },
+            {
+              "id": "d9-transaction-span-summary",
+              "name": "TransactionSpanSummary",
+              "shortDescription": {
+                "text": "Transaction span summary (info)"
+              }
+            },
+            {
+              "id": "d10-self-modifying-loop",
+              "name": "SelfModifyingLoop",
+              "shortDescription": {
+                "text": "Self-modifying loop"
+              }
+            },
+            {
+              "id": "d11-modify-without-get",
+              "name": "ModifyWithoutGet",
+              "shortDescription": {
+                "text": "Modify without prior Get"
+              }
+            },
+            {
+              "id": "d12-dead-integration-event",
+              "name": "DeadIntegrationEvent",
+              "shortDescription": {
+                "text": "Integration event has no subscribers"
+              }
+            },
+            {
+              "id": "d13-cross-app-internal-call",
+              "name": "CrossAppInternalCall",
+              "shortDescription": {
+                "text": "Cross-extension call into an internal procedure"
+              }
+            },
+            {
+              "id": "d14-dead-routine",
+              "name": "DeadRoutine",
+              "shortDescription": {
+                "text": "Routine unreachable from any entry point"
+              }
+            },
+            {
+              "id": "d16-obsolete-routine-call",
+              "name": "ObsoleteRoutineCall",
+              "shortDescription": {
+                "text": "Call to an obsolete routine"
+              }
+            },
+            {
+              "id": "d17-min-version-drift",
+              "name": "MinVersionDrift",
+              "shortDescription": {
+                "text": "Call into API newer than declared MinVersion"
+              }
+            },
+            {
+              "id": "d46-commit-in-lifecycle",
+              "name": "CommitInLifecycle",
+              "shortDescription": {
+                "text": "Commit reachable from an Install/Upgrade codeunit trigger"
+              }
+            },
+            {
+              "id": "d47-io-unsafe-txn",
+              "name": "IoUnsafeTxn",
+              "shortDescription": {
+                "text": "External IO inside an open write transaction / before commit"
+              }
+            },
+            {
+              "id": "d48-io-in-loop",
+              "name": "IoInLoop",
+              "shortDescription": {
+                "text": "External IO (HTTP/FILE) inside a loop"
+              }
+            },
+            {
+              "id": "d49-uncommitted-write-before-ui",
+              "name": "UncommittedWriteBeforeUi",
+              "shortDescription": {
+                "text": "DB write pending at a window-opening UI call (BC runtime error)"
+              }
+            },
+            {
+              "id": "d50-checked-run-implicit-commit",
+              "name": "CheckedRunImplicitCommit",
+              "shortDescription": {
+                "text": "Checked Codeunit.Run implicit commit within a posting span (advisory)"
+              }
+            },
+            {
+              "id": "d51-retry-side-effect-duplication",
+              "name": "RetrySideEffectDuplication",
+              "shortDescription": {
+                "text": "Write-direction external request before an escaping error — may duplicate on retry (advisory)"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "d3-missing-setloadfields",
+          "level": "warning",
+          "message": {
+            "text": "Missing SetLoadFields before a record retrieval — PostSalesDoc runs Get on Header and then accesses field(s) [last posting date, no., status posted] — no SetLoadFields was set."
+          },
+          "fingerprints": {
+            "al-sem/v1": "5b683b08f0dace60"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/posting.al"
+                },
+                "region": {
+                  "startLine": 8,
+                  "startColumn": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8PostingChain :: PostSalesDoc"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 8,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "Get on Header with no SetLoadFields"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 9,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "accesses Header.Status Posted"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 11,
+                            "startColumn": 39
+                          }
+                        },
+                        "message": {
+                          "text": "accesses Header.No."
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 14,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "accesses Header.Last Posting Date"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d8-commit-in-transaction",
+          "level": "error",
+          "message": {
+            "text": "Commit inside a posting transaction span — HandlePosted calls Commit while reachable from PostSalesDoc, which writes 3 tables. A mid-transaction Commit breaks rollback semantics — if the surrounding operation later fails, the data is left half-written."
+          },
+          "fingerprints": {
+            "al-sem/v1": "d6cb54387a218da4"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/subscriber.al"
+                },
+                "region": {
+                  "startLine": 11,
+                  "startColumn": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8BadSubscriber :: HandlePosted"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 3,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "transaction-managing routine: PostSalesDoc"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/subscriber.al"
+                          },
+                          "region": {
+                            "startLine": 11,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "Commit inside PostSalesDoc's transaction span"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d9-transaction-span-summary",
+          "level": "note",
+          "message": {
+            "text": "Transaction span summary — Transaction ending at HandlePosted's Commit spans 3 routines, writes 3 known table(s), publishes 1 event(s). Consider whether all of this needs to be atomic."
+          },
+          "fingerprints": {
+            "al-sem/v1": "f82fce47e81c1186"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/subscriber.al"
+                },
+                "region": {
+                  "startLine": 4,
+                  "startColumn": 5
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8BadSubscriber :: HandlePosted"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/subscriber.al"
+                          },
+                          "region": {
+                            "startLine": 4,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "Commit at end of span"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d19-unused-parameter",
+          "level": "note",
+          "message": {
+            "text": "Procedure parameter is never used — OnAfterPostSalesDoc declares parameter 'Header' (Record \"Sales Header\") at position 0 but the body never references it."
+          },
+          "fingerprints": {
+            "al-sem/v1": "5b19963123f97d3d"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/posting.al"
+                },
+                "region": {
+                  "startLine": 19,
+                  "startColumn": 5
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8PostingChain :: OnAfterPostSalesDoc"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/posting.al"
+                          },
+                          "region": {
+                            "startLine": 19,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "parameter 'Header: Record \"Sales Header\"' declared but never referenced"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d35-commit-in-event-subscriber",
+          "level": "error",
+          "message": {
+            "text": "Commit reachable from event subscriber — HandlePosted is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails."
+          },
+          "fingerprints": {
+            "al-sem/v1": "51c96e0902e95c73"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/subscriber.al"
+                },
+                "region": {
+                  "startLine": 11,
+                  "startColumn": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8BadSubscriber :: HandlePosted"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/subscriber.al"
+                          },
+                          "region": {
+                            "startLine": 4,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "[EventSubscriber] HandlePosted"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/subscriber.al"
+                          },
+                          "region": {
+                            "startLine": 11,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "Commit"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d45-event-transitive-table-exposure",
+          "level": "note",
+          "message": {
+            "text": "Event subscribers expose table transitively from publisher — Publisher 323c302a83ac644b/cef6be65ffad540c497f12505e92be6971f278eddb0f9cf1180f61e12fe6ef20 dispatches to 1 subscriber(s) that write table 11111111-0000-0000-0000-00000000d80a/table/50100; reach=direct; publisherAlsoWrites=yes; subscriberCoverage=complete"
+          },
+          "fingerprints": {
+            "al-sem/v1": "18f3e3f0c343408e"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/posting.al"
+                },
+                "region": {
+                  "startLine": 19,
+                  "startColumn": 5
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D8PostingChain :: OnAfterPostSalesDoc"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/subscriber.al"
+                          },
+                          "region": {
+                            "startLine": 4,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "subscriber writes 11111111-0000-0000-0000-00000000d80a/table/50100"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

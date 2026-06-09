@@ -1,0 +1,236 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "al-sem",
+          "version": "gate-sarif-v1",
+          "informationUri": "https://github.com/SShadowS/al-sem",
+          "rules": [
+            {
+              "id": "d1-db-op-in-loop",
+              "name": "DbOpInLoop",
+              "shortDescription": {
+                "text": "Database operation inside a loop"
+              }
+            },
+            {
+              "id": "d2-event-fanout-in-loop",
+              "name": "EventFanoutInLoop",
+              "shortDescription": {
+                "text": "Event raised inside a loop with DB-touching subscribers"
+              }
+            },
+            {
+              "id": "d3-missing-setloadfields",
+              "name": "MissingSetLoadFields",
+              "shortDescription": {
+                "text": "Missing SetLoadFields before record retrieval"
+              }
+            },
+            {
+              "id": "d4-repeated-lookup-in-loop",
+              "name": "RepeatedLookupInLoop",
+              "shortDescription": {
+                "text": "Repeated identical lookup inside a loop"
+              }
+            },
+            {
+              "id": "d5-set-based-opportunity",
+              "name": "SetBasedOpportunity",
+              "shortDescription": {
+                "text": "Loop-and-Modify candidate for ModifyAll"
+              }
+            },
+            {
+              "id": "d7-recursive-event-expansion",
+              "name": "RecursiveEventExpansion",
+              "shortDescription": {
+                "text": "Event subscriber chain forms a cycle"
+              }
+            },
+            {
+              "id": "d8-commit-in-transaction",
+              "name": "CommitInTransaction",
+              "shortDescription": {
+                "text": "Commit inside a posting transaction span"
+              }
+            },
+            {
+              "id": "d9-transaction-span-summary",
+              "name": "TransactionSpanSummary",
+              "shortDescription": {
+                "text": "Transaction span summary (info)"
+              }
+            },
+            {
+              "id": "d10-self-modifying-loop",
+              "name": "SelfModifyingLoop",
+              "shortDescription": {
+                "text": "Self-modifying loop"
+              }
+            },
+            {
+              "id": "d11-modify-without-get",
+              "name": "ModifyWithoutGet",
+              "shortDescription": {
+                "text": "Modify without prior Get"
+              }
+            },
+            {
+              "id": "d12-dead-integration-event",
+              "name": "DeadIntegrationEvent",
+              "shortDescription": {
+                "text": "Integration event has no subscribers"
+              }
+            },
+            {
+              "id": "d13-cross-app-internal-call",
+              "name": "CrossAppInternalCall",
+              "shortDescription": {
+                "text": "Cross-extension call into an internal procedure"
+              }
+            },
+            {
+              "id": "d14-dead-routine",
+              "name": "DeadRoutine",
+              "shortDescription": {
+                "text": "Routine unreachable from any entry point"
+              }
+            },
+            {
+              "id": "d16-obsolete-routine-call",
+              "name": "ObsoleteRoutineCall",
+              "shortDescription": {
+                "text": "Call to an obsolete routine"
+              }
+            },
+            {
+              "id": "d17-min-version-drift",
+              "name": "MinVersionDrift",
+              "shortDescription": {
+                "text": "Call into API newer than declared MinVersion"
+              }
+            },
+            {
+              "id": "d46-commit-in-lifecycle",
+              "name": "CommitInLifecycle",
+              "shortDescription": {
+                "text": "Commit reachable from an Install/Upgrade codeunit trigger"
+              }
+            },
+            {
+              "id": "d47-io-unsafe-txn",
+              "name": "IoUnsafeTxn",
+              "shortDescription": {
+                "text": "External IO inside an open write transaction / before commit"
+              }
+            },
+            {
+              "id": "d48-io-in-loop",
+              "name": "IoInLoop",
+              "shortDescription": {
+                "text": "External IO (HTTP/FILE) inside a loop"
+              }
+            },
+            {
+              "id": "d49-uncommitted-write-before-ui",
+              "name": "UncommittedWriteBeforeUi",
+              "shortDescription": {
+                "text": "DB write pending at a window-opening UI call (BC runtime error)"
+              }
+            },
+            {
+              "id": "d50-checked-run-implicit-commit",
+              "name": "CheckedRunImplicitCommit",
+              "shortDescription": {
+                "text": "Checked Codeunit.Run implicit commit within a posting span (advisory)"
+              }
+            },
+            {
+              "id": "d51-retry-side-effect-duplication",
+              "name": "RetrySideEffectDuplication",
+              "shortDescription": {
+                "text": "Write-direction external request before an escaping error — may duplicate on retry (advisory)"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "d47-io-unsafe-txn",
+          "level": "error",
+          "message": {
+            "text": "External IO inside an open write transaction — SendAfterModify performs HTTP Get while a database write is still pending (uncommitted). The external call happens inside an open write transaction — if it blocks or fails the transaction is held open across the network round-trip, and BC's runtime forbids HTTP during a write transaction."
+          },
+          "fingerprints": {
+            "al-sem/v1": "fcc7991d4affd62d"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Sender.Codeunit.al"
+                },
+                "region": {
+                  "startLine": 17,
+                  "startColumn": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D47 Sender :: SendAfterModify"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Sender.Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 16,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "DB write — transaction now dirty"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Sender.Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 17,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "HTTP Get call inside open write transaction"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

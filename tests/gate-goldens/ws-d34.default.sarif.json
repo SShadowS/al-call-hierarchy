@@ -1,0 +1,484 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "al-sem",
+          "version": "gate-sarif-v1",
+          "informationUri": "https://github.com/SShadowS/al-sem",
+          "rules": [
+            {
+              "id": "d1-db-op-in-loop",
+              "name": "DbOpInLoop",
+              "shortDescription": {
+                "text": "Database operation inside a loop"
+              }
+            },
+            {
+              "id": "d2-event-fanout-in-loop",
+              "name": "EventFanoutInLoop",
+              "shortDescription": {
+                "text": "Event raised inside a loop with DB-touching subscribers"
+              }
+            },
+            {
+              "id": "d3-missing-setloadfields",
+              "name": "MissingSetLoadFields",
+              "shortDescription": {
+                "text": "Missing SetLoadFields before record retrieval"
+              }
+            },
+            {
+              "id": "d4-repeated-lookup-in-loop",
+              "name": "RepeatedLookupInLoop",
+              "shortDescription": {
+                "text": "Repeated identical lookup inside a loop"
+              }
+            },
+            {
+              "id": "d5-set-based-opportunity",
+              "name": "SetBasedOpportunity",
+              "shortDescription": {
+                "text": "Loop-and-Modify candidate for ModifyAll"
+              }
+            },
+            {
+              "id": "d7-recursive-event-expansion",
+              "name": "RecursiveEventExpansion",
+              "shortDescription": {
+                "text": "Event subscriber chain forms a cycle"
+              }
+            },
+            {
+              "id": "d8-commit-in-transaction",
+              "name": "CommitInTransaction",
+              "shortDescription": {
+                "text": "Commit inside a posting transaction span"
+              }
+            },
+            {
+              "id": "d9-transaction-span-summary",
+              "name": "TransactionSpanSummary",
+              "shortDescription": {
+                "text": "Transaction span summary (info)"
+              }
+            },
+            {
+              "id": "d10-self-modifying-loop",
+              "name": "SelfModifyingLoop",
+              "shortDescription": {
+                "text": "Self-modifying loop"
+              }
+            },
+            {
+              "id": "d11-modify-without-get",
+              "name": "ModifyWithoutGet",
+              "shortDescription": {
+                "text": "Modify without prior Get"
+              }
+            },
+            {
+              "id": "d12-dead-integration-event",
+              "name": "DeadIntegrationEvent",
+              "shortDescription": {
+                "text": "Integration event has no subscribers"
+              }
+            },
+            {
+              "id": "d13-cross-app-internal-call",
+              "name": "CrossAppInternalCall",
+              "shortDescription": {
+                "text": "Cross-extension call into an internal procedure"
+              }
+            },
+            {
+              "id": "d14-dead-routine",
+              "name": "DeadRoutine",
+              "shortDescription": {
+                "text": "Routine unreachable from any entry point"
+              }
+            },
+            {
+              "id": "d16-obsolete-routine-call",
+              "name": "ObsoleteRoutineCall",
+              "shortDescription": {
+                "text": "Call to an obsolete routine"
+              }
+            },
+            {
+              "id": "d17-min-version-drift",
+              "name": "MinVersionDrift",
+              "shortDescription": {
+                "text": "Call into API newer than declared MinVersion"
+              }
+            },
+            {
+              "id": "d46-commit-in-lifecycle",
+              "name": "CommitInLifecycle",
+              "shortDescription": {
+                "text": "Commit reachable from an Install/Upgrade codeunit trigger"
+              }
+            },
+            {
+              "id": "d47-io-unsafe-txn",
+              "name": "IoUnsafeTxn",
+              "shortDescription": {
+                "text": "External IO inside an open write transaction / before commit"
+              }
+            },
+            {
+              "id": "d48-io-in-loop",
+              "name": "IoInLoop",
+              "shortDescription": {
+                "text": "External IO (HTTP/FILE) inside a loop"
+              }
+            },
+            {
+              "id": "d49-uncommitted-write-before-ui",
+              "name": "UncommittedWriteBeforeUi",
+              "shortDescription": {
+                "text": "DB write pending at a window-opening UI call (BC runtime error)"
+              }
+            },
+            {
+              "id": "d50-checked-run-implicit-commit",
+              "name": "CheckedRunImplicitCommit",
+              "shortDescription": {
+                "text": "Checked Codeunit.Run implicit commit within a posting span (advisory)"
+              }
+            },
+            {
+              "id": "d51-retry-side-effect-duplication",
+              "name": "RetrySideEffectDuplication",
+              "shortDescription": {
+                "text": "Write-direction external request before an escaping error — may duplicate on retry (advisory)"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "d19-unused-parameter",
+          "level": "note",
+          "message": {
+            "text": "Procedure parameter is never used — DoWork declares parameter '_n' (Integer) at position 0 but the body never references it."
+          },
+          "fingerprints": {
+            "al-sem/v1": "78c98607c6fbe158"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Codeunit.al"
+                },
+                "region": {
+                  "startLine": 44,
+                  "startColumn": 5
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D34 Demo :: DoWork"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 44,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "parameter '_n: Integer' declared but never referenced"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d19-unused-parameter",
+          "level": "note",
+          "message": {
+            "text": "Procedure parameter is never used — Persist declares parameter '_n' (Integer) at position 0 but the body never references it."
+          },
+          "fingerprints": {
+            "al-sem/v1": "511bfe702d091533"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Codeunit.al"
+                },
+                "region": {
+                  "startLine": 46,
+                  "startColumn": 5
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D34 Demo :: Persist"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 46,
+                            "startColumn": 5
+                          }
+                        },
+                        "message": {
+                          "text": "parameter '_n: Integer' declared but never referenced"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d34-commit-in-loop",
+          "level": "error",
+          "message": {
+            "text": "Commit inside a nested loop — NestedCommit calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely."
+          },
+          "fingerprints": {
+            "al-sem/v1": "c4dddc26353d66af"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Codeunit.al"
+                },
+                "region": {
+                  "startLine": 22,
+                  "startColumn": 17
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D34 Demo :: NestedCommit"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 21,
+                            "startColumn": 13
+                          }
+                        },
+                        "message": {
+                          "text": "for loop"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 22,
+                            "startColumn": 17
+                          }
+                        },
+                        "message": {
+                          "text": "Commit (loop depth 2)"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d34-commit-in-loop",
+          "level": "warning",
+          "message": {
+            "text": "Loop reaches a Commit through a callee — TransitiveCommit's for loop calls Persist, which commits — per-iteration commits break atomicity even when the Commit isn't visible at the loop site."
+          },
+          "fingerprints": {
+            "al-sem/v1": "64eaacb06ec33019"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Codeunit.al"
+                },
+                "region": {
+                  "startLine": 31,
+                  "startColumn": 13
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D34 Demo :: TransitiveCommit"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 30,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "for loop"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 31,
+                            "startColumn": 13
+                          }
+                        },
+                        "message": {
+                          "text": "calls Persist (transitively commits)"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "d34-commit-in-loop",
+          "level": "error",
+          "message": {
+            "text": "Commit inside a loop — DirectCommitInLoop calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely."
+          },
+          "fingerprints": {
+            "al-sem/v1": "0b9238cb4424c191"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Codeunit.al"
+                },
+                "region": {
+                  "startLine": 10,
+                  "startColumn": 13
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "D34 Demo :: DirectCommitInLoop"
+                }
+              ]
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 8,
+                            "startColumn": 9
+                          }
+                        },
+                        "message": {
+                          "text": "for loop"
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 10,
+                            "startColumn": 13
+                          }
+                        },
+                        "message": {
+                          "text": "Commit"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

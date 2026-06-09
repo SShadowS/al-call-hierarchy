@@ -5,6 +5,7 @@
 //! surface.
 
 pub mod deps;
+pub mod gate;
 pub mod ids;
 pub mod l2;
 pub mod l3;

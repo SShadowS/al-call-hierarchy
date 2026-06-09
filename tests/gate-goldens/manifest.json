@@ -1,0 +1,495 @@
+{
+  "description": "Stage-1a gate-SARIF goldens — output of the al-sem TS gate's SARIF path (analyzeWorkspace + projectFinding/filterFindings/scope-filter + formatSarif). Stage 1: no baseline, no inline suppression. Two goldens per fixture: .txn.sarif.json (--preset transaction-integrity) and .default.sarif.json (default detector set). The Rust engine's `analyze --format sarif` must byte-match these.",
+  "capturePoint": "analyzeWorkspace({deterministic:true, detectors}) → projectFinding/filterFindings/{} → scope=primary filter → formatSarif(filteredResult)",
+  "alsemVersionPin": "AL_SEM_VERSION_OVERRIDE=gate-sarif-v1 (set before any import of format-sarif.ts). The driver.version field in all goldens is 'gate-sarif-v1'. This makes the SARIF byte-stable across package.json version bumps.",
+  "note": "Stage 1 (no baseline/suppression). Stage 3 will add baseline + al-sem-ignore goldens. Corpus: R4 ws-d8/d34/d35/d46/d47/d48/d49/d51 + d1-multi-caller (codeFlows) + d14 (non-txn). All fixtures run with scope=primary (dependency-anchored findings dropped).",
+  "alSemGitSha": "1b6e0c284ebc258fba2e092837e035ed0f958cb0",
+  "alsemVersionOverride": "gate-sarif-v1",
+  "fixtureCount": 20,
+  "txnPositiveCount": 12,
+  "txnCleanCount": 8,
+  "defaultPositiveCount": 11,
+  "distinctTxnRuleIds": [
+    "d34-commit-in-loop",
+    "d35-commit-in-event-subscriber",
+    "d46-commit-in-lifecycle",
+    "d47-io-unsafe-txn",
+    "d48-io-in-loop",
+    "d49-uncommitted-write-before-ui",
+    "d51-retry-side-effect-duplication",
+    "d8-commit-in-transaction"
+  ],
+  "distinctTxnLevels": [
+    "error",
+    "note",
+    "warning"
+  ],
+  "anyCodeFlows": true,
+  "fixtures": [
+    {
+      "fixture": "ws-d8-commit-in-tx",
+      "note": "d8 CommitInTransaction — positive",
+      "txn": {
+        "goldenFile": "ws-d8-commit-in-tx.txn.sarif.json",
+        "resultCount": 2,
+        "ruleIds": [
+          "d35-commit-in-event-subscriber",
+          "d8-commit-in-transaction"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-d8-commit-in-tx.default.sarif.json",
+        "resultCount": 6,
+        "ruleIds": [
+          "d19-unused-parameter",
+          "d3-missing-setloadfields",
+          "d35-commit-in-event-subscriber",
+          "d45-event-transitive-table-exposure",
+          "d8-commit-in-transaction",
+          "d9-transaction-span-summary"
+        ],
+        "levels": [
+          "error",
+          "note",
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-d34",
+      "note": "d34 CommitInLoop — positive",
+      "txn": {
+        "goldenFile": "ws-d34.txn.sarif.json",
+        "resultCount": 3,
+        "ruleIds": [
+          "d34-commit-in-loop"
+        ],
+        "levels": [
+          "error",
+          "warning"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-d34.default.sarif.json",
+        "resultCount": 5,
+        "ruleIds": [
+          "d19-unused-parameter",
+          "d34-commit-in-loop"
+        ],
+        "levels": [
+          "error",
+          "note",
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-d35",
+      "note": "d35 CommitInEventSubscriber — positive",
+      "txn": {
+        "goldenFile": "ws-d35.txn.sarif.json",
+        "resultCount": 2,
+        "ruleIds": [
+          "d35-commit-in-event-subscriber"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-d35.default.sarif.json",
+        "resultCount": 2,
+        "ruleIds": [
+          "d35-commit-in-event-subscriber"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-pos",
+      "note": "d46 CommitInLifecycle — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d46-pos.txn.sarif.json",
+        "resultCount": 2,
+        "ruleIds": [
+          "d46-commit-in-lifecycle"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d46-pos.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-nocommit",
+      "note": "d47 IoUnsafeTxn http-nocommit — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d47-pos-http-nocommit.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d47-io-unsafe-txn"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d47-pos-http-nocommit.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-http-commit-after",
+      "note": "d47 IoUnsafeTxn http-commit-after — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d47-pos-http-commit-after.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d47-io-unsafe-txn"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d47-pos-http-commit-after.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-pos-file",
+      "note": "d47 IoUnsafeTxn file — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d47-pos-file.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d47-io-unsafe-txn"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d47-pos-file.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "note": "d48 IoInLoop — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d48-pos.txn.sarif.json",
+        "resultCount": 2,
+        "ruleIds": [
+          "d48-io-in-loop"
+        ],
+        "levels": [
+          "error",
+          "warning"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d48-pos.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-message",
+      "note": "d49 UncommittedWriteBeforeUi modify-message — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d49-pos-modify-message.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d49-uncommitted-write-before-ui"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d49-pos-modify-message.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-pos-modify-runmodal",
+      "note": "d49 UncommittedWriteBeforeUi runmodal — positive",
+      "txn": {
+        "goldenFile": "ws-txn-d49-pos-modify-runmodal.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d49-uncommitted-write-before-ui"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-txn-d49-pos-modify-runmodal.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d3-missing-setloadfields"
+        ],
+        "levels": [
+          "warning"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-d51-pos",
+      "note": "d51 RetrySideEffectDuplication — positive (opt-in; txn slot runs d51 explicitly)",
+      "txn": {
+        "goldenFile": "ws-d51-pos.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d51-retry-side-effect-duplication"
+        ],
+        "levels": [
+          "note"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-d51-pos.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-d51-jobqueue",
+      "note": "d51 RetrySideEffectDuplication jobqueue — positive (opt-in; txn slot runs d51 explicitly)",
+      "txn": {
+        "goldenFile": "ws-d51-jobqueue.txn.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d51-retry-side-effect-duplication"
+        ],
+        "levels": [
+          "note"
+        ],
+        "hasCodeFlows": true
+      },
+      "default": {
+        "goldenFile": "ws-d51-jobqueue.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d46-neg",
+      "note": "d46 CommitInLifecycle — negative/clean",
+      "txn": {
+        "goldenFile": "ws-txn-d46-neg.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-txn-d46-neg.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-readonly",
+      "note": "d47 IoUnsafeTxn readonly — negative/clean",
+      "txn": {
+        "goldenFile": "ws-txn-d47-neg-readonly.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-txn-d47-neg-readonly.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d47-neg-temp",
+      "note": "d47 IoUnsafeTxn temp — negative/clean",
+      "txn": {
+        "goldenFile": "ws-txn-d47-neg-temp.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-txn-d47-neg-temp.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "note": "d48 IoInLoop — negative/clean",
+      "txn": {
+        "goldenFile": "ws-txn-d48-neg.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-txn-d48-neg.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-txn-d49-neg-no-write",
+      "note": "d49 UncommittedWriteBeforeUi no-write — negative/clean",
+      "txn": {
+        "goldenFile": "ws-txn-d49-neg-no-write.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-txn-d49-neg-no-write.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-d51-neg",
+      "note": "d51 RetrySideEffectDuplication — negative/clean (opt-in; txn slot runs d51 explicitly)",
+      "txn": {
+        "goldenFile": "ws-d51-neg.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-d51-neg.default.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      }
+    },
+    {
+      "fixture": "ws-d1-multi-caller",
+      "note": "d1 DbOpInLoop multi-caller — codeFlows breadth",
+      "txn": {
+        "goldenFile": "ws-d1-multi-caller.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-d1-multi-caller.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d1-db-op-in-loop"
+        ],
+        "levels": [
+          "error"
+        ],
+        "hasCodeFlows": true
+      }
+    },
+    {
+      "fixture": "ws-d14-dead-routine",
+      "note": "d14 DeadRoutine — non-txn positive",
+      "txn": {
+        "goldenFile": "ws-d14-dead-routine.txn.sarif.json",
+        "resultCount": 0,
+        "ruleIds": [],
+        "levels": [],
+        "hasCodeFlows": false
+      },
+      "default": {
+        "goldenFile": "ws-d14-dead-routine.default.sarif.json",
+        "resultCount": 1,
+        "ruleIds": [
+          "d14-dead-routine"
+        ],
+        "levels": [
+          "note"
+        ],
+        "hasCodeFlows": true
+      }
+    }
+  ]
+}
