@@ -2,16 +2,16 @@
   "description": "R4-0 Finding[] golden — stable projection of Finding[] from analyzeWorkspace (deterministic: true) per ws-d* smoke fixture. Comparison surface for the al-sem → Rust L5 detector parity differential. All ids in stable form (StableRoutineId/StableObjectId/StableTableId). See scripts/r4-finding-projection.ts.",
   "capturePoint": "post-runDetectors: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0', detectors: [...]}) → runDetectors (sorted by detector/primaryLocationKey/rootCauseKey) → projectR4Findings",
   "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
-  "alSemGitSha": "0d2e0dc30224a0519605906372500118e319ac37",
+  "alSemGitSha": "dcd24da8c593a41c4040fc40239863bc5cc8879e",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r4-0",
-  "fixtureCount": 33,
-  "positiveCount": 30,
+  "fixtureCount": 43,
+  "positiveCount": 40,
   "negativeCount": 3,
-  "totalFindings": 48,
+  "totalFindings": 60,
   "waves": [
     {
       "wave": "R4-A",
@@ -360,6 +360,96 @@
       ],
       "findingCount": 0,
       "isPositive": false
+    },
+    {
+      "fixture": "ws-event-ishandled",
+      "goldenFile": "ws-event-ishandled.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-ishandled-conditional-set",
+      "goldenFile": "ws-event-ishandled-conditional-set.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-ishandled-exit",
+      "goldenFile": "ws-event-ishandled-exit.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-ishandled-helper",
+      "goldenFile": "ws-event-ishandled-helper.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-ishandled-multi-dispatch",
+      "goldenFile": "ws-event-ishandled-multi-dispatch.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 2,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-ishandled-nested-guard",
+      "goldenFile": "ws-event-ishandled-nested-guard.r4.golden.json",
+      "detectors": [
+        "d43-event-ishandled-skip"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-multi-sub-overlap",
+      "goldenFile": "ws-event-multi-sub-overlap.r4.golden.json",
+      "detectors": [
+        "d44-event-multi-subscriber-overlap"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-read-after-write",
+      "goldenFile": "ws-event-read-after-write.r4.golden.json",
+      "detectors": [
+        "d44-event-multi-subscriber-overlap"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-d45-deep",
+      "goldenFile": "ws-event-d45-deep.r4.golden.json",
+      "detectors": [
+        "d45-event-transitive-table-exposure"
+      ],
+      "findingCount": 2,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-event-transitive-exposure",
+      "goldenFile": "ws-event-transitive-exposure.r4.golden.json",
+      "detectors": [
+        "d45-event-transitive-table-exposure"
+      ],
+      "findingCount": 1,
+      "isPositive": true
     }
   ]
 }

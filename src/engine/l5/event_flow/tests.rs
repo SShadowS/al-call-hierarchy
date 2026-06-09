@@ -9,6 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use super::*;
 use crate::engine::l3::event_graph::{EventEdge, EventGraph, EventSymbol, Evidence};
+use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l5::test_support::{coverage, routine, summary};
 
 fn ev(id: &str, publisher_routine: Option<&str>, name: &str, kind: &str) -> EventSymbol {
@@ -443,6 +444,185 @@ fn compute_chain_report_stats() {
     assert_eq!(rep.roots_with_events, 2);
     // At least one cycle detected across the two roots.
     assert!(rep.cycles_detected >= 1);
+}
+
+// ---------------------------------------------------------------------------
+// collect_relay_subscribers — direct oracles
+// ---------------------------------------------------------------------------
+
+/// Build a minimal `CombinedEdge` (direct call) from `from` to `to`.
+fn call_edge(from: &str, to: &str) -> CombinedEdge {
+    CombinedEdge {
+        from: from.to_string(),
+        to: to.to_string(),
+        kind: "direct".to_string(),
+        callsite_id: None,
+        operation_id: None,
+        event_id: None,
+        subscriber_app_id: None,
+        resolution: "resolved".to_string(),
+    }
+}
+
+/// Build the `edges_by_from` map from a list of `(from, to)` pairs.
+fn edges_map(pairs: &[(&str, &str)]) -> HashMap<String, Vec<CombinedEdge>> {
+    let mut m: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+    for &(f, t) in pairs {
+        m.entry(f.to_string()).or_default().push(call_edge(f, t));
+    }
+    m
+}
+
+/// Oracle 1: relay cycle terminates.
+///
+/// Setup: publisher P publishes E1; subscriber Sub1 subscribes to E1.
+/// Sub1's body calls relay publisher RelayP. RelayP publishes E2.
+/// Sub2 subscribes to E2. Sub2's body calls back to P (cycle back to the root).
+/// The `visited_pubs` guard must prevent infinite re-expansion of P.
+/// Expected result: {Sub1 → depth 1, Sub2 → depth 2} — the cycle edge back to P
+/// is silently dropped (P is already in `visited_pubs` from the start).
+#[test]
+fn collect_relay_subscribers_cycle_terminates() {
+    let g = EventGraph {
+        events: vec![
+            ev("E1", Some("P"), "OnFoo", "integration"),
+            ev("E2", Some("RelayP"), "OnBar", "integration"),
+        ],
+        edges: vec![
+            edge("E1", "Sub1", "resolved"),
+            edge("E2", "Sub2", "resolved"),
+        ],
+    };
+    let rs = vec![
+        routine("P", "event-publisher"),
+        routine("RelayP", "event-publisher"),
+        routine("Sub1", "event-subscriber"),
+        routine("Sub2", "event-subscriber"),
+    ];
+    let ix = build_event_flow_indexes(&g, &rs, &no_deps());
+
+    // Sub1 calls RelayP (relay hop); Sub2 calls P (cycle — P already visited).
+    let edges = edges_map(&[("Sub1", "RelayP"), ("Sub2", "P")]);
+
+    let result = collect_relay_subscribers("P", &ix, &edges, &RelayWalkOptions::default());
+
+    // Sub1 is a direct subscriber of P at depth 1.
+    assert_eq!(result.get("Sub1"), Some(&1), "Sub1 must be at depth 1");
+    // Sub2 is reached via RelayP at depth 2.
+    assert_eq!(result.get("Sub2"), Some(&2), "Sub2 must be at depth 2");
+    // P itself must NOT appear as a subscriber (it is visited_pubs, not a result entry).
+    assert!(
+        !result.contains_key("P"),
+        "cycle back to P must be suppressed"
+    );
+    // Exactly two subscribers discovered.
+    assert_eq!(result.len(), 2, "exactly Sub1 and Sub2 in result");
+}
+
+/// Oracle 2: MAX_DEPTH=4 truncation — subscribers beyond depth 4 are absent.
+///
+/// Setup: a linear relay chain of depth 5.
+///   P --E1--> S1 ; S1 calls R2 --E2--> S2 ; S2 calls R3 --E3--> S3 ;
+///   S3 calls R4 --E4--> S4 ; S4 calls R5 --E5--> S5.
+/// With the default max_depth=4: S1(1), S2(2), S3(3), S4(4) are collected;
+/// S5 would land at depth 5 > 4 and must be absent.
+#[test]
+fn collect_relay_subscribers_max_depth_truncates() {
+    let g = EventGraph {
+        events: vec![
+            ev("E1", Some("P"), "OnE1", "integration"),
+            ev("E2", Some("R2"), "OnE2", "integration"),
+            ev("E3", Some("R3"), "OnE3", "integration"),
+            ev("E4", Some("R4"), "OnE4", "integration"),
+            ev("E5", Some("R5"), "OnE5", "integration"),
+        ],
+        edges: vec![
+            edge("E1", "S1", "resolved"),
+            edge("E2", "S2", "resolved"),
+            edge("E3", "S3", "resolved"),
+            edge("E4", "S4", "resolved"),
+            edge("E5", "S5", "resolved"),
+        ],
+    };
+    let rs = vec![
+        routine("P", "event-publisher"),
+        routine("R2", "event-publisher"),
+        routine("R3", "event-publisher"),
+        routine("R4", "event-publisher"),
+        routine("R5", "event-publisher"),
+    ];
+    let ix = build_event_flow_indexes(&g, &rs, &no_deps());
+
+    // Relay chain: each subscriber Si calls the next relay publisher Ri+1.
+    let edges = edges_map(&[("S1", "R2"), ("S2", "R3"), ("S3", "R4"), ("S4", "R5")]);
+
+    let opts = RelayWalkOptions {
+        max_depth: 4,
+        max_nodes: 256,
+    };
+    let result = collect_relay_subscribers("P", &ix, &edges, &opts);
+
+    // S1..S4 must be present at their respective depths.
+    assert_eq!(result.get("S1"), Some(&1), "S1 at depth 1");
+    assert_eq!(result.get("S2"), Some(&2), "S2 at depth 2");
+    assert_eq!(result.get("S3"), Some(&3), "S3 at depth 3");
+    assert_eq!(result.get("S4"), Some(&4), "S4 at depth 4");
+    // S5 would be at depth 5 — must be absent (max_depth guard).
+    assert!(
+        !result.contains_key("S5"),
+        "S5 beyond max_depth must be absent"
+    );
+}
+
+/// Oracle 3: min-depth-on-shorter-path update.
+///
+/// A subscriber reachable via two paths — one longer, one shorter — must be
+/// recorded at the SHORTER depth.
+///
+/// Setup:
+///   P --E1--> DirectSub (depth 1, direct subscriber).
+///   P --E1--> RelaySub1 (depth 1, also a direct subscriber).
+///   RelaySub1 calls RelayP --E2--> DirectSub (depth 2, longer path).
+///
+/// DirectSub is reachable at depth 1 (directly) AND depth 2 (via relay).
+/// The result must record depth 1, not 2.
+#[test]
+fn collect_relay_subscribers_records_min_depth() {
+    let g = EventGraph {
+        events: vec![
+            ev("E1", Some("P"), "OnFoo", "integration"),
+            ev("E2", Some("RelayP"), "OnBar", "integration"),
+        ],
+        edges: vec![
+            // DirectSub is a direct (depth-1) subscriber of E1.
+            edge("E1", "DirectSub", "resolved"),
+            // RelaySub1 is also a direct subscriber; its body relays to RelayP.
+            edge("E1", "RelaySub1", "resolved"),
+            // DirectSub is ALSO a subscriber of E2 (depth-2 path via RelayP).
+            edge("E2", "DirectSub", "resolved"),
+        ],
+    };
+    let rs = vec![
+        routine("P", "event-publisher"),
+        routine("RelayP", "event-publisher"),
+        routine("RelaySub1", "event-subscriber"),
+        routine("DirectSub", "event-subscriber"),
+    ];
+    let ix = build_event_flow_indexes(&g, &rs, &no_deps());
+
+    // RelaySub1 relays to RelayP.
+    let edges = edges_map(&[("RelaySub1", "RelayP")]);
+
+    let result = collect_relay_subscribers("P", &ix, &edges, &RelayWalkOptions::default());
+
+    // DirectSub must be at depth 1 (the shorter path wins).
+    assert_eq!(
+        result.get("DirectSub"),
+        Some(&1),
+        "DirectSub must be recorded at depth 1 (min-depth), not 2"
+    );
+    // RelaySub1 is at depth 1 too.
+    assert_eq!(result.get("RelaySub1"), Some(&1), "RelaySub1 at depth 1");
 }
 
 #[test]

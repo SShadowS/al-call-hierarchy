@@ -245,6 +245,18 @@ pub struct L3Routine {
     /// Unreachable-after-exit statements recorded during the L2 body DFS
     /// (`features.unreachableStatements`). Read by d20. Additive — forwarded verbatim.
     pub unreachable_statements: Vec<crate::engine::l2::features::PUnreachableStatement>,
+    /// Whether the routine body contains any branching (`features.hasBranching`).
+    /// Read by d43's `classify_subscriber` / `publisher_branch_facts`. Additive —
+    /// forwarded verbatim from L2; dep (bodyless) routines default `false`.
+    pub has_branching: bool,
+    /// Variable assignments (`features.varAssignments`) — `lhsName` + optional
+    /// `rhsLiteralValue`. Read by d43 to detect `IsHandled := true` setters.
+    /// Additive — forwarded verbatim from L2.
+    pub var_assignments: Vec<crate::engine::l2::features::PVarAssignment>,
+    /// Condition references (`features.conditionReferences`) — identifiers used in
+    /// guard positions, with their reference anchors. Read by `enumerate_dispatch_sites`
+    /// (d43) to find post-call IsHandled guards. Additive — forwarded verbatim from L2.
+    pub condition_references: Vec<crate::engine::l2::features::PConditionReference>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -697,6 +709,10 @@ fn project_file(
             // deduped exactly as L2 produced it); d20 reads the unreachable list.
             let identifier_references = features.identifier_references.clone();
             let unreachable_statements = features.unreachable_statements.clone();
+            // d43 branch-slice surface: hasBranching + varAssignments + conditionReferences.
+            let has_branching = features.has_branching;
+            let var_assignments = features.var_assignments.clone();
+            let condition_references = features.condition_references.clone();
             // The routine's OWN declaration anchor (al-sem routine-indexer.ts:419):
             // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
             let source_anchor = anchor_from_node(routine, source_unit_id, cols);
@@ -757,6 +773,9 @@ fn project_file(
                 source_anchor,
                 identifier_references,
                 unreachable_statements,
+                has_branching,
+                var_assignments,
+                condition_references,
             });
         }
     }

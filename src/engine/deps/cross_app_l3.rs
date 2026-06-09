@@ -192,6 +192,12 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         },
         identifier_references: Vec::new(),
         unreachable_statements: Vec::new(),
+        // Dep routines are bodyless (ABI symbol-only) — no branching / assignments /
+        // condition refs. d43 gates on the publisher carrying an IsHandled `var` param +
+        // a primary role, so these defaults are never observed for a dep routine.
+        has_branching: false,
+        var_assignments: Vec::new(),
+        condition_references: Vec::new(),
     }
 }
 

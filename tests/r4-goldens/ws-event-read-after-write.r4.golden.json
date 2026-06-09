@@ -1,0 +1,81 @@
+{
+  "fixtureName": "ws-event-read-after-write",
+  "detectors": [
+    "d44-event-multi-subscriber-overlap"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d44-event-multi-subscriber-overlap",
+      "id": "d44-rw/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/Codeunit/50000/event/onafteradjust|bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100",
+      "rootCauseKey": "d44-rw/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/Codeunit/50000/event/onafteradjust|bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100",
+      "title": "Event subscriber reads a table that another subscriber writes",
+      "rootCause": "On event bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/Codeunit/50000/event/onafteradjust, subscribers {r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876} write bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100; subscribers {r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395} read bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100. AL subscriber order is undefined — reads may see pre- or post-mutation state.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/SubWriter.al",
+        "range": {
+          "startLine": 3,
+          "startColumn": 4,
+          "endLine": 7,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/SubWriter.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50001#db2f7657277cea6b37edaf5291907f053797801512d1c7785b79275a0494c019",
+            "syntaxKind": "procedure"
+          },
+          "note": "writes bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100"
+        },
+        {
+          "routineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/SubReader.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
+            "syntaxKind": "procedure"
+          },
+          "note": "reads bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/table/50100"
+        }
+      ],
+      "affectedObjects": [],
+      "affectedTables": [
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Table:50100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Make subscriber ordering explicit, or move the read into the writing subscriber.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "1dfa52c223850012",
+      "eventKind": "integration"
+    }
+  ]
+}

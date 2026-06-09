@@ -20,6 +20,9 @@ pub mod d35;
 pub mod d36;
 pub mod d38;
 pub mod d4;
+pub mod d43;
+pub mod d44;
+pub mod d45;
 pub mod d48;
 pub mod d5;
 pub mod d7;
@@ -69,6 +72,40 @@ pub(crate) fn anchor_of(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
         leading_context_hash: None,
         trailing_context_hash: None,
     }
+}
+
+/// `groupAndCap` — group findings by `key_of(finding)`, sort each group by
+/// `compareStrings(id)`, then keep the first `max_per_key` of each group (group
+/// iteration in sorted-key order). Returns `(kept, truncated_count)`. Port of
+/// al-sem `finding-grouping.ts:groupAndCap`. Used by d44 (per-event cap) and d45
+/// (per-publisher cap) to bound output explosion.
+pub(crate) fn group_and_cap<F>(
+    findings: Vec<crate::engine::l5::finding::Finding>,
+    key_of: F,
+    max_per_key: usize,
+) -> (Vec<crate::engine::l5::finding::Finding>, usize)
+where
+    F: Fn(&crate::engine::l5::finding::Finding) -> String,
+{
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<String, Vec<crate::engine::l5::finding::Finding>> = BTreeMap::new();
+    for f in findings {
+        groups.entry(key_of(&f)).or_default().push(f);
+    }
+    let mut kept: Vec<crate::engine::l5::finding::Finding> = Vec::new();
+    let mut truncated_count = 0usize;
+    // BTreeMap keys iterate in byte order (matching compareStrings).
+    for (_k, mut bag) in groups {
+        bag.sort_by(|a, b| a.id.cmp(&b.id));
+        if bag.len() <= max_per_key {
+            kept.extend(bag);
+        } else {
+            truncated_count += bag.len() - max_per_key;
+            bag.truncate(max_per_key);
+            kept.extend(bag);
+        }
+    }
+    (kept, truncated_count)
 }
 
 /// The registered detector list. Re-sorted findings come out of `run_detectors`;
@@ -166,6 +203,18 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d35-commit-in-event-subscriber".to_string(),
             run: d35::detect_d35,
+        },
+        Detector {
+            name: "d43-event-ishandled-skip".to_string(),
+            run: d43::detect_d43,
+        },
+        Detector {
+            name: "d44-event-multi-subscriber-overlap".to_string(),
+            run: d44::detect_d44,
+        },
+        Detector {
+            name: "d45-event-transitive-table-exposure".to_string(),
+            run: d45::detect_d45,
         },
     ]
 }

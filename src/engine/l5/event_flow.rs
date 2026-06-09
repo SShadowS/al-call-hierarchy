@@ -11,19 +11,19 @@
 //!     `get_subscribers_of_event` / `get_publisher_of_event`.
 //!   - `FanoutEntry` / `FanoutCoverage` + `compute_fanout` (the fan-out list with
 //!     the tri-state coverage states) + `compute_fanout_report`.
-//!   - `walk_event_chain` (the bounded transitive event-chain walk d45 uses) +
+//!   - `walk_event_chain` (the bounded transitive event-chain walk) +
 //!     `compute_chain_report`.
-//!   - `publisher_branch_facts` is OMITTED — it reads `routine.summary
-//!     .capabilityFactsDirect` + `routine.features.varAssignments`/`hasBranching`,
-//!     which the d43 branch-slice work depends on but is NOT part of the
-//!     index/fan-out/chain substrate this wave ports (it has no callers yet and
-//!     pulls in the IsHandled feature surface). Flagged for the reviewer below.
-//!   - `build_cross_extension_subscribers` is OMITTED — it reads `obj.appGuid` per
-//!     OBJECT id (al-sem `model.objects`) which the Rust `EventGraph` does not
-//!     carry; the EventEdge already exposes `subscriber_app_id`, and the publisher
-//!     app is derivable, but the al-sem helper keys on the OBJECT-app map. It is
-//!     D43/D44/D45 evidence-only (no detector filtering) and can land with the
-//!     detector wave. Flagged below.
+//!   - `collect_relay_subscribers` (the bounded transitive subscriber walk d45 uses —
+//!     bridges event-graph dispatches with call-graph relay edges).
+//!   - `is_handled_re` — hand-rolled matcher for al-sem `IS_HANDLED_RE`.
+//!   - `publisher_branch_facts` — the d43 branch-slice surface (reads the L3-forwarded
+//!     `var_assignments` / `has_branching` + the publisher summary's direct facts).
+//!     Ported with the d43/d44/d45 detector wave (previously deferred).
+//!   - `build_cross_extension_subscribers` — per-event cross-app subscriber lookup
+//!     keyed off the OBJECT-app map (`objects[].app_guid` via
+//!     `EventSymbol.publisher_object_id`) vs `EventEdge.subscriber_app_id`. D43/D44/D45
+//!     evidence-only (populates `Finding.cross_extension_subscribers`; no detector
+//!     filtering). Ported with the detector wave (previously deferred).
 //!
 //! === Determinism ===
 //! al-sem freezes every derived list with `[...set].sort(compareStrings)`
@@ -47,8 +47,58 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::l3::event_graph::EventGraph;
-use crate::engine::l3::l3_workspace::L3Routine;
+use crate::engine::l3::l3_workspace::{L3Object, L3Routine};
+use crate::engine::l4::capability_cone::CapabilityFact;
 use crate::engine::l5::full_summary::FullRoutineSummary;
+
+// ---------------------------------------------------------------------------
+// IS_HANDLED_RE — al-sem `/^is.?handled$/i`.
+// ---------------------------------------------------------------------------
+
+/// Faithful hand-rolled matcher for al-sem's `IS_HANDLED_RE = /^is.?handled$/i`.
+///
+/// The regex is anchored both ends, case-insensitive. `.?` matches ZERO OR ONE of
+/// any character (Unicode code point) EXCEPT a newline (`'\n'`). So the accepted
+/// strings are exactly:
+///   - 9 chars: matches `"ishandled"` case-insensitively (`.?` matched empty), or
+///   - 10 chars: `chars[0..2]` match `"is"` (ci), `chars[2] != '\n'`, `chars[3..10]`
+///     match `"handled"` (ci).
+///
+/// Operates on `name.chars()` — NO whole-string `to_lowercase` — so multi-byte
+/// middle characters (`"is😀handled"`, `"isßhandled"`) and lowercase-expanding chars
+/// are handled faithfully.
+pub fn is_handled_re(name: &str) -> bool {
+    let chars: Vec<char> = name.chars().collect();
+    let is_lit: [char; 2] = ['i', 's'];
+    let handled_lit: [char; 7] = ['h', 'a', 'n', 'd', 'l', 'e', 'd'];
+
+    match chars.len() {
+        9 => {
+            // ".?" matched empty: "ishandled" (ci).
+            chars[0..2]
+                .iter()
+                .zip(is_lit.iter())
+                .all(|(c, t)| c.eq_ignore_ascii_case(t))
+                && chars[2..9]
+                    .iter()
+                    .zip(handled_lit.iter())
+                    .all(|(c, t)| c.eq_ignore_ascii_case(t))
+        }
+        10 => {
+            // ".?" matched one non-newline char.
+            chars[0..2]
+                .iter()
+                .zip(is_lit.iter())
+                .all(|(c, t)| c.eq_ignore_ascii_case(t))
+                && chars[2] != '\n'
+                && chars[3..10]
+                    .iter()
+                    .zip(handled_lit.iter())
+                    .all(|(c, t)| c.eq_ignore_ascii_case(t))
+        }
+        _ => false,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // EventKind
@@ -647,6 +697,232 @@ pub fn compute_chain_report(
         depth_truncated_nodes: acc.depth_truncated,
         chains,
     }
+}
+
+// ---------------------------------------------------------------------------
+// collect_relay_subscribers (port of al-sem engine/event-relay.ts)
+// ---------------------------------------------------------------------------
+
+/// Options for `collect_relay_subscribers`. Mirrors al-sem `RelayWalkOptions`.
+#[derive(Debug, Clone)]
+pub struct RelayWalkOptions {
+    /// Max chain depth (depth 1 = direct subscriber of the root). Default 4.
+    pub max_depth: usize,
+    /// Max total subscribers discovered. Default 256.
+    pub max_nodes: usize,
+}
+
+impl Default for RelayWalkOptions {
+    fn default() -> Self {
+        RelayWalkOptions {
+            max_depth: 4,
+            max_nodes: 256,
+        }
+    }
+}
+
+/// Walk the transitive subscriber chain from `publisher`, bridging event-graph
+/// dispatches with call-graph relay edges. Returns `subscriber RoutineId → min chain
+/// depth` (depth 1 = direct subscriber of the root). Faithful port of al-sem
+/// `collectRelaySubscribers`.
+///
+/// Unlike `walk_event_chain` (event-graph only), this also follows call-graph edges
+/// where a subscriber's BODY calls another event-publisher routine — a "relay" to the
+/// next hop. `edges_by_from` is the combined-graph adjacency (`ctx.graph.edges_by_from`).
+///
+/// Deterministic: subscribers iterated in byte order at each hop; the call-graph relay
+/// callees are iterated in the combined graph's existing edge order (already
+/// edge-sort-key sorted at assembly).
+pub fn collect_relay_subscribers(
+    publisher: &str,
+    ix: &EventFlowIndexes,
+    edges_by_from: &std::collections::HashMap<
+        String,
+        Vec<crate::engine::l4::combined_graph::CombinedEdge>,
+    >,
+    opts: &RelayWalkOptions,
+) -> BTreeMap<String, usize> {
+    let max_depth = opts.max_depth;
+    let max_nodes = opts.max_nodes;
+
+    let mut result: BTreeMap<String, usize> = BTreeMap::new();
+    // Queue of (publisher routine id, depth at which its direct subscribers land).
+    let mut queue: std::collections::VecDeque<(String, usize)> = std::collections::VecDeque::new();
+    queue.push_back((publisher.to_string(), 1));
+    let mut visited_pubs: BTreeSet<String> = BTreeSet::new();
+    visited_pubs.insert(publisher.to_string());
+
+    while let Some((pub_id, depth)) = queue.pop_front() {
+        if depth > max_depth {
+            continue;
+        }
+        let events = ix
+            .events_by_publisher
+            .get(&pub_id)
+            .cloned()
+            .unwrap_or_default();
+        for ev in &events {
+            // subscribers already sorted (BTreeMap value list); al-sem re-sorts defensively.
+            let subs = ix.subscribers_by_event.get(ev).cloned().unwrap_or_default();
+            for sub in &subs {
+                if result.len() >= max_nodes {
+                    break;
+                }
+                // Record this subscriber at min depth.
+                match result.get(sub) {
+                    Some(&existing) if depth >= existing => {}
+                    _ => {
+                        result.insert(sub.clone(), depth);
+                    }
+                }
+                if depth + 1 > max_depth {
+                    continue;
+                }
+                // Follow call-graph edges from this subscriber to event-publisher callees.
+                if let Some(call_edges) = edges_by_from.get(sub) {
+                    for edge in call_edges {
+                        let callee = &edge.to;
+                        if !ix.events_by_publisher.contains_key(callee) {
+                            continue;
+                        }
+                        if visited_pubs.contains(callee) {
+                            continue;
+                        }
+                        visited_pubs.insert(callee.clone());
+                        queue.push_back((callee.clone(), depth + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+// ---------------------------------------------------------------------------
+// build_cross_extension_subscribers
+// ---------------------------------------------------------------------------
+
+/// Per-event lookup of subscribers whose `subscriber_app_id` differs from the
+/// PUBLISHER'S app guid. Returns a `BTreeMap<EventId, Vec<RoutineId>>` whose value
+/// lists are sorted (byte order, matching al-sem `compareStrings`). Events with no
+/// cross-app subscriber are ABSENT from the map. Used by D43/D44/D45 to populate
+/// `Finding.cross_extension_subscribers` (evidence-only — never filters findings).
+///
+/// Faithful port of al-sem `buildCrossExtensionSubscribers`:
+///   - `objectAppById` = `objects[].id → app_guid`.
+///   - `eventPubApp[event] = objectAppById[event.publisher_object_id]` (the OBJECT
+///     app, NOT an edge field).
+///   - bucket each `edge` where `edge.subscriber_app_id != publisher_app`.
+///
+/// The publisher app is derived from the OBJECT-app map keyed by
+/// `EventSymbol.publisher_object_id` — NOT from `EventEdge.subscriber_app_id`.
+pub fn build_cross_extension_subscribers(
+    event_graph: &EventGraph,
+    objects: &[L3Object],
+) -> BTreeMap<String, Vec<String>> {
+    // objectAppById: object id → app guid.
+    let mut object_app_by_id: BTreeMap<&str, &str> = BTreeMap::new();
+    for obj in objects {
+        object_app_by_id.insert(obj.id.as_str(), obj.app_guid.as_str());
+    }
+
+    // eventPubApp: event id → publisher's app guid (via publisher_object_id).
+    let mut event_pub_app: BTreeMap<&str, &str> = BTreeMap::new();
+    for ev in &event_graph.events {
+        if let Some(app) = object_app_by_id.get(ev.publisher_object_id.as_str()) {
+            event_pub_app.insert(ev.id.as_str(), *app);
+        }
+    }
+
+    // Bucket cross-extension subscriber routine ids per event (sorted, deduped).
+    let mut buckets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for edge in &event_graph.edges {
+        let Some(pub_app) = event_pub_app.get(edge.event_id.as_str()) else {
+            continue;
+        };
+        if edge.subscriber_app_id == *pub_app {
+            continue;
+        }
+        buckets
+            .entry(edge.event_id.clone())
+            .or_default()
+            .insert(edge.subscriber_routine_id.clone());
+    }
+
+    buckets
+        .into_iter()
+        .map(|(k, set)| (k, set.into_iter().collect()))
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// publisher_branch_facts
+// ---------------------------------------------------------------------------
+
+/// Branch-slice confidence ladder. Mirrors al-sem `BranchSliceConfidence`.
+pub type BranchSliceConfidence = &'static str;
+
+/// The d43 branch-slice surface. Mirrors al-sem `PublisherBranchFacts`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublisherBranchFacts {
+    /// "exact" | "pattern" | "unknown".
+    pub confidence: BranchSliceConfidence,
+    /// Facts that fire when IsHandled is FALSE (the default branch). Conservative:
+    /// ALL direct facts.
+    pub default_branch_facts: Vec<CapabilityFact>,
+    /// Facts that fire when IsHandled is TRUE (the guarded branch). Always empty
+    /// (slicing deferred, mirroring al-sem).
+    pub guarded_branch_facts: Vec<CapabilityFact>,
+    /// Facts in neither branch (unconditional). Always empty.
+    pub unguarded_facts: Vec<CapabilityFact>,
+    /// Lowercased identifier name of the boolean guard parameter.
+    pub guard_param_name: Option<String>,
+}
+
+/// `publisherBranchFacts(publisher, model)` — faithful port.
+///
+/// Returns `None` when the routine is absent OR has no IsHandled-shaped parameter.
+/// The default-branch slice is conservative: ALL direct facts go to
+/// `default_branch_facts`; `guarded`/`unguarded` are empty.
+///
+/// Confidence ladder:
+///   - `exact`   — no branching at all (every direct fact is in the default branch).
+///   - `pattern` — branching present AND IsHandled is assigned somewhere in the body.
+///   - `unknown` — branching present but no IsHandled assignment detected.
+///
+/// `directFacts` = the publisher summary's `capability_facts_direct` (al-sem
+/// `routine.summary?.capabilityFactsDirect ?? []`).
+pub fn publisher_branch_facts(
+    publisher: &str,
+    routines: &[L3Routine],
+    summaries: &std::collections::HashMap<String, FullRoutineSummary>,
+) -> Option<PublisherBranchFacts> {
+    let routine = routines.iter().find(|r| r.id == publisher)?;
+    let guard_param = routine.parameters.iter().find(|p| is_handled_re(&p.name))?;
+    let direct_facts: Vec<CapabilityFact> = summaries
+        .get(publisher)
+        .map(|s| s.capability_facts_direct.clone())
+        .unwrap_or_default();
+    let has_branching = routine.has_branching;
+    let assigns_is_handled = routine
+        .var_assignments
+        .iter()
+        .any(|a| is_handled_re(&a.lhs_name));
+    let confidence: BranchSliceConfidence = if !has_branching {
+        "exact"
+    } else if assigns_is_handled {
+        "pattern"
+    } else {
+        "unknown"
+    };
+    Some(PublisherBranchFacts {
+        confidence,
+        default_branch_facts: direct_facts,
+        guarded_branch_facts: Vec::new(),
+        unguarded_facts: Vec::new(),
+        guard_param_name: Some(guard_param.name.to_lowercase()),
+    })
 }
 
 #[cfg(test)]

@@ -329,6 +329,88 @@ const WAVE_D48_NEGATIVE: Smoke = Smoke {
     corpus_dir: None,
 };
 
+/// R4-EVENT per-detector positive fixtures (event-flow substrate: d43/d44/d45).
+/// d43: 6 fixtures totaling 7 findings (ws-event-ishandled = 1, -conditional-set = ?,
+/// -exit, -helper, -multi-dispatch, -nested-guard). d44: 2 fixtures totaling 2
+/// (ws-event-multi-sub-overlap = 1, ws-event-read-after-write = 1). d45: 2 fixtures
+/// totaling 3 (ws-event-d45-deep = 2, ws-event-transitive-exposure = 1). Each
+/// byte-matches END-TO-END.
+const WAVE_R4_EVENT: &[Smoke] = &[
+    // --- d43: event-ishandled-skip (6 fixtures) ---
+    Smoke {
+        fixture: "ws-event-ishandled",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-ishandled-conditional-set",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-ishandled-exit",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-ishandled-helper",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-ishandled-multi-dispatch",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-ishandled-nested-guard",
+        wave: "R4-EVENT",
+        detectors: &["d43-event-ishandled-skip"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // --- d44: event-multi-subscriber-overlap (2 fixtures) ---
+    Smoke {
+        fixture: "ws-event-multi-sub-overlap",
+        wave: "R4-EVENT",
+        detectors: &["d44-event-multi-subscriber-overlap"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-read-after-write",
+        wave: "R4-EVENT",
+        detectors: &["d44-event-multi-subscriber-overlap"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // --- d45: event-transitive-table-exposure (2 fixtures, 3 findings) ---
+    Smoke {
+        fixture: "ws-event-d45-deep",
+        wave: "R4-EVENT",
+        detectors: &["d45-event-transitive-table-exposure"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-event-transitive-exposure",
+        wave: "R4-EVENT",
+        detectors: &["d45-event-transitive-table-exposure"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
 /// ws-d1-dep-terminal: the explicit D1 negative — a 0-finding workspace with a
 /// committed 0-count golden. Byte-matched END-TO-END (so the projection envelope's
 /// `findingCount: 0` shape is asserted) but EXEMPT from the anti-degenerate ≥1
@@ -482,6 +564,27 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d2-event-fanout-in-loop",
         neutral_fixture: "ws-d4-repeated-get",
+    },
+    // d43: ws-event-multi-sub-overlap has event subscribers but NO IsHandled dispatch
+    // guard anywhere (no conditionReferences) — the substrate guard bails (or, even
+    // reaching the site loop, no dispatch site has a post-call IsHandled guard), so 0.
+    NegativeAssertion {
+        detector: "d43-event-ishandled-skip",
+        neutral_fixture: "ws-event-multi-sub-overlap",
+    },
+    // d44: ws-event-transitive-exposure has a single subscriber per event (no two
+    // subscribers writing the same table, no reader-after-writer) — the overlap and
+    // read-after-write gates never fire, so 0.
+    NegativeAssertion {
+        detector: "d44-event-multi-subscriber-overlap",
+        neutral_fixture: "ws-event-transitive-exposure",
+    },
+    // d45: ws-event-ishandled has an event publisher whose subscriber sets IsHandled
+    // but writes NO table — the transitive-write aggregation finds no writer-subscriber
+    // table, so the per-(publisher,table) loop never fires and the detector emits 0.
+    NegativeAssertion {
+        detector: "d45-event-transitive-table-exposure",
+        neutral_fixture: "ws-event-ishandled",
     },
 ];
 
@@ -812,6 +915,15 @@ fn differential_r4_findings_match_goldens() {
     // The D48 explicit negative: byte-match its 0-count golden END-TO-END, but do
     // NOT push it into ported_results (exempt from the anti-degenerate ≥1).
     run_smoke_entry(&WAVE_D48_NEGATIVE, &registered_names, &mut all_divergences);
+
+    // --- R4-EVENT per-detector fixtures (event-flow substrate: d43/d44/d45) ----
+    for smoke in WAVE_R4_EVENT {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
 
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {

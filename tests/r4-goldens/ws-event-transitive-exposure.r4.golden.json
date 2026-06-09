@@ -1,0 +1,66 @@
+{
+  "fixtureName": "ws-event-transitive-exposure",
+  "detectors": [
+    "d45-event-transitive-table-exposure"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d45-event-transitive-table-exposure",
+      "id": "d45/33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa|33333333-3333-3333-3333-333333333333/table/50101",
+      "rootCauseKey": "d45/33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa|33333333-3333-3333-3333-333333333333/table/50101",
+      "title": "Event subscribers expose table transitively from publisher",
+      "rootCause": "Publisher r0/6295e47ecf668152e48755369c2a8aa0f0b5b2b22b1cba3e313a5ddf32fbeb9a dispatches to 1 subscriber(s) that write table 33333333-3333-3333-3333-333333333333/table/50101; reach=direct; publisherAlsoWrites=yes; subscriberCoverage=complete",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Publisher.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 4,
+          "endLine": 10,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50000#5da9b870383a38e35e94a3337a7a573278d2d6b9951cd6aa8645726a9c4753aa",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "33333333-3333-3333-3333-333333333333:Codeunit:50001#cac320d2ba49755e20d89b2940f64618c1e09d953b7b86c28677381a030daed4",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 10,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "33333333-3333-3333-3333-333333333333:Codeunit:50001#cac320d2ba49755e20d89b2940f64618c1e09d953b7b86c28677381a030daed4",
+            "syntaxKind": "procedure"
+          },
+          "note": "subscriber writes 33333333-3333-3333-3333-333333333333/table/50101"
+        }
+      ],
+      "affectedObjects": [],
+      "affectedTables": [
+        "33333333-3333-3333-3333-333333333333:Table:50101"
+      ],
+      "fixOptions": [
+        {
+          "description": "Treat 33333333-3333-3333-3333-333333333333/table/50101 as part of this event's effect surface for permission/transaction reasoning.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "0892c20e827db344",
+      "eventKind": "integration"
+    }
+  ]
+}

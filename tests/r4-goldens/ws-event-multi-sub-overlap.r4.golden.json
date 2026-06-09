@@ -1,0 +1,81 @@
+{
+  "fixtureName": "ws-event-multi-sub-overlap",
+  "detectors": [
+    "d44-event-multi-subscriber-overlap"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d44-event-multi-subscriber-overlap",
+      "id": "d44/22222222-2222-2222-2222-222222222222/Codeunit/50000/event/onafterpost|22222222-2222-2222-2222-222222222222/table/50100",
+      "rootCauseKey": "d44/22222222-2222-2222-2222-222222222222/Codeunit/50000/event/onafterpost|22222222-2222-2222-2222-222222222222/table/50100",
+      "title": "Multiple event subscribers write the same table",
+      "rootCause": "2 subscribers of event 22222222-2222-2222-2222-222222222222/Codeunit/50000/event/onafterpost write table 22222222-2222-2222-2222-222222222222/table/50100 (ops: modify)",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Sub1.al",
+        "range": {
+          "startLine": 3,
+          "startColumn": 4,
+          "endLine": 6,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sub1.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50001#8df06bda1ebc04b37b09e5e4ce5b4049e0133a67217b991a00f44783110486ab",
+            "syntaxKind": "procedure"
+          },
+          "note": "writes table 22222222-2222-2222-2222-222222222222/table/50100"
+        },
+        {
+          "routineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sub2.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
+            "syntaxKind": "procedure"
+          },
+          "note": "writes table 22222222-2222-2222-2222-222222222222/table/50100"
+        }
+      ],
+      "affectedObjects": [],
+      "affectedTables": [
+        "22222222-2222-2222-2222-222222222222:Table:50100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Coordinate the writes (single subscriber, or merge intent) to avoid lost-update / ordering surprises.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "c7675212e37a9d4c",
+      "eventKind": "integration"
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "fixtureName": "ws-event-d45-deep",
+  "detectors": [
+    "d45-event-transitive-table-exposure"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d45-event-transitive-table-exposure",
+      "id": "d45/cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e|cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101",
+      "rootCauseKey": "d45/cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e|cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101",
+      "title": "Event subscribers expose table transitively from publisher",
+      "rootCause": "Publisher r0/5bb994ddbc480751ae3d89df05a0ee3a22f66901520dbd052f6dca38d10e53ca dispatches to 2 subscriber(s) that write table cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101; reach=direct; publisherAlsoWrites=yes; subscriberCoverage=complete",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/PubA.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 4,
+          "endLine": 10,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50000#1c58acf3ea0c1a66759126b3534dd147b9c9c8060a8c54f2e798f209343bf88e",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/SubAudit.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 9,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+            "syntaxKind": "procedure"
+          },
+          "note": "subscriber writes cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101"
+        },
+        {
+          "routineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/PubB.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#c8d7973ef2570ecbed966283dab5eaf739158613c6eac836453eb5f7e1485628",
+            "syntaxKind": "procedure"
+          },
+          "note": "subscriber writes cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101"
+        }
+      ],
+      "affectedObjects": [],
+      "affectedTables": [
+        "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101"
+      ],
+      "fixOptions": [
+        {
+          "description": "Treat cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101 as part of this event's effect surface for permission/transaction reasoning.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "ba56b4ae9c53b7bb",
+      "eventKind": "integration"
+    },
+    {
+      "detector": "d45-event-transitive-table-exposure",
+      "id": "d45/cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f|cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101",
+      "rootCauseKey": "d45/cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f|cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101",
+      "title": "Event subscribers expose table transitively from publisher",
+      "rootCause": "Publisher r0/b803e1b083798099b85066a831d6f27688e2721ab4621892b65f6191e46e7948 dispatches to 1 subscriber(s) that write table cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101; reach=direct; publisherAlsoWrites=yes; subscriberCoverage=complete",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/PubB.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 4,
+          "endLine": 11,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50001#0f92409aa92b3688515a86ba6104ef0389daa0871ae2a6fa4aeb5e9b7317654f",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/SubAudit.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 9,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "cccccccc-cccc-cccc-cccc-cccccccccccc:Codeunit:50002#1e4ceb04e74c05e42b0b26dd8a2839bcab187ab49500581ffdcefc7790a8e2d2",
+            "syntaxKind": "procedure"
+          },
+          "note": "subscriber writes cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101"
+        }
+      ],
+      "affectedObjects": [],
+      "affectedTables": [
+        "cccccccc-cccc-cccc-cccc-cccccccccccc:Table:50101"
+      ],
+      "fixOptions": [
+        {
+          "description": "Treat cccccccc-cccc-cccc-cccc-cccccccccccc/table/50101 as part of this event's effect surface for permission/transaction reasoning.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "3ac54e0bd34606b7",
+      "eventKind": "integration"
+    }
+  ]
+}
