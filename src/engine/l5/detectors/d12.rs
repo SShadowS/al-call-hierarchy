@@ -1,0 +1,126 @@
+//! D12 — dead integration event. Port of al-sem
+//! `src/detectors/d12-dead-integration-event.ts`.
+//!
+//! Flags an `[IntegrationEvent]` published from primary-app code that has ZERO
+//! subscribers anywhere in the workspace + dependency closure — a dead extensibility
+//! surface. Reads the raw event graph (`ctx.event_graph`): integration `EventSymbol`s
+//! with a primary publisher routine + 0 edges naming that event's id.
+//!
+//! `id = d12/{event.id}` where `event.id` is the INTERNAL EventId
+//! `{publisherObjectId}/event/{eventName_lc}` (appGuid-based). The R4 projection does
+//! NOT stabilize this — only internal RoutineIds (`r0/...`) are rewritten — so the
+//! Rust event id must byte-match al-sem's `encodeEventId`. Within-detector sort by
+//! `compareStrings(a.id, b.id)`. severity info; confidence `to_confidence(&[],
+//! "likely")` → "likely".
+
+use std::collections::HashMap;
+
+use crate::engine::l5::confidence::to_confidence;
+use crate::engine::l5::detector_context::DetectorContext;
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::fingerprint::FingerprintIndex;
+use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+
+use super::anchor_of;
+
+const DETECTOR: &str = "d12-dead-integration-event";
+
+pub fn detect_d12(
+    resolved: &crate::engine::l3::l3_workspace::L3Resolved,
+    ctx: &DetectorContext,
+) -> DetectorOutput {
+    let ws = &resolved.workspace;
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let mut findings: Vec<Finding> = Vec::new();
+
+    // subsByEvent: count of edges per internal eventId.
+    let mut subs_by_event: HashMap<&str, usize> = HashMap::new();
+    for edge in &ctx.event_graph.edges {
+        *subs_by_event.entry(edge.event_id.as_str()).or_insert(0) += 1;
+    }
+
+    let mut candidates_considered = 0usize;
+
+    for ev in &ctx.event_graph.events {
+        if ev.event_kind != "integration" {
+            continue;
+        }
+        let Some(pub_routine_id) = &ev.publisher_routine_id else {
+            continue;
+        };
+        let Some(pub_routine) = ctx.routine_by_id.get(pub_routine_id.as_str()) else {
+            continue;
+        };
+        let pub_routine: &crate::engine::l3::l3_workspace::L3Routine = pub_routine;
+        // roleOf(routine) !== "primary" → skip. Source-only: every routine is
+        // primary, so this never skips (mirrors al-sem semantics).
+        candidates_considered += 1;
+        if subs_by_event.get(ev.id.as_str()).copied().unwrap_or(0) > 0 {
+            continue;
+        }
+
+        let confidence: FindingConfidence = to_confidence(&[], "likely");
+
+        let id = format!("d12/{}", ev.id);
+        let root_cause_key = id.clone();
+
+        let root_cause = format!(
+            "{} publishes an integration event that no subscriber across this workspace or its \
+             dependencies handles — the extensibility point is dead.",
+            pub_routine.name
+        );
+
+        let path = vec![EvidenceStep {
+            routine_id: pub_routine.id.clone(),
+            operation_id: None,
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: anchor_of(&pub_routine.source_anchor, pub_routine),
+            note: format!("publishes {}", pub_routine.name),
+        }];
+
+        let mut finding = Finding {
+            id,
+            root_cause_key,
+            detector: DETECTOR.to_string(),
+            title: "Integration event has no subscribers".to_string(),
+            root_cause,
+            severity: "info".to_string(),
+            confidence,
+            primary_location: anchor_of(&pub_routine.source_anchor, pub_routine),
+            evidence_path: path,
+            additional_paths: None,
+            affected_objects: vec![pub_routine.object_id.clone()],
+            affected_tables: Vec::new(),
+            fix_options: vec![FixOption {
+                description:
+                    "Either remove the event if it has no real extensibility purpose, or document \
+                     why it exists for future subscribers."
+                        .to_string(),
+                safety: "medium".to_string(),
+            }],
+            provenance: vec![Evidence {
+                source: "tree-sitter".to_string(),
+                note: None,
+            }],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+        };
+        finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
+        findings.push(finding);
+    }
+
+    findings.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let emitted = findings.len();
+    DetectorOutput {
+        findings,
+        stats: DetectorStats {
+            detector: DETECTOR.to_string(),
+            candidates_considered,
+            findings_emitted: emitted,
+        },
+    }
+}

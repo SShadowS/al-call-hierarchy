@@ -64,7 +64,7 @@ const SMOKE: &[Smoke] = &[
         fixture: "ws-d12-dead-event",
         wave: "R4-C",
         detectors: &["d12-dead-integration-event"],
-        ported: false,
+        ported: true,
     },
     Smoke {
         fixture: "ws-d8-commit-in-tx",
@@ -177,6 +177,26 @@ const WAVE_B: &[Smoke] = &[
     },
 ];
 
+/// R4-C per-detector positive fixtures (event/call-graph — eventGraph edges +
+/// combined-graph SCC). d12's smoke entry already byte-matches above; d7/d38 are the
+/// new per-detector entries.
+const WAVE_C: &[Smoke] = &[
+    // d7: event-subscriber chain forms a cycle (combined-graph SCC + event-dispatch).
+    Smoke {
+        fixture: "ws-d7-event-cycle",
+        wave: "R4-C",
+        detectors: &["d7-recursive-event-expansion"],
+        ported: true,
+    },
+    // d38: primary subscriber bound to an [Obsolete] publisher event (2 findings).
+    Smoke {
+        fixture: "ws-d38",
+        wave: "R4-C",
+        detectors: &["d38-subscriber-to-obsolete-event"],
+        ported: true,
+    },
+];
+
 /// A negative assertion: the given detector must produce 0 findings over the
 /// neutral fixture (which lacks the detector's triggering pattern).
 struct NegativeAssertion {
@@ -258,6 +278,27 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d33-unfiltered-bulk-write",
         neutral_fixture: "ws-d22",
+    },
+    // d7: ws-d38 has event-dispatch edges (publisher → subscriber) but the
+    // subscribers don't re-publish, so the combined graph has NO SCC of size >= 2 —
+    // Tarjan finds only singletons and the detector emits 0.
+    NegativeAssertion {
+        detector: "d7-recursive-event-expansion",
+        neutral_fixture: "ws-d38",
+    },
+    // d12: ws-d38 declares three [IntegrationEvent] publishers, but EACH has at least
+    // one [EventSubscriber] in the workspace — subsByEvent > 0 for every event, so the
+    // dead-event gate never fires and the detector emits 0.
+    NegativeAssertion {
+        detector: "d12-dead-integration-event",
+        neutral_fixture: "ws-d38",
+    },
+    // d38: ws-d12-dead-event has an [IntegrationEvent] publisher but NO subscriber at
+    // all — there are no resolved edges to walk, so the obsolete-publisher check is
+    // never reached and the detector emits 0.
+    NegativeAssertion {
+        detector: "d38-subscriber-to-obsolete-event",
+        neutral_fixture: "ws-d12-dead-event",
     },
 ];
 
@@ -532,6 +573,15 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- R4-C per-detector fixtures -------------------------------------------
+    for smoke in WAVE_C {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -633,11 +683,12 @@ fn differential_r4_findings_match_goldens() {
     );
 
     eprintln!(
-        "R4 differential: {} smoke + {} R4-A + {} R4-B wave fixture(s); {} ported (all byte-matched); \
+        "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C wave fixture(s); {} ported (all byte-matched); \
          {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
         WAVE_A.len(),
         WAVE_B.len(),
+        WAVE_C.len(),
         ported_results.len(),
         NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
@@ -661,11 +712,12 @@ fn refresh_r4_goldens_from_al_sem() {
     let dst = goldens_dir();
     std::fs::create_dir_all(&dst).expect("mk r4 goldens dir");
     let mut copied = 0usize;
-    // Smoke + wave-A + wave-B fixtures
+    // Smoke + wave-A + wave-B + wave-C fixtures
     let all_fixtures: Vec<&str> = SMOKE
         .iter()
         .chain(WAVE_A.iter())
         .chain(WAVE_B.iter())
+        .chain(WAVE_C.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

@@ -1,0 +1,153 @@
+{
+  "fixtureName": "ws-d38",
+  "detectors": [
+    "d38-subscriber-to-obsolete-event"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d38-subscriber-to-obsolete-event",
+      "id": "d38/11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614/11111111-0000-0000-0000-00000000d380/Codeunit/51400/event/onafterdostuffremoved",
+      "rootCauseKey": "d38/11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614/11111111-0000-0000-0000-00000000d380/Codeunit/51400/event/onafterdostuffremoved",
+      "title": "Subscriber bound to obsolete event (Removed)",
+      "rootCause": "HandleRemoved subscribes to 'OnAfterDoStuffRemoved', whose publisher OnAfterDoStuffRemoved is [Obsolete(Removed)] — the subscriber will stop firing once the publisher is removed.",
+      "severity": "high",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Subscriber.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 4,
+          "endLine": 12,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 4,
+              "endLine": 12,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#0ead17e6292911ebecd7119d64c047b938740d568e76139b0eb637ebac001614",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] subscribes to 'OnAfterDoStuffRemoved'"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Publisher.al",
+            "range": {
+              "startLine": 12,
+              "startColumn": 4,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#7159135672ff7ddc0cfd86ee6a1f447106ed9db51794d729be124cb77a9a6cce",
+            "syntaxKind": "procedure"
+          },
+          "note": "publisher OnAfterDoStuffRemoved is [Obsolete(Removed)] — Removed; use OnAfterDoStuffV2."
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+        "11111111-0000-0000-0000-00000000d380:Codeunit:51401"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Removed; use OnAfterDoStuffV2.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "51cb8e1a067595a4"
+    },
+    {
+      "detector": "d38-subscriber-to-obsolete-event",
+      "id": "d38/11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b/11111111-0000-0000-0000-00000000d380/Codeunit/51400/event/onafterdostuffpending",
+      "rootCauseKey": "d38/11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b/11111111-0000-0000-0000-00000000d380/Codeunit/51400/event/onafterdostuffpending",
+      "title": "Subscriber bound to obsolete event (Pending)",
+      "rootCause": "HandlePending subscribes to 'OnAfterDoStuffPending', whose publisher OnAfterDoStuffPending is [Obsolete(Pending)] — plan a migration to the successor before the publisher is removed.",
+      "severity": "info",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Subscriber.al",
+        "range": {
+          "startLine": 4,
+          "startColumn": 4,
+          "endLine": 6,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
+            "syntaxKind": "procedure"
+          },
+          "note": "[EventSubscriber] subscribes to 'OnAfterDoStuffPending'"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Publisher.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 4,
+              "endLine": 7,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51400#db37ad957a5e2f29e8cb36ea481e6ded565d3db969c67ba8f0aa7649768987cd",
+            "syntaxKind": "procedure"
+          },
+          "note": "publisher OnAfterDoStuffPending is [Obsolete(Pending)] — Use OnAfterDoStuffV2; this will be removed in 25.0."
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d380:Codeunit:51400",
+        "11111111-0000-0000-0000-00000000d380:Codeunit:51401"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Use OnAfterDoStuffV2; this will be removed in 25.0.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "bda8cb526eeee4d3"
+    }
+  ]
+}

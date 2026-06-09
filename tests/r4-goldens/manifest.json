@@ -2,16 +2,16 @@
   "description": "R4-0 Finding[] golden — stable projection of Finding[] from analyzeWorkspace (deterministic: true) per ws-d* smoke fixture. Comparison surface for the al-sem → Rust L5 detector parity differential. All ids in stable form (StableRoutineId/StableObjectId/StableTableId). See scripts/r4-finding-projection.ts.",
   "capturePoint": "post-runDetectors: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0', detectors: [...]}) → runDetectors (sorted by detector/primaryLocationKey/rootCauseKey) → projectR4Findings",
   "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
-  "alSemGitSha": "3095ae4103482d08d11dafc894f42833d27a45a0",
+  "alSemGitSha": "fb600e54799ec20406f563853b1a3496a83220f8",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r4-0",
-  "fixtureCount": 17,
-  "positiveCount": 17,
+  "fixtureCount": 20,
+  "positiveCount": 20,
   "negativeCount": 0,
-  "totalFindings": 24,
+  "totalFindings": 30,
   "waves": [
     {
       "wave": "R4-A",
@@ -215,6 +215,33 @@
         "d36-late-setloadfields"
       ],
       "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d33",
+      "goldenFile": "ws-d33.r4.golden.json",
+      "detectors": [
+        "d33-unfiltered-bulk-write"
+      ],
+      "findingCount": 3,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d7-event-cycle",
+      "goldenFile": "ws-d7-event-cycle.r4.golden.json",
+      "detectors": [
+        "d7-recursive-event-expansion"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-d38",
+      "goldenFile": "ws-d38.r4.golden.json",
+      "detectors": [
+        "d38-subscriber-to-obsolete-event"
+      ],
+      "findingCount": 2,
       "isPositive": true
     }
   ]

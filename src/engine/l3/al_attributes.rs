@@ -107,3 +107,61 @@ pub fn qualified_arg(attr: &AttributeInfo, index: usize) -> Option<QualifiedArg>
     let member = a.member.clone()?;
     Some(QualifiedArg { qualifier, member })
 }
+
+/// The `[Obsolete(...)]` state — Removed only when the third arg is the qualified
+/// enum value `ObsoleteState::Removed`; otherwise Pending. Absent `[Obsolete]` →
+/// `obsolete_state == None`. Mirrors al-sem `RoutineAttributes["obsoleteState"]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObsoleteState {
+    Pending,
+    Removed,
+}
+
+/// Structured info parsed from a routine's `attributesParsed`. Port of al-sem
+/// `RoutineAttributes` (`src/engine/attribute-parser.ts`). Only the fields the
+/// ported detectors read are modelled (obsolete_state / obsolete_reason for D38;
+/// internal_proc for parity with the al-sem shape).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutineAttributes {
+    pub obsolete_state: Option<ObsoleteState>,
+    pub obsolete_reason: Option<String>,
+    pub internal_proc: bool,
+}
+
+/// `parseRoutineAttributes` — parse `[Obsolete(reason, version[, ObsoleteState::X])]`
+/// + `[InternalProc]` out of a routine's structured attributes. Logic EXACTLY al-sem:
+///   - `[Obsolete]` present → `obsolete_reason = string_arg(0)`; `obsolete_state` is
+///     `Removed` IFF `args[2]` exists AND its kind is `qualified_enum_value` AND its
+///     member lowercased == "removed", else `Pending`. Absent → `obsolete_state` None.
+///   - `internal_proc = has_attribute("InternalProc")`.
+pub fn parse_routine_attributes(attrs: &[AttributeInfo]) -> RoutineAttributes {
+    let mut obsolete_state: Option<ObsoleteState> = None;
+    let mut obsolete_reason: Option<String> = None;
+
+    if let Some(obsolete) = find_attribute(attrs, "Obsolete") {
+        obsolete_reason = string_arg(obsolete, 0);
+        // State is Removed only when arg 2 is a qualified enum value whose member is
+        // "Removed" (e.g. `ObsoleteState::Removed`). Anything else — absent,
+        // `ObsoleteState::Pending`, or any other shape — means Pending.
+        let removed = match obsolete.args.get(2) {
+            Some(state_arg) => {
+                state_arg.kind == "qualified_enum_value"
+                    && state_arg.member.as_deref().unwrap_or("").to_lowercase() == "removed"
+            }
+            None => false,
+        };
+        obsolete_state = Some(if removed {
+            ObsoleteState::Removed
+        } else {
+            ObsoleteState::Pending
+        });
+    }
+
+    let internal_proc = has_attribute(attrs, "InternalProc");
+
+    RoutineAttributes {
+        obsolete_state,
+        obsolete_reason,
+        internal_proc,
+    }
+}

@@ -19,7 +19,7 @@ use std::collections::{BTreeSet, HashMap};
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
 use crate::engine::l3::event_graph::build_event_graph;
-use crate::engine::l3::event_graph::EventSymbol;
+use crate::engine::l3::event_graph::{EventGraph, EventSymbol};
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine, L3Table};
 use crate::engine::l3::symbol_table::SymbolTable;
 use crate::engine::l4::capability_cone::{
@@ -35,6 +35,10 @@ pub struct DetectorContext<'a> {
     /// The combined graph (al-sem passes this as the detector's `graph` arg;
     /// detectors read it from the ctx here).
     pub graph: CombinedGraph,
+    /// The raw L3 event graph (al-sem `model.eventGraph`). d12/d38 read its
+    /// `events`/`edges`; the combined-graph build already constructs it, so it is
+    /// captured here rather than recomputed.
+    pub event_graph: EventGraph,
     pub routine_by_id: HashMap<&'a str, &'a L3Routine>,
     pub objects_by_id: HashMap<&'a str, &'a L3Object>,
     pub table_by_id: HashMap<&'a str, &'a L3Table>,
@@ -167,6 +171,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
 
     DetectorContext {
         graph,
+        event_graph,
         routine_by_id,
         objects_by_id,
         table_by_id,

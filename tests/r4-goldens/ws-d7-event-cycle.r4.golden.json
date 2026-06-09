@@ -1,0 +1,140 @@
+{
+  "fixtureName": "ws-d7-event-cycle",
+  "detectors": [
+    "d7-recursive-event-expansion"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d7-recursive-event-expansion",
+      "id": "d7/11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+      "rootCauseKey": "d7/11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211,11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+      "title": "Event subscriber chain forms a cycle",
+      "rootCause": "Routines SubB → OnA → RaiseB → OnB → SubA → RaiseA → SubB form an event-dispatch cycle — invoking any of them at runtime can trigger unbounded recursion.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/event-a.al",
+        "range": {
+          "startLine": 16,
+          "startColumn": 1,
+          "endLine": 16,
+          "endColumn": 44
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 16,
+              "startColumn": 1,
+              "endLine": 16,
+              "endColumn": 44
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#44bce6c0405759026b82b42ca7d7d1670a14208ccef7f209db9bcb37d0423254",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: SubB"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 1,
+              "endLine": 3,
+              "endColumn": 27
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: OnA"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 1,
+              "endLine": 10,
+              "endColumn": 37
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#495576a3129ce2bd49d9dd4133a264f8262cd344623448900e272bda415e90da",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: RaiseB"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 1,
+              "endLine": 8,
+              "endColumn": 27
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: OnB"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 13,
+              "startColumn": 1,
+              "endLine": 13,
+              "endColumn": 44
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#593745eca6e934506df6af6e14f9ec71ea3acf0fc1f88acdf1711bd6e3fe2211",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: SubA"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/event-a.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 1,
+              "endLine": 5,
+              "endColumn": 37
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d70a:Codeunit:50117#d6f3248f75f632d329ca8ab27e33511ea2383e796e78f099a9fd3a851ad96e00",
+            "syntaxKind": "procedure"
+          },
+          "note": "participant: RaiseA"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d70a:Codeunit:50117"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Break the cycle: either remove one of the event publishes from a subscriber, or gate the publish on a 'currently-processing' flag.",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "37bbcaa01b523cbc"
+    }
+  ]
+}

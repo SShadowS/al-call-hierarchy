@@ -4,6 +4,7 @@
 
 pub mod d10;
 pub mod d11;
+pub mod d12;
 pub mod d18;
 pub mod d19;
 pub mod d20;
@@ -12,8 +13,10 @@ pub mod d22;
 pub mod d29;
 pub mod d33;
 pub mod d36;
+pub mod d38;
 pub mod d4;
 pub mod d5;
+pub mod d7;
 
 use crate::engine::l2::features::{PAnchor, PExpressionInfo};
 use crate::engine::l3::l3_workspace::L3Routine;
@@ -73,12 +76,20 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d5::detect_d5,
         },
         Detector {
+            name: "d7-recursive-event-expansion".to_string(),
+            run: d7::detect_d7,
+        },
+        Detector {
             name: "d10-self-modifying-loop".to_string(),
             run: d10::detect_d10,
         },
         Detector {
             name: "d11-modify-without-get".to_string(),
             run: d11::detect_d11,
+        },
+        Detector {
+            name: "d12-dead-integration-event".to_string(),
+            run: d12::detect_d12,
         },
         Detector {
             name: "d18-constant-filter-in-loop".to_string(),
@@ -111,6 +122,10 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d36-late-setloadfields".to_string(),
             run: d36::detect_d36,
+        },
+        Detector {
+            name: "d38-subscriber-to-obsolete-event".to_string(),
+            run: d38::detect_d38,
         },
     ]
 }
