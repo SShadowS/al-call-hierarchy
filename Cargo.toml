@@ -48,8 +48,14 @@ env_logger = "0.11"
 # URL decoding
 percent-encoding = "2"
 
-# Insertion-ordered map (used in format_terminal rollup groups)
+# Insertion-ordered map (used in format_terminal rollup groups + the cli-b CBOR
+# encoder's insertion-ordered value model).
 indexmap = "2"
+
+# gzip for the cli-b `.cbor.gz` snapshot serializer. zlib-ng (vendored) so the
+# DEFLATE stream is byte-stable across hosts and matches Bun's gzip output at
+# level 6. The gzip OS header byte is normalized to 0x03 by the serializer.
+flate2 = { version = "1", default-features = false, features = ["zlib-ng"] }
 
 # Error handling
 anyhow = "1"

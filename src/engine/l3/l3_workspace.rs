@@ -92,6 +92,20 @@ pub struct L3Field {
     pub is_blob_like: bool,
 }
 
+/// A workspace table key (the L3-relevant subset of al-sem's `Key`). Only the
+/// fields the cli-b snapshot `deriveSchema` reads are kept (`id` + resolved
+/// member field-ids). Additive — `L3Table` is NOT serialized into any R0–R3
+/// golden surface, so adding keys never moves an existing golden.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3Key {
+    /// Internal key id: `${tableId}/key/${index}` (mirrors al-sem `encodeKeyId`).
+    pub id: String,
+    /// Resolved member field internal ids (`${tableId}/${fieldNumber}`), in
+    /// declaration order. A key field not found in this object is silently
+    /// skipped (mirrors al-sem's `fieldsByName` resolution).
+    pub fields: Vec<String>,
+}
+
 /// A workspace table (the L3-relevant subset of al-sem's `Table`). Both `Table`
 /// and `TableExtension` declarations produce one of these (matching al-sem's
 /// `index.tables`).
@@ -103,6 +117,8 @@ pub struct L3Table {
     pub table_number: i64,
     pub name: String,
     pub fields: Vec<L3Field>,
+    /// Table keys (cli-b snapshot `deriveSchema` reads these). Additive.
+    pub keys: Vec<L3Key>,
 }
 
 /// A record variable with its (post-resolve) resolved internal table id.
@@ -461,14 +477,21 @@ fn index_table(
     let table_id = format!("{app_guid}/table/{table_number}");
     let mut fields = Vec::new();
 
-    // Collect `field_declaration` nodes anywhere under the declaration (prune at
-    // match — don't recurse into a field's own children). Document order.
+    // Collect `field_declaration` + `key_declaration` nodes anywhere under the
+    // declaration (prune at match — don't recurse into a matched node's own
+    // children). Document order. Mirrors al-sem `indexTable`'s single DFS.
     let mut field_nodes: Vec<Node> = Vec::new();
+    let mut key_nodes: Vec<Node> = Vec::new();
     let mut stack = vec![decl];
     let mut buffer: Vec<Node> = Vec::new();
+    let mut key_buffer: Vec<Node> = Vec::new();
     while let Some(node) = stack.pop() {
         if node.kind() == "field_declaration" {
             buffer.push(node);
+            continue;
+        }
+        if node.kind() == "key_declaration" {
+            key_buffer.push(node);
             continue;
         }
         // Push children reversed so the (reversed) collection reads document order.
@@ -479,6 +502,7 @@ fn index_table(
     }
     // `stack.pop()` + reverse-push yields document order already; collect.
     field_nodes.extend(buffer);
+    key_nodes.extend(key_buffer);
 
     for field_node in &field_nodes {
         let mut field_number = 0i64;
@@ -517,12 +541,43 @@ fn index_table(
         });
     }
 
+    // Resolve key member fields by (lowercased) name → field id, mirroring
+    // al-sem `indexTable`'s `fieldsByName` resolution. A key field not present in
+    // this object is silently skipped.
+    let fields_by_name: std::collections::HashMap<String, String> = fields
+        .iter()
+        .map(|f| (f.name.to_lowercase(), f.id.clone()))
+        .collect();
+    let mut keys: Vec<L3Key> = Vec::new();
+    for (index, key_node) in key_nodes.iter().enumerate() {
+        let mut key_field_ids: Vec<String> = Vec::new();
+        // The member list lives in a `field_list` child; its named children are
+        // identifier / quoted_identifier name references.
+        if let Some(field_list) = named_children(*key_node)
+            .into_iter()
+            .find(|c| c.kind() == "field_list")
+        {
+            for child in named_children(field_list) {
+                let raw = node_text(child, source);
+                let name = strip_quotes(raw).to_lowercase();
+                if let Some(fid) = fields_by_name.get(&name) {
+                    key_field_ids.push(fid.clone());
+                }
+            }
+        }
+        keys.push(L3Key {
+            id: format!("{table_id}/key/{index}"),
+            fields: key_field_ids,
+        });
+    }
+
     L3Table {
         id: table_id,
         app_guid: app_guid.to_string(),
         table_number,
         name: table_name.to_string(),
         fields,
+        keys,
     }
 }
 

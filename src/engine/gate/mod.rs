@@ -13,6 +13,7 @@
 
 pub mod app_attribution;
 pub mod baseline;
+pub mod cbor;
 pub mod exit_code;
 pub mod filter;
 pub mod format_html;

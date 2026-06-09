@@ -302,6 +302,14 @@ fn validate_roots_config(parsed: &serde_json::Value) -> Option<RootsConfig> {
     Some(RootsConfig { roots: entries })
 }
 
+/// True when `<workspaceRoot>/roots.config.json` exists AND loads+validates —
+/// i.e. al-sem's `model.identity.rootsConfig !== undefined`. The cli-b snapshot
+/// `deriveInputs` includes a `roots-config` input iff this holds. Engine-never-
+/// throws (the inner loader is total).
+pub fn roots_config_was_loaded(workspace_root: &Path) -> bool {
+    load_roots_config(workspace_root).is_some()
+}
+
 /// Load + validate `<workspaceRoot>/roots.config.json` (al-sem `loadRootsConfig`).
 /// Missing file ⇒ `None` (clean empty, the common case). Parse / validation
 /// failure ⇒ `None`. Never throws / panics.

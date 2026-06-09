@@ -528,3 +528,37 @@ pub(crate) fn empty_output_result(
     };
     Ok((out, exit::CLEAN, None))
 }
+
+/// Aggregate the analyzer diagnostics for a resolved workspace, in al-sem
+/// `analyzeWorkspace` (`src/index.ts:287-297`) concat order:
+///   1. workspace.diagnostics  (provider/discover + index/parse)
+///   2. depArtifacts.diagnostics (gate gap — empty, source-only)
+///   3. summarizeDiagnostics    (gate gap — empty)
+///   4. loadedRootsConfig.diagnostics (gate gap — covered by overlay below)
+///   5. overlayDiagnostics      (roots.config kinds-mismatch — `infra_diagnostics`)
+///   6. detectDiagnostics       (L5 detector-emitted, e.g. d43 substrate guard)
+///
+/// This is the source for the cli-b capability-snapshot envelope's `diagnostics`
+/// channel (`projectDiagnostics`). Mirrors the `run_diagnostics` build in
+/// `run_analyze` so both paths emit byte-identical diagnostics.
+pub fn compute_analyzer_diagnostics(
+    ws_path: &Path,
+    resolved: &crate::engine::l3::l3_workspace::L3Resolved,
+    detectors: &[crate::engine::l5::registry::Detector],
+) -> Vec<crate::engine::l5::registry::Diagnostic> {
+    let run = run_detectors(resolved, detectors);
+    let mut all: Vec<crate::engine::l5::registry::Diagnostic> = Vec::new();
+    // (1) workspace.diagnostics.
+    all.extend(crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path));
+    // (5) overlayDiagnostics — roots.config.json overlay (kinds-mismatch).
+    all.extend(resolved.infra_diagnostics.iter().map(|d| {
+        crate::engine::l5::registry::Diagnostic {
+            severity: d.severity.clone(),
+            stage: d.stage.clone(),
+            message: d.message.clone(),
+        }
+    }));
+    // (6) detectDiagnostics.
+    all.extend(run.diagnostics.iter().cloned());
+    all
+}

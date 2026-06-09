@@ -126,6 +126,9 @@ fn dep_table_to_l3(t: &ProjectedTable) -> L3Table {
         table_number: t.table_number,
         name: t.name.clone(),
         fields: t.fields.iter().map(dep_field_to_l3).collect(),
+        // Dep (.app symbol) tables carry no parsed keys (the ABI projection does
+        // not expose them); the cli-b snapshot corpus is source-only anyway.
+        keys: Vec::new(),
     }
 }
 

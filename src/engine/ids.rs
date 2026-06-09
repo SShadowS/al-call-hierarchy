@@ -48,6 +48,13 @@ pub fn sha256_hex(s: &str) -> String {
     hex_lower(&hasher.finalize())
 }
 
+/// SHA-256 hex of raw bytes (the cli-b snapshot `deriveInputs` file-content hash).
+pub fn sha256_bytes_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex_lower(&hasher.finalize())
+}
+
 /// Hash an ordered list of strings with an unambiguous, JS-`String.length`
 /// based framing: for each part feed `"<utf16_len>:" + part_utf8_bytes`.
 ///

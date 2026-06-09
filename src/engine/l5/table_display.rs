@@ -85,6 +85,7 @@ mod tests {
             table_number: 1,
             name: name.to_string(),
             fields: vec![],
+            keys: vec![],
         }
     }
 
