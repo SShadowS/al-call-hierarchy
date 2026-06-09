@@ -120,7 +120,26 @@ pub struct DetectorContext<'a> {
     /// overlay). Empty when the resolve path produced no classifications.
     pub root_classifications_by_routine:
         HashMap<String, crate::engine::root_classification::RootClassification>,
-    // TODO(R4-F): get_ordering_facts() (D47).
+    /// R4-F Stage-5b — the L4.5 ordering facts the d47/d49/d51 detectors consume,
+    /// keyed by `StableRoutineId`. al-sem computes this LAZILY (`ctx.getOrderingFacts()`,
+    /// memoized — only d47/d49/d51 reference it, so non-ordering runs never pay the
+    /// snapshot→digest→ordering cost). The Rust port computes it EAGERLY here (one
+    /// `compute_ordering_facts` pass over the resolved model); the R4 differential
+    /// filters findings by detector name, so eager computation only adds the
+    /// snapshot/digest cost — it never changes output. Detectors read it via
+    /// `get_ordering_facts()`.
+    pub ordering_facts: HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts>,
+}
+
+impl DetectorContext<'_> {
+    /// The L4.5 ordering facts, keyed by `StableRoutineId`. Eagerly computed in
+    /// `build_detector_context` (see field doc). d47/d49/d51 look up their reportable
+    /// routine's facts here exactly as al-sem's `ctx.getOrderingFacts()`.
+    pub fn get_ordering_facts(
+        &self,
+    ) -> &HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts> {
+        &self.ordering_facts
+    }
 }
 
 /// Build the shared context. Runs the SOURCE-ONLY L3→L4 substrate (symbols →
@@ -358,6 +377,10 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         .map(|rc| (rc.routine_id.clone(), rc.clone()))
         .collect();
 
+    // R4-F Stage-5b ordering facts — eagerly computed (see field doc). Keyed by
+    // StableRoutineId; d47/d49/d51 read it via `get_ordering_facts()`.
+    let ordering_facts = crate::engine::l5::ordering_facts::compute_ordering_facts(resolved);
+
     DetectorContext {
         graph,
         event_graph,
@@ -378,5 +401,6 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         reachable_roots,
         internal_reachable_externally,
         root_classifications_by_routine,
+        ordering_facts,
     }
 }

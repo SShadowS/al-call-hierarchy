@@ -1,0 +1,31 @@
+{
+  "fixtureName": "ws-txn-d47-advisory-post-nowrite",
+  "routineCount": 1,
+  "entries": [
+    {
+      "routineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+      "facts": [
+        {
+          "key": "EXTERNAL_IO_BEFORE_COMMIT||45e0ff383bb93299|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Post"
+          },
+          "guarantee": {
+            "label": "EXTERNAL_IO_BEFORE_COMMIT",
+            "scope": "owning-routine",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": false
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 14,
+            "column": 8
+          }
+        }
+      ]
+    }
+  ]
+}

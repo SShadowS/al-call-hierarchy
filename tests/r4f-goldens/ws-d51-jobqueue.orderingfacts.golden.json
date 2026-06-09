@@ -1,0 +1,39 @@
+{
+  "fixtureName": "ws-d51-jobqueue",
+  "routineCount": 1,
+  "entries": [
+    {
+      "routineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "facts": [
+        {
+          "key": "IO_BEFORE_ESCAPING_ERROR|752909d3c98199bf|50a06c8d11bf3a4d|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Post"
+          },
+          "guarantee": {
+            "label": "IO_BEFORE_ESCAPING_ERROR",
+            "scope": "root",
+            "writeOccurrenceId": "752909d3c98199bf",
+            "ioOccurrenceId": "50a06c8d11bf3a4d",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": true
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 13,
+            "column": 8
+          },
+          "writeAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 14,
+            "column": 8
+          }
+        }
+      ]
+    }
+  ]
+}

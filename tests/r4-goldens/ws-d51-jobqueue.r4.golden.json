@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-d51-jobqueue",
+  "detectors": [
+    "d51-retry-side-effect-duplication"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d51-retry-side-effect-duplication",
+      "id": "d51/aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed/IO_BEFORE_ESCAPING_ERROR|752909d3c98199bf|50a06c8d11bf3a4d|",
+      "rootCauseKey": "d51/aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+      "title": "External request may be duplicated on retry",
+      "rootCause": "PostThenError is configured as a job-queue (retryable) entrypoint and issues an HTTP Post request that can then raise an uncaught error on the same path. When the platform retries a failed attempt, the request path is reached again; unless the endpoint is idempotent or guarded by durable state, the external side effect may be duplicated.",
+      "severity": "low",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Sender.Codeunit.al",
+        "range": {
+          "startLine": 13,
+          "startColumn": 8,
+          "endLine": 13,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+        "syntaxKind": "call"
+      },
+      "evidencePath": [
+        {
+          "routineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sender.Codeunit.al",
+            "range": {
+              "startLine": 13,
+              "startColumn": 8,
+              "endLine": 13,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed",
+            "syntaxKind": "call"
+          },
+          "note": "HTTP Post request — if this routine is retried the request may be re-issued"
+        }
+      ],
+      "affectedObjects": [
+        "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Guard the external call with a durable idempotency key stored in the database before the call, or ensure the external endpoint is idempotent. Alternatively, restructure the routine so errors are raised before the external call, or move the external call to an after-commit step.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4874ec6d5a651866"
+    }
+  ]
+}

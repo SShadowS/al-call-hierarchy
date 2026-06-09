@@ -31,8 +31,11 @@ pub mod d43;
 pub mod d44;
 pub mod d45;
 pub mod d46;
+pub mod d47;
 pub mod d48;
+pub mod d49;
 pub mod d5;
+pub mod d51;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -261,6 +264,21 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d46-commit-in-lifecycle".to_string(),
             run: d46::detect_d46,
+        },
+        // d47/d49/d51 (R4-F Stage-5b). d47/d49 are DEFAULT in al-sem; d51 is OPT-IN.
+        // The R4 differential filters findings by detector name, so registering all
+        // three only surfaces them when a fixture explicitly requests them.
+        Detector {
+            name: "d47-io-unsafe-txn".to_string(),
+            run: d47::detect_d47,
+        },
+        Detector {
+            name: "d49-uncommitted-write-before-ui".to_string(),
+            run: d49::detect_d49,
+        },
+        Detector {
+            name: "d51-retry-side-effect-duplication".to_string(),
+            run: d51::detect_d51,
         },
     ]
 }

@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-d51-neg",
+  "detectors": [
+    "d51-retry-side-effect-duplication"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

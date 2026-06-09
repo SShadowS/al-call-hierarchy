@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-txn-d49-neg-commit-between",
+  "detectors": [
+    "d49-uncommitted-write-before-ui"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

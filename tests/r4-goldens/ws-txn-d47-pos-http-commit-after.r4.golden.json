@@ -1,0 +1,80 @@
+{
+  "fixtureName": "ws-txn-d47-pos-http-commit-after",
+  "detectors": [
+    "d47-io-unsafe-txn"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d47-io-unsafe-txn",
+      "id": "d47/11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95/WRITE_PENDING_AT_EXTERNAL_IO|9c4843d9df93a646|1ef027b263d72eb4|",
+      "rootCauseKey": "d47/11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+      "title": "External IO inside an open write transaction",
+      "rootCause": "SendThenCommit performs HTTP Get while a database write is still pending (uncommitted). The external call happens inside an open write transaction — if it blocks or fails the transaction is held open across the network round-trip, and BC's runtime forbids HTTP during a write transaction.",
+      "severity": "critical",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Sender.Codeunit.al",
+        "range": {
+          "startLine": 17,
+          "startColumn": 8,
+          "endLine": 17,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+        "syntaxKind": "call"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sender.Codeunit.al",
+            "range": {
+              "startLine": 16,
+              "startColumn": 8,
+              "endLine": 16,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+            "syntaxKind": "call"
+          },
+          "note": "DB write — transaction now dirty"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sender.Codeunit.al",
+            "range": {
+              "startLine": 17,
+              "startColumn": 8,
+              "endLine": 17,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+            "syntaxKind": "call"
+          },
+          "note": "HTTP Get call inside open write transaction"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-0000000d4702:Codeunit:50000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Commit (or complete) the write transaction before making the external call, or move the external IO out of the transactional path entirely. Holding a write transaction open across a network call risks deadlocks and orphaned side effects.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "e819210cb39c361e"
+    }
+  ]
+}

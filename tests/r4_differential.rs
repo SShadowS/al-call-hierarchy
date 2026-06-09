@@ -94,7 +94,7 @@ const SMOKE: &[Smoke] = &[
         fixture: "ws-txn-d47-pos-http-nocommit",
         wave: "R4-F",
         detectors: &["d47-io-unsafe-txn"],
-        ported: false,
+        ported: true,
         corpus_dir: None,
     },
     Smoke {
@@ -150,6 +150,164 @@ const WAVE_G_NEGATIVES: &[Smoke] = &[
         fixture: "ws-txn-d46-neg",
         wave: "R4-G",
         detectors: &["d46-commit-in-lifecycle"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-F per-detector POSITIVE fixtures (d47/d49/d51 ordering-facts → Finding[]).
+/// ws-txn-d47-pos-http-nocommit is the SMOKE positive (flipped to ported above).
+/// d47: pos-http-commit-after, pos-file, advisory-deduped, advisory-post-nowrite,
+/// event-pos (each 1 finding). d49: pos-modify-message, pos-modify-runmodal (1 each).
+/// d51: ws-d51-pos (1, "likely"), ws-d51-jobqueue (1, "confirmed"). Each byte-matches
+/// END-TO-END and produces ≥1 finding.
+const WAVE_F: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-txn-d47-pos-http-commit-after",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-pos-file",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-advisory-deduped",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-advisory-post-nowrite",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-event-pos",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-pos-modify-message",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-pos-modify-runmodal",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d51-pos",
+        wave: "R4-F",
+        detectors: &["d51-retry-side-effect-duplication"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d51-jobqueue",
+        wave: "R4-F",
+        detectors: &["d51-retry-side-effect-duplication"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// R4-F explicit 0-count goldens (byte-matched END-TO-END, EXEMPT from the ≥1 check).
+/// d47: crosshop-iobeforecommit (the KEY gradeGuarantee test — EXTERNAL_IO_BEFORE_COMMIT
+/// with read-direction HTTP Get is gradeGuarantee-suppressed → 0 findings),
+/// event-neg-clean, event-neg-isolated, neg-commit-between, neg-readonly, neg-temp.
+/// d49: neg-commit-between, neg-no-write, neg-run-boundary, neg-temp-write.
+/// d51: ws-d51-neg.
+const WAVE_F_NEGATIVES: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-txn-d47-crosshop-iobeforecommit",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-event-neg-clean",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-event-neg-isolated",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-neg-commit-between",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-neg-readonly",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d47-neg-temp",
+        wave: "R4-F",
+        detectors: &["d47-io-unsafe-txn"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-neg-commit-between",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-neg-no-write",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-neg-run-boundary",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-txn-d49-neg-temp-write",
+        wave: "R4-F",
+        detectors: &["d49-uncommitted-write-before-ui"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d51-neg",
+        wave: "R4-F",
+        detectors: &["d51-retry-side-effect-duplication"],
         ported: true,
         corpus_dir: None,
     },
@@ -1102,6 +1260,21 @@ fn differential_r4_findings_match_goldens() {
         run_smoke_entry(smoke, &registered_names, &mut all_divergences);
     }
 
+    // --- R4-F positives (d47/d49/d51; the d47 smoke positive is above) ---------
+    for smoke in WAVE_F {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+    // R4-F explicit 0-count goldens (d47/d49/d51 negatives, incl. the crosshop
+    // gradeGuarantee-suppression test): byte-match END-TO-END but do NOT push into
+    // ported_results (EXEMPT from the anti-degenerate ≥1).
+    for smoke in WAVE_F_NEGATIVES {
+        run_smoke_entry(smoke, &registered_names, &mut all_divergences);
+    }
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -1252,6 +1425,8 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_R4_EVENT.iter())
         .chain(WAVE_G_POSITIVE.iter())
         .chain(WAVE_G_NEGATIVES.iter())
+        .chain(WAVE_F.iter())
+        .chain(WAVE_F_NEGATIVES.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-txn-d47-crosshop-iobeforecommit",
+  "detectors": [
+    "d47-io-unsafe-txn"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

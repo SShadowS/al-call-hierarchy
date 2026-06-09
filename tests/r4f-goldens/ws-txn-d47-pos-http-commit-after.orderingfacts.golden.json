@@ -1,0 +1,79 @@
+{
+  "fixtureName": "ws-txn-d47-pos-http-commit-after",
+  "routineCount": 1,
+  "entries": [
+    {
+      "routineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+      "facts": [
+        {
+          "key": "EXTERNAL_IO_BEFORE_COMMIT||1ef027b263d72eb4|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Get"
+          },
+          "guarantee": {
+            "label": "EXTERNAL_IO_BEFORE_COMMIT",
+            "scope": "owning-routine",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": false
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 17,
+            "column": 8
+          }
+        },
+        {
+          "key": "WRITE_PENDING_AT_EXTERNAL_IO||1ef027b263d72eb4|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Get"
+          },
+          "guarantee": {
+            "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+            "scope": "owning-routine",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": false
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 17,
+            "column": 8
+          }
+        },
+        {
+          "key": "WRITE_PENDING_AT_EXTERNAL_IO|9c4843d9df93a646|1ef027b263d72eb4|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Get"
+          },
+          "guarantee": {
+            "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+            "scope": "root",
+            "writeOccurrenceId": "9c4843d9df93a646",
+            "ioOccurrenceId": "1ef027b263d72eb4",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": true
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 17,
+            "column": 8
+          },
+          "writeAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 16,
+            "column": 8
+          }
+        }
+      ]
+    }
+  ]
+}

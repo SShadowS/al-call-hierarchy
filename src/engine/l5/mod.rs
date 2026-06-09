@@ -67,5 +67,10 @@ pub mod ordering;
 pub mod ordering_engine;
 pub mod ordering_inter;
 
+// R4-F Stage-5b — the ordering-facts FACADE (compute_ordering_facts +
+// gradeGuarantee) the d47/d49/d51 detectors consume, plus the M5 stable
+// projection. Wraps the Stage-4 ordering engine. Additive.
+pub mod ordering_facts;
+
 #[cfg(test)]
 mod test_support;

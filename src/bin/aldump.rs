@@ -76,6 +76,7 @@ fn main() -> ExitCode {
     let mut r4f_snapshot = false;
     let mut r4f_digest_effects = false;
     let mut r4f_scoped_guarantees = false;
+    let mut r4f_ordering_facts = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -158,6 +159,10 @@ fn main() -> ExitCode {
             r4f_scoped_guarantees = true;
             continue;
         }
+        if arg == "--r4f-ordering-facts" {
+            r4f_ordering_facts = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -185,6 +190,7 @@ fn main() -> ExitCode {
         r4f_snapshot,
         r4f_digest_effects,
         r4f_scoped_guarantees,
+        r4f_ordering_facts,
     ]
     .iter()
     .filter(|f| **f)
@@ -507,6 +513,40 @@ fn main() -> ExitCode {
                 );
                 println!(
                     "{{\n  \"fixtureName\": {},\n  \"entryCount\": 0,\n  \"entries\": []\n}}",
+                    serde_json::json!(fixture_name)
+                );
+                return ExitCode::SUCCESS;
+            }
+        }
+    }
+
+    if r4f_ordering_facts {
+        // R4-F ORDERING FACTS (Stage-5b, M5): run the SOURCE-ONLY L0→L3 pipeline, then
+        // the ordering-facts facade (compute_ordering_facts: composeSnapshot → return
+        // summaries → isolated events → digest+ordering → resolve each scopedGuarantee
+        // to its IO/write/commit anchors) and emit the per-routine resolved OrderingFact[]
+        // in the al-sem `<fixture>.orderingfacts.golden.json` shape. Fail-closed → empty.
+        let fixture_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                let json =
+                    al_call_hierarchy::engine::l5::ordering_facts::project_r4f_ordering_facts(
+                        &resolved,
+                        &fixture_name,
+                    );
+                print!("{json}");
+                return ExitCode::SUCCESS;
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F ordering-facts projection",
+                    workspace.display()
+                );
+                println!(
+                    "{{\n  \"fixtureName\": {},\n  \"routineCount\": 0,\n  \"entries\": []\n}}",
                     serde_json::json!(fixture_name)
                 );
                 return ExitCode::SUCCESS;

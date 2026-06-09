@@ -1,0 +1,95 @@
+{
+  "fixtureName": "ws-txn-d47-event-pos",
+  "detectors": [
+    "d47-io-unsafe-txn"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d47-io-unsafe-txn",
+      "id": "d47/11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f/EXTERNAL_IO_IN_EVENT_SUBSCRIBER_TXN|8632ad53f9592356|2d2c85f05c8bac52|",
+      "rootCauseKey": "d47/11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+      "title": "External IO in event subscriber inside publisher's write transaction (advisory)",
+      "rootCause": "ProcessAndNotify dirties the database transaction (DB write) then raises integration event. A synchronous event subscriber (one or more subscribers) may run inside the publisher's uncommitted transaction and issue an external request (HTTP Post). If the subscriber is bound and the event is non-isolated, the external call executes before the publisher's transaction commits or rolls back. Subscriber binding and execution order are NOT proven — review manually.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 8,
+          "endLine": 9,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+        "syntaxKind": "call"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+            "range": {
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+            "syntaxKind": "call"
+          },
+          "note": "DB write — transaction now dirty"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 4,
+              "endLine": 16,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+            "syntaxKind": "procedure"
+          },
+          "note": "event dispatch — integration event fires synchronously; a bound subscriber would execute inside this uncommitted transaction (binding not proven)"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4720:Codeunit:50000#1b14d37dcf2ab2bfe14c21ea39032c69934029e553023cd2e8ef7fc364eeaf5f",
+            "syntaxKind": "call"
+          },
+          "note": "HTTP Post call in subscriber (one or more subscribers) — inside publisher's open write transaction"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-0000000d4720:Codeunit:50000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Commit the write transaction before raising the event, or declare the event Isolated=true ([IntegrationEvent(false, false, true)]) so subscribers run in a separate transaction. Alternatively, move external IO out of the subscriber or ensure it is idempotent.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "91e06242335d9dfe"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "fixtureName": "ws-txn-d47-pos-http-nocommit",
+  "routineCount": 1,
+  "entries": [
+    {
+      "routineId": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+      "facts": [
+        {
+          "key": "WRITE_PENDING_AT_EXTERNAL_IO||3976e68300bea13c|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Get"
+          },
+          "guarantee": {
+            "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+            "scope": "owning-routine",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": false
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 16,
+            "column": 8
+          }
+        },
+        {
+          "key": "WRITE_PENDING_AT_EXTERNAL_IO|6409339ecce975a7|3976e68300bea13c|",
+          "ioType": "HTTP",
+          "ioDetail": {
+            "method": "Get"
+          },
+          "guarantee": {
+            "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+            "scope": "root",
+            "writeOccurrenceId": "6409339ecce975a7",
+            "ioOccurrenceId": "3976e68300bea13c",
+            "supportingEdgeIds": [],
+            "interveningBoundary": "none",
+            "validForRefutation": true
+          },
+          "ioAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 16,
+            "column": 8
+          },
+          "writeAnchor": {
+            "sourceKind": "source",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 15,
+            "column": 8
+          }
+        }
+      ]
+    }
+  ]
+}

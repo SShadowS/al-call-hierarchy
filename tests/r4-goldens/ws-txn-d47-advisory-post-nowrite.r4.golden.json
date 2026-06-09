@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-txn-d47-advisory-post-nowrite",
+  "detectors": [
+    "d47-io-unsafe-txn"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d47-io-unsafe-txn",
+      "id": "d47/11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d/EXTERNAL_IO_BEFORE_COMMIT||45e0ff383bb93299|",
+      "rootCauseKey": "d47/11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+      "title": "External IO before commit (advisory)",
+      "rootCause": "PostThenCommit performs HTTP Post ordered before a Commit(); if the commit's write is the durable record of that IO, a rollback would orphan the external effect. Commit effectiveness and orphan relatedness are NOT proven — review manually.",
+      "severity": "info",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Sender.Codeunit.al",
+        "range": {
+          "startLine": 14,
+          "startColumn": 8,
+          "endLine": 14,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+        "syntaxKind": "call"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Sender.Codeunit.al",
+            "range": {
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
+            "syntaxKind": "call"
+          },
+          "note": "HTTP Post call before commit (advisory)"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-0000000d4708:Codeunit:50000"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Review whether a rollback after this external call would leave the remote side-effect without a corresponding DB record. If so, move the Commit() before the external IO, or ensure the IO is idempotent and the DB record is re-reconciled on retry.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "216e8c7223585aa0"
+    }
+  ]
+}
