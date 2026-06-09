@@ -49,7 +49,8 @@ fn usage() -> ExitCode {
          --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
          --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
          --r3a5-cross-app-summary | --r4-findings | --r4f-root-classifications | \
-         --r4f-return-summaries | --r4f-snapshot | --r4f-digest-effects] \
+         --r4f-return-summaries | --r4f-snapshot | --r4f-digest-effects | \
+         --r4f-scoped-guarantees] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -74,6 +75,7 @@ fn main() -> ExitCode {
     let mut r4f_return_summaries = false;
     let mut r4f_snapshot = false;
     let mut r4f_digest_effects = false;
+    let mut r4f_scoped_guarantees = false;
     let mut workspace_arg: Option<std::ffi::OsString> = None;
 
     for arg in std::env::args_os().skip(1) {
@@ -152,6 +154,10 @@ fn main() -> ExitCode {
             r4f_digest_effects = true;
             continue;
         }
+        if arg == "--r4f-scoped-guarantees" {
+            r4f_scoped_guarantees = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -178,6 +184,7 @@ fn main() -> ExitCode {
         r4f_return_summaries,
         r4f_snapshot,
         r4f_digest_effects,
+        r4f_scoped_guarantees,
     ]
     .iter()
     .filter(|f| **f)
@@ -463,6 +470,39 @@ fn main() -> ExitCode {
             None => {
                 eprintln!(
                     "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F digest-effects projection",
+                    workspace.display()
+                );
+                println!(
+                    "{{\n  \"fixtureName\": {},\n  \"entryCount\": 0,\n  \"entries\": []\n}}",
+                    serde_json::json!(fixture_name)
+                );
+                return ExitCode::SUCCESS;
+            }
+        }
+    }
+
+    if r4f_scoped_guarantees {
+        // R4-F SCOPED GUARANTEES (Stage-4): run the SOURCE-ONLY L0→L3 pipeline, compose
+        // the CapabilitySnapshot, compute return summaries + isolated event ids, run the
+        // digest + ORDERING-ENGINE path, and emit the per-root per-effect scopedGuarantees
+        // (filtered to the 5 RELEVANT labels) in the al-sem `<fixture>.scoped.golden.json`
+        // shape. Fail-closed/empty layout → an empty projection.
+        let fixture_name = workspace
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                let json = al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees(
+                    &resolved,
+                    &fixture_name,
+                );
+                print!("{json}");
+                return ExitCode::SUCCESS;
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F scoped-guarantees projection",
                     workspace.display()
                 );
                 println!(

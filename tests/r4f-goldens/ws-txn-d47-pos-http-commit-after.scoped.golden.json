@@ -1,0 +1,53 @@
+{
+  "fixtureName": "ws-txn-d47-pos-http-commit-after",
+  "entryCount": 1,
+  "entries": [
+    {
+      "routineId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95",
+      "effects": [
+        {
+          "factId": "fa981097b5ab1e8d",
+          "type": "COMMIT",
+          "scopedGuarantees": [
+            {
+              "label": "EXTERNAL_IO_BEFORE_COMMIT",
+              "scope": "owning-routine",
+              "supportingEdgeIds": [],
+              "interveningBoundary": "none",
+              "validForRefutation": false
+            }
+          ]
+        },
+        {
+          "factId": "1ef027b263d72eb4",
+          "type": "HTTP",
+          "scopedGuarantees": [
+            {
+              "label": "EXTERNAL_IO_BEFORE_COMMIT",
+              "scope": "owning-routine",
+              "supportingEdgeIds": [],
+              "interveningBoundary": "none",
+              "validForRefutation": false
+            },
+            {
+              "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+              "scope": "owning-routine",
+              "supportingEdgeIds": [],
+              "interveningBoundary": "none",
+              "validForRefutation": false
+            },
+            {
+              "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+              "scope": "root",
+              "writeOccurrenceId": "9c4843d9df93a646",
+              "ioOccurrenceId": "1ef027b263d72eb4",
+              "supportingEdgeIds": [],
+              "interveningBoundary": "none",
+              "validForRefutation": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

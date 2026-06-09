@@ -60,5 +60,12 @@ pub mod snapshot;
 // DigestEffectResult[] each with a stable occurrenceId (= factId). Additive.
 pub mod digest;
 
+// R4-F Stage-4 — the ORDERING ENGINE: per-effect scopedGuarantee derivation for
+// the 5 relevant hazard labels. 4a (intra HB), 4b (cross-hop substrate), 4c
+// (compute_ordering + the 5 root labels + merge). Additive.
+pub mod ordering;
+pub mod ordering_engine;
+pub mod ordering_inter;
+
 #[cfg(test)]
 mod test_support;

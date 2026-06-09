@@ -40,7 +40,8 @@ use serde::Serialize;
 use crate::engine::ids::sha256_hex;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::snapshot::{
-    compose_snapshot, CapabilitySnapshot, SnapCapabilityExtra, SnapValueSource, SnapshotGraphEdge,
+    compose_snapshot, CapabilitySnapshot, SnapCapabilityExtra, SnapTempState, SnapValueSource,
+    SnapshotCallsiteEvidence, SnapshotGraphEdge,
 };
 
 // ===========================================================================
@@ -884,28 +885,28 @@ fn reconstruct_witness_paths(
 /// `projectHop` PER variant (see hop-projection.ts). Custom Serialize emits in
 /// declaration order, None/undefined OMITTED.
 #[derive(Debug, Clone)]
-struct QueryWitnessHop {
-    kind: &'static str,
-    from_routine_id: String,
-    from_display: String,
-    to_routine_id: Option<String>,
-    to_display: Option<String>,
-    callee_display: Option<String>,
-    callsite_id: Option<String>,
-    event_id: Option<String>,
-    target_app_guid: Option<String>,
-    edge_kind: Option<String>,
-    anchor: Option<HopAnchor>,
-    receiver_type: Option<String>,
-    interface_name: Option<String>,
-    candidate_count: Option<usize>,
+pub struct QueryWitnessHop {
+    pub kind: &'static str,
+    pub from_routine_id: String,
+    pub from_display: String,
+    pub to_routine_id: Option<String>,
+    pub to_display: Option<String>,
+    pub callee_display: Option<String>,
+    pub callsite_id: Option<String>,
+    pub event_id: Option<String>,
+    pub target_app_guid: Option<String>,
+    pub edge_kind: Option<String>,
+    pub anchor: Option<HopAnchor>,
+    pub receiver_type: Option<String>,
+    pub interface_name: Option<String>,
+    pub candidate_count: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
-struct HopAnchor {
-    file: String,
-    line: Option<u32>,
-    column: Option<u32>,
+pub struct HopAnchor {
+    pub file: String,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
 }
 
 fn hop_anchor(
@@ -1680,6 +1681,11 @@ pub struct DigestEffectResult {
     /// Sort key fields (evidence.file, evidence.line) — for the effects sort.
     sort_file: String,
     sort_line: u32,
+    /// S4-internal (NOT serialized in the digest-effects golden): tempState fed to
+    /// the ordering engine's physical-write filter.
+    pub temp_state: Option<SnapTempState>,
+    /// S4: per-effect scoped guarantees (attached by `compute_ordering`).
+    pub scoped_guarantees: Vec<crate::engine::l5::ordering_engine::ScopedGuarantee>,
 }
 
 #[derive(Debug, Clone)]
@@ -1694,7 +1700,7 @@ pub struct ProjectedEvidence {
 /// A projected hop carried into the result (already V8-field-ordered on serialize).
 #[derive(Debug, Clone)]
 pub struct ProjectedHop {
-    inner: QueryWitnessHop,
+    pub inner: QueryWitnessHop,
 }
 
 #[derive(Debug, Clone)]
@@ -1704,11 +1710,23 @@ pub struct DigestEntryResult {
 }
 
 /// `digestQuery` (digest-query.ts) — per-root effect build. Roots in input order;
-/// entries sorted by routineId at the end.
-fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryResult> {
+/// entries sorted by routineId at the end. `return_summaries` + `isolated_event_ids`
+/// drive the S4 ordering engine (compute_ordering) — None for the S3-only path.
+fn digest_query(
+    snap: &CapabilitySnapshot,
+    roots: &[String],
+    return_summaries: Option<&HashMap<String, crate::engine::return_summary::RoutineReturnSummary>>,
+    isolated_event_ids: Option<&std::collections::HashSet<String>>,
+) -> Vec<DigestEntryResult> {
     const MAX_PATHS: usize = 3;
     let idx = build_fingerprint_indexes(snap);
     let mut entries: Vec<DigestEntryResult> = Vec::new();
+
+    // callsiteById (&str-keyed) for the ordering engine's cross-hop substrate.
+    let mut callsite_by_id_str: HashMap<&str, &SnapshotCallsiteEvidence> = HashMap::new();
+    for cs in &snap.callsite_index {
+        callsite_by_id_str.insert(cs.callsite_id.as_str(), cs);
+    }
 
     for rid in roots {
         let Some(display) = idx.routine_display_by_id.get(rid).cloned() else {
@@ -1743,6 +1761,9 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
             via_paths: Vec<Vec<QueryWitnessHop>>,
             had_truncation: bool,
             all_paths: Vec<Vec<QueryWitnessHop>>,
+            /// S4-internal (NOT serialized in the digest-effects golden): the
+            /// originating table-write fact's tempState (for the physical-write filter).
+            temp_state: Option<SnapTempState>,
         }
         let mut effect_map: Vec<(String, AccumulatedEffect)> = Vec::new();
 
@@ -1782,6 +1803,12 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
 
             let key = dedupe_key(effect_type, terminal, fact, &detail);
 
+            // tempState of the originating table-write fact (physical-write filter).
+            let fact_temp_state: Option<SnapTempState> = match &fact.extra {
+                Some(SnapCapabilityExtra::Table { temp_state, .. }) => temp_state.clone(),
+                _ => None,
+            };
+
             // Find existing in ordered effect_map.
             let existing_pos = effect_map.iter().position(|(k, _)| k == &key);
 
@@ -1809,10 +1836,24 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
                     || unique.len() > MAX_PATHS;
                 let via: Vec<Vec<QueryWitnessHop>> =
                     unique.iter().take(MAX_PATHS).cloned().collect();
+                // Merge tempState conservatively: stays known-temp only if BOTH are.
+                let is_known_temp = |t: &Option<SnapTempState>| {
+                    matches!(t, Some(SnapTempState::Known { value: true }))
+                };
+                let existing_temp = effect_map[pos].1.temp_state.clone();
+                let merged_temp =
+                    if is_known_temp(&existing_temp) && is_known_temp(&fact_temp_state) {
+                        existing_temp
+                    } else if is_known_temp(&existing_temp) {
+                        fact_temp_state.clone()
+                    } else {
+                        existing_temp
+                    };
                 let acc = &mut effect_map[pos].1;
                 acc.via_paths = via;
                 acc.had_truncation = had_truncation;
                 acc.all_paths = unique;
+                acc.temp_state = merged_temp;
             } else {
                 let via: Vec<Vec<QueryWitnessHop>> =
                     projected_paths.iter().take(MAX_PATHS).cloned().collect();
@@ -1833,6 +1874,7 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
                         via_paths: via,
                         had_truncation,
                         all_paths: projected_paths,
+                        temp_state: fact_temp_state,
                     },
                 ));
             }
@@ -1888,6 +1930,8 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
                 link_signature,
                 sort_file,
                 sort_line,
+                temp_state: acc.temp_state,
+                scoped_guarantees: Vec::new(),
             });
         }
 
@@ -1916,6 +1960,45 @@ fn digest_query(snap: &CapabilitySnapshot, roots: &[String]) -> Vec<DigestEntryR
                 id
             };
             eff.fact_id = occ_id;
+        }
+
+        // S4: compute_ordering — attach scopedGuarantees per effect (parallel to effects).
+        // Only runs the ordering engine when summaries are supplied (the S4 path);
+        // the S3-only digest-effects projection passes None → scopedGuarantees stay empty
+        // (and are not serialized by the S3 projection anyway).
+        if let Some(summaries) = return_summaries {
+            let ordering_inputs: Vec<crate::engine::l5::ordering_engine::OrderingEffectInput> =
+                effects
+                    .iter()
+                    .map(
+                        |e| crate::engine::l5::ordering_engine::OrderingEffectInput {
+                            effect_type: e.effect_type.clone(),
+                            evidence_operation_id: e.evidence_operation_id.clone(),
+                            evidence_callsite_id: e.evidence_callsite_id.clone(),
+                            via_paths: e
+                                .via_paths
+                                .iter()
+                                .map(|p| p.iter().map(|h| h.inner.clone()).collect())
+                                .collect(),
+                            via_paths_truncated: e.via_paths_truncated,
+                            temp_state: e.temp_state.clone(),
+                            occurrence_id: e.fact_id.clone(),
+                        },
+                    )
+                    .collect();
+            let scoped = crate::engine::l5::ordering_engine::compute_ordering(
+                rid,
+                &ordering_inputs,
+                snap,
+                &callsite_by_id_str,
+                Some(summaries),
+                isolated_event_ids,
+            );
+            for (i, eff) in effects.iter_mut().enumerate() {
+                if let Some(sg) = scoped.get(i) {
+                    eff.scoped_guarantees = sg.clone();
+                }
+            }
         }
 
         entries.push(DigestEntryResult {
@@ -2186,11 +2269,31 @@ impl Serialize for ProjectionSer<'_> {
     }
 }
 
-/// Compute the per-root digest effects for a resolved source-only workspace.
+/// Compute the per-root digest effects for a resolved source-only workspace
+/// (S3 path — NO ordering engine; scopedGuarantees stay empty).
 pub fn compute_digest_effects(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
     let snap = compose_snapshot(resolved);
     let roots = reportable_roots(resolved);
-    digest_query(&snap, &roots)
+    digest_query(&snap, &roots, None, None)
+}
+
+/// Compute the per-root digest effects WITH S4 ordering (scopedGuarantees attached).
+/// Mirrors `computeOrderingFacts`: composeSnapshot + computeReturnSummaries +
+/// isolatedEventIds + digestQuery(order:false).
+pub fn compute_digest_effects_with_ordering(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
+    let snap = compose_snapshot(resolved);
+    let roots = reportable_roots(resolved);
+    let summaries = crate::engine::return_summary::compute_return_summaries(
+        &resolved.workspace.routines,
+        Some(&resolved.workspace.objects),
+    );
+    let isolated = crate::engine::l3::event_graph::isolated_event_ids(&resolved.workspace.routines);
+    let isolated_opt = if isolated.is_empty() {
+        None
+    } else {
+        Some(&isolated)
+    };
+    digest_query(&snap, &roots, Some(&summaries), isolated_opt)
 }
 
 /// Project the R4-F digest-effects differential document, PRETTY-serialized with a
@@ -2203,6 +2306,149 @@ pub fn project_r4f_digest_effects(resolved: &L3Resolved, fixture_name: &str) -> 
     };
     let mut s =
         serde_json::to_string_pretty(&doc).expect("serialize R4-F digest-effects projection");
+    s.push('\n');
+    s
+}
+
+// ===========================================================================
+// R4-F STABLE PROJECTION — project_r4f_scoped_guarantees (Stage-4).
+// Per-ScopedGuarantee key order (FIXED, the al-sem golden shape): label, scope,
+// [writeOccurrenceId], [commitOccurrenceId], [ioOccurrenceId], [returnOccurrenceId],
+// supportingEdgeIds, [commitEffectiveness], interveningBoundary, validForRefutation.
+// Effects with no relevant scopedGuarantees are DROPPED; entries with no remaining
+// effects are DROPPED (negatives → entryCount 0).
+// ===========================================================================
+
+fn is_relevant_label(label: &str) -> bool {
+    matches!(
+        label,
+        "WRITE_PENDING_AT_EXTERNAL_IO"
+            | "EXTERNAL_IO_BEFORE_COMMIT"
+            | "WRITE_PENDING_AT_UI"
+            | "IO_BEFORE_ESCAPING_ERROR"
+            | "EXTERNAL_IO_IN_EVENT_SUBSCRIBER_TXN"
+    )
+}
+
+struct ScopedGuaranteeSer<'a>(&'a crate::engine::l5::ordering_engine::ScopedGuarantee);
+impl Serialize for ScopedGuaranteeSer<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let g = self.0;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("label", g.label)?;
+        map.serialize_entry("scope", g.scope)?;
+        if let Some(v) = &g.write_occurrence_id {
+            map.serialize_entry("writeOccurrenceId", v)?;
+        }
+        if let Some(v) = &g.commit_occurrence_id {
+            map.serialize_entry("commitOccurrenceId", v)?;
+        }
+        if let Some(v) = &g.io_occurrence_id {
+            map.serialize_entry("ioOccurrenceId", v)?;
+        }
+        if let Some(v) = &g.return_occurrence_id {
+            map.serialize_entry("returnOccurrenceId", v)?;
+        }
+        map.serialize_entry("supportingEdgeIds", &g.supporting_edge_ids)?;
+        if let Some(v) = g.commit_effectiveness {
+            map.serialize_entry("commitEffectiveness", v)?;
+        }
+        map.serialize_entry("interveningBoundary", g.intervening_boundary)?;
+        map.serialize_entry("validForRefutation", &g.valid_for_refutation)?;
+        map.end()
+    }
+}
+
+struct ScopedEffectSer<'a> {
+    fact_id: &'a str,
+    effect_type: &'a str,
+    guarantees: Vec<&'a crate::engine::l5::ordering_engine::ScopedGuarantee>,
+}
+impl Serialize for ScopedEffectSer<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("factId", self.fact_id)?;
+        map.serialize_entry("type", self.effect_type)?;
+        let sgs: Vec<ScopedGuaranteeSer> = self
+            .guarantees
+            .iter()
+            .map(|g| ScopedGuaranteeSer(g))
+            .collect();
+        map.serialize_entry("scopedGuarantees", &sgs)?;
+        map.end()
+    }
+}
+
+struct ScopedEntrySer<'a> {
+    routine_id: &'a str,
+    effects: Vec<ScopedEffectSer<'a>>,
+}
+impl Serialize for ScopedEntrySer<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("routineId", self.routine_id)?;
+        map.serialize_entry("effects", &self.effects)?;
+        map.end()
+    }
+}
+
+struct ScopedProjectionSer<'a> {
+    fixture_name: &'a str,
+    entries: Vec<ScopedEntrySer<'a>>,
+}
+impl Serialize for ScopedProjectionSer<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("fixtureName", self.fixture_name)?;
+        map.serialize_entry("entryCount", &self.entries.len())?;
+        map.serialize_entry("entries", &self.entries)?;
+        map.end()
+    }
+}
+
+/// Project the R4-F scoped-guarantees differential document, PRETTY-serialized with
+/// a trailing newline (the exact on-disk golden form).
+pub fn project_r4f_scoped_guarantees(resolved: &L3Resolved, fixture_name: &str) -> String {
+    let entries = compute_digest_effects_with_ordering(resolved);
+
+    // Drop effects with no relevant scopedGuarantees; drop entries with no effects.
+    let mut out_entries: Vec<ScopedEntrySer> = Vec::new();
+    for entry in &entries {
+        let mut out_effects: Vec<ScopedEffectSer> = Vec::new();
+        for eff in &entry.effects {
+            let relevant: Vec<&crate::engine::l5::ordering_engine::ScopedGuarantee> = eff
+                .scoped_guarantees
+                .iter()
+                .filter(|g| is_relevant_label(g.label))
+                .collect();
+            if relevant.is_empty() {
+                continue;
+            }
+            out_effects.push(ScopedEffectSer {
+                fact_id: &eff.fact_id,
+                effect_type: &eff.effect_type,
+                guarantees: relevant,
+            });
+        }
+        if out_effects.is_empty() {
+            continue;
+        }
+        out_entries.push(ScopedEntrySer {
+            routine_id: &entry.routine_id,
+            effects: out_effects,
+        });
+    }
+
+    let doc = ScopedProjectionSer {
+        fixture_name,
+        entries: out_entries,
+    };
+    let mut s =
+        serde_json::to_string_pretty(&doc).expect("serialize R4-F scoped-guarantees projection");
     s.push('\n');
     s
 }

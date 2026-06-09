@@ -590,6 +590,27 @@ impl SnapshotGraphEdge {
             | SnapshotGraphEdge::EventDispatch { from, .. } => from,
         }
     }
+
+    /// Public `from` accessor (R4-F Stage-4 ordering: typedEdge `.from`).
+    pub fn edge_from(&self) -> &str {
+        self.source_routine()
+    }
+
+    /// Public `to` accessor (R4-F Stage-4 ordering: typedEdge `.to`; None for
+    /// object-run-unresolved which has no `to` — al-sem reads `undefined`).
+    pub fn edge_to(&self) -> Option<&str> {
+        self.to_endpoint()
+    }
+
+    /// Public `callsiteId` accessor (None for event-dispatch).
+    pub fn edge_callsite_id(&self) -> Option<&str> {
+        self.callsite_id()
+    }
+
+    /// Public `kind` accessor (the `GraphEdgeKind` discriminant string).
+    pub fn edge_kind(&self) -> &str {
+        self.kind_str()
+    }
 }
 
 /// Operation evidence — anchor metadata for op witnesses. al-sem
@@ -783,6 +804,16 @@ pub struct CapabilitySnapshot {
 #[derive(Debug, Clone)]
 pub struct RoutineOrderFrames {
     entries: Vec<(String, Vec<ScopeFrame>)>,
+}
+
+impl RoutineOrderFrames {
+    /// Look up the scope-frame table for a routine (`snap.routineOrderFrames?.[routine]`).
+    pub fn get(&self, routine_id: &str) -> Option<&[ScopeFrame]> {
+        self.entries
+            .iter()
+            .find(|(k, _)| k == routine_id)
+            .map(|(_, v)| v.as_slice())
+    }
 }
 
 impl Serialize for RoutineOrderFrames {
