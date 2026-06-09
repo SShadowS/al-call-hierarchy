@@ -87,6 +87,7 @@ fn inline_suppress_args(disable_suppression: bool) -> AnalyzeArgs {
         update_baseline: false,
         disable_inline_suppression: disable_suppression,
         group_by: None,
+        deterministic: false,
     }
 }
 
@@ -232,6 +233,7 @@ fn d8_args(baseline: Option<&str>, update: bool, fail_on: Option<&str>) -> Analy
         update_baseline: update,
         disable_inline_suppression: false,
         group_by: None,
+        deterministic: false,
     }
 }
 
@@ -408,6 +410,7 @@ fn serialize_baseline_matches_committed_fingerprints() {
         affected_objects: vec![],
         affected_tables: vec![],
         path_count: 1,
+        fix_hint: None,
     };
     // Reverse order + duplicate to exercise sort+dedup.
     let findings = vec![mk(fps[1]), mk(fps[0]), mk(fps[1])];

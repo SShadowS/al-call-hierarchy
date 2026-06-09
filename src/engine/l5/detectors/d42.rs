@@ -299,5 +299,5 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("callerFull", skipped_caller_full);
     stats.add_skip("calleeRequiresNone", skipped_callee_requires_none);
     stats.add_skip("calleeUnknown", skipped_callee_unknown);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

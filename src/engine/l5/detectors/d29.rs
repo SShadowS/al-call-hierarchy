@@ -131,7 +131,7 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("nonModifyEvent", skipped_non_modify_event);
     stats.add_skip("noRecordParam", skipped_no_record_param);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 fn emit(

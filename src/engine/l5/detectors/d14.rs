@@ -180,6 +180,7 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }
 

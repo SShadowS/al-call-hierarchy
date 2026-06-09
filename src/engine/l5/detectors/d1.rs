@@ -749,6 +749,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     DetectorOutput {
         findings: merged,
         stats,
+        diagnostics: vec![],
     }
 }
 

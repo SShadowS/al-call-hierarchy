@@ -201,5 +201,5 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("callerPersists", skipped_caller_persists);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

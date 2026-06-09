@@ -169,5 +169,5 @@ pub fn detect_d35(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("commitFreeSubscriber", skipped_commit_free_subscriber);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

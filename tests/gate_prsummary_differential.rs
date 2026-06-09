@@ -172,6 +172,7 @@ fn make_args(
         update_baseline: false,
         disable_inline_suppression: false,
         group_by: None,
+        deterministic: false,
     }
 }
 
@@ -557,6 +558,7 @@ fn oracle_parse_fail_on_error_is_err() {
         update_baseline: false,
         disable_inline_suppression: false,
         group_by: None,
+        deterministic: false,
     };
     // The pipeline itself does NOT validate fail_on — the bin/CLI does (parse_fail_on).
     // However compute_finding_exit with an unknown severity falls back to sev_rank=0,

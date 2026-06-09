@@ -209,5 +209,6 @@ pub fn detect_d51(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings: emitted,
         stats: DetectorStats::new(DETECTOR, candidates_considered, count),
+            diagnostics: vec![],
     }
 }

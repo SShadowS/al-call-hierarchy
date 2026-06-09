@@ -342,5 +342,6 @@ pub fn detect_d46(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings: emitted,
         stats,
+        diagnostics: vec![],
     }
 }

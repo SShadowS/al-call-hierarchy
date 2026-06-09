@@ -324,6 +324,7 @@ mod tests {
             affected_objects: vec![],
             affected_tables: vec![],
             path_count: 1,
+            fix_hint: None,
         };
         // line 14 (same), 15 (+1) suppressed; 13 and 16 kept.
         let findings = vec![mk(13), mk(14), mk(15), mk(16)];
@@ -364,6 +365,7 @@ mod tests {
             affected_objects: vec![],
             affected_tables: vec![],
             path_count: 1,
+            fix_hint: None,
         };
         let out = apply_inline_suppressions(&[finding], &map);
         assert_eq!(out.kept, vec![0]);

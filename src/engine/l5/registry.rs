@@ -111,18 +111,44 @@ impl DetectorStats {
 /// indent, trailing newline, all object keys in alphabetical order. This is the format
 /// the al-sem golden files use (JSON.stringify with sortedReplacer + 2-space indent +
 /// trailing newline).
+///
+/// Delegates to `format_json::serialize_document_value` (the single canonical
+/// serializer) so stats and envelopes are always byte-consistent.
 pub fn serialize_detector_stats(stats: &[DetectorStats]) -> String {
     let arr: Vec<serde_json::Value> = stats.iter().map(|s| s.to_json_value()).collect();
     let val = serde_json::Value::Array(arr);
-    let mut out = serde_json::to_string_pretty(&val).expect("DetectorStats serialization failed");
-    out.push('\n');
-    out
+    crate::engine::gate::format_json::serialize_document_value(val)
 }
 
 /// A detector's output.
+///
+/// Most detectors construct this as `DetectorOutput { findings, stats }` (no diagnostics).
+/// The `diagnostics` field defaults to `vec![]` via the `Default` partial support:
+/// use `DetectorOutput { findings, stats, ..DetectorOutput::empty() }` or the
+/// two-field shorthand `{ findings, stats }` — BUT note the struct is not `Default`
+/// (requires `Finding`/`DetectorStats` Default impls). For detectors that emit
+/// diagnostics (e.g. d43 substrate guard), populate the field explicitly.
 pub struct DetectorOutput {
     pub findings: Vec<Finding>,
     pub stats: DetectorStats,
+    /// Non-panic diagnostics emitted by the detector (e.g. d43 substrate guard warning).
+    /// Propagates to `RunOutput.diagnostics` and thence to the JSON envelope.
+    /// Omit in struct literals when empty — existing `{ findings, stats }` constructions
+    /// must be updated to `{ findings, stats, diagnostics: vec![] }`. The helper
+    /// `DetectorOutput::no_diag(findings, stats)` reduces boilerplate for detectors
+    /// that never emit diagnostics.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl DetectorOutput {
+    /// Convenience constructor for the common case: no diagnostics.
+    pub fn no_diag(findings: Vec<Finding>, stats: DetectorStats) -> Self {
+        DetectorOutput {
+            findings,
+            stats,
+            diagnostics: vec![],
+        }
+    }
 }
 
 /// A detector: a pure query over the resolved model + shared context. The closure
@@ -190,6 +216,7 @@ pub(crate) fn run_detectors_cross_app(
         workspace: merged_workspace_view(base),
         root_classifications: Vec::new(),
         primary_app: None,
+        infra_diagnostics: Vec::new(),
     };
     let (findings, diagnostics, detector_stats) = run_each(&resolved, &ctx, detectors);
 
@@ -246,6 +273,8 @@ fn run_each(
         match result {
             Ok(output) => {
                 findings.extend(output.findings);
+                // Collect detector-emitted diagnostics (non-panic; d43 substrate guard etc.)
+                diagnostics.extend(output.diagnostics);
                 detector_stats.push(output.stats);
             }
             Err(err) => {

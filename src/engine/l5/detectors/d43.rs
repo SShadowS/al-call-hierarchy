@@ -354,11 +354,19 @@ pub fn detect_d43(
         .filter(|r| r.kind == "event-subscriber")
         .count();
     if !saw_any_condition_ref && event_subscriber_count > 0 {
-        // al-sem pushes a warning diagnostic + bails; the diagnostic does not reach
-        // the byte-parity surface, so we just bail with zero findings.
+        // al-sem pushes a warning diagnostic + bails (mirrors index.ts ctx.diagnostics.push).
+        // This diagnostic propagates to RunOutput.diagnostics and thence to the JSON envelope.
         return DetectorOutput {
             findings: Vec::new(),
             stats: DetectorStats::new(DETECTOR, 0, 0),
+            diagnostics: vec![crate::engine::l5::registry::Diagnostic {
+                severity: "warning".to_string(),
+                stage: "detect".to_string(),
+                message: format!(
+                    "{}: conditionReferences substrate empty; dispatch-site detection limited",
+                    DETECTOR
+                ),
+            }],
         };
     }
 
@@ -554,5 +562,5 @@ pub fn detect_d43(
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates, emitted);
     stats.add_skip("other", skipped_no_guard + skipped_no_setter);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

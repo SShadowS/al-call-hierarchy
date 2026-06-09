@@ -360,14 +360,25 @@ fn resolve_target<'a>(
 /// here for deterministic, hash-free iteration). A second config entry on the
 /// same routine still unions against the ORIGINAL AST kinds, not entry-1's
 /// merged result.
+/// A single infrastructure diagnostic emitted during root-classification overlay.
+/// Mirrors the `Diagnostic` shape from `src/model/finding.ts`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfraDiagnostic {
+    pub severity: String,
+    pub stage: String,
+    pub message: String,
+}
+
 fn overlay_config_roots(
     ast_roots: Vec<RootClassification>,
     config: Option<&RootsConfig>,
     workspace: &L3Workspace,
-) -> Vec<RootClassification> {
+) -> (Vec<RootClassification>, Vec<InfraDiagnostic>) {
     let Some(config) = config else {
-        return ast_roots;
+        return (ast_roots, vec![]);
     };
+
+    let mut diagnostics: Vec<InfraDiagnostic> = Vec::new();
 
     let ast_by_routine: BTreeMap<String, RootClassification> = ast_roots
         .iter()
@@ -420,7 +431,41 @@ fn overlay_config_roots(
             Some(existing) => {
                 // AST + config corroboration: union kinds, upgrade to "static".
                 // Union against the ORIGINAL (frozen) AST kind set.
-                let mut unioned: BTreeSet<String> = existing.kinds.iter().cloned().collect();
+                let ast_kind_set: BTreeSet<String> = existing.kinds.iter().cloned().collect();
+                let cfg_kind_set_existing: BTreeSet<String> = entry.kinds.iter().cloned().collect();
+
+                // kinds-mismatch diagnostic: emit when AST and config disagree.
+                // Mirrors al-sem `root-classifier-overlay.ts` lines 145-158.
+                let only_ast: Vec<String> = ROOT_KIND_VALUES
+                    .iter()
+                    .filter(|&&k| ast_kind_set.contains(k) && !cfg_kind_set_existing.contains(k))
+                    .map(|&k| k.to_string())
+                    .collect();
+                let only_cfg: Vec<String> = ROOT_KIND_VALUES
+                    .iter()
+                    .filter(|&&k| cfg_kind_set_existing.contains(k) && !ast_kind_set.contains(k))
+                    .map(|&k| k.to_string())
+                    .collect();
+                if !only_ast.is_empty() || !only_cfg.is_empty() {
+                    // JSON-encode the kind arrays (compact, no spaces) to match al-sem's
+                    // `JSON.stringify(onlyAst)` / `JSON.stringify(onlyCfg)`.
+                    let only_ast_json =
+                        serde_json::to_string(&only_ast).unwrap_or_else(|_| "[]".to_string());
+                    let only_cfg_json =
+                        serde_json::to_string(&only_cfg).unwrap_or_else(|_| "[]".to_string());
+                    diagnostics.push(InfraDiagnostic {
+                        severity: "warning".to_string(),
+                        stage: "discover".to_string(),
+                        message: format!(
+                            "[roots-config/kinds-mismatch] roots.config.json entry \"{}\" \
+                             disagrees with AST: ast-only={only_ast_json}, \
+                             config-only={only_cfg_json}.",
+                            entry.id
+                        ),
+                    });
+                }
+
+                let mut unioned: BTreeSet<String> = ast_kind_set;
                 unioned.extend(entry.kinds.iter().cloned());
                 let kinds = canonical_kinds(&unioned);
                 let externally_reachable = entry
@@ -444,7 +489,7 @@ fn overlay_config_roots(
 
     let mut roots: Vec<RootClassification> = by_routine.into_values().collect();
     roots.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-    roots
+    (roots, diagnostics)
 }
 
 // ---------------------------------------------------------------------------
@@ -455,10 +500,14 @@ fn overlay_config_roots(
 /// `<workspace>/roots.config.json`, then overlay the config on the AST roots.
 /// `workspace_root` is `None` for the inline/cross-app paths that have no disk
 /// config (⇒ AST-only). Mirrors al-sem's index.ts wiring.
+///
+/// Returns `(classifications, infra_diagnostics)`. Infrastructure diagnostics
+/// (e.g. `kinds-mismatch` warnings) are threaded up to the caller for inclusion
+/// in the JSON envelope.
 pub fn compute_root_classifications(
     workspace: &L3Workspace,
     workspace_root: Option<&Path>,
-) -> Vec<RootClassification> {
+) -> (Vec<RootClassification>, Vec<InfraDiagnostic>) {
     let ast_roots = classify_roots(workspace);
     let config = workspace_root.and_then(load_roots_config);
     overlay_config_roots(ast_roots, config.as_ref(), workspace)

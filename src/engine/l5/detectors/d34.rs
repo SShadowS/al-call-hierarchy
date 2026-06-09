@@ -152,7 +152,7 @@ pub fn detect_d34(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("suppressedByDirect", skipped_suppressed_by_direct);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 fn emit_direct(

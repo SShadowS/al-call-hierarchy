@@ -123,5 +123,6 @@ pub fn detect_d9(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

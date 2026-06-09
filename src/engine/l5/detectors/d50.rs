@@ -372,6 +372,7 @@ pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings: emitted,
         stats,
+        diagnostics: vec![],
     }
 }
 
@@ -703,6 +704,7 @@ mod tests {
             },
             root_classifications: vec![],
             primary_app: None,
+            infra_diagnostics: Vec::new(),
         };
 
         let output = detect_d50(&resolved, &ctx);

@@ -136,6 +136,7 @@ mod tests {
             affected_objects: vec![],
             affected_tables: vec![],
             path_count: 1,
+            fix_hint: None,
         }
     }
 

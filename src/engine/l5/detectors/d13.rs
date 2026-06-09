@@ -146,5 +146,6 @@ pub fn detect_d13(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

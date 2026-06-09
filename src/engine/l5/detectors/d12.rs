@@ -122,5 +122,6 @@ pub fn detect_d12(
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

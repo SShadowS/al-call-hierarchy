@@ -234,7 +234,7 @@ pub fn detect_d32(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("tooFewCallers", skipped_too_few_callers);
     stats.add_skip("unresolvedOrMixedEdges", skipped_unresolved_or_mixed_edges);
     stats.add_skip("varies", skipped_varies);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 fn emit(

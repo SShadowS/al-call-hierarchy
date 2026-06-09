@@ -217,5 +217,6 @@ pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

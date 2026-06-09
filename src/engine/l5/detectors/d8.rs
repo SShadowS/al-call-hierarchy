@@ -190,5 +190,6 @@ pub fn detect_d8(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     DetectorOutput {
         findings: deduped,
         stats,
+        diagnostics: vec![],
     }
 }

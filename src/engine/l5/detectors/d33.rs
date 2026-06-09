@@ -181,7 +181,7 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("parameter", skipped_parameter);
     stats.add_skip("unresolvedTable", skipped_unresolved_table);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 /// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE

@@ -390,7 +390,7 @@ fn build_cross_app_l3_impl(
 
     // R4-F: classify AST roots over the MERGED whole, then overlay
     // `<workspace>/roots.config.json` (config lives at the workspace root).
-    let root_classifications =
+    let (root_classifications, infra_diagnostics) =
         crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
 
     Some(CrossAppL3 {
@@ -402,6 +402,7 @@ fn build_cross_app_l3_impl(
             // The cross-app L3 constructor has no workspace path here
             // (it receives a pre-assembled workspace), so primary_app = None.
             primary_app: None,
+            infra_diagnostics,
         },
         declared_dep_app_guids: declared_dep_app_guids.to_vec(),
         fetched_app_guids,

@@ -192,7 +192,7 @@ pub fn detect_d22(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("unresolvedTable", skipped_unresolved_table);
     stats.add_skip("parameter", skipped_parameter);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 /// Returns true if there is a `CalcFields` op on `record_var_key` strictly

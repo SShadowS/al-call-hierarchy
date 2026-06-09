@@ -222,5 +222,6 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

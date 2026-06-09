@@ -217,5 +217,6 @@ pub fn detect_d45(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings: kept,
         stats: DetectorStats::new(DETECTOR, candidates, emitted),
+            diagnostics: vec![],
     }
 }

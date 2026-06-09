@@ -565,6 +565,7 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings: emitted,
         stats,
+        diagnostics: vec![],
     }
 }
 

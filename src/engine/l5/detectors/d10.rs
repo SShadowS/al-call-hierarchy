@@ -150,5 +150,6 @@ pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

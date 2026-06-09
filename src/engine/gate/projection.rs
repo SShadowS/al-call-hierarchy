@@ -40,6 +40,8 @@ pub struct FindingSummary {
     pub terminal_location: Option<FindingLocation>,
     pub affected_objects: Vec<String>,
     pub affected_tables: Vec<String>,
+    /// `fixHint` (finding-summary.ts) — the first `fixOptions` entry, if any.
+    pub fix_hint: Option<(String, String)>,
     pub path_count: usize,
 }
 
@@ -103,6 +105,11 @@ pub fn project_finding(finding: &Finding, idx: &ProjectionIndex) -> FindingSumma
         terminal_location: terminal,
         affected_objects: finding.affected_objects.clone(),
         affected_tables: finding.affected_tables.clone(),
+        // al-sem: `finding.fixOptions[0]` (the first fix option, if any).
+        fix_hint: finding
+            .fix_options
+            .first()
+            .map(|f| (f.description.clone(), f.safety.clone())),
         // al-sem: `1 + (finding.additionalPaths?.length ?? 0)`.
         path_count: 1 + finding
             .additional_paths

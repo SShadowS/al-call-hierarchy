@@ -227,5 +227,5 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("noPriorFilter", skipped_no_prior_filter);
     stats.add_skip("noPostUse", skipped_no_post_use);
     stats.add_skip("reFiltered", skipped_re_filtered);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

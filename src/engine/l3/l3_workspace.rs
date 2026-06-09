@@ -885,14 +885,15 @@ pub fn assemble_and_resolve(
 ) -> L3Resolved {
     let mut workspace = assemble_workspace(files, app_guid, model_instance_id);
     resolve(&mut workspace);
-    // Inline path: no disk `roots.config.json` ⇒ AST-only classifications.
+    // Inline path: no disk `roots.config.json` ⇒ AST-only classifications, no infra diagnostics.
     // No disk `app.json` ⇒ primary_app = None.
-    let root_classifications =
+    let (root_classifications, infra_diagnostics) =
         crate::engine::root_classification::compute_root_classifications(&workspace, None);
     L3Resolved {
         workspace,
         root_classifications,
         primary_app: None,
+        infra_diagnostics,
     }
 }
 
@@ -1012,7 +1013,7 @@ pub fn assemble_and_resolve_workspace(
         // R4-F: classify AST roots, then overlay `<workspace>/roots.config.json`.
         // `workspace` is the root where the config lives (mirrors al-sem's
         // index.ts: `loadRootsConfig(workspaceRoot)`).
-        let root_classifications =
+        let (root_classifications, infra_diagnostics) =
             crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
         // Disk-backed path: read the primary app's identity from `app.json`.
         // Mirrors al-sem `model.identity.primaryApp`. Never throws — returns None
@@ -1022,6 +1023,7 @@ pub fn assemble_and_resolve_workspace(
             workspace: ws,
             root_classifications,
             primary_app,
+            infra_diagnostics,
         }
     };
     // Empty fail-closed model (no objects/routines) → treat as not-analyzable.
@@ -1178,6 +1180,10 @@ pub struct L3Resolved {
     /// primary app description. Additive — `L3Resolved` is NOT serialized into any
     /// golden surface, so adding this field never moves a golden.
     pub primary_app: Option<crate::engine::gate::app_attribution::App>,
+    /// Infrastructure diagnostics from the root-classification overlay (e.g.
+    /// `kinds-mismatch` warnings from `roots.config.json`). Empty for inline /
+    /// cross-app paths that have no disk config. Propagated to the JSON envelope.
+    pub infra_diagnostics: Vec<crate::engine::root_classification::InfraDiagnostic>,
 }
 
 // ---------------------------------------------------------------------------

@@ -192,5 +192,6 @@ pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

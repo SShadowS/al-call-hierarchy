@@ -155,5 +155,6 @@ pub fn detect_d11(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

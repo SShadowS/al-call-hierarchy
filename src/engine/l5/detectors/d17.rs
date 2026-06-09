@@ -78,6 +78,7 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         return DetectorOutput {
             findings,
             stats: DetectorStats::new(DETECTOR, 0, 0),
+            diagnostics: vec![],
         };
     }
 
@@ -223,6 +224,7 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }
 
@@ -472,6 +474,7 @@ mod tests {
             },
             root_classifications: Vec::new(),
             primary_app: None,
+            infra_diagnostics: Vec::new(),
         }
     }
 

@@ -126,7 +126,7 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("helperPersistsUnknown", skipped_helper_persists_unknown);
     stats.add_skip("tempRecord", skipped_temp_record);
     stats.add_skip("parameter", skipped_parameter);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
 
 /// Iterate ops in source order on the same record var, after the Validate; the first

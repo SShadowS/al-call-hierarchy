@@ -241,6 +241,7 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         update_baseline: a.update_baseline,
         disable_inline_suppression: false,
         group_by,
+        deterministic: a.deterministic,
     };
 
     match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
@@ -307,9 +308,10 @@ mod tests {
         assert_eq!(code, 3);
     }
 
-    /// The stub formats (Terminal/Json/Html) return `Err` from the pipeline. We drive a
+    /// The remaining stub formats (Terminal/Html) return `Err` from the pipeline. We drive a
     /// REAL fixture workspace so the primary format-match stub arm is exercised (NOT the
     /// fail-closed empty_output path). The Err is then asserted explicitly.
+    /// Json is now implemented (Stage A2) so it is NOT included here.
     #[test]
     fn stub_formats_return_err() {
         use al_call_hierarchy::engine::gate::filter::Scope;
@@ -327,11 +329,7 @@ mod tests {
             ws.display()
         );
 
-        for fmt in [
-            OutputFormat::Terminal,
-            OutputFormat::Json,
-            OutputFormat::Html,
-        ] {
+        for fmt in [OutputFormat::Terminal, OutputFormat::Html] {
             let args = AnalyzeArgs {
                 workspace: ws.to_string_lossy().to_string(),
                 min_severity: None,
@@ -347,6 +345,7 @@ mod tests {
                 update_baseline: false,
                 disable_inline_suppression: false,
                 group_by: None,
+                deterministic: false,
             };
             let result = run_analyze_with_exit(&args, "test");
             assert!(

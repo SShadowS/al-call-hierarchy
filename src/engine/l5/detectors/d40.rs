@@ -246,5 +246,5 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("tempRecord", skipped_temp_record);
     stats.add_skip("callerLoaded", skipped_caller_loaded);
     stats.add_skip("calleeUnknown", skipped_callee_unknown);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

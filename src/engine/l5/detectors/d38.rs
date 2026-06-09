@@ -179,5 +179,5 @@ pub fn detect_d38(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("noPublisherRoutine", skipped_no_publisher_routine);
     stats.add_skip("publisherMissing", skipped_publisher_missing);
     stats.add_skip("publisherNotObsolete", skipped_publisher_not_obsolete);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

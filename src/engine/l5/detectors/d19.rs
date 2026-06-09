@@ -135,5 +135,6 @@ pub fn detect_d19(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     DetectorOutput {
         findings,
         stats,
+        diagnostics: vec![],
     }
 }

@@ -174,5 +174,5 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     stats.add_skip("noPriorLoad", skipped_no_prior_load);
     stats.add_skip("tempRecord", skipped_temp_record);
     stats.add_skip("parameter", skipped_parameter);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }

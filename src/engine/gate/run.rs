@@ -27,6 +27,7 @@ use crate::engine::gate::app_attribution::App;
 use crate::engine::gate::baseline::{apply_baseline, load_baseline, save_baseline};
 use crate::engine::gate::exit_code::{compute_finding_exit, exit};
 use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
+use crate::engine::gate::format_json::{build_analyze_json, JsonFormatInputs};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
 use crate::engine::gate::inline_suppression::{apply_inline_suppressions, build_suppression_map};
@@ -34,6 +35,7 @@ use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::preflight::evaluate_preflight;
 use crate::engine::gate::presets::resolve_analyze_detectors;
 use crate::engine::gate::projection::{project_finding, ProjectionIndex};
+use crate::engine::gate::version::alsem_version;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::registry::run_detectors;
 
@@ -53,13 +55,12 @@ pub enum OutputFormat {
 /// The "not yet implemented" `Err` string for a stub formatter. Referenced from BOTH
 /// the main format match and the `empty_output_result` fallback so the wording cannot
 /// drift, and so A1–A3 only delete the arm in one conceptual place. Returns `None` for
-/// the already-implemented formats (Sarif / PrSummary).
+/// the already-implemented formats (Sarif / PrSummary / Json).
 fn stub_not_implemented(fmt: OutputFormat) -> Option<String> {
     let (name, stage) = match fmt {
         OutputFormat::Terminal => ("terminal", "A1"),
-        OutputFormat::Json => ("json", "A2"),
         OutputFormat::Html => ("html", "A3"),
-        OutputFormat::Sarif | OutputFormat::PrSummary => return None,
+        OutputFormat::Sarif | OutputFormat::PrSummary | OutputFormat::Json => return None,
     };
     Some(format!(
         "format '{name}' not yet implemented (stage {stage})"
@@ -106,6 +107,9 @@ pub struct AnalyzeArgs {
     /// entering the pipeline. `None` means no explicit grouping was requested
     /// (the terminal formatter will use its default). Ignored by sarif/pr-summary/json/html.
     pub group_by: Option<String>,
+    /// `--deterministic` — pins timestamps and version for byte-stable output.
+    /// Used by the `json` formatter to pin `generatedAt` to the UNIX epoch.
+    pub deterministic: bool,
 }
 
 /// Read the workspace root `app.json` identity (`id` / `publisher` / `name` / `version`)
@@ -211,6 +215,24 @@ pub fn run_analyze_with_exit(
     // (detector, primaryLocationKey, rootCauseKey) with dep-anchored findings already
     // role-scoped out (source-only ⇒ no-op).
     let run = run_detectors(&resolved, &detectors);
+    // Capture diagnostics + detector stats for the Json formatter (consumed after filtering).
+    // Merge infra diagnostics (e.g. kinds-mismatch from roots.config.json overlay) with
+    // detector-emitted diagnostics (e.g. d43 substrate guard) — mirrors al-sem's flat
+    // `result.diagnostics` which combines all diagnostic sources.
+    let run_diagnostics: Vec<crate::engine::l5::registry::Diagnostic> = {
+        let mut all: Vec<crate::engine::l5::registry::Diagnostic> = resolved
+            .infra_diagnostics
+            .iter()
+            .map(|d| crate::engine::l5::registry::Diagnostic {
+                severity: d.severity.clone(),
+                stage: d.stage.clone(),
+                message: d.message.clone(),
+            })
+            .collect();
+        all.extend(run.diagnostics.iter().cloned());
+        all
+    };
+    let run_detector_stats = run.detector_stats.clone();
 
     // Project each finding (display names + 1-based location), preserving order.
     let idx = ProjectionIndex::build(&resolved.workspace.objects, &resolved.workspace.routines);
@@ -306,6 +328,11 @@ pub fn run_analyze_with_exit(
         });
     }
 
+    // --- dependency-coverage preflight (al-sem Task 2) ---
+    // NOTE: coverage is computed HERE (before the format switch) so it is available
+    // to the Json formatter. The preflight evaluation + exit-code gate follow below.
+    let coverage = resolved.project_coverage_disk(ws_path);
+
     // --- format ---
     let output = match args.format {
         OutputFormat::Sarif => {
@@ -318,10 +345,21 @@ pub fn run_analyze_with_exit(
             let apps = read_workspace_apps(ws_path);
             format_pr_summary(&paired, &resolved.workspace.routines, &apps)
         }
+        OutputFormat::Json => {
+            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+            build_analyze_json(&JsonFormatInputs {
+                findings: &summaries,
+                diagnostics: &run_diagnostics,
+                detector_stats: &run_detector_stats,
+                coverage: &coverage,
+                deterministic: args.deterministic,
+                alsem_version: alsem_version(),
+            })
+        }
         // Stubs — the actual formatters are wired in Stages A1–A3.
         // The resolved model + raw findings are available on `resolved` / `paired`
         // when those stages implement them; nothing is emitted here.
-        fmt @ (OutputFormat::Terminal | OutputFormat::Json | OutputFormat::Html) => {
+        fmt @ (OutputFormat::Terminal | OutputFormat::Html) => {
             return Err(stub_not_implemented(fmt).expect("stub format has a message"))
         }
     };
@@ -331,7 +369,7 @@ pub fn run_analyze_with_exit(
     // "no silent clean" contract — al-sem index.ts:263-264). The warn is INDEPENDENT
     // of --require-dependencies; only the FAILED→exit-4 path needs that flag.
     // We return the warning message as the 3rd tuple field; the bin emits it.
-    let coverage = resolved.project_coverage_disk(ws_path);
+    // NOTE: `coverage` was already computed above for the Json formatter.
     let pf = evaluate_preflight(
         coverage.unresolved_callsites.len(),
         &coverage.opaque_apps,
@@ -359,12 +397,11 @@ pub fn run_analyze_with_exit(
 }
 
 /// The empty-output path for a fail-closed / unreadable workspace: empty findings ⇒
-/// empty SARIF or the "no findings" PR-summary; a clean preflight ⇒ exit CLEAN.
-/// The new stub formats (Terminal/Json/Html) are not reachable here from the real
-/// CLI (it validates format before entering the pipeline), but must be exhaustive.
+/// empty SARIF or the "no findings" PR-summary or a zero-findings Json envelope;
+/// a clean preflight ⇒ exit CLEAN.
 ///
-/// `Err` is returned for stub formats so `run_analyze` / `run_analyze_with_exit`
-/// surface an obvious error even on an unreadable workspace — no silent pass.
+/// `Err` is returned for stub formats (Terminal/Html) so `run_analyze` /
+/// `run_analyze_with_exit` surface an obvious error — no silent pass.
 pub(crate) fn empty_output_result(
     args: &AnalyzeArgs,
     version: &str,
@@ -372,7 +409,28 @@ pub(crate) fn empty_output_result(
     let out = match args.format {
         OutputFormat::Sarif => format_sarif(&[], &[], version),
         OutputFormat::PrSummary => format_pr_summary(&[], &[], &[]),
-        fmt @ (OutputFormat::Terminal | OutputFormat::Json | OutputFormat::Html) => {
+        OutputFormat::Json => {
+            // Empty envelope: zero findings, zero stats, zero coverage.
+            let empty_coverage = crate::engine::l3::coverage::AnalysisCoverage {
+                source_units_total: 0,
+                source_units_parsed: 0,
+                routines_total: 0,
+                routines_body_available: 0,
+                routines_parse_incomplete: vec![],
+                opaque_apps: vec![],
+                unresolved_callsites: vec![],
+                dynamic_dispatch_sites: vec![],
+            };
+            build_analyze_json(&JsonFormatInputs {
+                findings: &[],
+                diagnostics: &[],
+                detector_stats: &[],
+                coverage: &empty_coverage,
+                deterministic: args.deterministic,
+                alsem_version: alsem_version(),
+            })
+        }
+        fmt @ (OutputFormat::Terminal | OutputFormat::Html) => {
             return Err(stub_not_implemented(fmt).expect("stub format has a message"))
         }
     };

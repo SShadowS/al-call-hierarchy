@@ -148,5 +148,5 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("parameter", skipped_parameter);
-    DetectorOutput { findings, stats }
+    DetectorOutput::no_diag(findings, stats)
 }
