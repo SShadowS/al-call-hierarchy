@@ -1,16 +1,21 @@
 //! `run_analyze` — the gate pipeline lib entry the `alsem analyze` bin wraps and the
-//! differential test calls in-process. Mirrors the `analyze` action in al-sem
-//! `src/cli/index.ts` (Stage 1: NO baseline, NO inline suppression — those are Stage 3).
+//! differential tests call in-process. Mirrors the `analyze` action in al-sem
+//! `src/cli/index.ts`.
+//!
+//! Stage 1 (SARIF + projection + filters): NO baseline, NO inline suppression.
+//! Stage 2b (this layer): adds `--format pr-summary`, `--fail-on`, `--require-dependencies`,
+//! the dependency-coverage preflight, and the CI exit-code contract.
 //!
 //! Pipeline:
-//!   assemble_and_resolve_workspace_default(ws)  (L0→L3, source-only)
+//!   assemble_and_resolve_workspace(ws)  (L0→L3, source-only)
 //!   → resolve the detector set (preset | --detector | default)
 //!   → run_detectors (L4 inside the DetectorContext + L5) — pre-sorted Finding[]
 //!   → project_finding per finding (display names + 1-based location)
 //!   → filter_findings (min-severity, detector allow-list)
 //!   → scope filter (primary drops dependency-anchored findings)
 //!   → limit
-//!   → format_sarif
+//!   → format (sarif | pr-summary)
+//!   → preflight + exit-code (--fail-on / --require-dependencies)
 //!
 //! Source-only: the transaction-integrity preset is intra-app, so this drives the
 //! source-only `run_detectors` (not the cross-app variant). Every workspace object is
@@ -18,18 +23,23 @@
 
 use std::path::Path;
 
+use crate::engine::gate::app_attribution::App;
+use crate::engine::gate::exit_code::{compute_finding_exit, exit};
 use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
+use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
+use crate::engine::gate::preflight::evaluate_preflight;
 use crate::engine::gate::presets::resolve_analyze_detectors;
 use crate::engine::gate::projection::{project_finding, ProjectionIndex};
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::registry::run_detectors;
 
-/// Output format. Stage 1: only `Sarif`.
+/// Output format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     Sarif,
+    PrSummary,
 }
 
 /// Parsed `analyze` arguments.
@@ -46,23 +56,95 @@ pub struct AnalyzeArgs {
     pub scope: Scope,
     /// `--limit`.
     pub limit: Option<usize>,
-    /// `--format` (Stage 1: Sarif only).
+    /// `--format`.
     pub format: OutputFormat,
     /// `--sarif-version-override` — pins `driver.version` for byte-stable output.
-    /// When `None`, `default_version` is used.
+    /// When `None`, `default_version` is used. (SARIF only; PR-summary embeds no version.)
     pub sarif_version_override: Option<String>,
+    /// `--fail-on <sev>` — when `Some`, exit `FINDINGS` (1) if any kept finding is
+    /// at/above this severity. Already-validated severity string (`None` ⇒ never gate).
+    pub fail_on: Option<String>,
+    /// `--require-dependencies` — make a degraded preflight FAIL (exit 4).
+    pub require_dependencies: bool,
 }
 
-/// Run the gate `analyze` pipeline and return the SARIF string WITHOUT the trailing
-/// newline (the CLI / caller appends `"\n"` to match al-sem's
-/// `process.stdout.write(`${formatSarif(...)}\n`)`).
+/// Read the workspace root `app.json` identity (`id` / `publisher` / `name` / `version`)
+/// into the gate `App` registry. Mirrors al-sem `WorkspaceProvider.collect`:
+///   - defaults: `publisher = "unknown"`, `name = "unknown"`, `version = "0.0.0.0"`.
+///   - `appGuid` from the `id` (already validated by `compute_gate_model_instance_id`).
+/// SOURCE-ONLY: exactly one app per run. Returns an empty registry if `app.json` is
+/// unreadable (engine-never-throws; attribution then falls back to "(unknown app)").
+fn read_workspace_apps(ws: &Path) -> Vec<App> {
+    let Ok(text) = std::fs::read_to_string(ws.join("app.json")) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(app_guid) = v
+        .get("id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+    else {
+        return Vec::new();
+    };
+    let publisher = v
+        .get("publisher")
+        .and_then(|x| x.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let name = v
+        .get("name")
+        .and_then(|x| x.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let version = v
+        .get("version")
+        .and_then(|x| x.as_str())
+        .unwrap_or("0.0.0.0")
+        .to_string();
+    vec![App {
+        app_guid: app_guid.to_string(),
+        publisher,
+        name,
+        version,
+    }]
+}
+
+/// Run the gate `analyze` pipeline and return the formatted output string WITHOUT the
+/// trailing newline (the CLI / caller appends `"\n"`, matching al-sem's
+/// `process.stdout.write(`${format(...)}\n`)`).
 ///
-/// `default_version` is the engine's real version, used when no override is given.
+/// Backwards-compatible Stage-1 entry: SARIF only, no exit code. Prefer
+/// `run_analyze_with_exit` for the full gate (pr-summary + exit code).
+pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, String> {
+    run_analyze_with_exit(args, default_version).map(|(out, _exit, _warn)| out)
+}
+
+/// Run the gate `analyze` pipeline, returning `(stdout, exit_code, stderr_warning)`.
+///
+/// The exit code follows the al-sem precedence:
+///   CONFIG_ERROR (3) and ANALYSIS_FAILURE (2) are the CALLER's responsibility (bad
+///   flags / a thrown pipeline — neither occurs here: detector/preset resolution errors
+///   return `Err`, which the bin maps to 3). This fn computes:
+///   PREFLIGHT_FAILED (4) > FINDINGS (1) > CLEAN (0).
+///
+/// The third tuple field is the preflight degraded warning message (F2: "no silent
+/// clean" contract). `Some(msg)` when `pf.degraded`, `None` when coverage is complete.
+/// The bin emits `al-sem: warning: {msg}` to stderr; tests may inspect it directly.
+/// The warning is emitted REGARDLESS of `--require-dependencies` (only the
+/// FAILED→exit-4 path needs that flag).
+///
+/// `default_version` is the engine's real version, used when no SARIF override is given.
 ///
 /// Errors: detector/preset resolution failures (e.g. unknown preset, `--preset` +
 /// `--detector` together). A workspace that fails to assemble (fail-closed / unreadable)
-/// yields an EMPTY-results SARIF — engine-never-throws.
-pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, String> {
+/// yields EMPTY findings (engine-never-throws) — empty SARIF / "no findings" PR-summary,
+/// a clean preflight, and exit CLEAN.
+pub fn run_analyze_with_exit(
+    args: &AnalyzeArgs,
+    default_version: &str,
+) -> Result<(String, u8, Option<String>), String> {
     let detectors = resolve_analyze_detectors(args.preset.as_deref(), args.detector.as_deref())?;
 
     let version = args
@@ -73,17 +155,16 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
     // Assemble with the al-sem GATE modelInstanceId (content-derived, UNPINNED) so the
     // internal RoutineIds embedded in each finding's rootCauseKey — and therefore the
     // SARIF fingerprint hashed over them — byte-match the al-sem `analyze` CLI goldens.
-    // (The R4 dump pins "r0"; the gate does not — see model_instance_id.rs.)
     let ws_path = Path::new(&args.workspace);
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
-        // Fail-closed layout → empty SARIF (no findings).
-        None => return Ok(format_sarif(&[], &[], &version)),
+        // Fail-closed layout → empty output, clean preflight, clean exit.
+        None => return Ok(empty_output(args, &version)),
     };
     let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id) {
         Some(r) => r,
-        // Fail-closed / unreadable workspace → empty SARIF (no findings).
-        None => return Ok(format_sarif(&[], &[], &version)),
+        // Fail-closed / unreadable workspace → empty output.
+        None => return Ok(empty_output(args, &version)),
     };
 
     // L4 + L5: run the selected detectors. Findings come pre-sorted by
@@ -93,7 +174,6 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
 
     // Project each finding (display names + 1-based location), preserving order.
     let idx = ProjectionIndex::build(&resolved.workspace.objects, &resolved.workspace.routines);
-    // Keep the raw Finding alongside its summary so the SARIF can emit evidence paths.
     let mut paired: Vec<(
         crate::engine::gate::projection::FindingSummary,
         &crate::engine::l5::finding::Finding,
@@ -103,15 +183,7 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
         .map(|f| (project_finding(f, &idx), f))
         .collect();
 
-    // The filter / scope / limit steps are defined over `FindingSummary` (mirroring
-    // al-sem). We run each over the summaries-only view, then prune `paired` to the
-    // surviving prefix/subset by replaying the SAME predicates on the pairs — keeping
-    // each `(summary, raw)` pair aligned. Finding `id`s are globally unique (the id
-    // embeds the detector + location), so membership tests are unambiguous.
-
-    // --- filter: min-severity, then detector allow-list. The al-sem CLI only passes a
-    // detector allow-list to filter_findings when `--detector` is set (the preset bakes
-    // the set into analyzeWorkspace instead). Mirror that exactly. ---
+    // --- filter: min-severity, then detector allow-list (only when `--detector` set). ---
     let detector_allow = args.detector.as_ref().map(|d| {
         d.split(',')
             .map(|s| s.trim().to_string())
@@ -130,8 +202,7 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
         paired.retain(|(s, _)| kept_ids.contains(&s.id));
     }
 
-    // --- scope: primary drops dependency-anchored findings. Source-only ⇒ no object is
-    // a dependency, so this keeps everything. ---
+    // --- scope: primary drops dependency-anchored findings. Source-only ⇒ keep all. ---
     {
         let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
         let kept_ids: std::collections::HashSet<String> =
@@ -147,11 +218,58 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
         paired.truncate(n);
     }
 
-    let summaries: Vec<crate::engine::gate::projection::FindingSummary> =
-        paired.iter().map(|(s, _)| s.clone()).collect();
-    let raws: Vec<&crate::engine::l5::finding::Finding> = paired.iter().map(|(_, r)| *r).collect();
+    // --- format ---
+    let output = match args.format {
+        OutputFormat::Sarif => {
+            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+            let raws: Vec<&crate::engine::l5::finding::Finding> =
+                paired.iter().map(|(_, r)| *r).collect();
+            format_sarif(&summaries, &raws, &version)
+        }
+        OutputFormat::PrSummary => {
+            let apps = read_workspace_apps(ws_path);
+            format_pr_summary(&paired, &resolved.workspace.routines, &apps)
+        }
+    };
 
-    match args.format {
-        OutputFormat::Sarif => Ok(format_sarif(&summaries, &raws, &version)),
-    }
+    // --- dependency-coverage preflight (al-sem Task 2) ---
+    // F2 FIX: always evaluate AND surface pf.degraded as a stderr warning (the
+    // "no silent clean" contract — al-sem index.ts:263-264). The warn is INDEPENDENT
+    // of --require-dependencies; only the FAILED→exit-4 path needs that flag.
+    // We return the warning message as the 3rd tuple field; the bin emits it.
+    let coverage = resolved.project_coverage_disk(ws_path);
+    let pf = evaluate_preflight(
+        coverage.unresolved_callsites.len(),
+        &coverage.opaque_apps,
+        args.require_dependencies,
+    );
+
+    // The degraded warning message — None when coverage is complete (pf.degraded false).
+    // Matches al-sem: `if (pf.degraded) process.stderr.write(`al-sem: warning: ${pf.message}\n`)`.
+    let stderr_warning: Option<String> = if pf.degraded {
+        Some(pf.message.clone())
+    } else {
+        None
+    };
+
+    // --- exit-code gate (precedence: PREFLIGHT_FAILED (4) > FINDINGS (1) > CLEAN (0)). ---
+    let exit_code = if pf.failed {
+        exit::PREFLIGHT_FAILED
+    } else {
+        // computeFindingExit over the KEPT findings' severities (no fail-on ⇒ CLEAN).
+        let severities: Vec<&str> = paired.iter().map(|(s, _)| s.severity.as_str()).collect();
+        compute_finding_exit(&severities, args.fail_on.as_deref())
+    };
+
+    Ok((output, exit_code, stderr_warning))
+}
+
+/// The empty-output path for a fail-closed / unreadable workspace: empty findings ⇒
+/// empty SARIF or the "no findings" PR-summary; a clean preflight ⇒ exit CLEAN.
+fn empty_output(args: &AnalyzeArgs, version: &str) -> (String, u8, Option<String>) {
+    let out = match args.format {
+        OutputFormat::Sarif => format_sarif(&[], &[], version),
+        OutputFormat::PrSummary => format_pr_summary(&[], &[], &[]),
+    };
+    (out, exit::CLEAN, None)
 }

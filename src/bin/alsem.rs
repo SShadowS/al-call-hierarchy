@@ -11,9 +11,10 @@
 
 use std::process::ExitCode;
 
+use al_call_hierarchy::engine::gate::exit_code::parse_fail_on;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
-use al_call_hierarchy::engine::gate::run::{run_analyze, AnalyzeArgs, OutputFormat};
+use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
 use clap::{Parser, Subcommand};
 
 /// The engine's default (unpinned) SARIF `driver.version`. The differential always
@@ -73,13 +74,21 @@ struct AnalyzeCli {
     #[arg(long = "limit")]
     limit: Option<usize>,
 
-    /// Output format (Stage 1: only `sarif`).
+    /// Output format: sarif | pr-summary.
     #[arg(long = "format", default_value = "sarif")]
     format: String,
 
     /// Pin the SARIF driver.version (e.g. gate-sarif-v1) for byte-stable output.
     #[arg(long = "sarif-version-override")]
     sarif_version_override: Option<String>,
+
+    /// Exit 1 if any kept finding is at/above this severity: critical|high|medium|low|info.
+    #[arg(long = "fail-on")]
+    fail_on: Option<String>,
+
+    /// Make a degraded dependency-coverage preflight FAIL (exit 4).
+    #[arg(long = "require-dependencies", default_value_t = false)]
+    require_dependencies: bool,
 }
 
 fn main() -> ExitCode {
@@ -112,13 +121,26 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
 
     let format = match a.format.as_str() {
         "sarif" => OutputFormat::Sarif,
+        "pr-summary" => OutputFormat::PrSummary,
         other => {
             eprintln!(
-                "al-sem: unsupported --format '{other}'. Stage 1 supports: sarif (known presets: {})",
+                "al-sem: unsupported --format '{other}'. Supported: sarif, pr-summary (known presets: {})",
                 PRESET_NAMES_LIST.join(", ")
             );
             return ExitCode::from(3);
         }
+    };
+
+    // --- validate --fail-on (CONFIG_ERROR on a bad value, mirroring al-sem parseFailOn). ---
+    let fail_on = match &a.fail_on {
+        Some(s) => match parse_fail_on(s) {
+            Ok(sev) => Some(sev),
+            Err(msg) => {
+                eprintln!("al-sem: {msg}");
+                return ExitCode::from(3);
+            }
+        },
+        None => None,
     };
 
     let args = AnalyzeArgs {
@@ -130,13 +152,21 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         limit: a.limit,
         format,
         sarif_version_override: a.sarif_version_override,
+        fail_on,
+        require_dependencies: a.require_dependencies,
     };
 
-    match run_analyze(&args, DEFAULT_SARIF_VERSION) {
-        Ok(sarif) => {
-            // al-sem appends a trailing newline to the SARIF string.
-            println!("{sarif}");
-            ExitCode::SUCCESS
+    match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
+        Ok((out, exit_code, stderr_warning)) => {
+            // F2: emit the preflight degraded warning to stderr (the "no silent clean"
+            // contract). Matches al-sem index.ts:263-264:
+            //   `if (pf.degraded) process.stderr.write(`al-sem: warning: ${pf.message}\n`)`.
+            if let Some(msg) = stderr_warning {
+                eprintln!("al-sem: warning: {msg}");
+            }
+            // al-sem appends a trailing newline to the formatted output.
+            println!("{out}");
+            ExitCode::from(exit_code)
         }
         Err(msg) => {
             eprintln!("al-sem: {msg}");

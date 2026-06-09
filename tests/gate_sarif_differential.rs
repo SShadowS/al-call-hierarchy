@@ -162,6 +162,8 @@ fn run_gate(workspace: &str, preset: Option<&str>, detector: Option<&str>) -> St
         limit: None,
         format: OutputFormat::Sarif,
         sarif_version_override: Some(PIN_VERSION.to_string()),
+        fail_on: None,
+        require_dependencies: false,
     };
     run_analyze(&args, "engine-default").expect("run_analyze")
 }
