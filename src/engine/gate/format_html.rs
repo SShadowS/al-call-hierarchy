@@ -5,8 +5,15 @@
 //! whitespace, and SVG coordinates.
 //!
 //! ## SVG coordinate parity
-//! All SVG coordinates are integers (the arithmetic yields integer or half-integer
-//! values, but the corpus only exercises integers). Bezier midpoints: `mx = (x1+x2)/2`.
+//! All SVG coordinates are integers, produced by INTENTIONAL integer arithmetic
+//! that matches TS's emitted values exactly. Two integer-division sites:
+//!   - bezier midpoints `mx = (x1 + x2) / 2` — every (x1,x2) pair used has an even
+//!     sum (266+400, 650+760, …), so the halve is exact.
+//!   - `y_of`: `top = (h_total - block_h) / 2 + 20` — `h_total - block_h` is always
+//!     even (both are multiples of ROW=46 plus/minus the even constant 40), so the
+//!     halve is exact.
+//! Parity holds while those divisors stay even. DO NOT "fix" either to floating
+//! point — that would re-introduce the float-formatting divergence we avoid.
 //! The fixed-literal attributes `stroke-width="1.5"` and `opacity="0.7"` are
 //! NOT arithmetic — they are hardcoded string constants.
 //!
@@ -107,7 +114,22 @@ fn short_file(source_unit_id: &str) -> &str {
 }
 
 /// `trunc(s, n)` — truncate to n chars (replacing the last char with `…`).
+///
+/// UTF-16 FOLLOW-UP: this slices on Unicode scalar boundaries (`chars()`), but TS
+/// `trunc` (format-html.ts:56-58) measures/slices on UTF-16 code units
+/// (`s.length` / `s.slice`). For non-BMP labels (astral chars in eventName n=30,
+/// pub n=30, sub n=32, routineLabel n=24) the cut point diverges. This is part of
+/// the tracked engine-wide UTF-16 `compareStrings` follow-up — DO NOT change the
+/// behavior in isolation. When the swap lands it must use UTF-16 code-unit
+/// semantics for slicing (cut on an `encode_utf16()` boundary, re-decoding the
+/// kept prefix), NOT byte- or scalar-based slicing, to actually match al-sem.
+/// Corpus-invisible today (all labels are BMP).
 fn trunc(s: &str, n: usize) -> String {
+    // Engine never panics: guard n==0 (unreachable today — callers pass 24/30/32 —
+    // but `chars[..n - 1]` would underflow otherwise).
+    if n == 0 {
+        return String::new();
+    }
     let chars: Vec<char> = s.chars().collect();
     if chars.len() > n {
         let truncated: String = chars[..n - 1].iter().collect();
@@ -379,7 +401,15 @@ fn node_svg(
     )
 }
 
-/// Sort comparator: byte-order (mirrors TS `cmp`).
+/// Sort comparator for event/publisher/subscriber labels (mirrors TS `cmp`,
+/// format-html.ts:38: `a < b ? -1 : a > b ? 1 : 0`).
+///
+/// UTF-16 FOLLOW-UP: `str::cmp` orders by UTF-8 bytes (== Unicode scalar order),
+/// but TS `<`/`>` on strings orders by UTF-16 code units. These agree for BMP but
+/// diverge for non-BMP (surrogate-pair) chars. This is part of the tracked
+/// engine-wide UTF-16 `compareStrings` follow-up — DO NOT change in isolation.
+/// When it lands it must compare via `encode_utf16().cmp(...)`, NOT bytes/scalars,
+/// to match al-sem for non-BMP labels. Corpus-invisible today (all labels are BMP).
 fn cmp_str(a: &str, b: &str) -> std::cmp::Ordering {
     a.cmp(b)
 }
@@ -446,17 +476,17 @@ fn render_event_graph(graph: &EventGraph, m: &Maps) -> String {
         });
     }
 
-    // Publisher column: distinct pub labels, sorted
+    // Publisher column: distinct pub labels, sorted.
+    // (Dedup order is immaterial post-sort; mirrors the subs_col pattern below.)
     let pubs: Vec<String> = {
-        let mut set = std::collections::LinkedList::new();
+        let mut v: Vec<String> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for ev in &events {
             let p = pub_label(ev, m);
             if seen.insert(p.clone()) {
-                set.push_back(p);
+                v.push(p);
             }
         }
-        let mut v: Vec<String> = set.into_iter().collect();
         v.sort_by(|a, b| cmp_str(a, b));
         v
     };
@@ -487,7 +517,10 @@ fn render_event_graph(graph: &EventGraph, m: &Maps) -> String {
     let rows = pubs.len().max(events.len()).max(subs_col.len()).max(1) as i64;
     let h_total = rows * ROW + 40;
 
-    // yOf(i, count) — mirrors TS `yOf`
+    // yOf(i, count) — mirrors TS `yOf`. The `/ 2` is INTENTIONAL integer division:
+    // `h_total - block_h` is always even (both are multiples of ROW=46 ± the even
+    // constant 40), so it halves exactly and matches TS. See the module-level
+    // "SVG coordinate parity" note — DO NOT convert to floating point.
     let y_of = |i: i64, count: i64| -> i64 {
         let block_h = count * ROW;
         let top = (h_total - block_h) / 2 + 20;
@@ -734,19 +767,26 @@ pub fn format_html(inputs: &HtmlFormatInputs<'_>) -> String {
     for (summary, _raw) in findings {
         *counts.entry(summary.severity.as_str()).or_insert(0) += 1;
     }
-    let _total = findings.len().max(1);
-
-    // co-location map: "sourceUnitId:line:col" → Vec<detector>
-    // Uses IndexMap so insertion order is preserved (mirrors TS `new Map()`)
-    let loc_key = |s: &FindingSummary| -> String {
+    // co-location map: "sourceUnitId:startLine:startColumn" → Vec<detector>
+    // Uses IndexMap so insertion order is preserved (mirrors TS `new Map()`).
+    // NOTE: keys off the RAW `Finding.primary_location` (NOT the projected
+    // `FindingSummary.primary_location`). When a finding has an `actionable_anchor`,
+    // `project_finding` swaps primary←actionable and demotes the original to the
+    // terminal location, so the projected primary ≠ the raw primary. TS `locKey`
+    // (format-html.ts:436-437) keys on `f.primaryLocation.{sourceUnitId,range.startLine,
+    // range.startColumn}` — the raw anchor — so we must too, or co-location grouping
+    // diverges for any finding that carries an actionable anchor.
+    let loc_key = |raw: &Finding| -> String {
         format!(
             "{}:{}:{}",
-            s.primary_location.file, s.primary_location.line, s.primary_location.column
+            raw.primary_location.source_unit_id,
+            raw.primary_location.start_line,
+            raw.primary_location.start_column
         )
     };
     let mut by_loc: IndexMap<String, Vec<String>> = IndexMap::new();
-    for (summary, _raw) in findings {
-        let k = loc_key(summary);
+    for (summary, raw) in findings {
+        let k = loc_key(raw);
         by_loc.entry(k).or_default().push(summary.detector.clone());
     }
 
@@ -791,7 +831,8 @@ pub fn format_html(inputs: &HtmlFormatInputs<'_>) -> String {
             let cards: String = fs
                 .iter()
                 .map(|(summary, raw)| {
-                    let k = loc_key(summary);
+                    // Look up co-located detectors by the RAW finding's key (see loc_key note).
+                    let k = loc_key(raw);
                     // TS: `[...new Set(co)]` — deduplicate while preserving insertion order.
                     let raw_co = by_loc
                         .get(&k)
@@ -872,7 +913,8 @@ pub fn format_html(inputs: &HtmlFormatInputs<'_>) -> String {
 mod tests {
     use super::*;
     use crate::engine::l3::event_graph::{EventEdge, EventGraph, EventSymbol};
-    use crate::engine::l3::l3_workspace::{L3Object, L3Routine, L3Table};
+    use crate::engine::l3::l3_workspace::{L3Object, L3Routine};
+    use crate::engine::l5::finding::{FindingConfidence, SourceAnchor};
 
     fn empty_maps() -> Maps<'static> {
         // Using leaked empty slices for 'static lifetime in tests
@@ -1035,5 +1077,193 @@ mod tests {
         assert_eq!(trunc("hello!", 5), "hell\u{2026}");
         // exactly n → no truncation
         assert_eq!(trunc("abcde", 5), "abcde");
+        // MINOR-4 guard: n==0 never panics (unreachable today, but must be safe).
+        assert_eq!(trunc("abcde", 0), "");
+        assert_eq!(trunc("", 0), "");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Oracle 8: co-location keys off the RAW primary location, not the projected
+    // one (MUST-FIX 1). Two findings share the SAME raw primary anchor, but the
+    // FIRST carries an `actionable_anchor` pointing at a DIFFERENT location — so its
+    // PROJECTED `FindingSummary.primary_location` differs from the raw one. TS
+    // `locKey` keys on the raw anchor, so the two must CO-LOCATE. Keying on the
+    // projected summary (the pre-fix bug) would split them apart.
+    // This test FAILS if `loc_key` is reverted to key off `FindingSummary`.
+    // ---------------------------------------------------------------------------
+    fn anchor(source_unit_id: &str, line: u32, col: u32, routine_id: &str) -> SourceAnchor {
+        SourceAnchor {
+            source_unit_id: source_unit_id.to_string(),
+            start_line: line,
+            start_column: col,
+            end_line: line,
+            end_column: col + 1,
+            enclosing_routine_id: routine_id.to_string(),
+            syntax_kind: "call_statement".to_string(),
+            normalized_text_hash: None,
+            leading_context_hash: None,
+            trailing_context_hash: None,
+        }
+    }
+
+    fn minimal_finding(
+        id: &str,
+        detector: &str,
+        primary: SourceAnchor,
+        actionable: Option<SourceAnchor>,
+    ) -> Finding {
+        Finding {
+            id: id.to_string(),
+            root_cause_key: id.to_string(),
+            detector: detector.to_string(),
+            title: format!("title {id}"),
+            root_cause: format!("root cause {id}"),
+            severity: "medium".to_string(),
+            confidence: FindingConfidence {
+                level: "likely".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: primary,
+            evidence_path: vec![],
+            additional_paths: None,
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: actionable,
+            fingerprint: Some(id.to_string()),
+            event_kind: None,
+            cross_extension_subscribers: None,
+        }
+    }
+
+    #[test]
+    fn co_location_keys_off_raw_not_projected_primary() {
+        use crate::engine::gate::projection::{project_finding, ProjectionIndex};
+        use crate::engine::l3::coverage::AnalysisCoverage;
+        use crate::engine::l3::l3_workspace::{L3Resolved, L3Workspace};
+
+        // Both findings sit at the SAME raw primary anchor (ws:Foo.al, line 9, col 4).
+        let raw_primary_a = anchor("ws:Foo.al", 9, 4, "rA");
+        let raw_primary_b = anchor("ws:Foo.al", 9, 4, "rB");
+        // Finding A carries an actionable anchor at a DIFFERENT location (line 42),
+        // so its PROJECTED primary becomes line 43 — diverging from the raw line 10.
+        let actionable_a = anchor("ws:Bar.al", 42, 0, "rA");
+
+        let f_a = minimal_finding("fA", "d1-db-op-in-loop", raw_primary_a, Some(actionable_a));
+        let f_b = minimal_finding("fB", "d4-repeated-lookup-in-loop", raw_primary_b, None);
+
+        // Project (empty model — display names resolve to None, irrelevant to the key).
+        let objects: Vec<L3Object> = vec![];
+        let routines: Vec<L3Routine> = vec![];
+        let idx = ProjectionIndex::build(&objects, &routines);
+        let sum_a = project_finding(&f_a, &idx);
+        let sum_b = project_finding(&f_b, &idx);
+
+        // Sanity: A's projected primary really did move off the raw anchor.
+        assert_ne!(
+            sum_a.primary_location.line, sum_b.primary_location.line,
+            "precondition: actionable_anchor must make A's projected primary differ from B's"
+        );
+
+        let resolved = L3Resolved {
+            workspace: L3Workspace {
+                objects: vec![],
+                tables: vec![],
+                routines: vec![],
+            },
+            root_classifications: vec![],
+            primary_app: None,
+            infra_diagnostics: vec![],
+        };
+        let coverage = AnalysisCoverage {
+            source_units_total: 1,
+            source_units_parsed: 1,
+            routines_total: 0,
+            routines_body_available: 0,
+            routines_parse_incomplete: vec![],
+            opaque_apps: vec![],
+            unresolved_callsites: vec![],
+            dynamic_dispatch_sites: vec![],
+        };
+
+        let findings: Vec<(FindingSummary, &Finding)> = vec![(sum_a, &f_a), (sum_b, &f_b)];
+        let html = format_html(&HtmlFormatInputs {
+            findings: &findings,
+            resolved: &resolved,
+            coverage: &coverage,
+            primary_app: None,
+        });
+
+        // Because the two share the SAME raw primary, each finding card must list the
+        // OTHER detector as co-located. (Keying off the projected summary would split
+        // them — A's projected line ≠ B's projected line — and emit NO co-located block.)
+        assert!(
+            html.contains(
+                r#"<div class="co">co-located: <code>d4-repeated-lookup-in-loop</code></div>"#
+            ),
+            "finding A must show d4 as co-located (raw-key match):\n{html}"
+        );
+        assert!(
+            html.contains(r#"<div class="co">co-located: <code>d1-db-op-in-loop</code></div>"#),
+            "finding B must show d1 as co-located (raw-key match):\n{html}"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Oracle 9: missing primary_app (None) — corpus-invisible (all 22 disk fixtures
+    // have an app.json → Some). TS: `appLine = ""` and the title carries no app
+    // suffix (`<title>al-sem report</title>`). Mirrors format-html.ts:472-474,481.
+    // ---------------------------------------------------------------------------
+    #[test]
+    fn missing_primary_app_renders_empty_masthead_and_bare_title() {
+        use crate::engine::l3::coverage::AnalysisCoverage;
+        use crate::engine::l3::l3_workspace::{L3Resolved, L3Workspace};
+
+        let resolved = L3Resolved {
+            workspace: L3Workspace {
+                objects: vec![],
+                tables: vec![],
+                routines: vec![],
+            },
+            root_classifications: vec![],
+            primary_app: None,
+            infra_diagnostics: vec![],
+        };
+        let coverage = AnalysisCoverage {
+            source_units_total: 0,
+            source_units_parsed: 0,
+            routines_total: 0,
+            routines_body_available: 0,
+            routines_parse_incomplete: vec![],
+            opaque_apps: vec![],
+            unresolved_callsites: vec![],
+            dynamic_dispatch_sites: vec![],
+        };
+        let findings: Vec<(FindingSummary, &Finding)> = vec![];
+        let html = format_html(&HtmlFormatInputs {
+            findings: &findings,
+            resolved: &resolved,
+            coverage: &coverage,
+            primary_app: None,
+        });
+
+        // Bare title (no ` — <app>` suffix).
+        assert!(
+            html.contains("<title>al-sem report</title>"),
+            "missing primary_app must render the bare title:\n{html}"
+        );
+        // appLine == "" → masthead has the h1 then the empty template slot, NO
+        // `<span class="app">`.
+        assert!(
+            !html.contains(r#"<span class="app">"#),
+            "missing primary_app must NOT render an app span:\n{html}"
+        );
+        // The h1 is still present.
+        assert!(
+            html.contains("<h1><b>al-sem</b> analysis report</h1>"),
+            "masthead h1 must always render:\n{html}"
+        );
     }
 }
