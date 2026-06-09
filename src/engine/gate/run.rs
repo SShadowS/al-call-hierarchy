@@ -30,6 +30,7 @@ use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, 
 use crate::engine::gate::format_json::{build_analyze_json, JsonFormatInputs};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
+use crate::engine::gate::format_terminal::{format_terminal, format_terminal_grouped, GroupBy};
 use crate::engine::gate::inline_suppression::{apply_inline_suppressions, build_suppression_map};
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::preflight::evaluate_preflight;
@@ -58,9 +59,11 @@ pub enum OutputFormat {
 /// the already-implemented formats (Sarif / PrSummary / Json).
 fn stub_not_implemented(fmt: OutputFormat) -> Option<String> {
     let (name, stage) = match fmt {
-        OutputFormat::Terminal => ("terminal", "A1"),
         OutputFormat::Html => ("html", "A3"),
-        OutputFormat::Sarif | OutputFormat::PrSummary | OutputFormat::Json => return None,
+        OutputFormat::Sarif
+        | OutputFormat::PrSummary
+        | OutputFormat::Json
+        | OutputFormat::Terminal => return None,
     };
     Some(format!(
         "format '{name}' not yet implemented (stage {stage})"
@@ -384,10 +387,24 @@ pub fn run_analyze_with_exit(
                 alsem_version: alsem_version(),
             })
         }
+        OutputFormat::Terminal => {
+            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+            // group-by path: only when format==terminal AND group_by is set.
+            if let Some(ref by_str) = args.group_by {
+                if let Some(by) = GroupBy::from_str(by_str) {
+                    format_terminal_grouped(&summaries, &coverage, by)
+                } else {
+                    // Invalid group_by — the CLI validates this, so treat as plain.
+                    format_terminal(&summaries, &coverage, &run_diagnostics)
+                }
+            } else {
+                format_terminal(&summaries, &coverage, &run_diagnostics)
+            }
+        }
         // Stubs — the actual formatters are wired in Stages A1–A3.
         // The resolved model + raw findings are available on `resolved` / `paired`
         // when those stages implement them; nothing is emitted here.
-        fmt @ (OutputFormat::Terminal | OutputFormat::Html) => {
+        fmt @ OutputFormat::Html => {
             return Err(stub_not_implemented(fmt).expect("stub format has a message"))
         }
     };
@@ -470,7 +487,24 @@ pub(crate) fn empty_output_result(
                 alsem_version: alsem_version(),
             })
         }
-        fmt @ (OutputFormat::Terminal | OutputFormat::Html) => {
+        OutputFormat::Terminal => {
+            // Empty workspace → "No findings." terminal output.
+            let empty_coverage = crate::engine::l3::coverage::AnalysisCoverage {
+                source_units_total: 0,
+                source_units_parsed: 0,
+                routines_total: 0,
+                routines_body_available: 0,
+                routines_parse_incomplete: vec![],
+                opaque_apps: vec![],
+                unresolved_callsites: vec![],
+                dynamic_dispatch_sites: vec![],
+            };
+            let ws_path = Path::new(&args.workspace);
+            let diagnostics =
+                crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
+            format_terminal(&[], &empty_coverage, &diagnostics)
+        }
+        fmt @ OutputFormat::Html => {
             return Err(stub_not_implemented(fmt).expect("stub format has a message"))
         }
     };

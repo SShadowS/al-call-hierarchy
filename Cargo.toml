@@ -48,6 +48,9 @@ env_logger = "0.11"
 # URL decoding
 percent-encoding = "2"
 
+# Insertion-ordered map (used in format_terminal rollup groups)
+indexmap = "2"
+
 # Error handling
 anyhow = "1"
 

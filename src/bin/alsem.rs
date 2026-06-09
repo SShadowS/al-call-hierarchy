@@ -329,7 +329,33 @@ mod tests {
             ws.display()
         );
 
-        for fmt in [OutputFormat::Terminal, OutputFormat::Html] {
+        // Terminal is now implemented (Stage A3) — it must succeed, not return Err.
+        {
+            let args = AnalyzeArgs {
+                workspace: ws.to_string_lossy().to_string(),
+                min_severity: None,
+                detector: None,
+                preset: Some("transaction-integrity".to_string()),
+                scope: Scope::Primary,
+                limit: None,
+                format: OutputFormat::Terminal,
+                sarif_version_override: None,
+                fail_on: None,
+                require_dependencies: false,
+                baseline: None,
+                update_baseline: false,
+                disable_inline_suppression: false,
+                group_by: None,
+                deterministic: false,
+            };
+            let result = run_analyze_with_exit(&args, "test");
+            assert!(
+                result.is_ok(),
+                "Terminal format must succeed (Stage A3 implemented); got: {result:?}"
+            );
+        }
+        // Html is still a stub — must return Err.
+        for fmt in [OutputFormat::Html] {
             let args = AnalyzeArgs {
                 workspace: ws.to_string_lossy().to_string(),
                 min_severity: None,

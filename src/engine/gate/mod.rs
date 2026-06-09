@@ -18,6 +18,7 @@ pub mod filter;
 pub mod format_json;
 pub mod format_pr_summary;
 pub mod format_sarif;
+pub mod format_terminal;
 pub mod inline_suppression;
 pub mod model_instance_id;
 pub mod preflight;
