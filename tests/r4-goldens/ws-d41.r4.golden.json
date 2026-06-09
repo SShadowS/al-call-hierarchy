@@ -1,0 +1,99 @@
+{
+  "fixtureName": "ws-d41",
+  "detectors": [
+    "d41-transitive-filter-loss"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d41-transitive-filter-loss",
+      "id": "d41/11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/cs0/0",
+      "rootCauseKey": "d41/11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/cs0/0",
+      "title": "Filter silently lost across helper call",
+      "rootCause": "FilterThenCallResetThenFind filters customer before calling ResettingHelper, which calls Reset; the subsequent FindFirst operates on the unfiltered set.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 8,
+          "startColumn": 24,
+          "endLine": 8,
+          "endColumn": 32
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+        "syntaxKind": "identifier"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 41
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+            "syntaxKind": "call_expression"
+          },
+          "note": "SetRange on customer",
+          "operationId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/op0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 8,
+              "startColumn": 24,
+              "endLine": 8,
+              "endColumn": 32
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+            "syntaxKind": "identifier"
+          },
+          "note": "forwards customer to ResettingHelper, which calls Reset",
+          "callsiteId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 28
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindFirst on customer — operates on the now-unfiltered set",
+          "operationId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41/op1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-000000abc410:Codeunit:50420",
+        "11111111-0000-0000-0000-000000abc410:Codeunit:50420"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Re-apply the SetRange/SetFilter on customer after the call to ResettingHelper, or restructure to avoid the call inside the filtered scope.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4ee6dfd940842761"
+    }
+  ]
+}

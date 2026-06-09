@@ -1,0 +1,155 @@
+{
+  "fixtureName": "ws-d40",
+  "detectors": [
+    "d40-transitive-load-missing"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d40-transitive-load-missing",
+      "id": "d40/11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084/11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084/cs0/0",
+      "rootCauseKey": "d40/11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084/11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084/cs0/0",
+      "title": "Forwarded record not loaded before reading helper",
+      "rootCause": "DoesNotLoadThenForwardsToReader forwards customer to ReadingHelper, which reads the record without loading it — the caller must Get/Find the record before the call.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 15,
+          "startColumn": 22,
+          "endLine": 15,
+          "endColumn": 30
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+        "syntaxKind": "identifier"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 15,
+              "startColumn": 22,
+              "endLine": 15,
+              "endColumn": 30
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
+            "syntaxKind": "identifier"
+          },
+          "note": "forwards customer to ReadingHelper (param[0])",
+          "callsiteId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 48,
+              "startColumn": 4,
+              "endLine": 51,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
+            "syntaxKind": "procedure"
+          },
+          "note": "ReadingHelper reads this record before loading it"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-000000abc440:Codeunit:50410",
+        "11111111-0000-0000-0000-000000abc440:Codeunit:50410"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Load customer with Get / FindFirst before forwarding to ReadingHelper, or have ReadingHelper load its parameter internally.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "3a61d21ceef514ba"
+    },
+    {
+      "detector": "d40-transitive-load-missing",
+      "id": "d40/11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a/11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a/cs0/0",
+      "rootCauseKey": "d40/11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a/11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a/cs0/0",
+      "title": "Forwarded record not loaded before mutating helper",
+      "rootCause": "DoesNotLoadThenForwardsToMutator forwards customer to MutatingHelper, which mutates the record without loading it — the caller must Get/Find the record before the call.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 7,
+          "startColumn": 23,
+          "endLine": 7,
+          "endColumn": 31
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+        "syntaxKind": "identifier"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 23,
+              "endLine": 7,
+              "endColumn": 31
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a",
+            "syntaxKind": "identifier"
+          },
+          "note": "forwards customer to MutatingHelper (param[0])",
+          "callsiteId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#efb3d05c0a29bd2db887819cfcf137d829d4295363b5591d8625f2517399ba6a/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 43,
+              "startColumn": 4,
+              "endLine": 46,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
+            "syntaxKind": "procedure"
+          },
+          "note": "MutatingHelper mutates this record before loading it"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-000000abc440:Codeunit:50410",
+        "11111111-0000-0000-0000-000000abc440:Codeunit:50410"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Load customer with Get / FindFirst before forwarding to MutatingHelper, or have MutatingHelper load its parameter internally.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "fb382a778e2913ad"
+    }
+  ]
+}

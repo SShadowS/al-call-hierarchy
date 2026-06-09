@@ -23,6 +23,9 @@ pub mod d37;
 pub mod d38;
 pub mod d39;
 pub mod d4;
+pub mod d40;
+pub mod d41;
+pub mod d42;
 pub mod d43;
 pub mod d44;
 pub mod d45;
@@ -202,6 +205,21 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d39-record-left-dirty-across-chain".to_string(),
             run: d39::detect_d39,
+        },
+        // d40 is OPT-IN in al-sem (kept out of the default registry there). The
+        // R4 differential filters findings by detector name, so registering it
+        // here only surfaces d40 when explicitly requested by a fixture.
+        Detector {
+            name: "d40-transitive-load-missing".to_string(),
+            run: d40::detect_d40,
+        },
+        Detector {
+            name: "d41-transitive-filter-loss".to_string(),
+            run: d41::detect_d41,
+        },
+        Detector {
+            name: "d42-cross-call-wrong-setloadfields".to_string(),
+            run: d42::detect_d42,
         },
         Detector {
             name: "d8-commit-in-transaction".to_string(),

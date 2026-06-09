@@ -1,0 +1,82 @@
+{
+  "fixtureName": "ws-d42",
+  "detectors": [
+    "d42-cross-call-wrong-setloadfields"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d42-cross-call-wrong-setloadfields",
+      "id": "d42/11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/cs0/0",
+      "rootCauseKey": "d42/11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/cs0/0",
+      "title": "Forwarded record's narrowed load misses a field the callee reads",
+      "rootCause": "NarrowedThenForwardToReader narrowed customer's load to \"No.\", Name but forwards it to ReadsAddress, which reads Address — defeats the partial-load optimisation.",
+      "severity": "low",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 21,
+          "endLine": 10,
+          "endColumn": 29
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+        "syntaxKind": "identifier"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 21,
+              "endLine": 10,
+              "endColumn": 29
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9",
+            "syntaxKind": "identifier"
+          },
+          "note": "forwards customer (narrowed to \"No.\", Name) to ReadsAddress",
+          "callsiteId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#ba6fee58a62578b744d4c6592c5ceb417252c73df70decc5203281d62c6dfad9/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 44,
+              "startColumn": 4,
+              "endLine": 47,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-000000abc420:Codeunit:50430#63a451911ab3cee6926fa025b5dd0ecdc9314b063cf8c5d14061079c7899590a",
+            "syntaxKind": "procedure"
+          },
+          "note": "ReadsAddress requires Address loaded; the runtime will issue an extra SQL round-trip"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-000000abc420:Codeunit:50430",
+        "11111111-0000-0000-0000-000000abc420:Codeunit:50430"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Add Address to the SetLoadFields/AddLoadFields call on customer before forwarding to ReadsAddress.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "c780f9f6c87c3509"
+    }
+  ]
+}

@@ -283,6 +283,35 @@ const WAVE_E: &[Smoke] = &[
     },
 ];
 
+/// R4-E2 per-detector positive fixtures (transitive record-flow — parameterRoles +
+/// resolved call edge + the source-ordered load/filter scan). d40: ws-d40 (2 findings —
+/// medium read + high mutate, OPT-IN detector). d41: ws-d41 (1 finding — filter lost
+/// across a Reset helper). d42: ws-d42 (1 finding — narrowed load misses the field the
+/// callee reads). Each byte-matches END-TO-END.
+const WAVE_E2: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d40",
+        wave: "R4-E2",
+        detectors: &["d40-transitive-load-missing"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d41",
+        wave: "R4-E2",
+        detectors: &["d41-transitive-filter-loss"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d42",
+        wave: "R4-E2",
+        detectors: &["d42-cross-call-wrong-setloadfields"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
 /// D1 per-detector positive fixtures (path-walker substrate end-to-end). d1 is the
 /// MOST COMPLEX detector — its byte-match validates `walk_evidence` +
 /// `merge_by_terminal` + `describe_table` + `pick_actionable_anchor` together.
@@ -631,6 +660,28 @@ const NEGATIVES: &[NegativeAssertion] = &[
         detector: "d39-record-left-dirty-across-chain",
         neutral_fixture: "ws-d37",
     },
+    // d40: ws-d41 forwards records by-var to ResettingHelper, but that callee resets
+    // filters — it does NOT require its parameter loaded at entry
+    // (requiresLoadedAtEntry !== "yes") — so the transitive-load gate never fires and
+    // the detector emits 0.
+    NegativeAssertion {
+        detector: "d40-transitive-load-missing",
+        neutral_fixture: "ws-d41",
+    },
+    // d41: ws-d40 forwards records by-var to MutatingHelper / ReadingHelper, but
+    // neither callee calls Reset (resetsFiltersOnParam !== "yes") — the filter-loss
+    // gate never fires, so the detector emits 0.
+    NegativeAssertion {
+        detector: "d41-transitive-filter-loss",
+        neutral_fixture: "ws-d40",
+    },
+    // d42: ws-d40 forwards records that were never narrowed (no SetLoadFields /
+    // AddLoadFields) — the caller-side load is "full", so the callerFull skip fires
+    // for every binding and the detector emits 0.
+    NegativeAssertion {
+        detector: "d42-cross-call-wrong-setloadfields",
+        neutral_fixture: "ws-d40",
+    },
 ];
 
 fn repo_root() -> PathBuf {
@@ -937,6 +988,15 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- R4-E2 per-detector fixtures (transitive record-flow: d40/d41/d42) -----
+    for smoke in WAVE_E2 {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
     // --- D1 per-detector fixtures (path-walker substrate) ---------------------
     for smoke in WAVE_D1 {
         if let Some((matched, count)) =
@@ -1120,6 +1180,7 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_C.iter())
         .chain(WAVE_D.iter())
         .chain(WAVE_E.iter())
+        .chain(WAVE_E2.iter())
         .chain(WAVE_D1.iter())
         .chain(std::iter::once(&WAVE_D1_NEGATIVE))
         .chain(WAVE_D2.iter())
