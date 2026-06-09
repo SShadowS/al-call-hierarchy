@@ -130,9 +130,19 @@ pub fn combined_graph(
     // (the slices arrive grouped per-from; re-sort globally for parity).
     uncertainty_edges.sort_by_key(uncertainty_sort_key);
 
+    // edges_from_order: the sorted `nodes` iteration order is the first-appearance
+    // order for the incremental reassembly (each routine contributes at most one
+    // `edges_by_from` entry, inserted in sorted-node order).
+    let edges_from_order: Vec<String> = nodes
+        .iter()
+        .filter(|id| edges_by_from.contains_key(*id))
+        .cloned()
+        .collect();
+
     let graph = CombinedGraph {
         nodes,
         edges_by_from,
+        edges_from_order,
         uncertainty_edges,
         typed_edges,
     };
@@ -595,9 +605,18 @@ fn compute_one_scc<'db>(
     // targets for completeness/determinism.
     let mut mini_nodes: BTreeSet<String> = members.iter().cloned().collect();
     mini_nodes.extend(edge_targets.iter().cloned());
+    let mini_nodes_vec: Vec<String> = mini_nodes.into_iter().collect();
+    // edges_from_order: the mini-graph nodes are already in sorted BTreeSet order;
+    // the edges_by_from keys are a subset of the SCC members — collect in that order.
+    let mini_edges_from_order: Vec<String> = mini_nodes_vec
+        .iter()
+        .filter(|id| edges_by_from.contains_key(*id))
+        .cloned()
+        .collect();
     let mini_graph = CombinedGraph {
-        nodes: mini_nodes.into_iter().collect(),
+        nodes: mini_nodes_vec,
         edges_by_from,
+        edges_from_order: mini_edges_from_order,
         uncertainty_edges: mini_uncertainty,
         typed_edges: Vec::new(),
     };

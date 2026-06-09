@@ -1,0 +1,65 @@
+{
+  "fixtureName": "ws-d17-drift",
+  "detectors": [
+    "d17-min-version-drift"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d17-min-version-drift",
+      "id": "d17/dddddddd-0000-0000-0000-0000000000d17",
+      "rootCauseKey": "d17/dddddddd-0000-0000-0000-0000000000d17",
+      "title": "Declared MinVersion is older than the resolved dependency version",
+      "rootCause": "DoStuff calls into D17DepNewer (dddddddd-0000-0000-0000-0000000000d17). app.json declares MinVersion 1.0.0.0 for this dependency, but the resolved .app is at version 2.0.0.0 — your code may use APIs that don't exist on older tenants.",
+      "severity": "info",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/caller.al",
+        "range": {
+          "startLine": 4,
+          "startColumn": 2,
+          "endLine": 4,
+          "endColumn": 37
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d170:Codeunit:50170#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d170:Codeunit:50170#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/caller.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 2,
+              "endLine": 4,
+              "endColumn": 37
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d170:Codeunit:50170#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls OnRun in D17DepNewer 2.0.0.0 (declared MinVersion 1.0.0.0)"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d170:Codeunit:50170"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Bump app.json dependencies[].version for D17DepNewer to at least 2.0.0.0, or test that your code paths into this dep also work on 1.0.0.0.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4221f607865dc66a"
+    }
+  ]
+}

@@ -519,6 +519,7 @@ mod tests {
         let empty_graph = CombinedGraph {
             nodes: vec![],
             edges_by_from: HashMap::new(),
+            edges_from_order: vec![],
             uncertainty_edges: vec![],
             typed_edges: vec![],
         };
@@ -545,6 +546,9 @@ mod tests {
             upgraded_bindings_by_callsite: HashMap::new(),
             reachable_roots: BTreeSet::new(),
             internal_reachable_externally: false,
+            dep_routine_ids: BTreeSet::new(),
+            declared_dependencies: Vec::new(),
+            app_versions: HashMap::new(),
             root_classifications_by_routine,
             ordering_facts: HashMap::new(),
         }
@@ -658,6 +662,7 @@ mod tests {
         let empty_graph = CombinedGraph {
             nodes: vec![],
             edges_by_from: HashMap::new(),
+            edges_from_order: vec![],
             uncertainty_edges: vec![],
             typed_edges: vec![],
         };
@@ -684,6 +689,9 @@ mod tests {
             upgraded_bindings_by_callsite: HashMap::new(),
             reachable_roots: BTreeSet::new(),
             internal_reachable_externally: false,
+            dep_routine_ids: BTreeSet::new(),
+            declared_dependencies: Vec::new(),
+            app_versions: HashMap::new(),
             root_classifications_by_routine: HashMap::new(),
             ordering_facts: HashMap::new(),
         };

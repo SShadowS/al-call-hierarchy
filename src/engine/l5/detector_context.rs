@@ -41,6 +41,16 @@ use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::{build_reverse_call_graph, ReverseCallGraph};
 use crate::engine::l5::transaction_spans::{compute_transaction_spans, TransactionSpan};
 
+/// A declared workspace dependency (`model.identity.primaryDependencies[]`): the
+/// `appGuid` / `name` / `minVersion` triple d17 iterates. Mirrors al-sem's
+/// `ManifestDependency` (the d17-relevant subset). Source-only runs leave this empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredDep {
+    pub app_guid: String,
+    pub name: String,
+    pub min_version: String,
+}
+
 /// Shared context threaded into every detector.
 pub struct DetectorContext<'a> {
     /// The combined graph (al-sem passes this as the detector's `graph` arg;
@@ -120,6 +130,19 @@ pub struct DetectorContext<'a> {
     /// overlay). Empty when the resolve path produced no classifications.
     pub root_classifications_by_routine:
         HashMap<String, crate::engine::root_classification::RootClassification>,
+    /// The routines whose app_guid ∈ the fetched dependency set (cross-app runs).
+    /// `roleOf(caller)` = `dep_routine_ids.contains(caller.id) ? "dependency" :
+    /// "primary"` — the d13/d16/d17 cross-app gate. EMPTY for source-only runs (every
+    /// routine primary), matching al-sem's source-only `analysisRole` default.
+    pub dep_routine_ids: BTreeSet<String>,
+    /// The DECLARED workspace dependencies (`model.identity.primaryDependencies`),
+    /// `{appGuid, name, minVersion}` per the primary app.json `dependencies[]`. d17
+    /// iterates these. EMPTY for source-only runs (no deps declared / read).
+    pub declared_dependencies: Vec<DeclaredDep>,
+    /// Resolved dependency `.app` versions keyed by appGuid (`model.apps[].version`).
+    /// d17 looks up the resolved version to compare against the declared minVersion.
+    /// EMPTY for source-only runs (no dep .app parsed).
+    pub app_versions: HashMap<String, String>,
     /// R4-F Stage-5b — the L4.5 ordering facts the d47/d49/d51 detectors consume,
     /// keyed by `StableRoutineId`. al-sem computes this LAZILY (`ctx.getOrderingFacts()`,
     /// memoized — only d47/d49/d51 reference it, so non-ordering runs never pay the
@@ -400,7 +423,215 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         upgraded_bindings_by_callsite,
         reachable_roots,
         internal_reachable_externally,
+        // Source-only: no deps → every routine primary, no declared deps, no versions.
+        dep_routine_ids: BTreeSet::new(),
+        declared_dependencies: Vec::new(),
+        app_versions: HashMap::new(),
         root_classifications_by_routine,
         ordering_facts,
+    }
+}
+
+/// Build the shared context for a CROSS-APP run from a pre-assembled
+/// `R3a5CrossAppBase` (the merged workspace+dep model + cross-app combined graph +
+/// `dep_routine_ids`). Mirrors `build_detector_context` but reads every substrate
+/// from `base` instead of recomputing source-only, and threads `dep_routine_ids`
+/// into the entry-point / reachable-root / transaction-span / event-flow builders so
+/// dep routines are NOT treated as primary roots. d13/d16/d17 read
+/// `dep_routine_ids` (the roleOf gate), `declared_dependencies` + `app_versions`
+/// (d17), and the eager indexes; the path-walker substrate (uncertainties /
+/// summaries) is built identically for any future cross-app detector.
+///
+/// `root_classifications` + `ordering_facts` are EMPTY here (d13/d16/d17 never read
+/// them; the base does not carry the resolved-model classifier inputs). A future
+/// cross-app ordering detector would thread them additively.
+pub(crate) fn build_detector_context_cross_app(
+    base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
+) -> DetectorContext<'_> {
+    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+
+    let ws_routines = &base.ws_routines;
+    let dep_routine_ids = &base.dep_routine_ids;
+    let graph = base.graph.clone();
+
+    // Cone over the merged graph (direct facts/coverage already assembled in `base`).
+    let cones = compose_cone_over_graph(
+        &base.graph,
+        &base.nodes,
+        &base.direct_full,
+        &base.direct_coverage,
+    );
+    let empty_facts: Vec<CapabilityFact> = Vec::new();
+    let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+    for r in ws_routines {
+        let cone = cones.get(&r.id);
+        let inherited = cone.map(|c| c.inherited.clone()).unwrap_or_default();
+        let coverage = cone.map(|c| c.coverage.clone());
+        summaries.insert(
+            r.id.clone(),
+            FullRoutineSummary {
+                routine_id: r.id.clone(),
+                capability_facts_direct: base
+                    .direct_full
+                    .get(&r.id)
+                    .unwrap_or(&empty_facts)
+                    .clone(),
+                capability_facts_inherited: inherited,
+                coverage,
+            },
+        );
+    }
+
+    // --- Eager indexes (over the merged routine/object/table sets) ---------
+    let routine_by_id: HashMap<&str, &L3Routine> =
+        ws_routines.iter().map(|r| (r.id.as_str(), r)).collect();
+    let objects_by_id: HashMap<&str, &L3Object> =
+        base.objects.iter().map(|o| (o.id.as_str(), o)).collect();
+    let table_by_id: HashMap<&str, &L3Table> =
+        base.tables.iter().map(|t| (t.id.as_str(), t)).collect();
+
+    let reverse_call_graph = build_reverse_call_graph(&graph);
+
+    let entry_points: BTreeSet<String> =
+        crate::engine::l5::entry_points::find_entry_points(ws_routines, dep_routine_ids)
+            .into_iter()
+            .collect();
+
+    let mut access_modifiers: HashMap<String, AccessModifier> = HashMap::new();
+    for r in ws_routines {
+        let access = match r.access_modifier.as_deref() {
+            Some("local") => AccessModifier::Local,
+            Some("internal") => AccessModifier::Internal,
+            _ => AccessModifier::Public,
+        };
+        access_modifiers.insert(r.id.clone(), access);
+    }
+    let internal_reachable_externally = false;
+    let reachable_roots: BTreeSet<String> = crate::engine::l5::entry_points::find_reachable_roots(
+        ws_routines,
+        dep_routine_ids,
+        &access_modifiers,
+        internal_reachable_externally,
+    )
+    .into_iter()
+    .collect();
+
+    let transaction_spans = compute_transaction_spans(
+        ws_routines,
+        dep_routine_ids,
+        &reverse_call_graph,
+        &summaries,
+    );
+
+    let event_flow_indexes =
+        build_event_flow_indexes(&base.event_graph, ws_routines, dep_routine_ids);
+
+    // Resolved-call-edge-by-callsite index: EMPTY for the cross-app context. The
+    // cross-app build does not retain the raw resolver `calls.edges`, and d13/d16/d17
+    // read edges directly off `ctx.graph` (the combined graph). Future cross-app
+    // detectors that need this index would thread `calls` through `R3a5CrossAppBase`.
+    let resolved_call_edge_by_callsite: HashMap<
+        String,
+        crate::engine::l3::call_resolver::CallEdge,
+    > = HashMap::new();
+
+    let mut uncertainty_edges_by_from: HashMap<
+        String,
+        Vec<crate::engine::l4::combined_graph::Uncertainty>,
+    > = HashMap::new();
+    for ue in &graph.uncertainty_edges {
+        uncertainty_edges_by_from
+            .entry(ue.from.clone())
+            .or_default()
+            .push(ue.uncertainty.clone());
+    }
+
+    // Core summaries (JACOBI WITH dep leaves) for the path-walker uncertainty union +
+    // parameter roles — same as project_r3a5_cross_app's core.
+    let (core_summaries, _trace) = compute_summaries_with_leaves(
+        ws_routines,
+        &graph,
+        &base.combined_scc,
+        &base.upgraded_bindings,
+        &base.field_index,
+        false,
+        &base.leaf_summaries,
+    );
+
+    let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
+    for r in ws_routines {
+        if let Some(s) = core_summaries.get(&r.id) {
+            if !s.parameter_roles.is_empty() {
+                parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
+            }
+        }
+    }
+
+    let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+    for r in ws_routines {
+        let from_summary: &[Uncertainty] = core_summaries
+            .get(&r.id)
+            .map(|s| s.uncertainties.as_slice())
+            .unwrap_or(&[]);
+        let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
+            .get(&r.id)
+            .map(|edges| edges.iter().map(Uncertainty::from).collect())
+            .unwrap_or_default();
+        if from_summary.is_empty() && from_edges.is_empty() {
+            continue;
+        }
+        let combined: Vec<Uncertainty> = from_summary
+            .iter()
+            .cloned()
+            .chain(from_edges.into_iter())
+            .collect();
+        uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
+    }
+
+    let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
+    for r in ws_routines {
+        for cs in &r.call_sites {
+            call_site_by_id.insert(cs.id.as_str(), cs);
+        }
+    }
+
+    let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
+        base.upgraded_bindings.clone();
+
+    let app_versions: HashMap<String, String> = base.resolved_app_versions.clone();
+    let declared_dependencies: Vec<DeclaredDep> = base
+        .declared_dependencies
+        .iter()
+        .map(|d| DeclaredDep {
+            app_guid: d.app_guid.clone(),
+            name: d.name.clone(),
+            min_version: d.min_version.clone(),
+        })
+        .collect();
+
+    DetectorContext {
+        graph,
+        event_graph: base.event_graph.clone(),
+        routine_by_id,
+        objects_by_id,
+        table_by_id,
+        reverse_call_graph,
+        entry_points,
+        transaction_spans,
+        resolved_call_edge_by_callsite,
+        uncertainty_edges_by_from,
+        uncertainties_by_node,
+        call_site_by_id,
+        summaries,
+        event_flow_indexes,
+        parameter_roles_by_routine,
+        upgraded_bindings_by_callsite,
+        reachable_roots,
+        internal_reachable_externally,
+        dep_routine_ids: dep_routine_ids.clone(),
+        declared_dependencies,
+        app_versions,
+        root_classifications_by_routine: HashMap::new(),
+        ordering_facts: HashMap::new(),
     }
 }

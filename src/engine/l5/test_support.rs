@@ -44,12 +44,18 @@ pub fn edge(from: &str, to: &str, callsite_id: &str) -> CombinedEdge {
 
 /// Build a `CombinedGraph` from a node list + flat edge list. `nodes` is sorted;
 /// `edges_by_from` is grouped (each per-from list in input order — the L5
-/// reverse-graph builder is robust to per-from ordering).
+/// reverse-graph builder is robust to per-from ordering). `edges_from_order`
+/// records the first-appearance of each `from` key in the `edges` slice
+/// (matching al-sem JS Map insertion order).
 pub fn graph_from_edges(nodes: &[&str], edges: &[CombinedEdge]) -> CombinedGraph {
     let mut node_vec: Vec<String> = nodes.iter().map(|n| n.to_string()).collect();
     node_vec.sort();
     let mut edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+    let mut edges_from_order: Vec<String> = Vec::new();
     for e in edges {
+        if !edges_by_from.contains_key(&e.from) {
+            edges_from_order.push(e.from.clone());
+        }
         edges_by_from
             .entry(e.from.clone())
             .or_default()
@@ -58,6 +64,7 @@ pub fn graph_from_edges(nodes: &[&str], edges: &[CombinedEdge]) -> CombinedGraph
     CombinedGraph {
         nodes: node_vec,
         edges_by_from,
+        edges_from_order,
         uncertainty_edges: Vec::new(),
         typed_edges: Vec::new(),
     }

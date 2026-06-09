@@ -68,6 +68,10 @@ pub struct CrossAppL3 {
     /// `(appGuid, sourceKind)` for every app — workspace ("source") + each dep
     /// ("symbol-only" | "app-source"). Drives coverage `opaqueApps`.
     pub apps: Vec<(String, String)>,
+    /// `(appGuid, version)` for every FETCHED dep `.app` (from its manifest identity).
+    /// The resolved-version side of d17's MinVersion-vs-resolved drift check
+    /// (al-sem `model.apps[].version`). ADDITIVE — only the d17 plumbing reads it.
+    pub dep_app_versions: Vec<(String, String)>,
 }
 
 /// Convert one projected dep object into the L3 object shape (identical to the
@@ -259,6 +263,36 @@ pub fn build_cross_app_l3(
     declared_dep_app_guids: &[String],
     model_instance_id: &str,
 ) -> Option<CrossAppL3> {
+    build_cross_app_l3_impl(
+        workspace,
+        alpackages_path,
+        declared_dep_app_guids,
+        model_instance_id,
+        false,
+    )
+}
+
+/// R4 variant of [`build_cross_app_l3`] that PARSES the embedded `.al` source of
+/// app-source deps (`includes_source`) instead of the symbol-only ABI projection —
+/// mirroring al-sem's `noDepSummaries:false` ingestion (`dependency-pipeline.ts`:
+/// `if (ref.includesSource) { parse+index embedded source } else { project ABI }`).
+/// This materializes a dep's `OnRun` trigger / `[InternalProc]` / `[Obsolete]`
+/// routines that the symbol reference omits — the substrate the d13/d16/d17
+/// cross-app finding goldens require. ADDITIVE: the existing symbol-only callers
+/// (R3a5 gate, aldump) keep [`build_cross_app_l3`].
+pub fn build_cross_app_l3_r4(workspace: &Path, model_instance_id: &str) -> Option<CrossAppL3> {
+    let declared = read_workspace_declared_dep_app_guids(workspace);
+    let alpackages = workspace.join(".alpackages");
+    build_cross_app_l3_impl(workspace, &alpackages, &declared, model_instance_id, true)
+}
+
+fn build_cross_app_l3_impl(
+    workspace: &Path,
+    alpackages_path: &Path,
+    declared_dep_app_guids: &[String],
+    model_instance_id: &str,
+    parse_embedded_source: bool,
+) -> Option<CrossAppL3> {
     // 1. Assemble the NATIVE workspace L3 model from `.al` source (pre-resolve).
     let mut ws = assemble_l3_workspace_from_disk(workspace, model_instance_id)?;
 
@@ -269,6 +303,7 @@ pub fn build_cross_app_l3(
     let mut dep_routines: Vec<ProjectedRoutine> = Vec::new();
     let mut apps: Vec<(String, String)> = Vec::new();
     let mut fetched_app_guids: Vec<String> = Vec::new();
+    let mut dep_app_versions: Vec<(String, String)> = Vec::new();
 
     // The workspace app(s) are "source". Derive from the native objects' app guid.
     let mut ws_app_guids: Vec<String> = ws
@@ -283,6 +318,12 @@ pub fn build_cross_app_l3(
         apps.push((g.clone(), "source".to_string()));
     }
 
+    // Embedded-source-parsed dep L3 entities (R4 path only). Appended AFTER the
+    // ABI-projected ones so the workspace-first/deps-last order is preserved.
+    let mut src_dep_objects: Vec<L3Object> = Vec::new();
+    let mut src_dep_tables: Vec<L3Table> = Vec::new();
+    let mut src_dep_routines: Vec<L3Routine> = Vec::new();
+
     for app_path in collect_app_paths(alpackages_path) {
         let Ok(bytes) = std::fs::read(&app_path) else {
             continue;
@@ -293,6 +334,7 @@ pub fn build_cross_app_l3(
             continue;
         };
         fetched_app_guids.push(parsed.app_guid.clone());
+        dep_app_versions.push((parsed.app_guid.clone(), parsed.version.clone()));
         apps.push((
             parsed.app_guid.clone(),
             if parsed.includes_source {
@@ -301,13 +343,46 @@ pub fn build_cross_app_l3(
                 "symbol-only".to_string()
             },
         ));
-        dep_objects.extend(parsed.objects);
-        dep_tables.extend(parsed.tables);
-        dep_routines.extend(parsed.routines);
+
+        if parse_embedded_source && parsed.includes_source {
+            // --- embedded-source path (al-sem `if ref.includesSource`) ---
+            // Parse the embedded `.al` units (sourceUnitId = `dep:<appGuid>:<relpath>`,
+            // appGuid = dep guid) into FULL L3 entities (with bodies + attributes),
+            // exactly the R3a-4 stabilizer pattern. resolve() runs over the MERGED
+            // whole later, so DON'T resolve per-dep here.
+            let embedded = crate::engine::deps::dep_artifact_l4::iterate_embedded_source(&bytes);
+            let units: Vec<(String, String)> = embedded
+                .iter()
+                .map(|f| {
+                    (
+                        format!("dep:{}:{}", parsed.app_guid, f.relative_path),
+                        f.content.clone(),
+                    )
+                })
+                .collect();
+            let dep_ws = crate::engine::l3::l3_workspace::assemble_workspace_units(
+                &units,
+                &parsed.app_guid,
+                model_instance_id,
+            );
+            src_dep_objects.extend(dep_ws.objects);
+            src_dep_tables.extend(dep_ws.tables);
+            src_dep_routines.extend(dep_ws.routines);
+        } else {
+            // --- symbol-only ABI projection (default) ---
+            dep_objects.extend(parsed.objects);
+            dep_tables.extend(parsed.tables);
+            dep_routines.extend(parsed.routines);
+        }
     }
 
     // 3. MERGE: append dep entities (workspace first, deps last).
     append_dep_entities(&mut ws, &dep_objects, &dep_tables, &dep_routines);
+    // 3b. Append embedded-source-parsed dep entities (R4 path). These are already L3
+    //     entities (full bodies + attributes), so push directly — deps still last.
+    ws.objects.extend(src_dep_objects);
+    ws.tables.extend(src_dep_tables);
+    ws.routines.extend(src_dep_routines);
 
     // 4. RESOLVE the merged whole (build_symbol_table → resolve_record_types →
     //    merge_extension_fields). Same `resolve` the native path runs — no new algo.
@@ -326,7 +401,127 @@ pub fn build_cross_app_l3(
         declared_dep_app_guids: declared_dep_app_guids.to_vec(),
         fetched_app_guids,
         apps,
+        dep_app_versions,
     })
+}
+
+/// One declared workspace dependency `{appGuid, name, minVersion}` — the d17-relevant
+/// subset of al-sem `ManifestDependency` (`parseWorkspaceDependencies`, explicit
+/// `dependencies[]` only; missing `version` defaults to `"0.0.0.0"`). Read from the
+/// workspace app.json. ADDITIVE — only the d17 plumbing reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredDependencyDecl {
+    pub app_guid: String,
+    pub name: String,
+    pub min_version: String,
+}
+
+/// Well-known Microsoft Application-tier app identities. BC apps never list these in
+/// `dependencies[]` — they are implicit, declared via the `application` field in
+/// app.json. Mirrors al-sem `MS_APPLICATION_TIER` in `workspace-dependencies.ts`
+/// (same GUIDs, names, publisher, ORDER).
+const MS_APPLICATION_TIER: &[(&str, &str)] = &[
+    ("c1335042-3002-4257-bf8a-75c898ccb1b8", "Application"),
+    ("437dbf0e-84ff-417a-965d-ed2bb9650972", "Base Application"),
+    (
+        "f3552374-a1f2-4356-848e-196002525837",
+        "Business Foundation",
+    ),
+];
+
+/// Well-known Microsoft Platform-tier app identities. BC apps never list these in
+/// `dependencies[]` — they are implicit, declared via the `platform` field in
+/// app.json. Mirrors al-sem `MS_PLATFORM_TIER` in `workspace-dependencies.ts`
+/// (same GUIDs, names, publisher, ORDER).
+const MS_PLATFORM_TIER: &[(&str, &str)] = &[
+    ("63ca2fa4-4f03-4f2b-a480-172fef340d3f", "System Application"),
+    ("8874ed3a-0643-4247-9ced-7a7002f7135d", "System"),
+];
+
+/// Read the workspace root `app.json` `dependencies[]` into `{appGuid, name,
+/// minVersion}` rows, including IMPLICIT Microsoft Application-/Platform-tier deps
+/// derived from the `application` / `platform` string fields. Returns `[]` on any
+/// read/parse miss (fail-closed).
+///
+/// Mirrors al-sem `parseWorkspaceDependencies` (workspace-dependencies.ts) EXACTLY:
+///   result = [...explicit deps..., ...MS_APPLICATION_TIER (if application set),
+///              ...MS_PLATFORM_TIER (if platform set)]
+/// The implicit entries use the `application`/`platform` version string as
+/// `minVersion` and the well-known GUIDs/names from the tier constants above.
+pub fn read_workspace_declared_dependencies(workspace: &Path) -> Vec<DeclaredDependencyDecl> {
+    let Ok(text) = std::fs::read_to_string(workspace.join("app.json")) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+
+    // --- explicit dependencies[] ---
+    let mut result: Vec<DeclaredDependencyDecl> = value
+        .get("dependencies")
+        .and_then(|d| d.as_array())
+        .map(|deps| {
+            deps.iter()
+                .filter_map(|d| {
+                    let app_guid = d
+                        .get("id")
+                        .or_else(|| d.get("appId"))
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())?
+                        .to_string();
+                    let name = d
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let min_version = d
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("0.0.0.0")
+                        .to_string();
+                    Some(DeclaredDependencyDecl {
+                        app_guid,
+                        name,
+                        min_version,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // --- implicit Microsoft Application-tier deps (app.json `application` field) ---
+    // al-sem: `if (typeof parsed.application === "string" && parsed.application !== "")`
+    if let Some(app_ver) = value
+        .get("application")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        for (guid, name) in MS_APPLICATION_TIER {
+            result.push(DeclaredDependencyDecl {
+                app_guid: guid.to_string(),
+                name: name.to_string(),
+                min_version: app_ver.to_string(),
+            });
+        }
+    }
+
+    // --- implicit Microsoft Platform-tier deps (app.json `platform` field) ---
+    // al-sem: `if (typeof parsed.platform === "string" && parsed.platform !== "")`
+    if let Some(plat_ver) = value
+        .get("platform")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        for (guid, name) in MS_PLATFORM_TIER {
+            result.push(DeclaredDependencyDecl {
+                app_guid: guid.to_string(),
+                name: name.to_string(),
+                min_version: plat_ver.to_string(),
+            });
+        }
+    }
+
+    result
 }
 
 /// Read the workspace root `app.json` `dependencies[].id` app guids (the DECLARED
@@ -429,4 +624,164 @@ impl CrossAppL3 {
         let diagnostics: Vec<crate::engine::l3::coverage::CoverageDiagnostic> = Vec::new();
         self.project_coverage(&units, &diagnostics)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Native oracles — #[cfg(test)]
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Helper: write an `app.json` to a temp dir and return the dir path.
+    fn write_app_json(content: &str) -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().expect("tmp dir");
+        fs::write(dir.path().join("app.json"), content).expect("write app.json");
+        dir
+    }
+
+    // -----------------------------------------------------------------------
+    // Oracle 1 — implicit MS dep synthesis (Fix 1)
+    // -----------------------------------------------------------------------
+
+    /// An app.json with explicit deps only (no `application`/`platform`) → no implicit deps.
+    #[test]
+    fn no_implicit_deps_when_no_application_or_platform() {
+        let dir = write_app_json(
+            r#"{
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "name": "Test",
+            "publisher": "PT",
+            "version": "1.0.0.0",
+            "dependencies": [
+                {"id": "bbbbbbbb-0000-0000-0000-000000000002", "name": "Dep", "publisher": "P", "version": "2.0.0.0"}
+            ]
+        }"#,
+        );
+        let deps = read_workspace_declared_dependencies(dir.path());
+        assert_eq!(deps.len(), 1, "only the explicit dep");
+        assert_eq!(deps[0].app_guid, "bbbbbbbb-0000-0000-0000-000000000002");
+    }
+
+    /// An app.json with `application` → 3 MS Application-tier implicit deps appended after
+    /// the explicit ones, in MS_APPLICATION_TIER order.
+    #[test]
+    fn implicit_application_tier_deps_appended_in_order() {
+        let dir = write_app_json(
+            r#"{
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "name": "Test",
+            "publisher": "PT",
+            "version": "1.0.0.0",
+            "application": "25.1.0.0"
+        }"#,
+        );
+        let deps = read_workspace_declared_dependencies(dir.path());
+        // No explicit deps → only the 3 Application-tier entries.
+        assert_eq!(deps.len(), 3, "3 MS Application-tier implicit deps");
+        // Verify GUIDs and minVersion match al-sem MS_APPLICATION_TIER exactly.
+        assert_eq!(deps[0].app_guid, "c1335042-3002-4257-bf8a-75c898ccb1b8");
+        assert_eq!(deps[0].name, "Application");
+        assert_eq!(deps[0].min_version, "25.1.0.0");
+        assert_eq!(deps[1].app_guid, "437dbf0e-84ff-417a-965d-ed2bb9650972");
+        assert_eq!(deps[1].name, "Base Application");
+        assert_eq!(deps[2].app_guid, "f3552374-a1f2-4356-848e-196002525837");
+        assert_eq!(deps[2].name, "Business Foundation");
+    }
+
+    /// An app.json with `platform` → 2 MS Platform-tier implicit deps appended after the
+    /// explicit ones, in MS_PLATFORM_TIER order.
+    #[test]
+    fn implicit_platform_tier_deps_appended_in_order() {
+        let dir = write_app_json(
+            r#"{
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "name": "Test",
+            "publisher": "PT",
+            "version": "1.0.0.0",
+            "platform": "25.0.0.0"
+        }"#,
+        );
+        let deps = read_workspace_declared_dependencies(dir.path());
+        assert_eq!(deps.len(), 2, "2 MS Platform-tier implicit deps");
+        assert_eq!(deps[0].app_guid, "63ca2fa4-4f03-4f2b-a480-172fef340d3f");
+        assert_eq!(deps[0].name, "System Application");
+        assert_eq!(deps[0].min_version, "25.0.0.0");
+        assert_eq!(deps[1].app_guid, "8874ed3a-0643-4247-9ced-7a7002f7135d");
+        assert_eq!(deps[1].name, "System");
+    }
+
+    /// Full scenario: explicit dep + application + platform → explicit first, then
+    /// application tier (3), then platform tier (2). Mirrors al-sem result order.
+    #[test]
+    fn explicit_then_application_then_platform_order() {
+        let dir = write_app_json(
+            r#"{
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "name": "Test",
+            "publisher": "PT",
+            "version": "1.0.0.0",
+            "dependencies": [
+                {"id": "eeeeeeee-0000-0000-0000-000000000001", "name": "MyDep", "publisher": "P", "version": "3.0.0.0"}
+            ],
+            "application": "24.0.0.0",
+            "platform": "24.0.0.0"
+        }"#,
+        );
+        let deps = read_workspace_declared_dependencies(dir.path());
+        // 1 explicit + 3 application + 2 platform = 6
+        assert_eq!(deps.len(), 6, "1 explicit + 3 app-tier + 2 plat-tier = 6");
+        assert_eq!(
+            deps[0].app_guid, "eeeeeeee-0000-0000-0000-000000000001",
+            "explicit first"
+        );
+        assert_eq!(
+            deps[1].app_guid, "c1335042-3002-4257-bf8a-75c898ccb1b8",
+            "Application"
+        );
+        assert_eq!(
+            deps[2].app_guid, "437dbf0e-84ff-417a-965d-ed2bb9650972",
+            "Base Application"
+        );
+        assert_eq!(
+            deps[3].app_guid, "f3552374-a1f2-4356-848e-196002525837",
+            "Business Foundation"
+        );
+        assert_eq!(
+            deps[4].app_guid, "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+            "System Application"
+        );
+        assert_eq!(
+            deps[5].app_guid, "8874ed3a-0643-4247-9ced-7a7002f7135d",
+            "System"
+        );
+    }
+
+    /// Empty `application` string → no implicit application-tier deps (al-sem: `!== ""`).
+    #[test]
+    fn empty_application_string_produces_no_implicit_deps() {
+        let dir = write_app_json(
+            r#"{
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "name": "Test",
+            "publisher": "PT",
+            "version": "1.0.0.0",
+            "application": ""
+        }"#,
+        );
+        let deps = read_workspace_declared_dependencies(dir.path());
+        assert!(
+            deps.is_empty(),
+            "empty application string → no implicit deps"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Oracle 2 — role-scope filter: dep-anchored routines are filtered from
+    // the edge walk (dep_routine_ids.contains(&e.from) → skip).
+    // This is tested indirectly via detect_d17 in d17.rs; the cross_app_l3
+    // test confirms the declared-deps list shape only.
+    // -----------------------------------------------------------------------
 }

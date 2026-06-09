@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::registry::{run_detectors, Detector, RunOutput};
+use crate::engine::l5::registry::{run_detectors, run_detectors_cross_app, Detector, RunOutput};
 
 // ===========================================================================
 // INTERNAL model (model/finding.ts). Not serialized — the detector populates it
@@ -452,6 +452,60 @@ pub fn project_r4_findings(
 
     // RE-SORT in stable space: (detector compareNatural, stable primaryLocationKey
     // compareStrings, stable rootCauseKey compareStrings).
+    stable.sort_by(|a, b| {
+        crate::engine::l5::registry::compare_natural(&a.detector, &b.detector)
+            .then_with(|| stable_primary_location_key(a).cmp(&stable_primary_location_key(b)))
+            .then_with(|| a.root_cause_key.cmp(&b.root_cause_key))
+    });
+
+    R4FindingsProjection {
+        fixture_name: fixture_name.to_string(),
+        detectors: detector_names.to_vec(),
+        finding_count: stable.len(),
+        findings: stable,
+    }
+}
+
+/// CROSS-APP variant of `project_r4_findings`: build the cross-app L4 base from a
+/// disk workspace (its `.alpackages` dep `.app`(s) read off disk), run the registered
+/// detectors in CROSS-APP mode (`run_detectors_cross_app` — `dep_routine_ids`-derived
+/// roles), then project + RE-SORT in stable space. The stable id map is built from the
+/// MERGED `base.ws_routines` (so dep callee ids in d16 ids project correctly).
+///
+/// Engine-never-throws: a fail-closed / dep-less workspace (`build_r3a5_cross_app_base`
+/// → None) yields an empty projection.
+pub fn project_r4_findings_cross_app(
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+    detectors: &[Detector],
+    fixture_name: &str,
+    detector_names: &[String],
+) -> R4FindingsProjection {
+    let Some(base) =
+        crate::engine::l4::capability_cone::build_r4_cross_app_base(workspace, model_instance_id)
+    else {
+        return R4FindingsProjection {
+            fixture_name: fixture_name.to_string(),
+            detectors: detector_names.to_vec(),
+            finding_count: 0,
+            findings: vec![],
+        };
+    };
+
+    let RunOutput { findings, .. } = run_detectors_cross_app(&base, detectors);
+
+    let detector_name_set: std::collections::HashSet<&str> =
+        detector_names.iter().map(|s| s.as_str()).collect();
+
+    let map = crate::engine::l4::summary::build_routine_stable_map(&base.ws_routines);
+    let stable_finding_id = make_stable_finding_id_fn(&map);
+
+    let mut stable: Vec<StableFinding> = findings
+        .iter()
+        .filter(|f| detector_name_set.contains(f.detector.as_str()))
+        .map(|f| project_finding(f, &map, &stable_finding_id))
+        .collect();
+
     stable.sort_by(|a, b| {
         crate::engine::l5::registry::compare_natural(&a.detector, &b.detector)
             .then_with(|| stable_primary_location_key(a).cmp(&stable_primary_location_key(b)))

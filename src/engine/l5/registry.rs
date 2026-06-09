@@ -13,7 +13,9 @@
 //! is plain `str::cmp` (byte order), used inline.
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::detector_context::{build_detector_context, DetectorContext};
+use crate::engine::l5::detector_context::{
+    build_detector_context, build_detector_context_cross_app, DetectorContext,
+};
 use crate::engine::l5::finding::Finding;
 
 /// A diagnostic emitted when a detector panics (stage = "detect").
@@ -65,14 +67,96 @@ fn primary_location_key(f: &Finding) -> String {
 /// that panics becomes a `Diagnostic(stage: "detect")` and the rest still run.
 pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput {
     let ctx = build_detector_context(resolved);
+    let (findings, diagnostics, detector_stats) = run_each(resolved, &ctx, detectors);
+
+    // Role-scoping filter (registry.ts:161-172). Source-only: every routine's role
+    // is "primary" (no analysisRole), so the predicate keeps everything.
+    let role_by_routine: std::collections::HashMap<&str, &str> = resolved
+        .workspace
+        .routines
+        .iter()
+        // analysisRole is not modeled on L3Routine (source-only ⇒ always primary).
+        .map(|r| (r.id.as_str(), "primary"))
+        .collect();
+    let scoped = role_scope_and_sort(findings, &role_by_routine);
+
+    RunOutput {
+        findings: scoped,
+        diagnostics,
+        detector_stats,
+    }
+}
+
+/// CROSS-APP variant of `run_detectors`: build the cross-app context from the
+/// pre-assembled `R3a5CrossAppBase`, run every detector, then role-scope with
+/// `dep_routine_ids`-derived roles (`"dependency"` for dep routines, `"primary"`
+/// else) so dep-anchored findings are dropped by the existing scope filter. d13/d16
+/// already gate `roleOf(caller)` internally via `ctx.dep_routine_ids`; the scope
+/// filter is the second, anchor-based safety net (registry.ts:161-172 parity).
+pub(crate) fn run_detectors_cross_app(
+    base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
+    detectors: &[Detector],
+) -> RunOutput {
+    let ctx = build_detector_context_cross_app(base);
+    // The detectors close over `(resolved, ctx)`. Build a throwaway L3Resolved view
+    // over the merged routines so the `resolved.workspace` arg is consistent with the
+    // ctx (detectors read `resolved.workspace.routines`/`.objects` for the fingerprint
+    // index + role map; for d13/d16/d17 those are the merged sets in `base`).
+    let resolved = L3Resolved {
+        workspace: merged_workspace_view(base),
+        root_classifications: Vec::new(),
+    };
+    let (findings, diagnostics, detector_stats) = run_each(&resolved, &ctx, detectors);
+
+    // role_by_routine: dep routines → "dependency", else "primary".
+    let role_by_routine: std::collections::HashMap<&str, &str> = base
+        .ws_routines
+        .iter()
+        .map(|r| {
+            let role = if base.dep_routine_ids.contains(&r.id) {
+                "dependency"
+            } else {
+                "primary"
+            };
+            (r.id.as_str(), role)
+        })
+        .collect();
+    let scoped = role_scope_and_sort(findings, &role_by_routine);
+
+    RunOutput {
+        findings: scoped,
+        diagnostics,
+        detector_stats,
+    }
+}
+
+/// Build an `L3Workspace` view over the merged base routines/objects/tables — the
+/// `resolved.workspace` arg every detector receives. The cross-app detectors read
+/// `routines` (role map + fingerprint index) and `objects` (fingerprint index);
+/// the merged sets come straight from `base`.
+fn merged_workspace_view(
+    base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
+) -> crate::engine::l3::l3_workspace::L3Workspace {
+    crate::engine::l3::l3_workspace::L3Workspace {
+        objects: base.objects.clone(),
+        tables: base.tables.clone(),
+        routines: base.ws_routines.clone(),
+    }
+}
+
+/// Run each detector in isolation (panic → diagnostic), collecting findings + stats.
+fn run_each(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+    detectors: &[Detector],
+) -> (Vec<Finding>, Vec<Diagnostic>, Vec<DetectorStats>) {
     let mut findings: Vec<Finding> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     let mut detector_stats: Vec<DetectorStats> = Vec::new();
 
     for detector in detectors {
-        // Catch a panic so one detector cannot kill the run (al-sem try/catch).
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            (detector.run)(resolved, &ctx)
+            (detector.run)(resolved, ctx)
         }));
         match result {
             Ok(output) => {
@@ -93,22 +177,15 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
             }
         }
     }
+    (findings, diagnostics, detector_stats)
+}
 
-    // Role-scoping filter (registry.ts:161-172). Source-only: every routine's role
-    // is "primary" (no analysisRole), so the predicate keeps everything. The
-    // role-by-id map is built over the internal routine ids; the
-    // primaryLocation.enclosingRoutineId is an internal id, so the lookup matches.
-    // For the source-only R4-A wave there are no dependency routines, so the
-    // `actionableAnchor` branch never engages; we still honour the "default
-    // primary when unknown" semantics.
-    let role_by_routine: std::collections::HashMap<&str, &str> = resolved
-        .workspace
-        .routines
-        .iter()
-        // analysisRole is not modeled on L3Routine (source-only ⇒ always primary).
-        .map(|r| (r.id.as_str(), "primary"))
-        .collect();
-    let scoped: Vec<Finding> = findings
+/// Apply the role-scope filter (drop dep-anchored findings) then the stable sort.
+fn role_scope_and_sort(
+    findings: Vec<Finding>,
+    role_by_routine: &std::collections::HashMap<&str, &str>,
+) -> Vec<Finding> {
+    let mut scoped: Vec<Finding> = findings
         .into_iter()
         .filter(|f| {
             let primary_role = role_by_routine
@@ -131,18 +208,12 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
         })
         .collect();
 
-    let mut scoped = scoped;
     scoped.sort_by(|a, b| {
         compare_natural(&a.detector, &b.detector)
             .then_with(|| primary_location_key(a).cmp(&primary_location_key(b)))
             .then_with(|| a.root_cause_key.cmp(&b.root_cause_key))
     });
-
-    RunOutput {
-        findings: scoped,
-        diagnostics,
-        detector_stats,
-    }
+    scoped
 }
 
 /// Port of al-sem `compareNatural`: split each string into runs of digits and

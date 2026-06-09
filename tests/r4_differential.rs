@@ -30,7 +30,9 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::{project_r4_findings, R4FindingsProjection};
+use al_call_hierarchy::engine::l5::finding::{
+    project_r4_findings, project_r4_findings_cross_app, R4FindingsProjection,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -124,6 +126,41 @@ const WAVE_H_NEGATIVES: &[Smoke] = &[Smoke {
     ported: true,
     corpus_dir: None,
 }];
+
+/// R4 CROSS-APP per-detector fixtures (d13/d16/d17). Each fixture resolves a cross-app
+/// call into a COMMITTED dependency `.app` under `tests/r0-corpus/<fixture>/.alpackages/`.
+/// These run through the CROSS-APP L5 pipeline (`project_r4_findings_cross_app`) which
+/// reads the dep `.app` off disk — NOT the source-only `project_r4_findings` path.
+const WAVE_CROSS_APP: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d13-internal-call",
+        wave: "R4-CROSS-APP",
+        detectors: &["d13-cross-app-internal-call"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d13-member-call",
+        wave: "R4-CROSS-APP",
+        detectors: &["d13-cross-app-internal-call"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d16-obsolete",
+        wave: "R4-CROSS-APP",
+        detectors: &["d16-obsolete-routine-call"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d17-drift",
+        wave: "R4-CROSS-APP",
+        detectors: &["d17-min-version-drift"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
 /// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
@@ -1057,6 +1094,84 @@ fn run_rust(golden_name: &str, source_dir: &str, detector_names: &[&str]) -> R4F
     }
 }
 
+/// Run the Rust CROSS-APP L5 pass for one fixture: build the cross-app L4 base
+/// (reading the committed dep `.app`(s) from `<fixture>/.alpackages/`), run the
+/// registered detectors in cross-app mode, project the envelope filtered to the named
+/// detectors. Model-instance id `"r0"` matches the al-sem dump convention.
+fn run_rust_cross_app(
+    golden_name: &str,
+    source_dir: &str,
+    detector_names: &[&str],
+) -> R4FindingsProjection {
+    let fixture_dir = corpus_dir().join(source_dir);
+    assert!(
+        fixture_dir.is_dir(),
+        "R4 cross-app golden for {golden_name} has no matching in-repo fixture at {}",
+        fixture_dir.display()
+    );
+    let names: Vec<String> = detector_names.iter().map(|s| s.to_string()).collect();
+    let detectors = registered_detectors();
+    project_r4_findings_cross_app(&fixture_dir, "r0", &detectors, golden_name, &names)
+}
+
+/// Run a single CROSS-APP entry. All 4 cross-app fixtures (d13-internal-call,
+/// d13-member-call, d16-obsolete, d17-drift) byte-match their goldens END-TO-END:
+///   - d13 carries no dep id in its rootCauseKey → fingerprint is stable.
+///   - d16's rootCauseKey embeds the dep callee's INTERNAL id, BUT the Rust engine
+///     stabilizes it via `FingerprintIndex::build_with_dep_ids` (the dep-id → stable-id
+///     substitution) — so the fingerprint DOES byte-match. `KNOWN_DIVERGENCES` is []
+///     for these fixtures.
+///   - d17 carries no dep id in its rootCauseKey → fingerprint is stable.
+///
+/// Divergences are still routed through the KNOWN_DIVERGENCES allowlist (for future
+/// proofing) — any undocumented divergence fails the run.
+///
+/// Returns `(byte_matched_modulo_allowlist, finding_count)`. The anti-degenerate ≥1
+/// check still applies; the byte-match flag is true when every divergence is
+/// allowlisted (so the fixture is "accepted" under the documented exception).
+fn run_cross_app_entry(
+    smoke: &Smoke,
+    allowlist: &[AllowEntry],
+    all_divergences: &mut Vec<Divergence>,
+) -> Option<(bool, usize)> {
+    let golden_path = goldens_dir().join(format!("{}.r4.golden.json", smoke.fixture));
+    assert!(
+        golden_path.is_file(),
+        "missing R4 cross-app golden: {}",
+        golden_path.display()
+    );
+    let golden_text = std::fs::read_to_string(&golden_path)
+        .unwrap_or_else(|e| panic!("read R4 golden {}: {e}", golden_path.display()));
+    let golden_json: Value = serde_json::from_str(&golden_text)
+        .unwrap_or_else(|e| panic!("R4 golden {} not valid JSON: {e}", golden_path.display()));
+    let _: R4FindingsProjection = serde_json::from_value(golden_json.clone())
+        .unwrap_or_else(|e| panic!("R4 golden {} not R4FindingsProjection: {e}", smoke.fixture));
+
+    let source_dir = smoke.corpus_dir.unwrap_or(smoke.fixture);
+    let rust = run_rust_cross_app(smoke.fixture, source_dir, smoke.detectors);
+
+    let rust_text = pretty_with_newline(&rust);
+    let byte_matched = rust_text == golden_text;
+    let count = rust.finding_count;
+    if byte_matched {
+        return Some((true, count));
+    }
+
+    // Diff into a local bucket; every divergence MUST be allowlisted (test==R4_TEST_NAME)
+    // for the fixture to be accepted. Any UNDOCUMENTED divergence fails the run via the
+    // shared allowlist-gating block.
+    let mut local: Vec<Divergence> = Vec::new();
+    let rust_json = serde_json::to_value(&rust).expect("rust → value");
+    diff_value(smoke.fixture, "", &golden_json, &rust_json, &mut local);
+    let all_allowlisted = local.iter().all(|d| {
+        allowlist
+            .iter()
+            .any(|e| e.fixture == d.fixture && e.path == d.path)
+    });
+    all_divergences.extend(local);
+    Some((all_allowlisted, count))
+}
+
 /// Pretty-serialize + trailing newline — the exact on-disk golden form.
 fn pretty_with_newline(proj: &R4FindingsProjection) -> String {
     let mut s = serde_json::to_string_pretty(proj).expect("serialize R4 projection");
@@ -1308,6 +1423,14 @@ fn differential_r4_findings_match_goldens() {
         run_smoke_entry(smoke, &registered_names, &mut all_divergences);
     }
 
+    // --- R4 CROSS-APP positives (d13/d16/d17 — committed dep .app in .alpackages) -
+    for smoke in WAVE_CROSS_APP {
+        if let Some((matched, count)) = run_cross_app_entry(smoke, &allowlist, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -1460,6 +1583,7 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_G_NEGATIVES.iter())
         .chain(WAVE_F.iter())
         .chain(WAVE_F_NEGATIVES.iter())
+        .chain(WAVE_CROSS_APP.iter())
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

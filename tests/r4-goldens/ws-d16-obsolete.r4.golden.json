@@ -1,0 +1,125 @@
+{
+  "fixtureName": "ws-d16-obsolete",
+  "detectors": [
+    "d16-obsolete-routine-call"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d16-obsolete-routine-call",
+      "id": "d16/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d/cs0/dddddddd-0000-0000-0000-0000000000d16:Codeunit:60160#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "rootCauseKey": "d16/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d/cs0/dddddddd-0000-0000-0000-0000000000d16:Codeunit:60160#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "title": "Call to obsolete routine (Pending)",
+      "rootCause": "UseOld calls OnRun — Use D16NewWay instead.",
+      "severity": "info",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/caller.al",
+        "range": {
+          "startLine": 4,
+          "startColumn": 2,
+          "endLine": 4,
+          "endColumn": 35
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/caller.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 2,
+              "endLine": 4,
+              "endColumn": 35
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls Pending OnRun",
+          "callsiteId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#9deb2eb83b8f2129a28d5d9b4ba4ae479f12726743ac2aca882bdc5b2c48311d/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d16a:Codeunit:50116",
+        "dddddddd-0000-0000-0000-0000000000d16:Codeunit:60160"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Use D16NewWay instead",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "07a5af87f1e4b262"
+    },
+    {
+      "detector": "d16-obsolete-routine-call",
+      "id": "d16/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd/cs0/dddddddd-0000-0000-0000-0000000000d16:Codeunit:60161#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "rootCauseKey": "d16/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd/11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd/cs0/dddddddd-0000-0000-0000-0000000000d16:Codeunit:60161#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+      "title": "Call to obsolete routine (Removed)",
+      "rootCause": "UseVeryOld calls OnRun — Removed in v26.",
+      "severity": "high",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/caller.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 2,
+          "endLine": 9,
+          "endColumn": 39
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/caller.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 2,
+              "endLine": 9,
+              "endColumn": 39
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls Removed OnRun",
+          "callsiteId": "11111111-0000-0000-0000-00000000d16a:Codeunit:50116#554d7344008fe86f4d44536f5f89a688c5d690dc0c2948afd011074464656afd/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d16a:Codeunit:50116",
+        "dddddddd-0000-0000-0000-0000000000d16:Codeunit:60161"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Removed in v26",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "fb83a67da523d4da"
+    }
+  ]
+}

@@ -2329,6 +2329,13 @@ pub(crate) struct R3a5CrossAppBase {
     /// Per-routine direct coverage `(status, reasons)`.
     pub direct_coverage: HashMap<String, (String, Vec<String>)>,
     pub nodes: Vec<String>,
+    /// The DECLARED workspace dependencies `{appGuid, name, minVersion}` (app.json
+    /// `dependencies[]`). The d17 MinVersion side. ADDITIVE — only the cross-app L5
+    /// detector context reads it; NOT serialized into the r3a5 gate.
+    pub declared_dependencies: Vec<crate::engine::deps::cross_app_l3::DeclaredDependencyDecl>,
+    /// Resolved dep `.app` versions keyed by appGuid (`model.apps[].version`). The d17
+    /// resolved-version side. ADDITIVE — same gate-additivity note as above.
+    pub resolved_app_versions: HashMap<String, String>,
 }
 
 /// Assemble the cross-app L4 BASE (steps 1–3 + 5 of the from-scratch pipeline):
@@ -2342,14 +2349,45 @@ pub(crate) fn build_r3a5_cross_app_base(
     model_instance_id: &str,
 ) -> Option<R3a5CrossAppBase> {
     use crate::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+    // --- 1. Merged cross-app L3 (SYMBOL-ONLY dep projection — the R3a5 gate). ---
+    let cross = build_cross_app_l3_from_workspace(workspace, model_instance_id)?;
+    build_cross_app_base_from_cross(cross, workspace, model_instance_id)
+}
+
+/// R4 cross-app base: identical assembly to [`build_r3a5_cross_app_base`] EXCEPT the
+/// merged L3 is built via [`build_cross_app_l3_r4`] which PARSES embedded `.al` source
+/// of app-source deps (so a dep's `OnRun` / `[InternalProc]` / `[Obsolete]` routines
+/// materialize). ADDITIVE: the R3a5 gate keeps the symbol-only `cross`, so its golden
+/// is unmoved; only the d13/d16/d17 cross-app L5 findings consume this richer base.
+pub(crate) fn build_r4_cross_app_base(
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+) -> Option<R3a5CrossAppBase> {
+    use crate::engine::deps::cross_app_l3::build_cross_app_l3_r4;
+    let cross = build_cross_app_l3_r4(workspace, model_instance_id)?;
+    build_cross_app_base_from_cross(cross, workspace, model_instance_id)
+}
+
+/// The shared cross-app base assembly (steps 1b–5) over an already-built `CrossAppL3`.
+/// Both the symbol-only R3a5 path and the source-parsing R4 path funnel through here,
+/// so the JACOBI/cone/graph assembly is byte-identical given the same merged model.
+fn build_cross_app_base_from_cross(
+    mut cross: crate::engine::deps::cross_app_l3::CrossAppL3,
+    workspace: &std::path::Path,
+    model_instance_id: &str,
+) -> Option<R3a5CrossAppBase> {
     use crate::engine::deps::dep_artifact_l4::{
         build_dep_artifact_l4, inject_intra_app_call_edges, ConsumerModel,
     };
     use crate::engine::deps::merged_index::collect_app_paths;
     use crate::engine::l4::summary_runner::FieldIndex;
 
-    // --- 1. Merged cross-app L3. ---
-    let mut cross = build_cross_app_l3_from_workspace(workspace, model_instance_id)?;
+    // d17 plumbing (ADDITIVE): declared deps `{appGuid, name, minVersion}` from the
+    // workspace app.json + the resolved dep `.app` versions captured during the merge.
+    let declared_dependencies =
+        crate::engine::deps::cross_app_l3::read_workspace_declared_dependencies(workspace);
+    let resolved_app_versions: HashMap<String, String> =
+        cross.dep_app_versions.iter().cloned().collect();
 
     // --- 2. Dep artifacts (injected intra-app edges) + recovered retained facts. ---
     let alpackages = workspace.join(".alpackages");
@@ -2511,6 +2549,8 @@ pub(crate) fn build_r3a5_cross_app_base(
         direct_full,
         direct_coverage,
         nodes,
+        declared_dependencies,
+        resolved_app_versions,
     })
 }
 

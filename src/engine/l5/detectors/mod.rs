@@ -7,7 +7,10 @@ pub mod d1;
 pub mod d10;
 pub mod d11;
 pub mod d12;
+pub mod d13;
 pub mod d14;
+pub mod d16;
+pub mod d17;
 pub mod d18;
 pub mod d19;
 pub mod d2;
@@ -166,8 +169,20 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d12::detect_d12,
         },
         Detector {
+            name: "d13-cross-app-internal-call".to_string(),
+            run: d13::detect_d13,
+        },
+        Detector {
             name: "d14-dead-routine".to_string(),
             run: d14::detect_d14,
+        },
+        Detector {
+            name: "d16-obsolete-routine-call".to_string(),
+            run: d16::detect_d16,
+        },
+        Detector {
+            name: "d17-min-version-drift".to_string(),
+            run: d17::detect_d17,
         },
         Detector {
             name: "d18-constant-filter-in-loop".to_string(),

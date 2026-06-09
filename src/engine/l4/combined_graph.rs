@@ -112,6 +112,12 @@ pub struct CombinedGraph {
     pub nodes: Vec<String>,
     /// from-id → its edgeSortKey-sorted edge list.
     pub edges_by_from: HashMap<String, Vec<CombinedEdge>>,
+    /// First-appearance order of `from` keys in the `edges` array (call-graph
+    /// emission order, then event-dispatch). Mirrors al-sem JS `Map` insertion
+    /// order so that d17's sample-selection iterates `edgesByFrom` in the SAME
+    /// order: `for (const [, edges] of graph.edgesByFrom)`. Needed when ≥2
+    /// primary callers reach the same dep — the first one in emission order wins.
+    pub edges_from_order: Vec<String>,
     /// Sorted (uncertaintySortKey) uncertainty edges.
     pub uncertainty_edges: Vec<UncertaintyEdge>,
     /// Typed edges in emission order.
@@ -329,7 +335,14 @@ pub fn build_combined_graph(
     nodes.sort();
 
     let mut edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+    // Track the first-appearance order of `from` keys (mirrors al-sem JS Map insertion
+    // order: `for (const e of edges) edgesByFrom.set(e.from, ...)` where Set preserves
+    // insertion order). Used by d17 to select the first sample in emission order.
+    let mut edges_from_order: Vec<String> = Vec::new();
     for e in edges {
+        if !edges_by_from.contains_key(&e.from) {
+            edges_from_order.push(e.from.clone());
+        }
         edges_by_from.entry(e.from.clone()).or_default().push(e);
     }
     for list in edges_by_from.values_mut() {
@@ -343,6 +356,7 @@ pub fn build_combined_graph(
     CombinedGraph {
         nodes,
         edges_by_from,
+        edges_from_order,
         uncertainty_edges,
         typed_edges,
     }

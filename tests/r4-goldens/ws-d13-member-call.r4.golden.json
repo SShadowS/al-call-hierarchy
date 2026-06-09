@@ -1,0 +1,67 @@
+{
+  "fixtureName": "ws-d13-member-call",
+  "detectors": [
+    "d13-cross-app-internal-call"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d13-cross-app-internal-call",
+      "id": "d13/11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs0",
+      "rootCauseKey": "d13/11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs0",
+      "title": "Cross-extension call into an internal procedure",
+      "rootCause": "OnRun calls InternalMethod (app dddddddd-0000-0000-0000-0000000d13mc), which is declared Internal. Crossing this boundary breaks encapsulation and can stop compiling on any minor version bump of the dependency.",
+      "severity": "high",
+      "confidence": {
+        "level": "confirmed",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/caller.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 2,
+          "endLine": 10,
+          "endColumn": 22
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/caller.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 2,
+              "endLine": 10,
+              "endColumn": 22
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls Internal InternalMethod in app dddddddd-0000-0000-0000-0000000d13mc",
+          "callsiteId": "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-0000000d13mc:Codeunit:50114",
+        "dddddddd-0000-0000-0000-0000000d13mc:Codeunit:60014"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Use the dependency's public API instead, or request the routine be promoted to Public upstream.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "2e73f171fca5c992"
+    }
+  ]
+}
