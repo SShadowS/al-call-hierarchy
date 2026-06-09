@@ -8,6 +8,7 @@ pub mod d11;
 pub mod d12;
 pub mod d18;
 pub mod d19;
+pub mod d2;
 pub mod d20;
 pub mod d21;
 pub mod d22;
@@ -19,6 +20,7 @@ pub mod d35;
 pub mod d36;
 pub mod d38;
 pub mod d4;
+pub mod d48;
 pub mod d5;
 pub mod d7;
 pub mod d8;
@@ -78,8 +80,16 @@ pub fn registered_detectors() -> Vec<Detector> {
             run: d1::detect_d1,
         },
         Detector {
+            name: "d2-event-fanout-in-loop".to_string(),
+            run: d2::detect_d2,
+        },
+        Detector {
             name: "d4-repeated-lookup-in-loop".to_string(),
             run: d4::detect_d4,
+        },
+        Detector {
+            name: "d48-io-in-loop".to_string(),
+            run: d48::detect_d48,
         },
         Detector {
             name: "d5-set-based-opportunity".to_string(),

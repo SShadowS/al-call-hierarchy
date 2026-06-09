@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-txn-d48-neg",
+  "detectors": [
+    "d48-io-in-loop"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

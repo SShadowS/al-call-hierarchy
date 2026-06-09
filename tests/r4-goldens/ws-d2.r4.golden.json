@@ -1,0 +1,153 @@
+{
+  "fixtureName": "ws-d2",
+  "detectors": [
+    "d2-event-fanout-in-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d2-event-fanout-in-loop",
+      "id": "d2/22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac/loop0/22222222-d200-0000-0000-000000000002/Codeunit/64101/event/onprocessline",
+      "rootCauseKey": "d2/22222222-d200-0000-0000-000000000002/Codeunit/64101/event/onprocessline",
+      "title": "Event raised inside a loop fans out to database work",
+      "rootCause": "RaiseInLoop raises OnProcessLine inside a loop; subscribers touch the database every iteration. (Also reached from 1 other in-loop ancestor.)",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/publisher.al",
+        "range": {
+          "startLine": 7,
+          "startColumn": 12,
+          "endLine": 7,
+          "endColumn": 27
+        },
+        "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/publisher.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 27
+            },
+            "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac",
+            "syntaxKind": "call_expression"
+          },
+          "note": "loop raises event OnProcessLine",
+          "callsiteId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac/cs0",
+          "loopId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#299663ee14d29f43470da2f218237c42dc9923d39062c86dbc2982a454f2e0ac/loop0"
+        },
+        {
+          "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/subscriber.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 8,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+            "syntaxKind": "procedure"
+          },
+          "note": "subscriber HandleProcessLine in D2 Subscriber (app 22222222-d200-0000-0000-000000000002) touches the database"
+        },
+        {
+          "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/subscriber.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer",
+          "operationId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b/op0"
+        }
+      ],
+      "affectedObjects": [
+        "22222222-d200-0000-0000-000000000002:Codeunit:64101",
+        "22222222-d200-0000-0000-000000000002:Codeunit:64102"
+      ],
+      "affectedTables": [
+        "22222222-d200-0000-0000-000000000002:Table:64100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Raise the event once outside the loop, or batch the work the subscribers do.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "additionalPaths": [
+        [
+          {
+            "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/publisher.al",
+              "range": {
+                "startLine": 23,
+                "startColumn": 12,
+                "endLine": 23,
+                "endColumn": 27
+              },
+              "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb",
+              "syntaxKind": "call_expression"
+            },
+            "note": "loop raises event OnProcessLine",
+            "callsiteId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb/cs0",
+            "loopId": "22222222-d200-0000-0000-000000000002:Codeunit:64101#9f8e1dcbbca5845f181918754d798dca39710fc8ce8bec00f8b389605f25b3eb/loop0"
+          },
+          {
+            "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "range": {
+                "startLine": 3,
+                "startColumn": 4,
+                "endLine": 8,
+                "endColumn": 8
+              },
+              "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+              "syntaxKind": "procedure"
+            },
+            "note": "subscriber HandleProcessLine in D2 Subscriber (app 22222222-d200-0000-0000-000000000002) touches the database"
+          },
+          {
+            "routineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/subscriber.al",
+              "range": {
+                "startLine": 7,
+                "startColumn": 8,
+                "endLine": 7,
+                "endColumn": 26
+              },
+              "enclosingRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+              "syntaxKind": "call_expression"
+            },
+            "note": "FindSet on Customer",
+            "operationId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b/op0"
+          }
+        ]
+      ],
+      "fingerprint": "79b06650b904d850"
+    }
+  ]
+}

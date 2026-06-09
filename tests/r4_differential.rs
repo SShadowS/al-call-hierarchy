@@ -294,6 +294,41 @@ const WAVE_D1: &[Smoke] = &[
     },
 ];
 
+/// D2 per-detector positive fixture (event-fanout-in-loop — the complement of d1).
+/// ws-d2 (1 finding, WITH additionalPaths — two loops publish the same event, folded
+/// by merge_by_terminal). Validates the event-dispatch-following WalkPolicy + the
+/// subscriber DB-effect terminal + merge_by_terminal on rootCauseKey `d2/{eventId}`.
+const WAVE_D2: &[Smoke] = &[Smoke {
+    fixture: "ws-d2",
+    wave: "R4-D2",
+    detectors: &["d2-event-fanout-in-loop"],
+    ported: true,
+    corpus_dir: None,
+}];
+
+/// D48 per-detector positive fixture (http/file IO inside a loop). ws-txn-d48-pos
+/// (2 findings: one transitive HTTP Send via a call chain, one direct FILE IO).
+/// Validates the capability-fact IoTerminal (resource_kind http/file, witness
+/// callsite, HttpExtra method) + the in-loop call-chain walk.
+const WAVE_D48: &[Smoke] = &[Smoke {
+    fixture: "ws-txn-d48-pos",
+    wave: "R4-D48",
+    detectors: &["d48-io-in-loop"],
+    ported: true,
+    corpus_dir: None,
+}];
+
+/// ws-txn-d48-neg: the explicit D48 negative — a 0-finding workspace (http/file IO
+/// present but NOT inside any loop) with a committed 0-count golden. Byte-matched
+/// END-TO-END but EXEMPT from the anti-degenerate ≥1 check.
+const WAVE_D48_NEGATIVE: Smoke = Smoke {
+    fixture: "ws-txn-d48-neg",
+    wave: "R4-D48",
+    detectors: &["d48-io-in-loop"],
+    ported: true,
+    corpus_dir: None,
+};
+
 /// ws-d1-dep-terminal: the explicit D1 negative — a 0-finding workspace with a
 /// committed 0-count golden. Byte-matched END-TO-END (so the projection envelope's
 /// `findingCount: 0` shape is asserted) but EXEMPT from the anti-degenerate ≥1
@@ -440,6 +475,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d32-constant-boolean-parameter",
         neutral_fixture: "ws-d19",
+    },
+    // d2: ws-d4-repeated-get has a repeat..until loop with in-loop Get ops but NO
+    // event publish inside any loop — the publisher-routine gate on the in-loop
+    // callsite never matches, so the event-fanout detector emits 0.
+    NegativeAssertion {
+        detector: "d2-event-fanout-in-loop",
+        neutral_fixture: "ws-d4-repeated-get",
     },
 ];
 
@@ -750,6 +792,27 @@ fn differential_r4_findings_match_goldens() {
     // NOT push it into ported_results (it is exempt from the anti-degenerate ≥1).
     run_smoke_entry(&WAVE_D1_NEGATIVE, &registered_names, &mut all_divergences);
 
+    // --- D2 per-detector fixture (event-fanout-in-loop) -----------------------
+    for smoke in WAVE_D2 {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+
+    // --- D48 per-detector fixture (http/file IO in loop) ----------------------
+    for smoke in WAVE_D48 {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+    // The D48 explicit negative: byte-match its 0-count golden END-TO-END, but do
+    // NOT push it into ported_results (exempt from the anti-degenerate ≥1).
+    run_smoke_entry(&WAVE_D48_NEGATIVE, &registered_names, &mut all_divergences);
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -892,6 +955,9 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_D.iter())
         .chain(WAVE_D1.iter())
         .chain(std::iter::once(&WAVE_D1_NEGATIVE))
+        .chain(WAVE_D2.iter())
+        .chain(WAVE_D48.iter())
+        .chain(std::iter::once(&WAVE_D48_NEGATIVE))
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

@@ -2,16 +2,16 @@
   "description": "R4-0 Finding[] golden — stable projection of Finding[] from analyzeWorkspace (deterministic: true) per ws-d* smoke fixture. Comparison surface for the al-sem → Rust L5 detector parity differential. All ids in stable form (StableRoutineId/StableObjectId/StableTableId). See scripts/r4-finding-projection.ts.",
   "capturePoint": "post-runDetectors: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0', detectors: [...]}) → runDetectors (sorted by detector/primaryLocationKey/rootCauseKey) → projectR4Findings",
   "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
-  "alSemGitSha": "a95b6881ec5fddfb3ced9d2b3bca4a0dc6033e40",
+  "alSemGitSha": "0d2e0dc30224a0519605906372500118e319ac37",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",
   "cacheVersionTuple": "analyzer=0.0.12;grammar=tree-sitter-al-v2.5.2-native;symbolReader=17;summarySchema=33;depCache=8;resourcePolicy=1",
   "modelInstanceId": "r0",
   "alsemVersion": "r4-0",
-  "fixtureCount": 30,
-  "positiveCount": 28,
-  "negativeCount": 2,
-  "totalFindings": 45,
+  "fixtureCount": 33,
+  "positiveCount": 30,
+  "negativeCount": 3,
+  "totalFindings": 48,
   "waves": [
     {
       "wave": "R4-A",
@@ -330,6 +330,33 @@
       "goldenFile": "ws-d1-dep-terminal.r4.golden.json",
       "detectors": [
         "d1-db-op-in-loop"
+      ],
+      "findingCount": 0,
+      "isPositive": false
+    },
+    {
+      "fixture": "ws-d2",
+      "goldenFile": "ws-d2.r4.golden.json",
+      "detectors": [
+        "d2-event-fanout-in-loop"
+      ],
+      "findingCount": 1,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-txn-d48-pos",
+      "goldenFile": "ws-txn-d48-pos.r4.golden.json",
+      "detectors": [
+        "d48-io-in-loop"
+      ],
+      "findingCount": 2,
+      "isPositive": true
+    },
+    {
+      "fixture": "ws-txn-d48-neg",
+      "goldenFile": "ws-txn-d48-neg.r4.golden.json",
+      "detectors": [
+        "d48-io-in-loop"
       ],
       "findingCount": 0,
       "isPositive": false

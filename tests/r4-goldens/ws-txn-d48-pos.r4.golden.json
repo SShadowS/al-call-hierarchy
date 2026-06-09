@@ -1,0 +1,196 @@
+{
+  "fixtureName": "ws-txn-d48-pos",
+  "detectors": [
+    "d48-io-in-loop"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d48-io-in-loop",
+      "id": "d48/11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16/11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16/cs0",
+      "rootCauseKey": "d48/11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+      "title": "External IO inside a loop",
+      "rootCause": "A repeat loop in ProcessAll reaches HTTP Send in SendOne on every iteration.",
+      "severity": "high",
+      "confidence": {
+        "level": "possible",
+        "evidence": [
+          {
+            "source": "tree-sitter",
+            "note": "unresolved-call at r0/0111c3fe83ddeeebad9d2c78e9c8ed9e21034f7922c67bd2eb59f8a2cd305dda/cs0"
+          }
+        ],
+        "cappedBy": [
+          "unresolved-call"
+        ]
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+        "range": {
+          "startLine": 14,
+          "startColumn": 8,
+          "endLine": 14,
+          "endColumn": 30
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 29,
+              "startColumn": 8,
+              "endLine": 32,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+            "syntaxKind": "repeat_statement"
+          },
+          "note": "repeat loop",
+          "loopId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 31,
+              "startColumn": 12,
+              "endLine": 31,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls SendOne",
+          "callsiteId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 39,
+              "startColumn": 8,
+              "endLine": 39,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls SendOne",
+          "callsiteId": "11111111-0000-0000-0000-00000000d480:Codeunit:50001#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 30
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16",
+            "syntaxKind": "call_expression"
+          },
+          "note": "HTTP Send",
+          "callsiteId": "11111111-0000-0000-0000-00000000d480:Codeunit:50000#575f7874587897f82348220d404de819860d274571630bbafa38721de672ef16/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d480:Codeunit:50000",
+        "11111111-0000-0000-0000-00000000d480:Codeunit:50001"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move the HTTP call outside the loop or batch requests to avoid N external calls per iteration.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "f40350e597df6aff"
+    },
+    {
+      "detector": "d48-io-in-loop",
+      "id": "d48/11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d/11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d/cs0",
+      "rootCauseKey": "d48/11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+      "title": "External IO inside a loop",
+      "rootCause": "A repeat loop in ExportAll directly calls FILE IO on every iteration.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+        "range": {
+          "startLine": 72,
+          "startColumn": 12,
+          "endLine": 72,
+          "endColumn": 54
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 70,
+              "startColumn": 8,
+              "endLine": 73,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+            "syntaxKind": "repeat_statement"
+          },
+          "note": "repeat loop",
+          "loopId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
+            "range": {
+              "startLine": 72,
+              "startColumn": 12,
+              "endLine": 72,
+              "endColumn": 54
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FILE",
+          "callsiteId": "11111111-0000-0000-0000-00000000d480:Codeunit:50003#c430e2d2f95fd1b5c0bbbf663dc9783e81063456de7781a8cca3c89ebb6c015d/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d480:Codeunit:50003"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move the FILE call outside the loop or batch requests to avoid N external calls.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "6e16ef3d02d152a2"
+    }
+  ]
+}
