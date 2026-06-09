@@ -75,6 +75,25 @@ pub struct Uncertainty {
     pub interface_name: Option<String>,
 }
 
+/// The combined-graph `UncertaintyEdge` carries its own structurally-identical
+/// `Uncertainty` (`combined_graph::Uncertainty`). They are the SAME al-sem
+/// `Uncertainty` shape modelled in two modules (the L4 summary core vs. the
+/// to-less combined-graph edge). This converts an edge uncertainty into the
+/// summary form so the path-walker (which consumes `summary::Uncertainty`) can
+/// union the summary-carried and edge-carried sources with one type. Field-for-
+/// field copy — no information is lost or gained.
+impl From<&crate::engine::l4::combined_graph::Uncertainty> for Uncertainty {
+    fn from(u: &crate::engine::l4::combined_graph::Uncertainty) -> Self {
+        Uncertainty {
+            kind: u.kind.clone(),
+            callsite_id: u.callsite_id.clone(),
+            operation_id: u.operation_id.clone(),
+            routine_id: u.routine_id.clone(),
+            interface_name: u.interface_name.clone(),
+        }
+    }
+}
+
 /// Stable key for an Uncertainty — mirrors al-sem `uncertaintyKey`.
 pub fn uncertainty_key(u: &Uncertainty) -> String {
     if let Some(cs) = &u.callsite_id {
@@ -86,26 +105,21 @@ pub fn uncertainty_key(u: &Uncertainty) -> String {
     format!("{}|{}", u.kind, u.routine_id.as_deref().unwrap_or(""))
 }
 
-/// De-duplicate a list of [`Uncertainty`] values by key (keep first seen), then
-/// sort by key. Mirrors al-sem `dedupeUncertainties` (uncertainty-util.ts).
+/// De-duplicate a list of [`Uncertainty`] values by key, then sort by key. Mirrors
+/// al-sem `dedupeUncertainties` (uncertainty-util.ts) EXACTLY: al-sem builds a JS
+/// `Map` with `byKey.set(key, u)` in order — so on a key collision the LAST value
+/// wins — then emits `[...byKey.values()].sort(byKey)`. A `BTreeMap` reproduces both:
+/// `insert` is last-write-wins and iteration is key-sorted (byte order == al-sem's
+/// ASCII-key `compareStrings`). (Keep-first would diverge only for same-key
+/// `interface-open-world` uncertainties with differing `interfaceName`, but matching
+/// keep-last removes the reliance on that one-interface-per-callsite invariant.)
 pub(crate) fn dedupe_uncertainties(list: Vec<Uncertainty>) -> Vec<Uncertainty> {
-    use std::collections::HashMap;
-    let mut seen: HashMap<String, Uncertainty> = HashMap::new();
-    // Preserve first-seen order (insertion order) via a separate keys vec.
-    let mut order: Vec<String> = Vec::new();
+    use std::collections::BTreeMap;
+    let mut seen: BTreeMap<String, Uncertainty> = BTreeMap::new();
     for u in list {
-        let k = uncertainty_key(&u);
-        if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(k.clone()) {
-            order.push(k);
-            e.insert(u);
-        }
+        seen.insert(uncertainty_key(&u), u); // last-write-wins, matching JS Map.set
     }
-    let mut result: Vec<Uncertainty> = order
-        .into_iter()
-        .map(|k| seen.remove(&k).unwrap())
-        .collect();
-    result.sort_by_key(uncertainty_key);
-    result
+    seen.into_values().collect() // BTreeMap iterates keys in sorted order
 }
 
 /// Per-record-parameter role summary (internal form). Mirrors al-sem

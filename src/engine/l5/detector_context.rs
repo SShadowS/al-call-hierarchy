@@ -26,6 +26,9 @@ use crate::engine::l4::capability_cone::{
     compose_cone_over_graph, direct_facts_for_routine, CapabilityFact,
 };
 use crate::engine::l4::combined_graph::{build_combined_graph, CombinedGraph};
+use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
+use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
+use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::{build_reverse_call_graph, ReverseCallGraph};
 use crate::engine::l5::transaction_spans::{compute_transaction_spans, TransactionSpan};
@@ -51,6 +54,15 @@ pub struct DetectorContext<'a> {
     /// Uncertainty edges grouped by source routine.
     pub uncertainty_edges_by_from:
         HashMap<String, Vec<crate::engine::l4::combined_graph::Uncertainty>>,
+    /// Per-node merged uncertainty set the path-walker accumulates per branch.
+    /// `uncertaintiesAt(node) = core_summary.uncertainties ∪
+    /// uncertainty_edges_by_from.get(node)`, deduped+sorted by `uncertainty_key`.
+    /// Mirrors al-sem `walkEvidence`'s `uncertaintiesAt` (path-walker.ts:103-106).
+    /// The UNION ORDER is `[...fromSummary, ...fromEdges]` — the CORE
+    /// `RoutineSummary.uncertainties` first, then the combined-graph edge
+    /// uncertainties — matching al-sem exactly before the dedupe. Keyed by
+    /// internal routine id; `walk_evidence` reads it via this exact field.
+    pub uncertainties_by_node: HashMap<String, Vec<Uncertainty>>,
     /// Every call site indexed by id.
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
@@ -162,6 +174,69 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
             .push(ue.uncertainty.clone());
     }
 
+    // --- Per-node uncertainty wiring (the path-walker source) --------------
+    // al-sem `walkEvidence` computes
+    //   uncertaintiesAt(node) = routine.summary.uncertainties ∪ uncertaintyEdgesByFrom.get(node)
+    // The CORE `RoutineSummary.uncertainties` is dropped by `FullRoutineSummary`
+    // (the cone path keeps only facts + coverage), so we recompute the core
+    // summaries here from the SAME combined graph the cone used: Tarjan SCC over
+    // `graph.edges_by_from`, then the Jacobi fixed point (`compute_summaries`).
+    // This is the only place that needs the core uncertainties; the union is
+    // assembled once and exposed on `uncertainties_by_node`.
+    let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &graph.edges_by_from {
+        scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let scc = tarjan_scc(&SccInputGraph {
+        nodes: &graph.nodes,
+        edges_by_from: &scc_adjacency,
+    });
+    // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
+    // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
+    // but `compute_summaries` takes it.
+    let mut field_index: FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+    let (core_summaries, _trace) = compute_summaries(
+        &ws.routines,
+        &graph,
+        &scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        false,
+    );
+
+    // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
+    // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
+    // uncertainties FIRST, then the combined-graph edge uncertainties (converted
+    // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
+    // then sorts by key, matching al-sem's `dedupeUncertainties`.
+    let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+    for r in &ws.routines {
+        let from_summary: &[Uncertainty] = core_summaries
+            .get(&r.id)
+            .map(|s| s.uncertainties.as_slice())
+            .unwrap_or(&[]);
+        let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
+            .get(&r.id)
+            .map(|edges| edges.iter().map(Uncertainty::from).collect())
+            .unwrap_or_default();
+        if from_summary.is_empty() && from_edges.is_empty() {
+            continue;
+        }
+        let combined: Vec<Uncertainty> = from_summary
+            .iter()
+            .cloned()
+            .chain(from_edges.into_iter())
+            .collect();
+        uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
+    }
+
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
         for cs in &r.call_sites {
@@ -180,6 +255,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         transaction_spans,
         resolved_call_edge_by_callsite,
         uncertainty_edges_by_from,
+        uncertainties_by_node,
         call_site_by_id,
         summaries,
     }

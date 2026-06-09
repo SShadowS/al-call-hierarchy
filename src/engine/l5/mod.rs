@@ -23,6 +23,18 @@ pub mod full_summary;
 pub mod reverse_call_graph;
 pub mod transaction_spans;
 
+// R4 PATH-WALKER SUPPORT SUBSTRATE — the shared pure-function modules the
+// d1/d2/d48/d14 path-walker detectors consume (NO detectors yet). Each ports one
+// al-sem L5 helper:
+//   - `op_classification` — al-sem `src/engine/op-classification.ts`.
+//   - `table_display`     — al-sem `src/detectors/table-display.ts`.
+//   - `path_merge`        — al-sem `src/detectors/path-merge.ts`.
+//   - `actionable_anchor` — al-sem `src/projection/actionable-anchor.ts`.
+pub mod actionable_anchor;
+pub mod op_classification;
+pub mod path_merge;
+pub mod table_display;
+
 // R4-0 Task 2b — the L5 HARNESS (Finding model + stable projection, fingerprint,
 // confidence, detector registry, detector context, path walker) and the ported
 // detectors (currently d4).
