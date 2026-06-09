@@ -1,0 +1,202 @@
+{
+  "fixtureName": "ws-d1-multi-caller",
+  "detectors": [
+    "d1-db-op-in-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d1-db-op-in-loop",
+      "id": "d1/11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/loop0/11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0",
+      "rootCauseKey": "d1/11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0",
+      "title": "Database operation inside a loop",
+      "rootCause": "A loop in CallerA reaches Modify on MC Customer (temp state uncertain). (Also reached from 2 other in-loop ancestors.)",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/D1MultiCaller.al",
+        "range": {
+          "startLine": 18,
+          "startColumn": 8,
+          "endLine": 18,
+          "endColumn": 21
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D1MultiCaller.al",
+            "range": {
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 26,
+              "endColumn": 31
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D1MultiCaller.al",
+            "range": {
+              "startLine": 26,
+              "startColumn": 12,
+              "endLine": 26,
+              "endColumn": 30
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls ModifyHelper",
+          "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/D1MultiCaller.al",
+            "range": {
+              "startLine": 18,
+              "startColumn": 8,
+              "endLine": 18,
+              "endColumn": 21
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Modify on MC Customer",
+          "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d01a:Codeunit:50101"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d01a:Table:50101"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "additionalPaths": [
+        [
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 33,
+                "startColumn": 8,
+                "endLine": 34,
+                "endColumn": 31
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+              "syntaxKind": "for_statement"
+            },
+            "note": "for loop",
+            "loopId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf/loop0"
+          },
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 34,
+                "startColumn": 12,
+                "endLine": 34,
+                "endColumn": 30
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+              "syntaxKind": "call_expression"
+            },
+            "note": "calls ModifyHelper",
+            "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf/cs0"
+          },
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 18,
+                "startColumn": 8,
+                "endLine": 18,
+                "endColumn": 21
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+              "syntaxKind": "call_expression"
+            },
+            "note": "Modify on MC Customer",
+            "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0"
+          }
+        ],
+        [
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 41,
+                "startColumn": 8,
+                "endLine": 42,
+                "endColumn": 31
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+              "syntaxKind": "for_statement"
+            },
+            "note": "for loop",
+            "loopId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c/loop0"
+          },
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 42,
+                "startColumn": 12,
+                "endLine": 42,
+                "endColumn": 30
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+              "syntaxKind": "call_expression"
+            },
+            "note": "calls ModifyHelper",
+            "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c/cs0"
+          },
+          {
+            "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D1MultiCaller.al",
+              "range": {
+                "startLine": 18,
+                "startColumn": 8,
+                "endLine": 18,
+                "endColumn": 21
+              },
+              "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
+              "syntaxKind": "call_expression"
+            },
+            "note": "Modify on MC Customer",
+            "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0"
+          }
+        ]
+      ],
+      "fingerprint": "f0f2ee3b04f47a3b"
+    }
+  ]
+}

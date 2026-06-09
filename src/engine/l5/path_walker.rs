@@ -32,6 +32,12 @@ pub struct Terminal {
     pub routine_id: String,
     /// Loop nesting depth of the op site within its OWN routine.
     pub local_loop_depth: i64,
+    /// Optional detector-supplied op identity carried alongside the terminal —
+    /// the Rust analogue of al-sem's `D1Terminal extends Terminal { op }`. The
+    /// generic substrate ignores it; a policy's `build_terminal_step` reads it to
+    /// recover the exact terminating op (its anchor / note / operationId). `None`
+    /// for policies that don't carry an op (the synthetic oracles).
+    pub op_id: Option<String>,
 }
 
 /// Why a walk branch stopped. Detectors emit findings only from `Complete`.
@@ -304,6 +310,7 @@ mod tests {
                 vec![Terminal {
                     routine_id: node.to_string(),
                     local_loop_depth: 0,
+                    op_id: None,
                 }]
             } else {
                 Vec::new()

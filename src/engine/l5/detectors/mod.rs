@@ -2,6 +2,7 @@
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
 //! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave).
 
+pub mod d1;
 pub mod d10;
 pub mod d11;
 pub mod d12;
@@ -72,6 +73,10 @@ pub(crate) fn anchor_of(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
 /// registration order does not affect output. Grows one detector per wave.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
+        Detector {
+            name: "d1-db-op-in-loop".to_string(),
+            run: d1::detect_d1,
+        },
         Detector {
             name: "d4-repeated-lookup-in-loop".to_string(),
             run: d4::detect_d4,

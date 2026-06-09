@@ -1,0 +1,8 @@
+{
+  "fixtureName": "ws-d1-dep-terminal",
+  "detectors": [
+    "d1-db-op-in-loop"
+  ],
+  "findingCount": 0,
+  "findings": []
+}

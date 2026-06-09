@@ -262,6 +262,50 @@ const WAVE_D: &[Smoke] = &[
     },
 ];
 
+/// D1 per-detector positive fixtures (path-walker substrate end-to-end). d1 is the
+/// MOST COMPLEX detector — its byte-match validates `walk_evidence` +
+/// `merge_by_terminal` + `describe_table` + `pick_actionable_anchor` together.
+/// ws-d1 (3 findings, one WITH additionalPaths), ws-d1-multi-caller (1 finding, 2
+/// additionalPaths — validates merge_by_terminal), ws-d1-setup-singleton (3).
+/// ws-d1-dep-terminal (0 findings — the explicit negative) is byte-matched
+/// separately below (its 0-count golden is exempt from the anti-degenerate ≥1
+/// check).
+const WAVE_D1: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d1",
+        wave: "R4-D1",
+        detectors: &["d1-db-op-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d1-multi-caller",
+        wave: "R4-D1",
+        detectors: &["d1-db-op-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d1-setup-singleton",
+        wave: "R4-D1",
+        detectors: &["d1-db-op-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
+/// ws-d1-dep-terminal: the explicit D1 negative — a 0-finding workspace with a
+/// committed 0-count golden. Byte-matched END-TO-END (so the projection envelope's
+/// `findingCount: 0` shape is asserted) but EXEMPT from the anti-degenerate ≥1
+/// check that the positive fixtures must satisfy.
+const WAVE_D1_NEGATIVE: Smoke = Smoke {
+    fixture: "ws-d1-dep-terminal",
+    wave: "R4-D1",
+    detectors: &["d1-db-op-in-loop"],
+    ported: true,
+    corpus_dir: None,
+};
+
 /// A negative assertion: the given detector must produce 0 findings over the
 /// neutral fixture (which lacks the detector's triggering pattern).
 struct NegativeAssertion {
@@ -694,6 +738,18 @@ fn differential_r4_findings_match_goldens() {
         }
     }
 
+    // --- D1 per-detector fixtures (path-walker substrate) ---------------------
+    for smoke in WAVE_D1 {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
+    }
+    // The D1 explicit negative: byte-match its 0-count golden END-TO-END, but do
+    // NOT push it into ported_results (it is exempt from the anti-degenerate ≥1).
+    run_smoke_entry(&WAVE_D1_NEGATIVE, &registered_names, &mut all_divergences);
+
     // --- Anti-degenerate: all ported fixtures byte-matched AND had ≥1 finding -
     for (fixture, byte_matched, count) in &ported_results {
         assert!(
@@ -795,13 +851,15 @@ fn differential_r4_findings_match_goldens() {
     );
 
     eprintln!(
-        "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C + {} R4-D wave fixture(s); \
-         {} ported (all byte-matched); {} negatives passed; {} deferred; allowlist consumed ({} entr(y/ies)).",
+        "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C + {} R4-D + {} D1 wave fixture(s) \
+         (+1 D1 negative); {} ported (all byte-matched); {} negatives passed; {} deferred; \
+         allowlist consumed ({} entr(y/ies)).",
         SMOKE.len(),
         WAVE_A.len(),
         WAVE_B.len(),
         WAVE_C.len(),
         WAVE_D.len(),
+        WAVE_D1.len(),
         ported_results.len(),
         NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
@@ -832,6 +890,8 @@ fn refresh_r4_goldens_from_al_sem() {
         .chain(WAVE_B.iter())
         .chain(WAVE_C.iter())
         .chain(WAVE_D.iter())
+        .chain(WAVE_D1.iter())
+        .chain(std::iter::once(&WAVE_D1_NEGATIVE))
         .map(|s| s.fixture)
         .collect();
     for fixture in all_fixtures {

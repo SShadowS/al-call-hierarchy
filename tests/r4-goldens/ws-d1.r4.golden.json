@@ -1,0 +1,302 @@
+{
+  "fixtureName": "ws-d1",
+  "detectors": [
+    "d1-db-op-in-loop"
+  ],
+  "findingCount": 3,
+  "findings": [
+    {
+      "detector": "d1-db-op-in-loop",
+      "id": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/loop0/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0",
+      "rootCauseKey": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0",
+      "title": "Database operation inside a loop",
+      "rootCause": "A loop in ProcessAll reaches FindSet on Customer. (Also reached from 1 other in-loop ancestor.)",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/jobs.al",
+        "range": {
+          "startLine": 14,
+          "startColumn": 8,
+          "endLine": 14,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 6,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 25
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/loop0"
+        },
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 7,
+              "startColumn": 12,
+              "endLine": 7,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e",
+            "syntaxKind": "call_expression"
+          },
+          "note": "calls ProcessOne",
+          "callsiteId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/cs0"
+        },
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer",
+          "operationId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-d100-0000-0000-000000000001:Codeunit:63101"
+      ],
+      "affectedTables": [
+        "11111111-d100-0000-0000-000000000001:Table:63100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "additionalPaths": [
+        [
+          {
+            "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "range": {
+                "startLine": 39,
+                "startColumn": 8,
+                "endLine": 42,
+                "endColumn": 12
+              },
+              "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626",
+              "syntaxKind": "for_statement"
+            },
+            "note": "for loop",
+            "loopId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626/loop0"
+          },
+          {
+            "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "range": {
+                "startLine": 40,
+                "startColumn": 12,
+                "endLine": 40,
+                "endColumn": 24
+              },
+              "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626",
+              "syntaxKind": "call_expression"
+            },
+            "note": "calls ProcessOne",
+            "callsiteId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#eb9a84285becf81de20ca7a9fd32ebd5f8359d4441d56b261ae67ee3ed5b9626/cs0"
+          },
+          {
+            "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/jobs.al",
+              "range": {
+                "startLine": 14,
+                "startColumn": 8,
+                "endLine": 14,
+                "endColumn": 26
+              },
+              "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb",
+              "syntaxKind": "call_expression"
+            },
+            "note": "FindSet on Customer",
+            "operationId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0"
+          }
+        ]
+      ],
+      "fingerprint": "119171d2c174553c"
+    },
+    {
+      "detector": "d1-db-op-in-loop",
+      "id": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/loop0/11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/op0",
+      "rootCauseKey": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/op0",
+      "title": "Database operation inside a loop",
+      "rootCause": "A loop in DirectLoop reaches Get on Customer.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/jobs.al",
+        "range": {
+          "startLine": 23,
+          "startColumn": 12,
+          "endLine": 23,
+          "endColumn": 33
+        },
+        "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 23,
+              "endColumn": 34
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/loop0"
+        },
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 23,
+              "startColumn": 12,
+              "endLine": 23,
+              "endColumn": 33
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Get on Customer",
+          "operationId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#0925e4305d6e04ce6a5b25791a73a3bfd36d77d2e3782f1833712cdcc4b05f0b/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-d100-0000-0000-000000000001:Codeunit:63101"
+      ],
+      "affectedTables": [
+        "11111111-d100-0000-0000-000000000001:Table:63100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "981ce3d7cc1eeb01"
+    },
+    {
+      "detector": "d1-db-op-in-loop",
+      "id": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/loop1/11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/op0",
+      "rootCauseKey": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/op0",
+      "title": "Database operation inside a loop",
+      "rootCause": "A loop in NestedLoop reaches FindSet on Customer.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/jobs.al",
+        "range": {
+          "startLine": 53,
+          "startColumn": 16,
+          "endLine": 53,
+          "endColumn": 34
+        },
+        "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 52,
+              "startColumn": 12,
+              "endLine": 53,
+              "endColumn": 35
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+            "syntaxKind": "for_statement"
+          },
+          "note": "for loop",
+          "loopId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/loop1"
+        },
+        {
+          "routineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/jobs.al",
+            "range": {
+              "startLine": 53,
+              "startColumn": 16,
+              "endLine": 53,
+              "endColumn": 34
+            },
+            "enclosingRoutineId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a",
+            "syntaxKind": "call_expression"
+          },
+          "note": "FindSet on Customer",
+          "operationId": "11111111-d100-0000-0000-000000000001:Codeunit:63101#5130f21d38f7950dee5d05a7b6c89f2a52ba7f8e74640f75de417b51a206199a/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-d100-0000-0000-000000000001:Codeunit:63101"
+      ],
+      "affectedTables": [
+        "11111111-d100-0000-0000-000000000001:Table:63100"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "f41b8ef25a822795"
+    }
+  ]
+}
