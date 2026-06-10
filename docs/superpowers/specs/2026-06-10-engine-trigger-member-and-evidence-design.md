@@ -165,3 +165,116 @@ evidencePath; digest stays as-is). Any default/parity-locked output change.
   StableRoutineId-collapse that motivates the work — surface the member from source position, not the
   collapsed id, if the collapsed id can't distinguish the fields.
 - **Freeze before P3.2:** prove the schema, then al-perf builds against it.
+
+---
+
+## Revision 2 — folded from the three-reviewer adversarial pass (2× opus + gemini-3.1-pro)
+
+The design body above is SUPERSEDED where it conflicts here. All three reviewers verified against
+actual code; convergent findings below. Parity safety of E1/E2/E3 was CONFIRMED (no golden byte moves —
+`L3Routine` is not serde-serialized, routine set/order is provably unchanged, inventory is Rust-only,
+`--with-evidence` is never passed by the harness). The blockers are soundness/correctness of the
+discriminator and the cross-system join, plus mechanical compile-gates. Implement to THIS revision.
+
+### RE-1 — The finding-side discriminator is POSITION-BASED, never id-based (MUST) [opus×2]
+The internal `L3Routine.id` collapses identically to `StableRoutineId` — `compute_routine_id`
+(`scope.rs:560-588`) keys on `(app, objType, objNum, kind, name, params, ret)`, all identical for two
+fields' `OnValidate`; the gate routine map (`projection.rs:55-58`, `routines.iter().map(|r|
+(r.id, r))` into a HashMap) is last-writer-wins. So an `enclosingRoutineId`-keyed member lookup returns
+ONE field's member for BOTH findings (~50% wrong). **Strike the id-based lookup.** The sound mechanism:
+match the finding's `primary_location` (same `source_unit_id`) to the member-bearing wrapper node whose
+range CONTAINS it, smallest containing range, and use THAT member's name. Two field triggers are two
+distinct `trigger_declaration` nodes at disjoint ranges → unique containment. Add a two-field-`OnValidate`
+fixture test asserting EACH FINDING gets ITS OWN field name (per-finding, NOT per-inventory-row — the
+inventory test would pass trivially while the finding map is wrong).
+
+### RE-2 — Match the MEMBER-WRAPPER range, not just the trigger-body range (MUST) [gemini]
+RE-1's containment must use the member WRAPPER node (`field_declaration`/`page_field`/`action_declaration`/
+`report_dataitem` — the node spanning the WHOLE member incl. its properties), not only the nested
+`trigger_declaration` bounds. A finding reported on the member declaration itself (outside the trigger
+body) would otherwise fall back to the object scope and lose its member. So E1 must capture, per
+member-trigger routine, BOTH the `enclosing_member` string AND the member-wrapper source RANGE (start/end
+line/col + source_unit_id); the finding-side lookup matches against that wrapper range. (For the al-perf
+fusion use case the relevant findings sit inside trigger bodies, but the wrapper range is the robust
+boundary and costs nothing extra.)
+
+### RE-3 — Member-name derivation: `child_by_field_name("name")`, not "first child"; widen the parent set (MUST) [opus-2]
+"First identifier/quoted_identifier child" is WRONG for `field_declaration` — its first named child is
+the integer field NUMBER (grammar `field('id', integer); field('name', ...)`). Derive the member via
+`parent.child_by_field_name("name")` then `strip_quotes`. This works uniformly for the page/action/
+dataitem wrappers too. Fixes also: the page-action node kind is **`action_declaration`** (not `action`);
+include **`report_dataitem`** and **`query_dataitem`** as member-bearing parents (a report dataitem's
+name appears in al-perf profile frames, e.g. `"Customer - OnAfterGetRecord"`). RULE: treat ANY immediate
+parent that is not the object decl and exposes a `name` field as member-bearing; `None` otherwise (true
+object-level triggers `OnRun`/`OnOpenPage`, and wrappers without a `name`). `actionref_declaration` uses
+`promoted_name` not `name` and has no trigger body → `None`.
+
+### RE-4 — Canonicalize the member string for the cross-system 3-way join (MUST) [gemini]
+al-perf joins THREE member strings: the CPU-profile frame (`"Sell-to Customer No. - OnValidate"`, runtime-
+emitted, al-perf cannot change), the E2 inventory `enclosingMember`, and the E3 finding `enclosingMember`.
+The engine's two surfaces agree by construction (same AST string), but they must also match the PROFILE
+frame. Two corpus-invisible breakers:
+- **Escaped quotes:** an AL identifier `"Sell-to ""Custom"" No."` — `strip_quotes` only trims boundary
+  quotes; the engine must EMIT THE LOGICAL NAME (unescape internal `""` → `"`) so it matches the
+  profiler's display form. Specify: `enclosingMember` is the unescaped logical identifier.
+- **Case:** AL is case-insensitive; the profiler may normalize case differently from the source text.
+  CONTRACT: the engine emits the member as-written (unescaped); **al-perf MUST join case-insensitively**
+  (document this in the al-perf P3.2 spec). Do NOT lower-case in the engine (that would diverge the
+  inventory's human-facing field from source); the case-insensitive comparison lives on the join side.
+
+### RE-5 — `originatingObject` is honest metadata but likely UNJOINABLE from the profile; document the limit (MUST) [gemini]
+The multi-extension collision (two `tableextension`s adding `OnValidate` to the same base field) needs the
+declaring object to disambiguate — but the AL CPU-profile frame carries only `"<member> - OnValidate"`
+with NO extension identity, so al-perf has nothing to join `originatingObject` against. Keep
+`originatingObject` (= the StableObjectId of the object decl being assembled — the extension; available at
+`l3_workspace.rs:643`) as honest metadata, but DO NOT claim it resolves the multi-extension collision.
+Document in BOTH specs: the different-fields-same-trigger case is resolved by `enclosingMember` (the
+high-value, common fix); the two-extensions-same-base-field-same-member case remains UNRESOLVABLE from
+the profile and stays honestly `ambiguous` in al-perf. (E1 confirmed NECESSARY — re-parsing the AST at
+format time is a perf anti-pattern; collect the cheap string at L3 assembly.)
+
+### RE-6 — E2 inventory sort: three-key, case-insensitive on member (MUST) [gemini, opus-1]
+`build_inventory_doc` sort becomes: `locale_compare(stableRoutineId)` →
+`case_insensitive_compare(enclosingMember)` → `locale_compare(originatingObject)`. Without the
+case-insensitive secondary key, duplicate-stableRoutineId row order would depend on developer casing
+(nondeterministic across equivalent code). Update `cli_p1_inventory.rs` for the 1.1.0 version + the new
+fields + the deterministic tie-row order.
+
+### RE-7 — Mechanical compile-gates + lowest-blast-radius wiring (MUST) [opus-1, opus-2]
+- **Touch only the `l3_workspace.rs` copy of `collect_routine_nodes`** (4 other private copies exist in
+  L2: `l2/mod.rs:468`, `l2/l2_workspace.rs:441`, `l2/operation_order.rs:860`, `l2/control_context.rs:696`
+  — editing those would ripple into L2 goldens). Capture the parent via `node.parent()` at the existing
+  DFS match point WITHOUT restructuring the stack (preserves push order).
+- **Prefer attaching evidencePath POST-projection** in `run.rs` (~364) where `paired: (FindingSummary,
+  &Finding)` already carries the raw `Finding.evidence_path` — rather than threading the `--with-evidence`
+  flag into `project_finding` and adding a field to `FindingSummary` (which is a struct-literal at ~7
+  sites: `projection.rs:91`, `filter.rs:99`, `baseline.rs:117`, `format_pr_summary.rs:288`,
+  `format_terminal.rs:490`, `inline_suppression.rs:305`/`:346`). If a `FindingSummary` field is
+  unavoidable, it MUST be `Option` defaulting `None` at every literal + `skip_serializing_if`. NOTE: the
+  evidencePath surfaced on `analyze` comes from the internal `Finding.evidence_path` (`finding.rs:96`),
+  NOT the R4-projection `StableFinding` — the spec body's citation of `StableFinding` is corrected here.
+- `AnalyzeArgs`/`AnalyzeCli` gain `with_evidence: bool` → `with_evidence: false` at every test literal
+  (e.g. `cli_a_json_differential.rs:129,478`); the harness leaves it false → default output byte-identical.
+
+### RE-8 — Schema/cache verification (CONFIRMED, no tuple bump) [opus-1]
+The cache version tuple (`cli_c_cache_differential.rs:347-354`: `analyzer, depCache, devFingerprint,
+grammar, resourcePolicy, summarySchema, symbolReader`) does NOT include `INVENTORY_SCHEMA_VERSION` or the
+analyze envelope `schemaVersion`. So: bump `INVENTORY_SCHEMA_VERSION` 1.0.0→1.1.0 (update only
+`cli_p1_inventory.rs`); keep the no-flag analyze `schemaVersion` at `"1.0.0"` (the harness asserts it at
+`cli_a_json_differential.rs:394`); emit `"1.1.0"` ONLY under `--with-evidence`. No cache-tuple change.
+
+### RE-9 — Verify zero golden movement beyond "cargo test green" (SHOULD) [opus-1]
+Add an order/set invariant: assert `workspace.routines` (count + the `(id, source_anchor.start)`
+sequence) is identical pre/post the E1 `collect_routine_nodes` change on a multi-trigger fixture — the
+real risk is an accidental retraversal, which a green differential might not localize.
+
+### RE testing additions
+- Two-field-`OnValidate` fixture: inventory emits distinct `enclosingMember` per row sharing a
+  `stableRoutineId` (E2); `analyze --with-evidence` attaches `evidencePath` + per-FINDING distinct
+  `enclosingMember` (position/wrapper-range derived — RE-1/RE-2); default `analyze` byte-identical to
+  golden (E3).
+- Escaped-quote + mixed-case field-name fixture: `enclosingMember` is the unescaped logical name (RE-4).
+- `report_dataitem` `OnAfterGetRecord` fixture: `enclosingMember` = the dataitem name (RE-3).
+- Multi-extension fixture: distinct `originatingObject` per extension (metadata), with a doc note that
+  it's profile-unjoinable (RE-5).
+- Routine set/order invariant (RE-9); full parity differential green + KNOWN_DIVERGENCES `[]` (E4).
