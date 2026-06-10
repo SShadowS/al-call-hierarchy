@@ -25,6 +25,7 @@ pub mod format_sarif;
 pub mod format_terminal;
 pub mod inline_suppression;
 pub mod model_instance_id;
+pub mod policy;
 pub mod preflight;
 pub mod presets;
 pub mod projection;

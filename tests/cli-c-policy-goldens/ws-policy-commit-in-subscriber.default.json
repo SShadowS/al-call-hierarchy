@@ -1,0 +1,151 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "policy.check",
+  "policySource": "default",
+  "policyVersion": 1,
+  "ruleSummaries": [
+    {
+      "ruleId": "api-no-interactive-ui",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "api-no-user-dynamic-dispatch",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "exposed-root-no-direct-ledger-write",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "exposed-root-no-isolated-storage-write",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "install-codeunit-no-business-data-writes",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "no-commit-in-event-subscribers",
+      "routinesEvaluated": 3,
+      "routinesMatched": 1,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 1
+    },
+    {
+      "ruleId": "no-commit-in-triggers",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "no-http-from-table-triggers",
+      "routinesEvaluated": 3,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    }
+  ],
+  "findings": [
+    {
+      "id": "policy-no-commit-in-event-subscribers/2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+      "rootCauseKey": "policy-no-commit-in-event-subscribers/2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+      "detector": "policy-no-commit-in-event-subscribers",
+      "title": "Event subscribers must not perform Commit",
+      "rootCause": "Policy no-commit-in-event-subscribers matched 1 fact(s) on routine 2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Subscriber.al",
+        "range": {
+          "startLine": 3,
+          "startColumn": 4,
+          "endLine": 6,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+            "syntaxKind": "procedure"
+          },
+          "note": "Event subscribers must not perform Commit"
+        },
+        {
+          "routineId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Subscriber.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c",
+            "syntaxKind": "procedure"
+          },
+          "note": "matched on capability.op=commit, resourceKind=transaction",
+          "operationId": "2165ca1c251d83c1/6d6de6c790dc8fd8e69a94bacef3576c44fb23cab96744fc79ab7028219fa18c/op0"
+        }
+      ],
+      "affectedObjects": [
+        "10000002-0000-0000-0000-000000000000/Codeunit/50001"
+      ],
+      "affectedTables": [],
+      "fixOptions": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "3aab96a1ee8f0411"
+    }
+  ],
+  "diagnostics": []
+}

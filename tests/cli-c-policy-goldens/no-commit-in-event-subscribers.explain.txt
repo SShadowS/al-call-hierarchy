@@ -1,0 +1,29 @@
+Rule: no-commit-in-event-subscribers
+Title: Event subscribers must not perform Commit
+Severity: high
+Coverage gate: partial
+On unknown: fail-closed
+Effective policy: default
+
+Normalized AST:
+{
+  "kind": "all",
+  "children": [
+    {
+      "kind": "field",
+      "field": "root.kinds",
+      "operator": "in",
+      "value": [
+        "event-subscriber"
+      ]
+    },
+    {
+      "kind": "field",
+      "field": "capability.op",
+      "operator": "in",
+      "value": [
+        "commit"
+      ]
+    }
+  ]
+}

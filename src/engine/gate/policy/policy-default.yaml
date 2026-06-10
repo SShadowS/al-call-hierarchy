@@ -1,0 +1,83 @@
+version: 1
+description: "al-sem bundled default policy — high-precision rules for common Business Central correctness/security concerns."
+defaults:
+  onUnknown: fail-open
+  requireCoverage: partial
+rules:
+  - id: no-commit-in-event-subscribers
+    title: "Event subscribers must not perform Commit"
+    severity: high
+    when:
+      root.kinds: event-subscriber
+      capability.op: commit
+    onUnknown: fail-closed
+    facts: any
+
+  - id: no-commit-in-triggers
+    title: "Database triggers must not perform Commit"
+    severity: high
+    when:
+      root.kinds: trigger-table
+      capability.op: commit
+    onUnknown: fail-closed
+    facts: any
+
+  - id: api-no-interactive-ui
+    title: "API/web-service roots must not use interactive UI"
+    severity: high
+    when:
+      root.kinds: [api-page, web-service-exposed]
+      capability.op: [ui-confirm, ui-message]
+    onUnknown: fail-closed
+    facts: any
+
+  - id: api-no-user-dynamic-dispatch
+    title: "API/web-service roots must not perform user-driven dynamic dispatch"
+    severity: high
+    when:
+      root.kinds: [api-page, web-service-exposed]
+      capability.op: execute
+      capability.confidence: [userDynamic, configDynamic]
+    onUnknown: fail-closed
+    facts: any
+
+  - id: no-http-from-table-triggers
+    title: "Database triggers should not perform HTTP calls"
+    severity: medium
+    when:
+      root.kinds: trigger-table
+      capability.resourceKind: http
+    facts: any
+
+  - id: install-codeunit-no-business-data-writes
+    title: "Install codeunits should not write outside setup/migration tables"
+    severity: medium
+    when:
+      root.kinds: install-codeunit
+      capability.op: [insert, modify, delete]
+    except:
+      any:
+        - capability.resource.table.name: "* Setup"
+        - capability.resource.table.name: "* Setup *"
+        - capability.resource.table.name: "* Migration *"
+        - capability.resource.table.name: "* Buffer"
+    facts: any
+
+  - id: exposed-root-no-isolated-storage-write
+    title: "API/web-service roots must not write to IsolatedStorage"
+    severity: high
+    when:
+      root.kinds: [api-page, web-service-exposed]
+      capability.op: [store-write, store-delete]
+    onUnknown: fail-closed
+    facts: any
+
+  - id: exposed-root-no-direct-ledger-write
+    title: "API/web-service roots must not directly write ledger tables"
+    severity: high
+    when:
+      root.kinds: [api-page, web-service-exposed]
+      capability.op: [insert, modify, delete]
+      capability.resource.table.name: "* Ledger Entry"
+    onUnknown: fail-closed
+    facts: any

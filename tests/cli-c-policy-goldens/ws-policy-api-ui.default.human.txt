@@ -1,0 +1,14 @@
+Policy check — default
+
+Rule summaries:
+	api-no-interactive-ui: evaluated=1 matched=1 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=1
+	api-no-user-dynamic-dispatch: evaluated=1 matched=0 passed=1 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	exposed-root-no-direct-ledger-write: evaluated=1 matched=0 passed=1 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	exposed-root-no-isolated-storage-write: evaluated=1 matched=0 passed=1 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	install-codeunit-no-business-data-writes: evaluated=1 matched=0 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	no-commit-in-event-subscribers: evaluated=1 matched=0 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	no-commit-in-triggers: evaluated=1 matched=0 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=0
+	no-http-from-table-triggers: evaluated=1 matched=0 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=0
+
+Findings (1):
+	[high] policy-api-no-interactive-ui — API/web-service roots must not use interactive UI

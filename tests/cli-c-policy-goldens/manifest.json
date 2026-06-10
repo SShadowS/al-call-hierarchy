@@ -1,0 +1,156 @@
+{
+  "description": "Stage cli-c policy goldens — policy check (human/json/sarif) and policy explain produced with deterministic:true. The Rust engine must byte-match the json goldens.",
+  "capturePoint": "runPolicy(model, policyDoc, policySource, {scope:'primary'}) → formatPolicy(result, {format, deterministic:true, alsemVersion}) for each format",
+  "versionPin": "cli-c-v1",
+  "alSemGitSha": "484013d84d98225de5b2aa882f770b98651151de",
+  "defaultPolicyCorpus": [
+    "ws-policy-commit-in-subscriber",
+    "ws-policy-commit-in-trigger",
+    "ws-policy-api-ui",
+    "ws-policy-api-dynamic-dispatch",
+    "ws-policy-trigger-http",
+    "ws-policy-install-business-write",
+    "ws-policy-api-isolated-storage",
+    "ws-policy-api-ledger-write"
+  ],
+  "customPolicyFixture": "ws-policy-custom",
+  "noPolicyFixture": "ws-policy-clean",
+  "explainRules": [
+    "no-commit-in-event-subscribers",
+    "api-no-interactive-ui"
+  ],
+  "defaultResults": [
+    {
+      "fixture": "ws-policy-commit-in-subscriber",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-commit-in-trigger",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-api-ui",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-api-dynamic-dispatch",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-trigger-http",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-install-business-write",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-api-isolated-storage",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    },
+    {
+      "fixture": "ws-policy-api-ledger-write",
+      "findingCount": 1,
+      "hasExpectedRule": true
+    }
+  ],
+  "customSummary": {
+    "findingCount": 8,
+    "matched": 7,
+    "passed": 17,
+    "skippedCoverage": 1,
+    "skippedUnknown": 5,
+    "ruleSummaries": [
+      {
+        "ruleId": "cust-all-rule",
+        "matched": 1,
+        "passed": 0,
+        "skippedCoverage": 0,
+        "skippedUnknown": 0
+      },
+      {
+        "ruleId": "cust-any-rule",
+        "matched": 2,
+        "passed": 1,
+        "skippedCoverage": 0,
+        "skippedUnknown": 4
+      },
+      {
+        "ruleId": "cust-coverage-gate",
+        "matched": 0,
+        "passed": 6,
+        "skippedCoverage": 1,
+        "skippedUnknown": 0
+      },
+      {
+        "ruleId": "cust-field-rule",
+        "matched": 1,
+        "passed": 0,
+        "skippedCoverage": 0,
+        "skippedUnknown": 0
+      },
+      {
+        "ruleId": "cust-not-rule",
+        "matched": 3,
+        "passed": 4,
+        "skippedCoverage": 0,
+        "skippedUnknown": 0
+      },
+      {
+        "ruleId": "cust-unknown-table",
+        "matched": 0,
+        "passed": 6,
+        "skippedCoverage": 0,
+        "skippedUnknown": 1
+      }
+    ]
+  },
+  "triStateDistribution": {
+    "matched": 7,
+    "passed": 17,
+    "skippedCoverage": 1,
+    "skippedUnknown": 5
+  },
+  "totalGoldens": 32,
+  "goldenFiles": [
+    "api-no-interactive-ui.explain.txt",
+    "no-commit-in-event-subscribers.explain.txt",
+    "notfound.explain.exitcode.txt",
+    "notfound.explain.stderr.txt",
+    "ws-policy-api-dynamic-dispatch.default.human.txt",
+    "ws-policy-api-dynamic-dispatch.default.json",
+    "ws-policy-api-dynamic-dispatch.default.sarif",
+    "ws-policy-api-isolated-storage.default.human.txt",
+    "ws-policy-api-isolated-storage.default.json",
+    "ws-policy-api-isolated-storage.default.sarif",
+    "ws-policy-api-ledger-write.default.human.txt",
+    "ws-policy-api-ledger-write.default.json",
+    "ws-policy-api-ledger-write.default.sarif",
+    "ws-policy-api-ui.default.human.txt",
+    "ws-policy-api-ui.default.json",
+    "ws-policy-api-ui.default.sarif",
+    "ws-policy-clean.nopolicy.json",
+    "ws-policy-commit-in-subscriber.default.human.txt",
+    "ws-policy-commit-in-subscriber.default.json",
+    "ws-policy-commit-in-subscriber.default.sarif",
+    "ws-policy-commit-in-trigger.default.human.txt",
+    "ws-policy-commit-in-trigger.default.json",
+    "ws-policy-commit-in-trigger.default.sarif",
+    "ws-policy-custom.custom.human.txt",
+    "ws-policy-custom.custom.json",
+    "ws-policy-custom.custom.sarif",
+    "ws-policy-install-business-write.default.human.txt",
+    "ws-policy-install-business-write.default.json",
+    "ws-policy-install-business-write.default.sarif",
+    "ws-policy-trigger-http.default.human.txt",
+    "ws-policy-trigger-http.default.json",
+    "ws-policy-trigger-http.default.sarif"
+  ]
+}

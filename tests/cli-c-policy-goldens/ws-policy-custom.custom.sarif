@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "al-sem",
+          "version": "cli-c-v1",
+          "rules": [
+            {
+              "id": "policy-cust-all-rule",
+              "name": "cust-all-rule"
+            },
+            {
+              "id": "policy-cust-any-rule",
+              "name": "cust-any-rule"
+            },
+            {
+              "id": "policy-cust-coverage-gate",
+              "name": "cust-coverage-gate"
+            },
+            {
+              "id": "policy-cust-field-rule",
+              "name": "cust-field-rule"
+            },
+            {
+              "id": "policy-cust-not-rule",
+              "name": "cust-not-rule"
+            },
+            {
+              "id": "policy-cust-unknown-table",
+              "name": "cust-unknown-table"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "policy-cust-all-rule",
+          "message": {
+            "text": "Policy cust-all-rule matched 1 fact(s) on routine 12368d259a21538d/a9ffaf7ccd12db8c002c28121ef3178329ca0c9b776b4b6b701fe7205f0ba1d0."
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Subscriber.al"
+                },
+                "region": {
+                  "startLine": 4,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "83e29b84714a594b"
+          }
+        },
+        {
+          "ruleId": "policy-cust-any-rule",
+          "message": {
+            "text": "Policy cust-any-rule matched 2 fact(s) on routine 12368d259a21538d/212614c37504340719fa075588df93fa92db7c3123e96a5b330150588d57eebc."
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 16,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "6b0b6ab45dac454c"
+          }
+        },
+        {
+          "ruleId": "policy-cust-any-rule",
+          "message": {
+            "text": "Policy cust-any-rule matched 1 fact(s) on routine 12368d259a21538d/3a6acca2fcd82c3d18dee387447310e8b3ca6590be75583e799b06be396ce06b."
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 34,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "4c93efe94de59856"
+          }
+        },
+        {
+          "ruleId": "policy-cust-field-rule",
+          "message": {
+            "text": "Policy cust-field-rule matched 1 fact(s) on routine 12368d259a21538d/212614c37504340719fa075588df93fa92db7c3123e96a5b330150588d57eebc."
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 16,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "691f58cefde1edef"
+          }
+        },
+        {
+          "ruleId": "policy-cust-not-rule",
+          "message": {
+            "text": "Policy cust-not-rule matched 1 fact(s) on routine 12368d259a21538d/212614c37504340719fa075588df93fa92db7c3123e96a5b330150588d57eebc."
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 16,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "177d2838c4e74646"
+          }
+        },
+        {
+          "ruleId": "policy-cust-not-rule",
+          "message": {
+            "text": "Policy cust-not-rule matched 1 fact(s) on routine 12368d259a21538d/3a6acca2fcd82c3d18dee387447310e8b3ca6590be75583e799b06be396ce06b."
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 34,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "a3be1218f04dba42"
+          }
+        },
+        {
+          "ruleId": "policy-cust-not-rule",
+          "message": {
+            "text": "Policy cust-not-rule matched 1 fact(s) on routine 12368d259a21538d/be92fb5601f169f246545f91208b4a9c2d4fe2df661c3712fae8bceda5fc17ab."
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 25,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "116efbba49fa2da2"
+          }
+        },
+        {
+          "ruleId": "policy-cust-unknown-table",
+          "message": {
+            "text": "Predicate could not be resolved on any fact; onUnknown=fail-closed."
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Writer.al"
+                },
+                "region": {
+                  "startLine": 25,
+                  "startColumn": 4
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "9dc8ab0ca320ede8"
+          }
+        }
+      ]
+    }
+  ]
+}

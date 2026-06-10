@@ -64,6 +64,74 @@ enum Commands {
     Diff(DiffCli),
     /// Event fan-out and chain reports (cli-c/c1).
     Events(EventsCli),
+    /// Policy check + explain over rootClassifications + capabilities (cli-c/c2).
+    Policy(PolicyCli),
+}
+
+/// `PolicyCli` — top-level `policy` subcommand group.
+#[derive(Parser)]
+struct PolicyCli {
+    #[command(subcommand)]
+    command: PolicyCommands,
+}
+
+#[derive(Subcommand)]
+enum PolicyCommands {
+    /// Check an AL workspace against a policy (bundled default, auto-detected, or --policy).
+    Check(PolicyCheckCli),
+    /// Explain a single policy rule (rule summary + normalized AST).
+    Explain(PolicyExplainCli),
+}
+
+/// `PolicyCheckCli` — arguments for `alsem policy check <ws>`.
+#[derive(Parser)]
+struct PolicyCheckCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Path to an explicit policy YAML file (overrides auto-detect / default).
+    #[arg(long = "policy")]
+    policy: Option<String>,
+
+    /// Disable policy entirely (policySource "disabled", 0 rules).
+    #[arg(long = "no-policy", default_value_t = false)]
+    no_policy: bool,
+
+    /// Output format: human | json | sarif. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// Exit 1 if any analyzer error-severity diagnostic.
+    #[arg(long, default_value_t = false)]
+    strict: bool,
+}
+
+/// `PolicyExplainCli` — arguments for `alsem policy explain <rule>`.
+#[derive(Parser)]
+struct PolicyExplainCli {
+    /// The rule id to explain.
+    rule: String,
+
+    /// Path to the AL workspace root (for auto-detecting al-sem.policy.yaml). Defaults to ".".
+    #[arg(long = "workspace", default_value = ".")]
+    workspace: String,
+
+    /// Path to an explicit policy YAML file (overrides auto-detect / default).
+    #[arg(long = "policy")]
+    policy: Option<String>,
+
+    /// Output format: IGNORED (explain is always human + the AST block). Accepted
+    /// for CLI compatibility with `policy check`.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
 }
 
 /// `EventsCli` — top-level `events` subcommand group.
@@ -403,7 +471,106 @@ fn main() -> ExitCode {
             EventsCommands::Fanout(f) => run_events_fanout_cmd(f),
             EventsCommands::Chains(c) => run_events_chains_cmd(c),
         },
+        Commands::Policy(p) => match p.command {
+            PolicyCommands::Check(c) => run_policy_check_cmd(c),
+            PolicyCommands::Explain(e) => run_policy_explain_cmd(e),
+        },
     }
+}
+
+// ── policy check command ─────────────────────────────────────────────────────
+
+fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
+    use al_call_hierarchy::engine::gate::policy::pipeline::{run_policy_check, PolicyCheckOptions};
+
+    // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
+    const VALID_FORMATS: &[&str] = &["human", "json", "sarif"];
+    if !VALID_FORMATS.contains(&c.format.as_str()) {
+        eprintln!("al-sem policy check: invalid --format '{}'", c.format);
+        return ExitCode::from(1);
+    }
+
+    let workspace = std::path::Path::new(&c.workspace);
+    let opts = PolicyCheckOptions {
+        workspace,
+        policy_path: c.policy.as_deref(),
+        no_policy: c.no_policy,
+        format: &c.format,
+        out: c.out.as_deref(),
+        deterministic: c.deterministic,
+        strict: c.strict,
+        alsem_version: DEFAULT_ALSEM_VERSION,
+    };
+
+    let outcome = run_policy_check(&opts);
+
+    // A non-zero exit with no text → stderr-only error (load error / strict gate /
+    // modelInstanceId failure). Print stderr lines, no stdout.
+    if outcome.text.is_none() {
+        for line in &outcome.stderr_lines {
+            eprintln!("{line}");
+        }
+        return ExitCode::from(outcome.exit_code);
+    }
+
+    if let Some(text) = &outcome.text {
+        let write_result = if let Some(ref out_path) = outcome.out_path {
+            std::fs::write(out_path, text).map_err(|e| format!("{e}"))
+        } else {
+            use std::io::Write;
+            std::io::stdout()
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("{e}"))
+        };
+        if let Err(e) = write_result {
+            eprintln!("failed to write: {e}");
+            return ExitCode::from(1);
+        }
+    }
+
+    // Analyzer diagnostics go to stderr AFTER the output (al-sem's
+    // `for (const d of diagnostics) process.stderr.write(...)` at the tail).
+    for line in &outcome.stderr_lines {
+        eprintln!("{line}");
+    }
+
+    ExitCode::from(outcome.exit_code)
+}
+
+// ── policy explain command ───────────────────────────────────────────────────
+
+fn run_policy_explain_cmd(e: PolicyExplainCli) -> ExitCode {
+    use al_call_hierarchy::engine::gate::policy::pipeline::{
+        run_policy_explain, PolicyExplainOptions,
+    };
+
+    // al-sem validates --format against {human, json} but IGNORES it (always human).
+    const VALID_FORMATS: &[&str] = &["human", "json"];
+    if !VALID_FORMATS.contains(&e.format.as_str()) {
+        eprintln!("al-sem policy explain: invalid --format '{}'", e.format);
+        return ExitCode::from(1);
+    }
+
+    let workspace = std::path::Path::new(&e.workspace);
+    let opts = PolicyExplainOptions {
+        workspace,
+        rule_id: &e.rule,
+        policy_path: e.policy.as_deref(),
+    };
+
+    let outcome = run_policy_explain(&opts);
+
+    if let Some(stdout) = &outcome.stdout {
+        use std::io::Write;
+        if std::io::stdout().write_all(stdout.as_bytes()).is_err() {
+            eprintln!("failed to write");
+            return ExitCode::from(1);
+        }
+    }
+    for line in &outcome.stderr_lines {
+        eprintln!("{line}");
+    }
+    ExitCode::from(outcome.exit_code)
 }
 
 // ── diff command ────────────────────────────────────────────────────────────

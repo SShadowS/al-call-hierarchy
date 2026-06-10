@@ -1,0 +1,10 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "policy.check",
+  "policySource": "disabled",
+  "policyVersion": 0,
+  "ruleSummaries": [],
+  "findings": [],
+  "diagnostics": []
+}

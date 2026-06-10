@@ -1,0 +1,151 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "policy.check",
+  "policySource": "default",
+  "policyVersion": 1,
+  "ruleSummaries": [
+    {
+      "ruleId": "api-no-interactive-ui",
+      "routinesEvaluated": 1,
+      "routinesMatched": 1,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 1
+    },
+    {
+      "ruleId": "api-no-user-dynamic-dispatch",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 1,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "exposed-root-no-direct-ledger-write",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 1,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "exposed-root-no-isolated-storage-write",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 1,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "install-codeunit-no-business-data-writes",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "no-commit-in-event-subscribers",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "no-commit-in-triggers",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    },
+    {
+      "ruleId": "no-http-from-table-triggers",
+      "routinesEvaluated": 1,
+      "routinesMatched": 0,
+      "routinesSkippedCoverage": 0,
+      "routinesSkippedUnknown": 0,
+      "routinesPassed": 0,
+      "findingsEmitted": 0
+    }
+  ],
+  "findings": [
+    {
+      "id": "policy-api-no-interactive-ui/6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+      "rootCauseKey": "policy-api-no-interactive-ui/6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+      "detector": "policy-api-no-interactive-ui",
+      "title": "API/web-service roots must not use interactive UI",
+      "rootCause": "Policy api-no-interactive-ui matched 1 fact(s) on routine 6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Page.al",
+        "range": {
+          "startLine": 29,
+          "startColumn": 16,
+          "endLine": 32,
+          "endColumn": 20
+        },
+        "enclosingRoutineId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+        "syntaxKind": "trigger_declaration"
+      },
+      "evidencePath": [
+        {
+          "routineId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Page.al",
+            "range": {
+              "startLine": 29,
+              "startColumn": 16,
+              "endLine": 32,
+              "endColumn": 20
+            },
+            "enclosingRoutineId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+            "syntaxKind": "trigger_declaration"
+          },
+          "note": "API/web-service roots must not use interactive UI"
+        },
+        {
+          "routineId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Page.al",
+            "range": {
+              "startLine": 29,
+              "startColumn": 16,
+              "endLine": 32,
+              "endColumn": 20
+            },
+            "enclosingRoutineId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295",
+            "syntaxKind": "trigger_declaration"
+          },
+          "note": "matched on capability.op=ui-confirm, resourceKind=ui",
+          "callsiteId": "6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "10000004-0000-0000-0000-000000000000/Page/50101"
+      ],
+      "affectedTables": [],
+      "fixOptions": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "66847ef626a772f9"
+    }
+  ],
+  "diagnostics": []
+}

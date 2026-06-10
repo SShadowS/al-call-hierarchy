@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "al-sem",
+          "version": "cli-c-v1",
+          "rules": [
+            {
+              "id": "policy-api-no-interactive-ui",
+              "name": "api-no-interactive-ui"
+            },
+            {
+              "id": "policy-api-no-user-dynamic-dispatch",
+              "name": "api-no-user-dynamic-dispatch"
+            },
+            {
+              "id": "policy-exposed-root-no-direct-ledger-write",
+              "name": "exposed-root-no-direct-ledger-write"
+            },
+            {
+              "id": "policy-exposed-root-no-isolated-storage-write",
+              "name": "exposed-root-no-isolated-storage-write"
+            },
+            {
+              "id": "policy-install-codeunit-no-business-data-writes",
+              "name": "install-codeunit-no-business-data-writes"
+            },
+            {
+              "id": "policy-no-commit-in-event-subscribers",
+              "name": "no-commit-in-event-subscribers"
+            },
+            {
+              "id": "policy-no-commit-in-triggers",
+              "name": "no-commit-in-triggers"
+            },
+            {
+              "id": "policy-no-http-from-table-triggers",
+              "name": "no-http-from-table-triggers"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "policy-api-no-interactive-ui",
+          "message": {
+            "text": "Policy api-no-interactive-ui matched 1 fact(s) on routine 6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295."
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ws:src/Page.al"
+                },
+                "region": {
+                  "startLine": 29,
+                  "startColumn": 16
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "al-sem/v1": "66847ef626a772f9"
+          }
+        }
+      ]
+    }
+  ]
+}
