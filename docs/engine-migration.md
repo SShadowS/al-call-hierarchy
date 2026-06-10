@@ -1718,3 +1718,46 @@ byte-matches with `KNOWN_DIVERGENCES` empty.
 
 **NEXT:** the capability cone (R3a-3), the coverage roll-up (R3a-3), the dep hooks (R3a-4),
 full cross-app (R3a-5), Salsa incrementality, R4 (L5 detectors), and the product surface.
+
+---
+
+## FROZEN: trigger enclosing-member + opt-in evidence projection (for al-perf P3.2)
+
+Spec `docs/superpowers/specs/2026-06-10-engine-trigger-member-and-evidence-design.md` (Revision 2 +
+RE-10 empirical + RE-11), plan `…/plans/2026-06-10-engine-trigger-member-and-evidence.md`. Commits
+`0a2ff5c` (E1) · `588fb6a` (E2) · `222ca33`+`e22b9eb` (E3). Freeze proof: parity differentials
+(`cli_a_json` 7, `cli_b_fingerprint` 15, `cli_c_cache` 14) byte-identical + new suites
+(`cli_p1_enclosing_member` 6, `cli_p1_inventory` 5, `cli_a_with_evidence` 4) green; KNOWN_DIVERGENCES `[]`.
+
+**What al-perf P3.2 may now consume (the frozen schema):**
+- **`L3Routine`** (internal) carries `enclosing_member`/`originating_object`/`enclosing_member_range`
+  for member-trigger routines (field/control/action/`report_dataitem`/`query_dataitem`); `None` for
+  procedures + object-level triggers. Member = the UNQUOTED, unescaped (`""`→`"`) logical name via
+  `child_by_field_name("name")`. Additive — NOT serde-serialized, so zero golden impact.
+- **`fingerprint --inventory-only`** (Rust-only projection): schema **1.1.0**; each `routineInventory[]`
+  entry gains optional `enclosingMember`/`originatingObject` (emitted only when present), after
+  `routineName`, before `stableRoutineId`. Rows are sorted stableRoutineId → case-insensitive
+  enclosingMember → originatingObject (duplicate-stableRoutineId field-trigger rows are content-stable).
+- **`analyze --with-evidence`** (NEW opt-in flag; default `analyze` output is byte-identical to today):
+  envelope `schemaVersion` `"1.1.0"` (vs `"1.0.0"` default); each finding gains `evidencePath`
+  (`StableEvidenceStep[]`, routineId in `:`-form) + a POSITION-derived `enclosingMember`/
+  `originatingObject` on its projected `primaryLocation` (matched by smallest member-wrapper range
+  containing the projected anchor — NOT the collapsed `enclosingRoutineId`).
+
+**Empirical join contract (RE-10, validated against real `.alcpuprofile` data):**
+- Field-trigger CPU-profile frames are `"<member> - <Trigger>"` with member = the unquoted display name
+  → byte-matches `enclosingMember`. al-perf MUST join CASE-INSENSITIVELY (AL is case-insensitive).
+- `originatingObject` IS joinable: extension-declared trigger frames carry the extension object
+  (`scriptId`) + the extension's `declaringApplication.appId` → the multi-extension collision is
+  resolvable.
+- **Action caveat:** action frames carry the CAPTION (with `&` accelerator, e.g. `"Re&lease - OnAction"`),
+  not the action name → al-perf must strip `&` for action joins; action-trigger attribution is
+  best-effort (field triggers — the dominant case — join cleanly).
+
+**Known limitation (RE-11, PRE-EXISTING, not a regression):** two fields sharing the same trigger
+name+kind+signature collapse to one internal routine id, and the detector dedup (e.g. `d1` first-wins
+by collapsed finding id) emits ONE finding per collapsed-id group. The freeze IMPROVES this — the
+surviving finding goes from member-AMBIGUOUS to precisely position-attributed — but does NOT separately
+emit the sibling field's same-pattern finding. al-perf P3.2 should expect precise attribution of the
+surviving finding, not one finding per colliding sibling. Strictly better than pre-freeze; nothing
+regresses.
