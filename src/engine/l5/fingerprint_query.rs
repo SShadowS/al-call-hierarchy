@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use crate::engine::gate::format_json::serialize_document_value;
 use crate::engine::ids::sha256_hex;
 use crate::engine::l5::digest::{
-    build_fingerprint_indexes_pub, reconstruct_witness_paths_pub, FingerprintIndexesPub, HopAnchor,
+    build_fingerprint_indexes_pub, reconstruct_witness_paths_pub, FingerprintIndexesPub, HumanHop,
     ProjectedPath, QueryWitnessHop, TerminalHopInfo,
 };
 use crate::engine::l5::snapshot::{CapabilitySnapshot, SnapCapabilityExtra, SnapValueSource};
@@ -139,6 +139,9 @@ mod types {
         pub confidence: String,
         pub provenance: String,
         pub via: String,
+        /// Witness callsite id — the stable sort key for unresolved dispatch
+        /// instances (fingerprint-query.ts:468). NOT serialized in JSON.
+        pub witness_callsite_id: Option<String>,
     }
 
     #[derive(Debug, Clone)]
@@ -179,7 +182,10 @@ mod types {
         SelectorAmbiguous {
             selector: String,
             matched_form: String,
-            candidates: Vec<String>,
+            /// `(stableId, display)` pairs (≤ MAX_AMBIGUOUS_CANDIDATES). The human
+            /// renderer prints `  - <display>  (<stableId>)` per candidate
+            /// (fingerprint.ts:311-313).
+            candidates: Vec<(String, String)>,
         },
     }
 
@@ -392,7 +398,6 @@ fn table_op_to_right(op: &str) -> Option<&'static str> {
 fn build_block(
     rid: &str,
     root: &crate::engine::l5::snapshot::SnapshotRootClassificationSlot,
-    snap: &CapabilitySnapshot,
     idx: &FingerprintIndexesPub,
     filters: &FingerprintFilters,
 ) -> FingerprintBlock {
@@ -569,6 +574,7 @@ fn build_block(
             confidence: f.confidence.clone(),
             provenance: f.provenance.clone(),
             via: f.via.clone(),
+            witness_callsite_id: f.witness_callsite_id.clone(),
         };
         if target_id.is_some() {
             dispatch_resolved.push(inst);
@@ -582,7 +588,13 @@ fn build_block(
             .unwrap_or("")
             .cmp(b.target_id.as_deref().unwrap_or(""))
     });
-    // unresolved: sort by witnessCallsiteId (not directly available here; stable sort ok).
+    // unresolved: stable-sort by witnessCallsiteId ("" when absent) — fingerprint-query.ts:468.
+    dispatch_unresolved.sort_by(|a, b| {
+        a.witness_callsite_id
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.witness_callsite_id.as_deref().unwrap_or(""))
+    });
 
     // Required permissions.
     let mut perm_map: Vec<(String, PermissionLine)> = Vec::new();
@@ -761,14 +773,16 @@ pub fn fingerprint_query(
             });
             any_selector_failed = true;
         } else if matches.len() >= 2 {
+            // candidates: (stableId, display) — display falls back to "" (TS:
+            // `routineDisplayById.get(id) ?? ""`), NOT to the id.
             let candidates = matches
                 .iter()
                 .take(MAX_AMBIGUOUS_CANDIDATES)
                 .map(|id| {
-                    routine_display_by_id
-                        .get(id)
-                        .cloned()
-                        .unwrap_or_else(|| id.clone())
+                    (
+                        id.clone(),
+                        routine_display_by_id.get(id).cloned().unwrap_or_default(),
+                    )
                 })
                 .collect();
             diagnostics.push(FingerprintQueryDiagnostic::SelectorAmbiguous {
@@ -818,7 +832,7 @@ pub fn fingerprint_query(
     // Build blocks.
     let mut blocks: Vec<FingerprintBlock> = Vec::new();
     for root in root_pool {
-        let block = build_block(&root.routine_id, root, snap, &idx, filters);
+        let block = build_block(&root.routine_id, root, &idx, filters);
         blocks.push(block);
     }
 
@@ -861,10 +875,14 @@ pub fn fact_id_of(f: &SnapFact) -> String {
 pub const FINGERPRINT_QUERY_CONTRACT_VERSION: &str = "1.2.0";
 
 /// Build a `normalizeAnchorPath`-normalized file path: forward slashes,
-/// keep `ws:` prefix intact (it is NOT stripped — the golden keeps it).
-/// Mirroring al-sem `normalizeAnchorPath` (which only strips the absolute
-/// workspace root, never the `ws:` URI scheme prefix).
-fn normalize_anchor_path(source_file: &str, _workspace_root: &str) -> String {
+/// keep the `ws:` prefix intact (it is NOT stripped — the golden keeps it).
+///
+/// al-sem `normalizeAnchorPath(file, workspaceRoot)` strips ONLY a leading
+/// absolute `workspaceRoot` prefix. In the fingerprint snapshot every source
+/// path is already in `ws:`-relative form (never the absolute root), so the
+/// `workspaceRoot` argument never matches and the function reduces to the
+/// slash-normalization below — hence no `workspace_root` parameter here.
+fn normalize_anchor_path(source_file: &str) -> String {
     source_file.replace('\\', "/")
 }
 
@@ -878,7 +896,7 @@ fn project_witness_json(
     // Terminal evidence (anchor keys: column, excerpt, file, line, sourceKind — alphabetical).
     let evidence = if let Some(op_id) = &fact.witness_operation_id {
         if let Some(ev) = operation_index.get(op_id.as_str()) {
-            let file = normalize_anchor_path(&ev.source_file, workspace_root);
+            let file = normalize_anchor_path(&ev.source_file);
             // Sorted: column, excerpt, file, line, sourceKind
             let mut anchor = serde_json::Map::new();
             anchor.insert("column".into(), ev.start_column.into());
@@ -976,7 +994,7 @@ fn query_hop_to_json(hop: &QueryWitnessHop, workspace_root: &str) -> serde_json:
         m.insert("candidateCount".into(), (cc as u64).into());
     }
     if let Some(a) = &hop.anchor {
-        let file = normalize_anchor_path(&a.file, workspace_root);
+        let file = normalize_anchor_path(&a.file);
         let mut anch = serde_json::Map::new();
         anch.insert("sourceKind".into(), "source".into());
         anch.insert("file".into(), file.into());
@@ -991,107 +1009,12 @@ fn query_hop_to_json(hop: &QueryWitnessHop, workspace_root: &str) -> serde_json:
     serde_json::Value::Object(m)
 }
 
-fn build_fingerprint_query_envelope(
-    payload: &serde_json::Value,
-    deterministic: bool,
-    analyzer_diagnostics: &[(String, String, String)],
-) -> String {
-    let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(deterministic);
-
-    let diags: Vec<serde_json::Value> = analyzer_diagnostics
-        .iter()
-        .map(|(code, severity, message)| {
-            serde_json::json!({
-                "code": code,
-                "severity": severity,
-                "message": message,
-            })
-        })
-        .collect();
-
-    let envelope = serde_json::json!({
-        "kind": "fingerprint-query",
-        "schemaVersion": FINGERPRINT_QUERY_CONTRACT_VERSION,
-        "alsemVersion": "", // filled in by caller
-        "deterministic": deterministic,
-        "generatedAt": generated_at,
-        "diagnostics": diags,
-        "payload": payload,
-    });
-
-    // Sort keys + drop nulls + 2-space indent + trailing newline.
-    serialize_fingerprint_envelope(envelope)
-}
-
 /// Serialize the fingerprint-query envelope: sorted keys, null-drop,
 /// 2-space indent, trailing newline. Mirrors `serializeDocument` (contracts/document.ts).
 fn serialize_fingerprint_envelope(v: serde_json::Value) -> String {
     // Use the existing sorted-JSON serializer that the digest pipeline uses.
     // `serialize_document_value` always appends '\n'.
     serialize_document_value(v)
-}
-
-// ---------------------------------------------------------------------------
-// Full pipeline entry point
-// ---------------------------------------------------------------------------
-
-pub struct FingerprintPipelineInput<'a> {
-    pub workspace_root: &'a std::path::Path,
-    pub alsem_version: &'a str,
-    pub deterministic: bool,
-    pub filters: FingerprintFilters,
-    /// Analyzer diagnostics (code, severity, message) already computed by the caller.
-    pub analyzer_diagnostics: Vec<(String, String, String)>,
-    /// The workspace fingerprint from `compose_full_snapshot` (extracted by the caller).
-    pub workspace_fingerprint: String,
-}
-
-pub struct FingerprintPipelineResult {
-    pub json_text: String,
-    pub human_text: String,
-    /// Exit code: 0 = ok, 2 = selector errors.
-    pub exit_code: u8,
-    /// Whether any selector failed (mirrors selectorErrors.length > 0).
-    pub has_selector_errors: bool,
-}
-
-/// Run the full fingerprint query pipeline and return both JSON and human text.
-pub fn run_fingerprint_query(
-    snap: &CapabilitySnapshot,
-    input: &FingerprintPipelineInput,
-) -> FingerprintPipelineResult {
-    let result = fingerprint_query(snap, &input.filters);
-
-    let has_selector_errors = result.diagnostics.iter().any(|d| {
-        matches!(
-            d,
-            FingerprintQueryDiagnostic::SelectorUnresolved { .. }
-                | FingerprintQueryDiagnostic::SelectorAmbiguous { .. }
-        )
-    });
-
-    let exit_code = if has_selector_errors { 2 } else { 0 };
-
-    // Build JSON (we need workspace fingerprint injected).
-    let json_text = project_fingerprint_query_full(
-        &result,
-        snap,
-        input.workspace_root.to_string_lossy().as_ref(),
-        &input.filters,
-        input.deterministic,
-        &input.analyzer_diagnostics,
-        input.alsem_version,
-        &input.workspace_fingerprint,
-    );
-
-    let human_text = format_fingerprint_human(&result, input.deterministic);
-
-    FingerprintPipelineResult {
-        json_text,
-        human_text,
-        exit_code,
-        has_selector_errors,
-    }
 }
 
 /// Full `projectFingerprintQuery` with all parameters injected.
@@ -1544,73 +1467,74 @@ fn hop_arrow(depth: usize) -> &'static str {
     }
 }
 
-fn format_hop(hop: &QueryWitnessHop) -> String {
-    match hop.kind {
-        "call" => format!(
-            "{} (via {}{})",
-            hop.to_display.as_deref().unwrap_or("?"),
-            hop.callee_display.as_deref().unwrap_or("?"),
-            anchor_suffix(&hop.anchor)
+/// `formatHop` (format-fingerprint.ts:270). Renders a raw-derived `HumanHop`.
+/// The `routineDisplay` and the SHORT `eventDisplay` are read off the raw hop;
+/// the anchor uses the raw `sourceFile` verbatim (with the `ws:` prefix).
+pub fn format_hop(hop: &HumanHop) -> String {
+    match hop {
+        HumanHop::Call {
+            routine_display,
+            callee_display,
+            source_file,
+            line,
+            column,
+        } => format!(
+            "{routine_display} (via {callee_display}{})",
+            raw_anchor_suffix(source_file, *line, *column)
         ),
-        "object-run" => format!(
-            "{} (via Codeunit.Run {}{})",
-            hop.to_display.as_deref().unwrap_or("?"),
-            hop.callee_display.as_deref().unwrap_or("<unresolved>"),
-            anchor_suffix(&hop.anchor)
+        HumanHop::ObjectRun {
+            routine_display,
+            target_display,
+            source_file,
+            line,
+            column,
+        } => format!(
+            "{routine_display} (via Codeunit.Run {}{})",
+            target_display.as_deref().unwrap_or("<unresolved>"),
+            raw_anchor_suffix(source_file, *line, *column)
         ),
-        "event-dispatch" => format!("event {}", hop.event_id.as_deref().unwrap_or("?")),
-        "implicit-trigger" => {
-            // No triggerKind in QueryWitnessHop directly; use fromDisplay as fallback.
-            format!("trigger on {}", hop.from_display)
-        }
-        "dependency-export" => format!(
-            "{} (into dependency app {}{}{})",
-            hop.to_display.as_deref().unwrap_or("?"),
-            hop.target_app_guid.as_deref().unwrap_or("?"),
-            hop.callee_display
-                .as_ref()
-                .map(|c| format!(", via {c}"))
-                .unwrap_or_default(),
-            anchor_suffix(&hop.anchor)
+        HumanHop::EventDispatch { event_display } => format!("event {event_display}"),
+        HumanHop::VariableTypedCall {
+            routine_display,
+            receiver_type,
+            callee_display,
+            source_file,
+            line,
+            column,
+        } => format!(
+            "{routine_display} (via {receiver_type}.{}{})",
+            callee_display.as_deref().unwrap_or("?"),
+            raw_anchor_suffix(source_file, *line, *column)
         ),
-        "variable-typed-call" => format!(
-            "{} (via {}.{}{})",
-            hop.to_display.as_deref().unwrap_or("?"),
-            hop.receiver_type.as_deref().unwrap_or("?"),
-            hop.callee_display.as_deref().unwrap_or("?"),
-            anchor_suffix(&hop.anchor)
+        HumanHop::InterfaceDispatch {
+            routine_display,
+            interface_name,
+            candidate_count,
+            source_file,
+            line,
+            column,
+        } => format!(
+            "{routine_display} (via interface {interface_name}, {candidate_count} candidate{}{})",
+            if *candidate_count == 1 { "" } else { "s" },
+            raw_anchor_suffix(source_file, *line, *column)
         ),
-        "interface-dispatch" => format!(
-            "{} (via interface {}, {} candidate{}{})",
-            hop.to_display.as_deref().unwrap_or("?"),
-            hop.interface_name.as_deref().unwrap_or("?"),
-            hop.candidate_count.unwrap_or(0),
-            if hop.candidate_count.unwrap_or(0) == 1 {
-                ""
-            } else {
-                "s"
-            },
-            anchor_suffix(&hop.anchor)
-        ),
-        _ => hop
-            .to_display
-            .clone()
-            .unwrap_or_else(|| hop.kind.to_string()),
     }
 }
 
-fn anchor_suffix(anchor: &Option<HopAnchor>) -> String {
-    match anchor {
-        Some(a) => {
-            let line = a.line.unwrap_or(0);
-            let col = a.column.unwrap_or(0);
-            format!(" at {}:{line}:{col}", a.file)
-        }
+/// ` at <file>:<line>:<col>` suffix from a raw hop's source location.
+/// Mirrors TS `${sourceFile ? ` at ${sourceFile}:${line ?? 0}:${column ?? 0}` : ""}`.
+fn raw_anchor_suffix(
+    source_file: &Option<String>,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> String {
+    match source_file {
+        Some(sf) => format!(" at {sf}:{}:{}", line.unwrap_or(0), column.unwrap_or(0)),
         None => String::new(),
     }
 }
 
-fn format_terminal_hop(t: &TerminalHopInfo) -> String {
+pub fn format_terminal_hop(t: &TerminalHopInfo) -> String {
     // Mirrors formatHop case "terminal" in format-fingerprint.ts.
     let loc = if let Some(ref sf) = t.source_file {
         let line = t.line.unwrap_or(0);
@@ -1658,13 +1582,15 @@ fn render_witnesses(block: &FingerprintBlock, lines: &mut Vec<String>) {
         ));
         for (i, path) in w.paths.iter().enumerate() {
             lines.push(format!("      Path {}/{total} shown:", i + 1));
-            for (h, hop) in path.query_hops.iter().enumerate() {
+            // Render from the RAW-derived human hops (format-fingerprint.ts:247),
+            // NOT the projected query_hops — those drop short eventDisplay etc.
+            for (h, hop) in path.human_hops.iter().enumerate() {
                 let indent = "        ".to_string() + &"  ".repeat(h);
                 lines.push(format!("{indent}{}{}", hop_arrow(h), format_hop(hop)));
             }
             // Render the terminal hop (the evidence step) after all routing hops.
             if let Some(ref term) = path.terminal_hop {
-                let depth = path.query_hops.len();
+                let depth = path.human_hops.len();
                 let indent = "        ".to_string() + &"  ".repeat(depth);
                 lines.push(format!(
                     "{indent}{}{}",
@@ -1705,11 +1631,13 @@ fn render_block(block: &FingerprintBlock, verbosity: &str, lines: &mut Vec<Strin
         block.kinds.join(", ")
     ));
 
-    // Coverage.
+    // Coverage. Reasons are sorted alphabetically (format-fingerprint.ts:88).
     let reasons = if block.coverage.reasons.is_empty() {
         String::new()
     } else {
-        format!(" — {}", block.coverage.reasons.join(", "))
+        let mut sorted = block.coverage.reasons.clone();
+        sorted.sort();
+        format!(" — {}", sorted.join(", "))
     };
     lines.push(format!(
         "  {}{}{}",
@@ -1764,11 +1692,8 @@ fn render_block(block: &FingerprintBlock, verbosity: &str, lines: &mut Vec<Strin
 }
 
 /// Render the fingerprint query result as human-readable text.
-/// Mirrors `formatFingerprint` in `src/cli/format-fingerprint.ts`.
-pub fn format_fingerprint_human(result: &FingerprintQueryResult, _deterministic: bool) -> String {
-    format_fingerprint_human_verbosity(result, "compact")
-}
-
+/// Mirrors `formatFingerprint` in `src/cli/format-fingerprint.ts`. `verbosity`
+/// is `"compact"` (default) or `"full"`.
 pub fn format_fingerprint_human_verbosity(
     result: &FingerprintQueryResult,
     verbosity: &str,

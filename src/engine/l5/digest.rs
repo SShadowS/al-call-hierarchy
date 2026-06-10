@@ -442,9 +442,15 @@ struct WitnessPath {
     hops: Vec<WitnessHop>,
 }
 
-struct WitnessOutcome {
+/// Outcome of `reconstruct_witness_paths`: raw (un-projected) paths plus the
+/// `truncated`/`incomplete` flags and the `(kind, detail)` diagnostic pairs.
+struct WitnessOutcomeExt {
     paths: Vec<WitnessPath>,
     truncated: bool,
+    incomplete: bool,
+    /// Internal diagnostics (kind, optional detail). Forwarded by
+    /// `reconstruct_witness_paths_pub` as `WitnessDiagnosticPub`.
+    diagnostics: Vec<(String, Option<String>)>,
 }
 
 /// `buildDirectTerminal` (witness.ts).
@@ -685,34 +691,55 @@ fn dispatch_object_type(f: &Fact) -> Option<&str> {
 }
 
 /// `reconstructWitnessPaths(req)` with `limit:"all"` (→ HARD_PATH_CAP).
+/// `reconstructWitnessPaths` (witness.ts) — the SINGLE witness-BFS implementation.
+///
+/// `cap` is the effective path cap (`witnessLimit`): default callers pass
+/// `HARD_PATH_CAP`; the fingerprint query passes the user's `--witness` value.
+/// Always tracks `truncated`, `incomplete`, and emits all 9 TS diagnostic kinds
+/// (8 explicit + the `terminal-not-found` default-fallthrough) so the JSON
+/// projection and the digest path agree on witness shape. The `(kind, detail)`
+/// pairs mirror `projectFingerprintQuery`'s diag mapping (contracts/fingerprint-query.ts).
 fn reconstruct_witness_paths(
     root_id: &str,
     fact: &Fact,
     idx: &FingerprintIndexes,
-) -> WitnessOutcome {
-    let cap = HARD_PATH_CAP;
+    cap: usize,
+) -> WitnessOutcomeExt {
+    let mut diagnostics: Vec<(String, Option<String>)> = Vec::new();
 
     if fact.provenance == "direct" {
         // Case A: witnessOperationId → terminal "operation".
         if let Some(wo) = &fact.witness_operation_id {
             let ev = idx.operation_by_id.get(wo.as_str()).copied();
             let hop = build_direct_terminal(TerminalKind::Operation, wo, ev, None);
-            return WitnessOutcome {
+            let incomplete = ev.is_none();
+            if ev.is_none() {
+                diagnostics.push(("missing-operation-evidence".to_string(), Some(wo.clone())));
+            }
+            return WitnessOutcomeExt {
                 paths: vec![WitnessPath { hops: vec![hop] }],
                 truncated: false,
+                incomplete,
+                diagnostics,
             };
         }
         // Case B: only witnessCallsiteId → terminal "callsite".
         if let Some(wc) = &fact.witness_callsite_id {
             let ev = idx.callsite_by_id.get(wc.as_str()).copied();
             let hop = build_direct_terminal(TerminalKind::Callsite, wc, None, ev);
-            return WitnessOutcome {
+            let incomplete = ev.is_none();
+            if ev.is_none() {
+                diagnostics.push(("missing-callsite-evidence".to_string(), Some(wc.clone())));
+            }
+            return WitnessOutcomeExt {
                 paths: vec![WitnessPath { hops: vec![hop] }],
                 truncated: false,
+                incomplete,
+                diagnostics,
             };
         }
-        // Direct with no witness anchor → synthetic.
-        return WitnessOutcome {
+        // Direct with no witness anchor → synthetic + missing-witness-anchor (detail=subject).
+        return WitnessOutcomeExt {
             paths: vec![WitnessPath {
                 hops: vec![WitnessHop::Terminal {
                     evidence_kind: TerminalKind::Synthetic,
@@ -725,6 +752,11 @@ fn reconstruct_witness_paths(
                 }],
             }],
             truncated: false,
+            incomplete: true,
+            diagnostics: vec![(
+                "missing-witness-anchor".to_string(),
+                Some(fact.subject.clone()),
+            )],
         };
     }
 
@@ -732,10 +764,12 @@ fn reconstruct_witness_paths(
     let mut paths: Vec<WitnessPath> = Vec::new();
 
     let Some(witness_cs) = &fact.witness_callsite_id else {
-        // first-hop-not-found (no witnessCallsiteId).
-        return WitnessOutcome {
+        // first-hop-not-found (no witnessCallsiteId) → detail = via (callsiteId absent).
+        return WitnessOutcomeExt {
             paths: Vec::new(),
             truncated: false,
+            incomplete: true,
+            diagnostics: vec![("first-hop-not-found".to_string(), Some(fact.via.clone()))],
         };
     };
 
@@ -747,10 +781,12 @@ fn reconstruct_witness_paths(
         .copied()
         .collect();
     if first_edges.is_empty() {
-        // first-hop-not-found.
-        return WitnessOutcome {
+        // first-hop-not-found → detail = callsiteId (present here).
+        return WitnessOutcomeExt {
             paths: Vec::new(),
             truncated: false,
+            incomplete: true,
+            diagnostics: vec![("first-hop-not-found".to_string(), Some(witness_cs.clone()))],
         };
     }
 
@@ -788,6 +824,8 @@ fn reconstruct_witness_paths(
 
     let mut state_count = 0usize;
     let mut truncated = false;
+    let mut incomplete = false;
+    let mut depth_exceeded = false;
 
     while !queue.is_empty() && paths.len() < cap {
         let Some(state) = queue.pop_front() else {
@@ -795,9 +833,16 @@ fn reconstruct_witness_paths(
         };
         state_count += 1;
         if state_count > MAX_STATES {
+            // state-limit-exceeded (detail=maxExpandedStates=N), incomplete:true.
+            diagnostics.push((
+                "state-limit-exceeded".to_string(),
+                Some(format!("maxExpandedStates={MAX_STATES}")),
+            ));
+            incomplete = true;
             break;
         }
         if state.hops.len() > MAX_DEPTH {
+            depth_exceeded = true;
             continue;
         }
         // Terminal check: FIRST matching direct fact in insertion order.
@@ -825,6 +870,11 @@ fn reconstruct_witness_paths(
             .map(|c| c.direct_status == "unknown")
             .unwrap_or(false);
         if routine_out_len == 0 && directs.is_empty() && cov_unknown {
+            // opaque-or-unresolved-boundary (detail = routineId).
+            diagnostics.push((
+                "opaque-or-unresolved-boundary".to_string(),
+                Some(state.routine.clone()),
+            ));
             if !state.hops.is_empty() {
                 paths.push(WitnessPath {
                     hops: state.hops.clone(),
@@ -864,6 +914,20 @@ fn reconstruct_witness_paths(
 
     if paths.len() >= cap && !queue.is_empty() {
         truncated = true;
+        diagnostics.push(("path-limit-reached".to_string(), Some(format!("cap={cap}"))));
+    }
+    if depth_exceeded {
+        // depth-exceeded (detail=maxDepth=N), incomplete:true.
+        diagnostics.push((
+            "depth-exceeded".to_string(),
+            Some(format!("maxDepth={MAX_DEPTH}")),
+        ));
+        incomplete = true;
+    }
+    if paths.is_empty() && !incomplete {
+        // terminal-not-found: TS flows through the projection `default` → kind only, NO detail.
+        diagnostics.push(("terminal-not-found".to_string(), None));
+        incomplete = true;
     }
 
     // FINAL path sort: shortest-first, then JSON.stringify(raw WitnessHop[]) ordinal tiebreak.
@@ -874,7 +938,12 @@ fn reconstruct_witness_paths(
         witness_hops_json(&a.hops).cmp(&witness_hops_json(&b.hops))
     });
 
-    WitnessOutcome { paths, truncated }
+    WitnessOutcomeExt {
+        paths,
+        truncated,
+        incomplete,
+        diagnostics,
+    }
 }
 
 // ===========================================================================
@@ -1854,7 +1923,7 @@ fn digest_query(
             };
             let detail = effect_detail_of(fact, &idx.stable_id_to_display);
 
-            let outcome = reconstruct_witness_paths(rid, fact, &idx);
+            let outcome = reconstruct_witness_paths(rid, fact, &idx, HARD_PATH_CAP);
 
             let shortest = outcome.paths.first();
             let terminal = shortest.and_then(|p| find_terminal(&p.hops));
@@ -2630,11 +2699,130 @@ pub struct TerminalHopInfo {
     pub column: Option<u32>,
 }
 
+/// Human-renderable hop — carries the EXACT fields `formatHop`
+/// (format-fingerprint.ts:270) reads off the RAW `WitnessHop` (which the JSON
+/// projection drops, e.g. `event-dispatch` → the SHORT `eventDisplay`, not the
+/// full `event_id`; `implicit-trigger` → `triggerKind`). The human renderer
+/// must consume THIS, not the projected `QueryWitnessHop`.
+#[derive(Debug, Clone)]
+pub enum HumanHop {
+    Call {
+        routine_display: String,
+        callee_display: String,
+        source_file: Option<String>,
+        line: Option<u32>,
+        column: Option<u32>,
+    },
+    ObjectRun {
+        routine_display: String,
+        target_display: Option<String>,
+        source_file: Option<String>,
+        line: Option<u32>,
+        column: Option<u32>,
+    },
+    EventDispatch {
+        /// SHORT name (`eventDisplayById.get(eid) ?? eid`), NOT the full event_id.
+        event_display: String,
+    },
+    VariableTypedCall {
+        routine_display: String,
+        receiver_type: String,
+        callee_display: Option<String>,
+        source_file: Option<String>,
+        line: Option<u32>,
+        column: Option<u32>,
+    },
+    InterfaceDispatch {
+        routine_display: String,
+        interface_name: String,
+        candidate_count: usize,
+        source_file: Option<String>,
+        line: Option<u32>,
+        column: Option<u32>,
+    },
+}
+
+/// Map a raw non-terminal `WitnessHop` → `HumanHop` (terminals → None; they are
+/// rendered separately via `TerminalHopInfo`). Carries the SHORT `event_display`
+/// for event-dispatch hops, which the JSON projection discards.
+fn raw_hop_to_human(hop: &WitnessHop) -> Option<HumanHop> {
+    match hop {
+        WitnessHop::Call {
+            routine_display,
+            callee_display,
+            source_file,
+            line,
+            column,
+            ..
+        } => Some(HumanHop::Call {
+            routine_display: routine_display.clone(),
+            callee_display: callee_display.clone(),
+            source_file: source_file.clone(),
+            line: *line,
+            column: *column,
+        }),
+        WitnessHop::ObjectRun {
+            routine_display,
+            target_display,
+            source_file,
+            line,
+            column,
+            ..
+        } => Some(HumanHop::ObjectRun {
+            routine_display: routine_display.clone(),
+            target_display: target_display.clone(),
+            source_file: source_file.clone(),
+            line: *line,
+            column: *column,
+        }),
+        WitnessHop::EventDispatch { event_display, .. } => Some(HumanHop::EventDispatch {
+            event_display: event_display.clone(),
+        }),
+        WitnessHop::VariableTypedCall {
+            routine_display,
+            receiver_type,
+            callee_display,
+            source_file,
+            line,
+            column,
+            ..
+        } => Some(HumanHop::VariableTypedCall {
+            routine_display: routine_display.clone(),
+            receiver_type: receiver_type.clone(),
+            callee_display: callee_display.clone(),
+            source_file: source_file.clone(),
+            line: *line,
+            column: *column,
+        }),
+        WitnessHop::InterfaceDispatch {
+            routine_display,
+            interface_name,
+            candidate_count,
+            source_file,
+            line,
+            column,
+            ..
+        } => Some(HumanHop::InterfaceDispatch {
+            routine_display: routine_display.clone(),
+            interface_name: interface_name.clone(),
+            candidate_count: *candidate_count,
+            source_file: source_file.clone(),
+            line: *line,
+            column: *column,
+        }),
+        WitnessHop::Terminal { .. } => None,
+    }
+}
+
 /// Public projected path: a sequence of `QueryWitnessHop` values (terminal
-/// hops dropped by `project_path`) PLUS an optional terminal for human display.
+/// hops dropped by `project_path`) PLUS the raw-derived human hops and the
+/// optional terminal for human display.
 #[derive(Debug, Clone)]
 pub struct ProjectedPath {
     pub query_hops: Vec<QueryWitnessHop>,
+    /// Human-renderable hops (raw-derived; NOT used in JSON). Parallel to the
+    /// non-terminal raw hops.
+    pub human_hops: Vec<HumanHop>,
     /// Terminal hop (if any) for human rendering only. NOT included in JSON output.
     pub terminal_hop: Option<TerminalHopInfo>,
 }
@@ -2771,8 +2959,8 @@ pub fn reconstruct_witness_paths_pub(
         .cloned()
         .unwrap_or_else(|| root_id.to_string());
 
-    // Run the internal BFS with the requested cap.
-    let outcome = reconstruct_witness_paths_capped(root_id, fact, &private_idx, cap);
+    // Run the single witness BFS with the requested cap.
+    let outcome = reconstruct_witness_paths(root_id, fact, &private_idx, cap);
 
     // Project paths: strip terminal hops into query_hops; preserve terminal
     // separately for human rendering.
@@ -2781,6 +2969,8 @@ pub fn reconstruct_witness_paths_pub(
         .iter()
         .map(|p| {
             let query_hops = project_path(p, root_id, &root_display, &private_idx);
+            // Human hops: the RAW non-terminal hops, carrying short eventDisplay etc.
+            let human_hops: Vec<HumanHop> = p.hops.iter().filter_map(raw_hop_to_human).collect();
             // Extract the terminal hop (always the last hop in a WitnessPath, if any).
             let terminal_hop = p.hops.last().and_then(|last| {
                 if let WitnessHop::Terminal {
@@ -2809,13 +2999,14 @@ pub fn reconstruct_witness_paths_pub(
             });
             ProjectedPath {
                 query_hops,
+                human_hops,
                 terminal_hop,
             }
         })
         .collect();
 
-    // Forward all diagnostics from the internal outcome (includes missing-witness-anchor,
-    // path-limit-reached, graph-too-large etc. already built by reconstruct_witness_paths_capped).
+    // Forward all diagnostics from the internal outcome (missing-witness-anchor,
+    // path-limit-reached, state-limit-exceeded, etc. — already built by reconstruct_witness_paths).
     let diagnostics: Vec<WitnessDiagnosticPub> = outcome
         .diagnostics
         .into_iter()
@@ -2828,237 +3019,6 @@ pub fn reconstruct_witness_paths_pub(
         incomplete: outcome.incomplete,
         diagnostics,
     }
-}
-
-/// Internal variant of `reconstructWitnessPaths` that accepts a caller-supplied
-/// cap and tracks the `incomplete` flag (MAX_STATES exceeded).
-fn reconstruct_witness_paths_capped(
-    root_id: &str,
-    fact: &Fact,
-    idx: &FingerprintIndexes,
-    cap: usize,
-) -> WitnessOutcomeExt {
-    // Fast path — direct facts.
-    if fact.provenance == "direct" {
-        if let Some(wo) = &fact.witness_operation_id {
-            let ev = idx.operation_by_id.get(wo.as_str()).copied();
-            let hop = build_direct_terminal(TerminalKind::Operation, wo, ev, None);
-            let incomplete = ev.is_none();
-            let mut diags: Vec<(String, Option<String>)> = Vec::new();
-            if ev.is_none() {
-                diags.push(("missing-operation-evidence".to_string(), Some(wo.clone())));
-            }
-            return WitnessOutcomeExt {
-                paths: vec![WitnessPath { hops: vec![hop] }],
-                truncated: false,
-                incomplete,
-                diagnostics: diags,
-            };
-        }
-        if let Some(wc) = &fact.witness_callsite_id {
-            let ev = idx.callsite_by_id.get(wc.as_str()).copied();
-            let hop = build_direct_terminal(TerminalKind::Callsite, wc, None, ev);
-            let incomplete = ev.is_none();
-            let mut diags: Vec<(String, Option<String>)> = Vec::new();
-            if ev.is_none() {
-                diags.push(("missing-callsite-evidence".to_string(), Some(wc.clone())));
-            }
-            return WitnessOutcomeExt {
-                paths: vec![WitnessPath { hops: vec![hop] }],
-                truncated: false,
-                incomplete,
-                diagnostics: diags,
-            };
-        }
-        // Direct with no witness anchor → synthetic terminal, missing-witness-anchor diag.
-        return WitnessOutcomeExt {
-            paths: vec![WitnessPath {
-                hops: vec![WitnessHop::Terminal {
-                    evidence_kind: TerminalKind::Synthetic,
-                    operation_id: None,
-                    callsite_id: None,
-                    display_text: format!("{} {}", fact.op, fact.resource_kind),
-                    source_file: None,
-                    line: None,
-                    column: None,
-                }],
-            }],
-            truncated: false,
-            incomplete: true,
-            diagnostics: vec![(
-                "missing-witness-anchor".to_string(),
-                Some(fact.subject.clone()),
-            )],
-        };
-    }
-
-    // Inherited fact — BFS.
-    let mut paths: Vec<WitnessPath> = Vec::new();
-
-    let Some(witness_cs) = &fact.witness_callsite_id else {
-        return WitnessOutcomeExt {
-            paths: Vec::new(),
-            truncated: false,
-            incomplete: false,
-            diagnostics: Vec::new(),
-        };
-    };
-
-    let empty: Vec<&SnapshotGraphEdge> = Vec::new();
-    let out_from_root = idx.outgoing_edges.get(root_id).unwrap_or(&empty);
-    let first_edges: Vec<&SnapshotGraphEdge> = out_from_root
-        .iter()
-        .filter(|e| edge_callsite_id(e) == Some(witness_cs.as_str()))
-        .copied()
-        .collect();
-    if first_edges.is_empty() {
-        return WitnessOutcomeExt {
-            paths: Vec::new(),
-            truncated: false,
-            incomplete: false,
-            diagnostics: Vec::new(),
-        };
-    }
-
-    struct State {
-        routine: String,
-        hops: Vec<WitnessHop>,
-        visited: std::collections::HashSet<String>,
-    }
-
-    let mut seeds: Vec<State> = Vec::new();
-    for edge in &first_edges {
-        let Some(hop) = edge_to_hop(edge, idx) else {
-            continue;
-        };
-        let Some(to) = edge_to(edge) else {
-            continue;
-        };
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(root_id.to_string());
-        visited.insert(to.to_string());
-        seeds.push(State {
-            routine: to.to_string(),
-            hops: vec![hop],
-            visited,
-        });
-    }
-    seeds.sort_by(|a, b| a.routine.cmp(&b.routine));
-    let mut queue: std::collections::VecDeque<State> = seeds.into_iter().collect();
-
-    let mut state_count = 0usize;
-    let mut truncated = false;
-    let mut incomplete = false;
-
-    while !queue.is_empty() && paths.len() < cap {
-        let Some(state) = queue.pop_front() else {
-            break;
-        };
-        state_count += 1;
-        if state_count > MAX_STATES {
-            incomplete = true;
-            break;
-        }
-        if state.hops.len() > MAX_DEPTH {
-            continue;
-        }
-        let directs: &[&Fact] = idx
-            .direct_facts_by_routine
-            .get(&state.routine)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        if let Some(equivalent) = directs.iter().find(|d| fact_equivalent(d, fact)) {
-            let terminal = terminal_hop_from_fact(equivalent, idx);
-            let mut hops = state.hops.clone();
-            hops.push(terminal);
-            paths.push(WitnessPath { hops });
-            continue;
-        }
-        let routine_out_len = idx
-            .outgoing_edges
-            .get(&state.routine)
-            .map(|v| v.len())
-            .unwrap_or(0);
-        let cov_unknown = idx
-            .coverage_by_routine
-            .get(&state.routine)
-            .map(|c| c.direct_status == "unknown")
-            .unwrap_or(false);
-        if routine_out_len == 0 && directs.is_empty() && cov_unknown {
-            if !state.hops.is_empty() {
-                paths.push(WitnessPath {
-                    hops: state.hops.clone(),
-                });
-            }
-            continue;
-        }
-        let out = idx
-            .outgoing_edges
-            .get(&state.routine)
-            .cloned()
-            .unwrap_or_default();
-        let mut sorted = out;
-        sorted.sort_by(|a, b| edge_compare(a, b));
-        for edge in sorted {
-            let Some(to) = edge_to(edge) else {
-                continue;
-            };
-            if state.visited.contains(to) {
-                continue;
-            }
-            let Some(hop) = edge_to_hop(edge, idx) else {
-                continue;
-            };
-            let mut new_visited = state.visited.clone();
-            new_visited.insert(to.to_string());
-            let mut new_hops = state.hops.clone();
-            new_hops.push(hop);
-            queue.push_back(State {
-                routine: to.to_string(),
-                hops: new_hops,
-                visited: new_visited,
-            });
-        }
-    }
-
-    if paths.len() >= cap && !queue.is_empty() {
-        truncated = true;
-    }
-
-    paths.sort_by(|a, b| {
-        if a.hops.len() != b.hops.len() {
-            return a.hops.len().cmp(&b.hops.len());
-        }
-        witness_hops_json(&a.hops).cmp(&witness_hops_json(&b.hops))
-    });
-
-    let mut diagnostics: Vec<(String, Option<String>)> = Vec::new();
-    if truncated {
-        diagnostics.push(("path-limit-reached".to_string(), Some(format!("cap={cap}"))));
-    }
-    if incomplete {
-        diagnostics.push((
-            "graph-too-large".to_string(),
-            Some(format!("maxStates={MAX_STATES}")),
-        ));
-    }
-
-    WitnessOutcomeExt {
-        paths,
-        truncated,
-        incomplete,
-        diagnostics,
-    }
-}
-
-/// Extended WitnessOutcome with `incomplete` flag and internal diagnostics.
-struct WitnessOutcomeExt {
-    paths: Vec<WitnessPath>,
-    truncated: bool,
-    incomplete: bool,
-    /// Internal diagnostics (kind, optional detail). Forwarded by
-    /// `reconstruct_witness_paths_pub` as `WitnessDiagnosticPub`.
-    diagnostics: Vec<(String, Option<String>)>,
 }
 
 // ===========================================================================

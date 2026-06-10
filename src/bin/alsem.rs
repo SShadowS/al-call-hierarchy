@@ -21,10 +21,10 @@ use al_call_hierarchy::engine::l5::digest_cli::{
     auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
 };
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    run_fingerprint_pipeline, write_fingerprint_output, FingerprintFormat, FingerprintOptions,
-    FingerprintOutput,
+    default_format, normalize_witness, reject_illegal_combos, run_fingerprint_pipeline,
+    validate_roots, write_fingerprint_output, FingerprintOptions, FingerprintOutput, ShardMode,
+    SpecifiedFlags,
 };
-use al_call_hierarchy::engine::l5::fingerprint_query::WitnessLimit;
 use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
 
@@ -167,37 +167,48 @@ struct FingerprintCli {
     /// Path to the AL workspace root.
     workspace: String,
 
-    /// Output format: json | human | cbor | cbor.gz. Defaults to human.
-    #[arg(long = "format", default_value = "human")]
-    format: String,
+    /// Output format: human | json | cbor | cbor.gz. Default resolves to human
+    /// (or json when --shard). `None` = not passed (distinguishes the default).
+    #[arg(long = "format")]
+    format: Option<String>,
 
-    /// Write output to a file instead of stdout.
+    /// Write output to a file (single-file modes) or a directory (--shard).
     #[arg(long = "out")]
     out: Option<String>,
 
-    /// Emit sharded JSON output (one file per app) instead of a single file.
-    #[arg(long = "shard", default_value_t = false)]
-    shard: bool,
+    /// Emit sharded JSON output (one file per app). Value: primary-only | all.
+    #[arg(long = "shard")]
+    shard: Option<String>,
 
-    /// Witness reconstruction limit: false | all | N (0–256). Default: 3.
+    /// Witness reconstruction limit: false | 0 | <1..256> | all. Default: 3.
+    /// `None` = not passed; `Some("3")` (explicit default) does NOT trigger the
+    /// query branch (mirrors index.ts:439 `!== "3"`).
     #[arg(long = "witness")]
     witness: Option<String>,
 
-    /// Root-kind filter (comma-separated: entry-point, integration-event-subscriber, etc.).
-    #[arg(long = "roots", action = clap::ArgAction::Append)]
-    roots: Vec<String>,
+    /// Root-kind filter (comma-separated RootKind list; human/json only).
+    #[arg(long = "roots")]
+    roots: Option<String>,
 
     /// Routine selector (display name or StableRoutineId). May be repeated.
     #[arg(long = "routine", action = clap::ArgAction::Append)]
     routine: Vec<String>,
 
-    /// Include inherited (transitive) facts in the output.
-    #[arg(long = "include-inherited", default_value_t = false)]
-    include_inherited: bool,
+    /// Direct facts only (default is inherited). Mirrors --no-include-inherited.
+    #[arg(long = "no-include-inherited", default_value_t = false)]
+    no_include_inherited: bool,
 
     /// Pin timestamps / version for byte-stable output.
     #[arg(long, default_value_t = false)]
     deterministic: bool,
+
+    /// Skip loading roots.config.json overlay even if present.
+    #[arg(long = "no-roots-config", default_value_t = false)]
+    no_roots_config: bool,
+
+    /// Exit non-zero on any analyzer error-severity diagnostic.
+    #[arg(long = "strict", default_value_t = false)]
+    strict: bool,
 
     /// Human output verbosity: compact | full. Defaults to compact.
     #[arg(long = "verbosity", default_value = "compact")]
@@ -465,65 +476,82 @@ fn run_prove_cmd(p: ProveCli) -> ExitCode {
 // ── fingerprint command ─────────────────────────────────────────────────────
 
 fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
-    // Validate --format.
-    let format = match FingerprintFormat::parse(&f.format) {
-        Some(fmt) => fmt,
-        None => {
-            eprintln!(
-                "al-sem fingerprint: invalid --format '{}'. Expected: json | human | cbor | cbor.gz",
-                f.format
-            );
+    // Parse --shard mode (primary-only | all). Invalid value → exit 1.
+    let shard_mode: Option<ShardMode> = match f.shard.as_deref() {
+        None => None,
+        Some("primary-only") => Some(ShardMode::PrimaryOnly),
+        Some("all") => Some(ShardMode::All),
+        Some(other) => {
+            eprintln!("unknown --shard mode '{other}'; valid: primary-only, all");
             return ExitCode::from(1);
         }
     };
 
-    // Validate --verbosity.
+    // _specifiedFlags (index.ts:434-439).
+    let specified = SpecifiedFlags {
+        roots: f.roots.is_some(),
+        routine_selectors: !f.routine.is_empty(),
+        include_inherited: f.no_include_inherited,
+        witness: f.witness.is_some() && f.witness.as_deref() != Some("3"),
+    };
+
+    // defaultFormat (fingerprint.ts:140) + rejectIllegalCombos (fingerprint.ts:110).
+    let format = match default_format(f.format.as_deref(), shard_mode.is_some()) {
+        Ok(fmt) => fmt,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(msg) = reject_illegal_combos(specified, &format, shard_mode.is_some()) {
+        eprintln!("{msg}");
+        return ExitCode::from(1);
+    }
+
+    // Validate --verbosity (compact | full).
     if !matches!(f.verbosity.as_str(), "compact" | "full") {
         eprintln!(
-            "al-sem fingerprint: invalid --verbosity '{}'. Expected: compact | full",
+            "unknown --verbosity '{}'; valid: compact, full",
             f.verbosity
         );
         return ExitCode::from(1);
     }
 
-    // Parse --witness.
-    let witness_limit: Option<WitnessLimit> = match f.witness.as_deref() {
-        None => None,
-        Some(w) => match WitnessLimit::parse(w) {
-            Some(wl) => Some(wl),
-            None => {
-                eprintln!(
-                    "al-sem fingerprint: invalid --witness '{w}'. Expected: false | all | 0–256"
-                );
-                return ExitCode::from(1);
-            }
-        },
+    // normalizeWitness (fingerprint.ts:82): None→3, false/all, 0..256, >256 → exit 1.
+    let witness_limit = match normalize_witness(f.witness.as_deref()) {
+        Ok(wl) => Some(wl),
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(1);
+        }
     };
 
-    // Parse --roots.
-    let roots: Option<std::collections::BTreeSet<String>> = if f.roots.is_empty() {
-        None
-    } else {
-        let mut set = std::collections::BTreeSet::new();
-        for r in &f.roots {
-            for part in r.split(',') {
-                let trimmed = part.trim().to_string();
-                if !trimmed.is_empty() {
-                    set.insert(trimmed);
+    // validateRoots (fingerprint.ts:67): split on commas, each must be a RootKind.
+    let roots: Option<std::collections::BTreeSet<String>> = match &f.roots {
+        None => None,
+        Some(raw) => {
+            let values: Vec<String> = raw
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            match validate_roots(&values) {
+                Ok(vs) => {
+                    if vs.is_empty() {
+                        None
+                    } else {
+                        Some(vs.into_iter().collect())
+                    }
+                }
+                Err(msg) => {
+                    eprintln!("{msg}");
+                    return ExitCode::from(1);
                 }
             }
         }
-        if set.is_empty() {
-            None
-        } else {
-            Some(set)
-        }
     };
 
-    // `isQueryRequested`: any of witness/roots/routine/include-inherited specified.
-    let is_query_requested =
-        f.witness.is_some() || !f.roots.is_empty() || !f.routine.is_empty() || f.include_inherited;
-
+    let is_query_requested = specified.is_query_requested();
     let workspace = std::path::Path::new(&f.workspace);
 
     let opts = FingerprintOptions {
@@ -531,13 +559,15 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
         alsem_version: DEFAULT_ALSEM_VERSION,
         format,
         out: f.out.as_deref(),
-        shard: f.shard,
+        shard: shard_mode,
         witness_limit,
         roots,
         routine_selectors: f.routine.clone(),
-        include_inherited: f.include_inherited,
+        // includeInherited default true; --no-include-inherited → direct-only.
+        include_inherited: !f.no_include_inherited,
         is_query_requested,
         deterministic: f.deterministic,
+        strict: f.strict,
         verbosity: &f.verbosity,
     };
 
@@ -547,13 +577,21 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
             ExitCode::from(1)
         }
         Ok(result) => {
-            // Human format: selector errors go to stderr, no stdout.
+            // A stderr-only error (selector error, --shard-no-out, strict gate):
+            // print message, no stdout, exit with the result's code.
             if let Some(ref err_msg) = result.selector_error_message {
                 eprintln!("{err_msg}");
                 return ExitCode::from(result.exit_code);
             }
+            // strict gate emits the diagnostics block + exit 1, no output.
+            if result.exit_code == 1 && !result.stderr_diagnostics.is_empty() {
+                for line in &result.stderr_diagnostics {
+                    eprintln!("{line}");
+                }
+                return ExitCode::from(1);
+            }
 
-            // Write output (skip empty text for human selector errors).
+            // Write output (skip empty text).
             let should_write = match &result.output {
                 FingerprintOutput::Text(t) => !t.is_empty(),
                 _ => true,
@@ -563,6 +601,11 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
                     eprintln!("{e}");
                     return ExitCode::from(1);
                 }
+            }
+
+            // Per-mode stderr diagnostics AFTER writing output (human/base-json/cbor).
+            for line in &result.stderr_diagnostics {
+                eprintln!("{line}");
             }
 
             ExitCode::from(result.exit_code)

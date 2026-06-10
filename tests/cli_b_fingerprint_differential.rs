@@ -30,19 +30,17 @@
 //! `#[ignore] refresh_goldens` shells `bun run scripts/dump-fingerprint.ts` under
 //! `AL_SEM_DIR` to regenerate the goldens.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
-use al_call_hierarchy::engine::gate::run::compute_analyzer_diagnostics;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    run_fingerprint_pipeline, FingerprintFormat, FingerprintOptions, FingerprintOutput,
+    run_fingerprint_pipeline, FingerprintFormat, FingerprintOptions, FingerprintOutput, ShardMode,
 };
 use al_call_hierarchy::engine::l5::fingerprint_query::WitnessLimit;
 use al_call_hierarchy::engine::l5::snapshot_full::{
-    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_envelope,
-    serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
+    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_sharded,
+    FullSnapshotOptions,
 };
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
@@ -75,43 +73,6 @@ const WITNESS_FIXTURE: &str = "ws-d8-commit-in-tx";
 const SHARD_FIXTURE: &str = "ws-d8-commit-in-tx";
 const ERROR_FIXTURE: &str = "ws-d8-commit-in-tx";
 const ERROR_SELECTOR: &str = "THIS_ROUTINE_DOES_NOT_EXIST_FOR_ERROR_TEST";
-
-const DEFAULT_DETECTOR_NAMES: &[&str] = &[
-    "d1-db-op-in-loop",
-    "d2-event-fanout-in-loop",
-    "d3-missing-setloadfields",
-    "d4-repeated-lookup-in-loop",
-    "d5-set-based-opportunity",
-    "d7-recursive-event-expansion",
-    "d8-commit-in-transaction",
-    "d9-transaction-span-summary",
-    "d10-self-modifying-loop",
-    "d11-modify-without-get",
-    "d12-dead-integration-event",
-    "d13-cross-app-internal-call",
-    "d14-dead-routine",
-    "d16-blob-in-loop",
-    "d17-non-setbased-on-large-table",
-    "d18-event-subscriber-heavy",
-    "d19-flowfield-in-loop",
-    "d20-unbounded-result-set",
-    "d21-temp-table-misuse",
-    "d22-deprecated-api-use",
-    "d29-onaftergetrecord-heavy",
-    "d32-internal-event-publisher",
-    "d33-event-without-subscribers",
-    "d34-page-source-heavy",
-    "d35-implicit-transaction-scope",
-    "d36-redundant-calcfields",
-    "d37-record-passed-by-value",
-    "d38-page-trigger-heavy",
-    "d39-codeunit-instantiation-in-loop",
-    "d41-unindexed-filter",
-    "d42-locktable-late",
-    "d43-event-ishandled-skip",
-    "d44-event-recursive-publish",
-    "d45-text-encoding-mismatch",
-];
 
 fn al_sem_dir() -> PathBuf {
     std::env::var("AL_SEM_DIR")
@@ -148,25 +109,6 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
     }
 }
 
-/// Build envelope diagnostics for a fixture workspace.
-fn envelope_diagnostics(
-    ws_path: &Path,
-    resolved: &al_call_hierarchy::engine::l3::l3_workspace::L3Resolved,
-) -> Vec<EnvelopeDiagnostic> {
-    let default_detectors: Vec<_> = registered_detectors()
-        .into_iter()
-        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
-        .collect();
-    compute_analyzer_diagnostics(ws_path, resolved, &default_detectors)
-        .into_iter()
-        .map(|d| EnvelopeDiagnostic {
-            code: format!("DIAG-{}", d.stage),
-            severity: d.severity,
-            message: d.message,
-        })
-        .collect()
-}
-
 /// Helper: compose full snapshot tree for the B0 path (cbor / cbor.gz / envelope).
 fn compose_full_for(
     fixture: &str,
@@ -193,60 +135,6 @@ fn compose_full_for(
     };
     let tree = compose_full_snapshot(&resolved, &opts);
     (tree, resolved, ws)
-}
-
-/// Helper: run the fingerprint query pipeline for a fixture with default query options
-/// (includeInherited=true, witnessLimit=3).
-fn run_query_for(
-    fixture: &str,
-    witness_limit: Option<WitnessLimit>,
-    verbosity: &str,
-) -> (String, String) {
-    let ws = fixture_dir(fixture);
-    let opts = FingerprintOptions {
-        workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
-        format: FingerprintFormat::Json,
-        out: None,
-        shard: false,
-        witness_limit,
-        roots: None,
-        routine_selectors: Vec::new(),
-        include_inherited: true,
-        is_query_requested: true,
-        deterministic: true,
-        verbosity,
-    };
-    let result = run_fingerprint_pipeline(&opts)
-        .unwrap_or_else(|e| panic!("{fixture}: fingerprint pipeline error: {e}"));
-    let json_text = match result.output {
-        FingerprintOutput::Text(t) => t,
-        _ => panic!("{fixture}: expected Text output from json query"),
-    };
-
-    // Also get human text.
-    let human_opts = FingerprintOptions {
-        workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
-        format: FingerprintFormat::Human,
-        out: None,
-        shard: false,
-        witness_limit,
-        roots: None,
-        routine_selectors: Vec::new(),
-        include_inherited: true,
-        is_query_requested: true,
-        deterministic: true,
-        verbosity,
-    };
-    let human_result = run_fingerprint_pipeline(&human_opts)
-        .unwrap_or_else(|e| panic!("{fixture}: fingerprint human pipeline error: {e}"));
-    let human_text = match human_result.output {
-        FingerprintOutput::Text(t) => t,
-        _ => panic!("{fixture}: expected Text output from human query"),
-    };
-
-    (json_text, human_text)
 }
 
 // ===========================================================================
@@ -302,13 +190,14 @@ fn query_json_matches_goldens() {
             alsem_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Json,
             out: None,
-            shard: false,
+            shard: None,
             witness_limit: Some(WitnessLimit::Capped(3)),
             roots: None,
             routine_selectors: Vec::new(),
             include_inherited: true,
             is_query_requested: true,
             deterministic: true,
+            strict: false,
             verbosity: "compact",
         };
         let result = run_fingerprint_pipeline(&opts)
@@ -340,13 +229,14 @@ fn human_compact_matches_goldens() {
             alsem_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Human,
             out: None,
-            shard: false,
+            shard: None,
             witness_limit: Some(WitnessLimit::Capped(3)),
             roots: None,
             routine_selectors: Vec::new(),
             include_inherited: true,
             is_query_requested: true,
             deterministic: true,
+            strict: false,
             verbosity: "compact",
         };
         let result = run_fingerprint_pipeline(&opts)
@@ -377,13 +267,14 @@ fn witness_all_matches_golden() {
         alsem_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
-        shard: false,
+        shard: None,
         witness_limit: Some(WitnessLimit::All),
         roots: None,
         routine_selectors: Vec::new(),
         include_inherited: true,
         is_query_requested: true,
         deterministic: true,
+        strict: false,
         verbosity: "compact",
     };
     let result = run_fingerprint_pipeline(&opts)
@@ -409,13 +300,14 @@ fn witness_zero_matches_golden() {
         alsem_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
-        shard: false,
+        shard: None,
         witness_limit: Some(WitnessLimit::Capped(0)),
         roots: None,
         routine_selectors: Vec::new(),
         include_inherited: true,
         is_query_requested: true,
         deterministic: true,
+        strict: false,
         verbosity: "compact",
     };
     let result = run_fingerprint_pipeline(&opts)
@@ -441,13 +333,14 @@ fn witness_false_matches_golden() {
         alsem_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
-        shard: false,
+        shard: None,
         witness_limit: Some(WitnessLimit::Disabled),
         roots: None,
         routine_selectors: Vec::new(),
         include_inherited: true,
         is_query_requested: true,
         deterministic: true,
+        strict: false,
         verbosity: "compact",
     };
     let result = run_fingerprint_pipeline(&opts)
@@ -477,13 +370,14 @@ fn selector_error_json_matches_golden_and_exits_2() {
         alsem_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
-        shard: false,
+        shard: None,
         witness_limit: Some(WitnessLimit::Capped(3)),
         roots: None,
         routine_selectors: vec![ERROR_SELECTOR.to_string()],
         include_inherited: true,
         is_query_requested: true,
         deterministic: true,
+        strict: false,
         verbosity: "compact",
     };
     let result = run_fingerprint_pipeline(&opts)
@@ -514,13 +408,14 @@ fn human_full_matches_golden() {
         alsem_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Human,
         out: None,
-        shard: false,
+        shard: None,
         witness_limit: Some(WitnessLimit::Capped(3)),
         roots: None,
         routine_selectors: Vec::new(),
         include_inherited: true,
         is_query_requested: true,
         deterministic: true,
+        strict: false,
         verbosity: "full",
     };
     let result = run_fingerprint_pipeline(&opts)
@@ -566,6 +461,123 @@ fn shard_output_matches_goldens() {
     }
     drop((resolved, ws_path)); // keep compiler happy
     drop(ws);
+}
+
+// ===========================================================================
+// Items 5 / 15 / 17 — pipeline-level oracles (strict gate, per-mode stderr,
+// shard --out duality). Driven on a real fixture (ws-d8) whose only analyzer
+// diagnostic is severity "warning" (DIAG-detect), so the strict gate PASSES.
+// ===========================================================================
+
+fn opts_for<'a>(
+    ws: &'a std::path::Path,
+    format: FingerprintFormat,
+    shard: Option<ShardMode>,
+    strict: bool,
+    is_query: bool,
+) -> FingerprintOptions<'a> {
+    FingerprintOptions {
+        workspace: ws,
+        alsem_version: VERSION_OVERRIDE,
+        format,
+        out: None,
+        shard,
+        witness_limit: None,
+        roots: None,
+        routine_selectors: Vec::new(),
+        include_inherited: true,
+        is_query_requested: is_query,
+        deterministic: true,
+        strict,
+        verbosity: "compact",
+    }
+}
+
+#[test]
+fn item15_human_mode_routes_warning_to_stderr() {
+    // Human mode prints analyze diagnostics to stderr at exit (fingerprint.ts:331).
+    let ws = fixture_dir("ws-d8-commit-in-tx");
+    let opts = opts_for(&ws, FingerprintFormat::Human, None, false, false);
+    let r = run_fingerprint_pipeline(&opts).expect("pipeline");
+    assert_eq!(r.exit_code, 0);
+    // ws-d8 emits the d43 warning → must appear in stderr_diagnostics as `warning: ...`.
+    assert!(
+        r.stderr_diagnostics
+            .iter()
+            .any(|l| l.starts_with("warning: ")),
+        "human mode must route analyzer warnings to stderr: {:?}",
+        r.stderr_diagnostics
+    );
+}
+
+#[test]
+fn item15_json_query_mode_embeds_diags_no_stderr() {
+    // JSON-query mode embeds analyze diagnostics in payload.diagnostics + NO stderr
+    // (fingerprint.ts:281-297).
+    let ws = fixture_dir("ws-d8-commit-in-tx");
+    let opts = opts_for(&ws, FingerprintFormat::Json, None, false, true);
+    let r = run_fingerprint_pipeline(&opts).expect("pipeline");
+    assert_eq!(r.exit_code, 0);
+    assert!(
+        r.stderr_diagnostics.is_empty(),
+        "json-query mode must NOT print analyze diagnostics to stderr"
+    );
+    // The diagnostics live in the JSON payload instead.
+    if let FingerprintOutput::Text(t) = &r.output {
+        assert!(t.contains("\"diagnostics\""));
+    } else {
+        panic!("expected Text output");
+    }
+}
+
+#[test]
+fn item15_shard_mode_no_stderr_diags() {
+    // Shard path returns BEFORE the stderr loop (fingerprint.ts:223) → no stderr.
+    let ws = fixture_dir("ws-d8-commit-in-tx");
+    let mut opts = opts_for(
+        &ws,
+        FingerprintFormat::Json,
+        Some(ShardMode::All),
+        false,
+        false,
+    );
+    opts.out = Some("."); // shard requires --out; value is a directory.
+    let r = run_fingerprint_pipeline(&opts).expect("pipeline");
+    assert_eq!(r.exit_code, 0);
+    assert!(r.stderr_diagnostics.is_empty());
+    assert!(matches!(r.output, FingerprintOutput::Shards(_)));
+}
+
+#[test]
+fn item17_shard_without_out_errors_exit1() {
+    // --shard requires --out <directory> (fingerprint.ts:210) → exit 1, message to stderr.
+    let ws = fixture_dir("ws-d8-commit-in-tx");
+    let opts = opts_for(
+        &ws,
+        FingerprintFormat::Json,
+        Some(ShardMode::All),
+        false,
+        false,
+    );
+    let r = run_fingerprint_pipeline(&opts).expect("pipeline");
+    assert_eq!(r.exit_code, 1);
+    assert_eq!(
+        r.selector_error_message.as_deref(),
+        Some("--shard requires --out <directory>")
+    );
+}
+
+#[test]
+fn item5_strict_passes_on_warning_only_fixture() {
+    // ws-d8 has only a warning → strict gate does NOT trip; normal output proceeds.
+    let ws = fixture_dir("ws-d8-commit-in-tx");
+    let opts = opts_for(&ws, FingerprintFormat::Json, None, true, false);
+    let r = run_fingerprint_pipeline(&opts).expect("pipeline");
+    assert_eq!(
+        r.exit_code, 0,
+        "strict must pass when no error-severity diagnostics"
+    );
+    assert!(matches!(r.output, FingerprintOutput::Text(_)));
 }
 
 // ===========================================================================

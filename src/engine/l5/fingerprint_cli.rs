@@ -31,14 +31,14 @@ use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::run::compute_analyzer_diagnostics;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::detectors::registered_detectors;
-use crate::engine::l5::digest_cli::{build_envelope_diagnostics_json, DEFAULT_DETECTOR_NAMES};
+use crate::engine::l5::digest_cli::DEFAULT_DETECTOR_NAMES;
 use crate::engine::l5::fingerprint_query::{
     fingerprint_query, format_fingerprint_human_verbosity, project_fingerprint_query_full,
-    FingerprintFilters, FingerprintPipelineInput, FingerprintQueryDiagnostic, WitnessLimit,
+    FingerprintFilters, FingerprintQueryDiagnostic, WitnessLimit,
 };
 use crate::engine::l5::snapshot::compose_snapshot;
 use crate::engine::l5::snapshot_full::{
-    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_envelope, serialize_json,
+    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_envelope,
     serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
 };
 
@@ -63,6 +63,174 @@ impl FingerprintFormat {
     }
 }
 
+// ===========================================================================
+// CLI flag validation — byte-faithful port of `src/cli/fingerprint.ts`.
+//
+// These are TS-faithful, corpus-invisible behaviors (validateRoots,
+// normalizeWitness, rejectIllegalCombos, defaultFormat, isQueryRequested).
+// `alsem.rs` delegates to them so the exact exit codes + stderr strings match.
+// ===========================================================================
+
+/// `ROOT_KIND_VALUES` (model/root-classification.ts) — the valid `--roots` values,
+/// in declaration order (used verbatim in the `validateRoots` error message).
+pub const ROOT_KIND_VALUES: &[&str] = &[
+    "trigger-table",
+    "trigger-page",
+    "page-action",
+    "report-trigger",
+    "event-subscriber",
+    "install-codeunit",
+    "upgrade-codeunit",
+    "api-page",
+    "web-service-exposed",
+    "job-queue-entrypoint",
+    "public-procedure",
+    "test-procedure",
+];
+
+/// `validateRoots` (fingerprint.ts:67). Each value must be in `ROOT_KIND_VALUES`,
+/// else exit-1 with `unknown root kind '<v>'; valid: <a, b, ...>`.
+pub fn validate_roots(values: &[String]) -> Result<Vec<String>, String> {
+    let mut out = Vec::with_capacity(values.len());
+    for v in values {
+        if !ROOT_KIND_VALUES.contains(&v.as_str()) {
+            return Err(format!(
+                "unknown root kind '{v}'; valid: {}",
+                ROOT_KIND_VALUES.join(", ")
+            ));
+        }
+        out.push(v.clone());
+    }
+    Ok(out)
+}
+
+/// `normalizeWitness` (fingerprint.ts:82). `None` → 3 (`Capped(3)`); `false` →
+/// `Disabled`; `all` → `All`; digits in `0..=256` → `Capped(n)`; n>256 → exit-1
+/// `--witness must be in 0..256 or 'all' (got N)`; anything else → exit-1
+/// `invalid --witness value`.
+pub fn normalize_witness(w: Option<&str>) -> Result<WitnessLimit, String> {
+    match w {
+        None => Ok(WitnessLimit::Capped(3)),
+        Some("false") => Ok(WitnessLimit::Disabled),
+        Some("all") => Ok(WitnessLimit::All),
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) => {
+                if n > 256 {
+                    Err(format!("--witness must be in 0..256 or 'all' (got {n})"))
+                } else {
+                    Ok(WitnessLimit::Capped(n))
+                }
+            }
+            Err(_) => Err("invalid --witness value".to_string()),
+        },
+    }
+}
+
+/// `flagName` (fingerprint.ts:94) — maps an internal flag name to its CLI spelling
+/// for the combo-rejection messages.
+fn flag_name(f: &str) -> &str {
+    match f {
+        "routineSelectors" => "routine",
+        "includeInherited" => "include-inherited",
+        other => other,
+    }
+}
+
+/// Which query flags were explicitly specified on the CLI. Mirrors the
+/// `_specifiedFlags` set built in `index.ts:434-439`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpecifiedFlags {
+    /// `--roots` passed (TS: `cmdOpts.roots !== undefined`).
+    pub roots: bool,
+    /// `--routine` passed at least once (TS: array len > 0).
+    pub routine_selectors: bool,
+    /// `--no-include-inherited` passed (TS: `includeInherited === false`).
+    pub include_inherited: bool,
+    /// `--witness` passed with a value other than the default `"3"`
+    /// (TS: `witness !== undefined && witness !== "3"`).
+    pub witness: bool,
+}
+
+impl SpecifiedFlags {
+    /// `isQueryRequested` (fingerprint.ts:100) — any query flag specified.
+    pub fn is_query_requested(&self) -> bool {
+        self.roots || self.routine_selectors || self.witness || self.include_inherited
+    }
+
+    /// The query-flag names in TS iteration order, for `rejectIllegalCombos`.
+    fn specified_query_flags(&self) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        if self.roots {
+            v.push("roots");
+        }
+        if self.routine_selectors {
+            v.push("routineSelectors");
+        }
+        if self.witness {
+            v.push("witness");
+        }
+        if self.include_inherited {
+            v.push("includeInherited");
+        }
+        v
+    }
+}
+
+/// `defaultFormat` (fingerprint.ts:140). When `--format` is given it must be one
+/// of human|json|cbor|cbor.gz (else exit-1 `unknown --format '<f>'; valid: ...`).
+/// When omitted: `--shard` → json, else human.
+pub fn default_format(format: Option<&str>, shard: bool) -> Result<FingerprintFormat, String> {
+    const VALID: &[&str] = &["human", "json", "cbor", "cbor.gz"];
+    match format {
+        Some(f) => FingerprintFormat::parse(f)
+            .ok_or_else(|| format!("unknown --format '{f}'; valid: {}", VALID.join(", "))),
+        None => {
+            if shard {
+                Ok(FingerprintFormat::Json)
+            } else {
+                Ok(FingerprintFormat::Human)
+            }
+        }
+    }
+}
+
+/// `rejectIllegalCombos` (fingerprint.ts:110). `--shard` cannot combine with any
+/// query flag, and requires a serializer format; cbor/cbor.gz cannot combine with
+/// query flags. Messages are byte-identical to TS.
+pub fn reject_illegal_combos(
+    specified: SpecifiedFlags,
+    format: &FingerprintFormat,
+    shard: bool,
+) -> Result<(), String> {
+    if shard {
+        for f in specified.specified_query_flags() {
+            return Err(format!(
+                "--shard cannot be combined with --{}",
+                flag_name(f)
+            ));
+        }
+        if *format == FingerprintFormat::Human {
+            return Err("--shard requires --format=json|cbor|cbor.gz".to_string());
+        }
+    }
+    if *format == FingerprintFormat::Cbor || *format == FingerprintFormat::CborGz {
+        for f in specified.specified_query_flags() {
+            return Err(format!(
+                "--{} is only valid with --format=human or --format=json",
+                flag_name(f)
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Shard mode (the `--shard` value). Mirrors TS `"primary-only" | "all"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShardMode {
+    PrimaryOnly,
+    All,
+}
+
 /// Options for `run_fingerprint_pipeline`.
 pub struct FingerprintOptions<'a> {
     /// Workspace path.
@@ -73,8 +241,8 @@ pub struct FingerprintOptions<'a> {
     pub format: FingerprintFormat,
     /// Output file (stdout when None).
     pub out: Option<&'a str>,
-    /// Emit sharded output instead of a single file.
-    pub shard: bool,
+    /// Shard mode (None = single-file output).
+    pub shard: Option<ShardMode>,
     /// Witness limit: None = use default (3 = golden default); Some(WitnessLimit) = explicit.
     pub witness_limit: Option<WitnessLimit>,
     /// Root-kind filter (None = all roots).
@@ -87,6 +255,8 @@ pub struct FingerprintOptions<'a> {
     pub is_query_requested: bool,
     /// Pin timestamps for byte-stable output.
     pub deterministic: bool,
+    /// `--strict`: exit 1 if any analyzer diagnostic has severity "error" (before any output).
+    pub strict: bool,
     /// Verbosity for human output: "compact" | "full".
     pub verbosity: &'a str,
 }
@@ -103,58 +273,91 @@ pub enum FingerprintOutput {
 
 pub struct FingerprintRunResult {
     pub output: FingerprintOutput,
-    /// Exit code: 0 = ok, 2 = selector error.
+    /// Exit code: 0 = ok, 1 = strict/error, 2 = selector error.
     pub exit_code: u8,
-    /// Selector error message for human format (emit to stderr).
+    /// Selector error message for human format (emit to stderr at exit, no stdout).
     pub selector_error_message: Option<String>,
+    /// Analyzer diagnostics to print to stderr AFTER writing output, in
+    /// `<severity>: <message>` form. Empty for the JSON-query mode (those errors
+    /// are embedded in `payload.diagnostics` — fingerprint.ts:297 vs 332).
+    pub stderr_diagnostics: Vec<String>,
+}
+
+/// Format the human selector-error stderr block (fingerprint.ts:301-316).
+/// Byte-identical to TS: unresolved → one line; ambiguous → header + one
+/// `  - <display>  (<stableId>)` line per candidate.
+pub fn format_selector_errors_human(diags: &[FingerprintQueryDiagnostic]) -> String {
+    let mut out = String::new();
+    for d in diags {
+        match d {
+            FingerprintQueryDiagnostic::SelectorUnresolved { selector } => {
+                // triedForms join — the SELECTOR_FORMS list (fingerprint-query.ts:132).
+                out.push_str(&format!(
+                    "error: --routine '{selector}' did not match any routine (tried: stable-routine-id, full-display, two-segment, one-segment, object-qualified)\n"
+                ));
+            }
+            FingerprintQueryDiagnostic::SelectorAmbiguous {
+                selector,
+                matched_form,
+                candidates,
+            } => {
+                out.push_str(&format!(
+                    "error: --routine '{selector}' is ambiguous (matched via {matched_form}); candidates:\n"
+                ));
+                for (stable_id, display) in candidates {
+                    out.push_str(&format!("  - {display}  ({stable_id})\n"));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Run the full fingerprint pipeline.
+///
+/// Combo validation (`--shard`/cbor + query flags, `--format` value) is performed
+/// upstream by the CLI (`default_format` + `reject_illegal_combos`) so the exact
+/// TS exit codes / stderr land; this function assumes a legal invocation.
 pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<FingerprintRunResult, String> {
-    // Validate illegal combos.
-    if opts.shard && opts.is_query_requested {
-        return Err(
-            "fingerprint: --shard is not compatible with query flags (--witness, --roots, --routine, --include-inherited)".to_string(),
-        );
-    }
-    if (opts.format == FingerprintFormat::Cbor || opts.format == FingerprintFormat::CborGz)
-        && opts.is_query_requested
-    {
-        return Err(format!(
-            "fingerprint: --format {} is not compatible with query flags",
-            if opts.format == FingerprintFormat::Cbor {
-                "cbor"
-            } else {
-                "cbor.gz"
-            }
-        ));
-    }
-
     // Assemble workspace.
     let model_id = compute_gate_model_instance_id(opts.workspace)
         .ok_or_else(|| "fingerprint: could not compute modelInstanceId".to_string())?;
     let resolved = assemble_and_resolve_workspace(opts.workspace, &model_id)
         .ok_or_else(|| "fingerprint: workspace did not resolve".to_string())?;
 
+    // --strict gate (fingerprint.ts:187): BEFORE composeSnapshot. If any analyzer
+    // diagnostic is severity "error", print ALL analyzer diagnostics to stderr +
+    // exit 1, before any output / sharding.
+    let analyzer_diags = analyzer_diags_for(opts.workspace, &resolved);
+    if opts.strict {
+        let fatal = analyzer_diags.iter().any(|(_, sev, _)| sev == "error");
+        if fatal {
+            let stderr: Vec<String> = analyzer_diags
+                .iter()
+                .map(|(_, sev, msg)| format!("{sev}: {msg}"))
+                .collect();
+            return Ok(FingerprintRunResult {
+                output: FingerprintOutput::Text(String::new()),
+                exit_code: 1,
+                selector_error_message: None,
+                stderr_diagnostics: stderr,
+            });
+        }
+    }
+
     // B0 path: shard / cbor / cbor.gz / json-no-query.
-    let go_b0 = opts.shard
+    let go_b0 = opts.shard.is_some()
         || opts.format == FingerprintFormat::Cbor
         || opts.format == FingerprintFormat::CborGz
         || (opts.format == FingerprintFormat::Json && !opts.is_query_requested);
 
     if go_b0 {
-        // Build envelope diagnostics (shared 34-detector set).
-        let default_detectors: Vec<_> = registered_detectors()
-            .into_iter()
-            .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
-            .collect();
-        let diags_vec = compute_analyzer_diagnostics(opts.workspace, &resolved, &default_detectors);
-        let envelope_diags: Vec<EnvelopeDiagnostic> = diags_vec
-            .into_iter()
-            .map(|d| EnvelopeDiagnostic {
-                code: format!("DIAG-{}", d.stage),
-                severity: d.severity,
-                message: d.message,
+        let envelope_diags: Vec<EnvelopeDiagnostic> = analyzer_diags
+            .iter()
+            .map(|(code, severity, message)| EnvelopeDiagnostic {
+                code: code.clone(),
+                severity: severity.clone(),
+                message: message.clone(),
             })
             .collect();
 
@@ -166,11 +369,32 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
         };
         let tree = compose_full_snapshot(&resolved, &full_opts);
 
-        let output = if opts.shard {
-            // Sharded output: returns (filename, bytes) pairs.
-            // serialize_sharded: primary_only = opts.deterministic (or false = all shards).
-            // The manifest says --shard = primaryOnly:false for the golden fixture.
-            let shards = serialize_sharded(&tree, opts.alsem_version, false);
+        // stderr diagnostics: base-json / cbor / shard print analyze errors to
+        // stderr at exit (fingerprint.ts:242, 332). Shard path returns at :223
+        // BEFORE the stderr loop, so shards emit NO stderr diagnostics.
+        let stderr_diags: Vec<String> = if opts.shard.is_some() {
+            Vec::new()
+        } else {
+            analyzer_diags
+                .iter()
+                .map(|(_, sev, msg)| format!("{sev}: {msg}"))
+                .collect()
+        };
+
+        // --shard requires --out <directory> (fingerprint.ts:210) → exit 1.
+        if opts.shard.is_some() && opts.out.is_none() {
+            return Ok(FingerprintRunResult {
+                output: FingerprintOutput::Text(String::new()),
+                exit_code: 1,
+                selector_error_message: Some("--shard requires --out <directory>".to_string()),
+                stderr_diagnostics: Vec::new(),
+            });
+        }
+
+        let output = if let Some(mode) = opts.shard {
+            // serialize_sharded: primaryOnly = (mode == PrimaryOnly).
+            let primary_only = mode == ShardMode::PrimaryOnly;
+            let shards = serialize_sharded(&tree, opts.alsem_version, primary_only);
             FingerprintOutput::Shards(shards.into_iter().map(|s| (s.name, s.bytes)).collect())
         } else if opts.format == FingerprintFormat::Cbor {
             FingerprintOutput::Binary(serialize_cbor(&tree))
@@ -191,6 +415,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
             output,
             exit_code: 0,
             selector_error_message: None,
+            stderr_diagnostics: stderr_diags,
         });
     }
 
@@ -201,23 +426,6 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
         opts.workspace,
         opts.alsem_version,
     );
-
-    // Build envelope diagnostics (for the JSON envelope; human omits them).
-    let diags_json = build_envelope_diagnostics_json(opts.workspace, &resolved);
-    let analyzer_diagnostics: Vec<(String, String, String)> =
-        if let serde_json::Value::Array(arr) = diags_json {
-            arr.into_iter()
-                .filter_map(|v| {
-                    let obj = v.as_object()?;
-                    let code = obj.get("code")?.as_str()?.to_string();
-                    let severity = obj.get("severity")?.as_str()?.to_string();
-                    let message = obj.get("message")?.as_str()?.to_string();
-                    Some((code, severity, message))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
 
     // Witness limit: default to 3 (the golden capturePoint default).
     let witness_limit = opts.witness_limit.unwrap_or(WitnessLimit::Capped(3));
@@ -231,56 +439,57 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
 
     let result = fingerprint_query(&snap, &filters);
 
-    let has_selector_errors = result.diagnostics.iter().any(|d| {
-        matches!(
-            d,
-            crate::engine::l5::fingerprint_query::FingerprintQueryDiagnostic::SelectorUnresolved { .. }
-                | crate::engine::l5::fingerprint_query::FingerprintQueryDiagnostic::SelectorAmbiguous { .. }
-        )
-    });
+    let selector_errors: Vec<&FingerprintQueryDiagnostic> = result
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(
+                d,
+                FingerprintQueryDiagnostic::SelectorUnresolved { .. }
+                    | FingerprintQueryDiagnostic::SelectorAmbiguous { .. }
+            )
+        })
+        .collect();
+    let has_selector_errors = !selector_errors.is_empty();
     let exit_code: u8 = if has_selector_errors { 2 } else { 0 };
 
     if opts.format == FingerprintFormat::Human {
         if has_selector_errors {
-            // Human format: selector errors go to stderr, no stdout.
-            let msgs: Vec<String> = result
-                .diagnostics
-                .iter()
-                .map(|d| match d {
-                    FingerprintQueryDiagnostic::SelectorUnresolved { selector } => {
-                        format!("al-sem fingerprint: selector not found: {selector}")
-                    }
-                    FingerprintQueryDiagnostic::SelectorAmbiguous {
-                        selector,
-                        matched_form,
-                        ..
-                    } => {
-                        format!("al-sem fingerprint: selector '{selector}' is ambiguous (matchedForm={matched_form})")
-                    }
-                })
-                .collect();
+            // Human selector errors → stderr, exit 2, no stdout (fingerprint.ts:301).
+            let owned: Vec<FingerprintQueryDiagnostic> =
+                selector_errors.into_iter().cloned().collect();
+            let msg = format_selector_errors_human(&owned);
             return Ok(FingerprintRunResult {
                 output: FingerprintOutput::Text(String::new()),
                 exit_code: 2,
-                selector_error_message: Some(msgs.join("\n")),
+                // Strip the single trailing newline — alsem.rs re-adds it via eprintln!.
+                selector_error_message: Some(msg.trim_end_matches('\n').to_string()),
+                stderr_diagnostics: Vec::new(),
             });
         }
         let human = format_fingerprint_human_verbosity(&result, opts.verbosity);
+        // human format prints analyze diagnostics to stderr at exit (fingerprint.ts:331).
+        let stderr_diags: Vec<String> = analyzer_diags
+            .iter()
+            .map(|(_, sev, msg)| format!("{sev}: {msg}"))
+            .collect();
         return Ok(FingerprintRunResult {
             output: FingerprintOutput::Text(human),
             exit_code: 0,
             selector_error_message: None,
+            stderr_diagnostics: stderr_diags,
         });
     }
 
-    // json + query.
+    // json + query: selector errors are embedded in payload.diagnostics + exit 2,
+    // and NO analyze errors go to stderr (fingerprint.ts:281-297).
     let json_text = project_fingerprint_query_full(
         &result,
         &snap,
         &opts.workspace.to_string_lossy(),
         &filters,
         opts.deterministic,
-        &analyzer_diagnostics,
+        &analyzer_diags,
         opts.alsem_version,
         &workspace_fp,
     );
@@ -289,7 +498,25 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
         output: FingerprintOutput::Text(json_text),
         exit_code,
         selector_error_message: None,
+        stderr_diagnostics: Vec::new(),
     })
+}
+
+/// Build the analyzer diagnostics list as `(code, severity, message)` tuples,
+/// shared by the strict gate, the B0 envelope path, and the query JSON envelope.
+fn analyzer_diags_for(
+    workspace: &std::path::Path,
+    resolved: &crate::engine::l3::l3_workspace::L3Resolved,
+) -> Vec<(String, String, String)> {
+    let default_detectors: Vec<_> = registered_detectors()
+        .into_iter()
+        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
+        .collect();
+    let diags_vec = compute_analyzer_diagnostics(workspace, resolved, &default_detectors);
+    diags_vec
+        .into_iter()
+        .map(|d| (format!("DIAG-{}", d.stage), d.severity, d.message))
+        .collect()
 }
 
 /// Write the fingerprint output to a file or stdout.
