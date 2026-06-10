@@ -566,10 +566,18 @@ pub(crate) fn empty_output_result(
 /// - `enclosing_member` / `originating_object`: the POSITION-derived discriminator
 ///   (RE-1/RE-2). NOT keyed off `enclosingRoutineId` (which COLLAPSES identically for two
 ///   field triggers). Instead: of the member-trigger routines whose `enclosing_member_range`
-///   shares the finding's `source_unit_id` AND CONTAINS the finding's primaryLocation start
-///   (0-based line/col), pick the SMALLEST containing range; use its member/originating
-///   object. `None` when no member-trigger wrapper contains the finding (object-level /
+///   shares the source_unit_id AND CONTAINS the start (0-based line/col) of the finding's
+///   PROJECTED `primaryLocation`, pick the SMALLEST containing range; use its member/
+///   originating object. `None` when no member-trigger wrapper contains it (object-level /
 ///   procedure findings) — the engine never throws.
+///
+///   The match anchor MUST be the PROJECTED primary — i.e. the `actionable_anchor` when a
+///   detector set one, else the internal `primary_location` — because `project_finding`
+///   (projection.rs) promotes the actionable anchor to the emitted `primaryLocation` and
+///   demotes the original to `terminalLocation`. We must discriminate against the SAME
+///   location the consumer sees on `primaryLocation`. (Today the source-only pipeline never
+///   sets `actionable_anchor`, so this reduces to `primary_location`; the distinction is
+///   load-bearing only for a future cross-dependency run — and this is a FROZEN surface.)
 fn build_finding_evidence(
     paired: &[(
         crate::engine::gate::projection::FindingSummary,
@@ -594,10 +602,16 @@ fn build_finding_evidence(
     paired
         .iter()
         .map(|(_, finding)| {
-            let loc = &finding.primary_location;
+            // The PROJECTED primaryLocation anchor: the actionable anchor when set, else
+            // the internal primary. This is what `project_finding` emits as primaryLocation,
+            // so the discriminator stays consistent with what the consumer sees.
+            let loc = finding
+                .actionable_anchor
+                .as_ref()
+                .unwrap_or(&finding.primary_location);
             // Find the smallest member-wrapper range (same source unit) containing the
-            // finding's primaryLocation start. "Smallest" = fewest spanned lines, then
-            // fewest spanned columns (a stable, deterministic total order on extent).
+            // finding's projected primaryLocation start. "Smallest" = fewest spanned lines,
+            // then fewest spanned columns (a stable, deterministic total order on extent).
             let best = members
                 .iter()
                 .filter(|(range, _, _)| {

@@ -295,6 +295,27 @@ appPublisher, appVersion, appId}`. Findings:
   emits the action NAME (correct, source-faithful); the accelerator/caption mismatch is a join-side
   normalization al-perf owns. (Page/field/dataitem members are unaffected.)
 
+### RE-11 — Same-trigger-name sibling-field dedup is PRE-EXISTING; the freeze strictly improves on it [E3 empirical]
+Empirically confirmed during E3: when two fields of the same object carry the SAME trigger
+(identical trigger name + kind + signature — e.g. two `OnValidate` triggers) with the same
+finding-triggering pattern, the engine emits ONE finding for the collapsed group, not one per
+field. Cause: the internal routine id is position-INDEPENDENT (`compute_routine_id` ignores the
+enclosing member — the RE-1 collapse), so both field triggers map to the SAME internal RoutineId,
+and a detector's first-wins-by-finding-id dedup (e.g. `d1.rs`) keeps only the first. This is
+PRE-EXISTING engine behavior — NOT introduced by this change set.
+
+The freeze IMPROVES on the prior state without regressing anything: the SURVIVING finding goes
+from member-AMBIGUOUS (pre-freeze: no member, or a last-writer-wins routine-map member that could
+name the WRONG field) to PRECISELY attributed via the E3 position-derived discriminator (the member
+of the wrapper that actually CONTAINS the surviving finding's projected primaryLocation). It does
+NOT separately emit the sibling field's same-pattern finding.
+
+Consequence for al-perf P3.2: expect PRECISE attribution for the surviving finding of a
+same-trigger-name collision group — NOT a second finding per colliding sibling field. This is
+acceptable (strictly better than pre-freeze; nothing regresses). Fields with DISTINCT trigger kinds
+(e.g. one `OnValidate` + one `OnLookup`) do NOT collapse and yield one precisely-attributed finding
+each (the E3 `cli_a_with_evidence` two-field test exercises this distinct-kind case).
+
 ### RE testing additions
 - Two-field-`OnValidate` fixture: inventory emits distinct `enclosingMember` per row sharing a
   `stableRoutineId` (E2); `analyze --with-evidence` attaches `evidencePath` + per-FINDING distinct
