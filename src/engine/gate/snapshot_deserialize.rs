@@ -47,7 +47,7 @@ pub fn deserialize_snapshot(
     format_hint: Option<SnapshotFormat>,
 ) -> Result<CborValue, String> {
     let fmt = format_hint.unwrap_or_else(|| detect_format(bytes));
-    let mut parsed: CborValue = match fmt {
+    let parsed: CborValue = match fmt {
         SnapshotFormat::Json => {
             let text = std::str::from_utf8(bytes)
                 .map_err(|e| format!("snapshot JSON is not valid UTF-8: {e}"))?;
@@ -92,9 +92,9 @@ pub fn deserialize_snapshot(
         }
     }
 
-    // Normalize map key insertion order is already preserved; nothing more to do.
-    // (Take ownership so the caller gets the tree, not a borrow.)
-    Ok(std::mem::replace(&mut parsed, CborValue::Null))
+    // Map key insertion order is already preserved (serde_json `preserve_order` is
+    // on; the CBOR decoder uses IndexMap) — nothing more to do.
+    Ok(parsed)
 }
 
 /// Auto-detect the snapshot format from the leading bytes (al-sem `detectFormat`).
@@ -201,7 +201,21 @@ fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
 //   - 0xb9 + u16 map (always-map-16). Also tolerates 0xa0..0xb7 / 0xb8 / 0xba
 //     canonical map headers for robustness (a foreign-encoder snapshot).
 //   - 0xf4 false, 0xf5 true, 0xf6 null, 0xf7 undefined.
+//
+// The byte rules MIRROR `engine::gate::cbor::encode` (the B0 encoder) — they MUST
+// stay in lockstep. Rather than share a constants module across the frozen B0
+// encoder and this decoder (a refactor that would touch byte-frozen B0 code), the
+// agreement is GUARANTEED by the `cbor_and_gz_roundtrip_drives_identical_diff`
+// differential (encode a real snapshot via B0, decode here, re-run the diff →
+// byte-identical golden) plus the round-trip unit oracles below. Any drift between
+// encoder and decoder fails those tests.
 // ===========================================================================
+
+/// Maximum CBOR array/map nesting depth. Real snapshots nest only a handful of
+/// levels (e.g. `capabilityFacts[].extra.tempState`); 256 is far above that yet
+/// well below any stack-overflow risk, so a crafted nesting bomb yields `Err`,
+/// never a process abort.
+const MAX_CBOR_DEPTH: usize = 256;
 
 struct Decoder<'a> {
     buf: &'a [u8],
@@ -259,7 +273,15 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn decode_value(&mut self) -> Result<CborValue, String> {
+    fn decode_value(&mut self, depth: usize) -> Result<CborValue, String> {
+        // Depth guard: array/map nesting recurses, and the release profile builds with
+        // `panic = "abort"` — an unbounded recursion on a crafted (trivially small on
+        // disk) deeply-nested header stream would overflow the stack and ABORT the
+        // process, breaching "engine never panics on untrusted input". Real snapshots
+        // nest only a handful of levels; cap well above that.
+        if depth > MAX_CBOR_DEPTH {
+            return Err("CBOR: nesting too deep".to_string());
+        }
         let initial = self.read_u8()?;
         let major = initial >> 5;
         let info = initial & 0x1f;
@@ -287,7 +309,7 @@ impl<'a> Decoder<'a> {
                 let len = self.read_argument(info)? as usize;
                 let mut items = Vec::with_capacity(len.min(1024));
                 for _ in 0..len {
-                    items.push(self.decode_value()?);
+                    items.push(self.decode_value(depth + 1)?);
                 }
                 Ok(CborValue::Array(items))
             }
@@ -296,14 +318,14 @@ impl<'a> Decoder<'a> {
                 let len = self.read_argument(info)? as usize;
                 let mut m: IndexMap<String, CborValue> = IndexMap::new();
                 for _ in 0..len {
-                    let key = self.decode_value()?;
+                    let key = self.decode_value(depth + 1)?;
                     let key_str = match key {
                         CborValue::Text(s) => s,
                         other => {
                             return Err(format!("CBOR: non-text map key {other:?}"));
                         }
                     };
-                    let val = self.decode_value()?;
+                    let val = self.decode_value(depth + 1)?;
                     m.insert(key_str, val);
                 }
                 Ok(CborValue::Map(m))
@@ -395,7 +417,7 @@ fn half_to_f64(h: u16) -> f64 {
 /// top-level value are ignored (the snapshot is a single top-level object).
 pub fn cbor_decode(bytes: &[u8]) -> Result<CborValue, String> {
     let mut d = Decoder::new(bytes);
-    d.decode_value()
+    d.decode_value(0)
 }
 
 #[cfg(test)]
@@ -479,6 +501,34 @@ mod tests {
         for n in 0..encoded.len() {
             let _ = cbor_decode(&encoded[..n]);
         }
+    }
+
+    #[test]
+    fn nesting_bomb_errors_not_aborts() {
+        // A crafted deeply-nested array stream: N `0x81` (array, len 1) headers, each
+        // wrapping the next, then an int leaf. Trivially small on disk but would
+        // recurse N deep — past MAX_CBOR_DEPTH it must yield Err, NOT overflow the
+        // stack (which, under release `panic="abort"`, would abort the process).
+        let mut bomb = vec![0x81u8; 100_000];
+        bomb.push(0x00); // leaf int 0
+        let r = cbor_decode(&bomb);
+        assert!(r.is_err(), "deep nesting must error, got {r:?}");
+        assert_eq!(r.unwrap_err(), "CBOR: nesting too deep");
+
+        // A map nesting bomb too: N `0xa1 61 6b` (map len 1, key "k") then a leaf.
+        let mut map_bomb = Vec::new();
+        for _ in 0..100_000 {
+            map_bomb.extend_from_slice(&[0xa1, 0x61, 0x6b]); // {"k": <next>}
+        }
+        map_bomb.push(0x00);
+        let r2 = cbor_decode(&map_bomb);
+        assert!(r2.is_err(), "deep map nesting must error, got {r2:?}");
+        assert_eq!(r2.unwrap_err(), "CBOR: nesting too deep");
+
+        // A shallow nesting just under the cap still decodes (no false positive).
+        let mut ok = vec![0x81u8; 200];
+        ok.push(0x00);
+        assert!(cbor_decode(&ok).is_ok(), "200-deep must still decode");
     }
 
     #[test]

@@ -45,10 +45,6 @@ pub struct DiffCliOptions<'a> {
     pub alsem_version: &'a str,
 }
 
-fn severity_rank(s: Severity) -> u8 {
-    s.rank()
-}
-
 fn detect_input_kind(arg: &str) -> Result<InputKind, String> {
     let p = Path::new(arg);
     if !p.exists() {
@@ -210,12 +206,8 @@ pub fn run_diff(opts: &DiffCliOptions) -> DiffRunOutcome {
     if opts.coverage_policy == CoveragePolicy::Strict && strict_coverage_failed {
         exit_code = 1;
     } else if let Some(threshold) = opts.fail_on {
-        let t = severity_rank(threshold);
-        if result
-            .findings
-            .iter()
-            .any(|f| severity_rank(f.severity) <= t)
-        {
+        let t = threshold.rank();
+        if result.findings.iter().any(|f| f.severity.rank() <= t) {
             exit_code = 1;
         }
     }

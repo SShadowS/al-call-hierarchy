@@ -144,5 +144,9 @@ pub fn compute_diff_fingerprint(
         normalized_stable_id,
         secondary_key.unwrap_or("")
     );
-    sha256_hex(&payload)[..16].to_string()
+    // `sha256_hex` always returns 64 lowercase hex chars, so slicing `[..16]` is
+    // always in-bounds and char-boundary-safe (al-sem truncates to 16 hex too).
+    let hex = sha256_hex(&payload);
+    debug_assert_eq!(hex.len(), 64, "sha256_hex must be 64 hex chars");
+    hex[..16].to_string()
 }

@@ -137,3 +137,110 @@ fn stale(stale_id: &str, reason: &str) -> DiffDiagnostic {
         ],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn overlay(pairs: &[(&str, &str)]) -> RenameOverlay {
+        let mut o: RenameOverlay = IndexMap::new();
+        for (k, v) in pairs {
+            o.insert((*k).to_string(), (*v).to_string());
+        }
+        o
+    }
+
+    fn field_str(d: &DiffDiagnostic, key: &str) -> Option<String> {
+        d.fields.iter().find(|(k, _)| k == key).and_then(|(_, v)| {
+            if let CborValue::Text(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// (a) `{A:B, B:C}` → exactly one chain diagnostic (from=A, via=B, to=C).
+    #[test]
+    fn overlay_chain_diagnostic() {
+        let (_table, diags) = build_rename_table(&overlay(&[("A", "B"), ("B", "C")]));
+        let chains: Vec<&DiffDiagnostic> = diags
+            .iter()
+            .filter(|d| d.kind == "rename-overlay-chain")
+            .collect();
+        assert_eq!(chains.len(), 1, "exactly one chain diag");
+        assert_eq!(field_str(chains[0], "from").as_deref(), Some("A"));
+        assert_eq!(field_str(chains[0], "via").as_deref(), Some("B"));
+        assert_eq!(field_str(chains[0], "to").as_deref(), Some("C"));
+    }
+
+    /// (b) `{A:C, B:C}` → exactly one overlap diagnostic, targets `[A,B,C]` in
+    /// insertion order (the two olds in overlay order, then the shared new).
+    #[test]
+    fn overlay_overlap_diagnostic_targets_insertion_order() {
+        let (_table, diags) = build_rename_table(&overlay(&[("A", "C"), ("B", "C")]));
+        let overlaps: Vec<&DiffDiagnostic> = diags
+            .iter()
+            .filter(|d| d.kind == "rename-overlay-overlap")
+            .collect();
+        assert_eq!(overlaps.len(), 1, "exactly one overlap diag");
+        let targets = overlaps[0]
+            .fields
+            .iter()
+            .find(|(k, _)| k == "targets")
+            .map(|(_, v)| v)
+            .expect("targets field");
+        let CborValue::Array(items) = targets else {
+            panic!("targets must be an array");
+        };
+        let names: Vec<String> = items
+            .iter()
+            .filter_map(|v| {
+                if let CborValue::Text(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(names, vec!["A", "B", "C"], "targets in insertion order");
+    }
+
+    /// (c) An overlay stableId absent from both old+new → one stale diagnostic.
+    #[test]
+    fn overlay_stale_diagnostic() {
+        let (table, _diags) = build_rename_table(&overlay(&[("GONE", "ALSO_GONE")]));
+        let mut old_ids: HashSet<String> = HashSet::new();
+        old_ids.insert("present-old".into());
+        let mut new_ids: HashSet<String> = HashSet::new();
+        new_ids.insert("present-new".into());
+        let stale_diags = validate_overlay_against_snapshots(&table, &old_ids, &new_ids);
+        // Both the old (not-in-old) and the new (not-in-new) id are stale.
+        assert_eq!(stale_diags.len(), 2);
+        assert_eq!(stale_diags[0].kind, "rename-overlay-stale");
+        assert_eq!(
+            field_str(&stale_diags[0], "staleId").as_deref(),
+            Some("GONE")
+        );
+        assert_eq!(
+            field_str(&stale_diags[0], "reason").as_deref(),
+            Some("not-in-old")
+        );
+        assert_eq!(
+            field_str(&stale_diags[1], "staleId").as_deref(),
+            Some("ALSO_GONE")
+        );
+        assert_eq!(
+            field_str(&stale_diags[1], "reason").as_deref(),
+            Some("not-in-new")
+        );
+    }
+
+    /// Identity mappings (`A:A`) are dropped — no diagnostics, empty table.
+    #[test]
+    fn identity_mapping_dropped() {
+        let (table, diags) = build_rename_table(&overlay(&[("A", "A")]));
+        assert!(table.is_empty());
+        assert!(diags.is_empty());
+    }
+}

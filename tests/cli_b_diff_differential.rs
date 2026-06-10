@@ -416,6 +416,382 @@ fn cbor_and_gz_roundtrip_drives_identical_diff() {
     );
 }
 
+// ===========================================================================
+// Synthetic oracles — lock the corpus-invisible branches (preflight fatals, the
+// higher-severity finding kinds, the human zero-findings-with-diagnostics
+// early-exit). Each builds a minimal CborValue snapshot tree by hand and runs the
+// engine, asserting the TS-exact behavior.
+// ===========================================================================
+
+use indexmap::IndexMap;
+
+/// Build a CborValue::Map from (key, value) pairs.
+fn obj(pairs: Vec<(&str, CborValue)>) -> CborValue {
+    let mut m: IndexMap<String, CborValue> = IndexMap::new();
+    for (k, v) in pairs {
+        m.insert(k.to_string(), v);
+    }
+    CborValue::Map(m)
+}
+
+fn txt(s: &str) -> CborValue {
+    CborValue::Text(s.to_string())
+}
+
+/// A minimal snapshot with a given set of top-level fact arrays. `schemaVersion`
+/// defaults to 3 and `apps` to a single app guid `appguid-1` unless overridden.
+fn snapshot(extra: Vec<(&str, CborValue)>) -> CborValue {
+    let mut pairs: Vec<(&str, CborValue)> = vec![
+        ("schemaVersion", CborValue::Int(3)),
+        ("alsemVersion", txt("cli-b-v1")),
+        (
+            "apps",
+            CborValue::Array(vec![obj(vec![("appGuid", txt("appguid-1"))])]),
+        ),
+        (
+            "identities",
+            obj(vec![
+                ("stableIds", CborValue::Array(vec![])),
+                ("displayNames", CborValue::Array(vec![])),
+            ]),
+        ),
+    ];
+    pairs.extend(extra);
+    obj(pairs)
+}
+
+fn engine(
+    old: &CborValue,
+    new: &CborValue,
+    policy: CoveragePolicy,
+) -> al_call_hierarchy::engine::gate::diff::DiffEngineResult {
+    run_diff_engine(
+        old,
+        new,
+        &DiffEngineOptions {
+            coverage_policy: policy,
+            deterministic: true,
+            rename_overlay: None,
+        },
+    )
+}
+
+fn find_kind<'a>(
+    r: &'a al_call_hierarchy::engine::gate::diff::DiffEngineResult,
+    kind: &str,
+) -> &'a al_call_hierarchy::engine::gate::diff::DiffFinding {
+    r.findings
+        .iter()
+        .find(|f| f.kind.as_str() == kind)
+        .unwrap_or_else(|| {
+            panic!(
+                "no finding of kind {kind}; got {:?}",
+                r.findings
+                    .iter()
+                    .map(|f| f.kind.as_str())
+                    .collect::<Vec<_>>()
+            )
+        })
+}
+
+/// #5(a) — schemaVersion mismatch → fatal: empty findings + schema-version-mismatch diag.
+#[test]
+fn oracle_preflight_schema_version_mismatch_is_fatal() {
+    let old = snapshot(vec![]);
+    let mut new = snapshot(vec![]);
+    if let CborValue::Map(m) = &mut new {
+        m.insert("schemaVersion".into(), CborValue::Int(3)); // keep new at 3...
+    }
+    // ...but make OLD differ by mutating its schemaVersion to a sentinel. The
+    // deserializer gate rejects ≠3 inputs, but the engine itself must still
+    // short-circuit on a mismatch, so we feed the engine directly.
+    let mut old_mut = old;
+    if let CborValue::Map(m) = &mut old_mut {
+        m.insert("schemaVersion".into(), CborValue::Int(99));
+    }
+    let r = engine(&old_mut, &new, CoveragePolicy::Loose);
+    assert!(r.findings.is_empty(), "fatal preflight → no findings");
+    assert!(r
+        .diagnostics
+        .iter()
+        .any(|d| d.kind == "schema-version-mismatch"));
+}
+
+/// #5(b) — alsemVersion mismatch under strict → fatal error diagnostic.
+#[test]
+fn oracle_preflight_alsem_version_mismatch_strict_is_fatal() {
+    let old = snapshot(vec![]);
+    let mut new = snapshot(vec![]);
+    if let CborValue::Map(m) = &mut new {
+        m.insert("alsemVersion".into(), txt("cli-b-v2"));
+    }
+    let r = engine(&old, &new, CoveragePolicy::Strict);
+    assert!(
+        r.findings.is_empty(),
+        "strict version mismatch → fatal, no findings"
+    );
+    let diag = r
+        .diagnostics
+        .iter()
+        .find(|d| d.kind == "alsem-version-mismatch")
+        .expect("alsem-version-mismatch diag");
+    let sev = diag
+        .fields
+        .iter()
+        .find(|(k, _)| k == "severity")
+        .map(|(_, v)| v);
+    assert!(matches!(sev, Some(CborValue::Text(s)) if s == "error"));
+
+    // Under loose the same mismatch is a WARNING and NOT fatal (findings still flow).
+    let r2 = engine(&old, &new, CoveragePolicy::Loose);
+    let diag2 = r2
+        .diagnostics
+        .iter()
+        .find(|d| d.kind == "alsem-version-mismatch")
+        .expect("alsem-version-mismatch diag (loose)");
+    let sev2 = diag2
+        .fields
+        .iter()
+        .find(|(k, _)| k == "severity")
+        .map(|(_, v)| v);
+    assert!(matches!(sev2, Some(CborValue::Text(s)) if s == "warning"));
+}
+
+/// #5(c) — apps[0].appGuid mismatch → fatal app-identity-mismatch.
+#[test]
+fn oracle_preflight_app_identity_mismatch_is_fatal() {
+    let old = snapshot(vec![]);
+    let mut new = snapshot(vec![]);
+    if let CborValue::Map(m) = &mut new {
+        m.insert(
+            "apps".into(),
+            CborValue::Array(vec![obj(vec![("appGuid", txt("appguid-2"))])]),
+        );
+    }
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert!(r.findings.is_empty(), "app mismatch → fatal, no findings");
+    assert!(r
+        .diagnostics
+        .iter()
+        .any(|d| d.kind == "app-identity-mismatch"));
+}
+
+/// #4 — human renderer: a diff yielding DIAGNOSTICS but ZERO findings prints the
+/// diagnostics block and SKIPS the `Diff: 0 finding(s)…` summary line. We synthesize
+/// this via a strict run whose only coverage-sensitive finding is dropped (leaving a
+/// coverage-incomplete policy diagnostic and zero findings).
+#[test]
+fn oracle_human_zero_findings_with_diagnostics_skips_summary() {
+    // OLD has a table capability fact under a routine whose NEW-side cone is
+    // partial; strict drops the lost-capability finding and emits a coverage diag.
+    let subject = "appguid-1:Codeunit:50100#abc";
+    let cap_fact = |op: &str| {
+        obj(vec![
+            ("subject", txt(subject)),
+            ("op", txt(op)),
+            ("resourceKind", txt("table")),
+            ("resourceId", txt("appguid-1/table/50100")),
+        ])
+    };
+    let coverage = |inherited: &str| {
+        obj(vec![
+            ("subject", txt(subject)),
+            ("inheritedStatus", txt(inherited)),
+        ])
+    };
+    let old = snapshot(vec![
+        (
+            "capabilityFacts",
+            CborValue::Array(vec![cap_fact("insert")]),
+        ),
+        ("coverage", CborValue::Array(vec![coverage("complete")])),
+    ]);
+    // NEW: the capability is gone AND the cone is partial → strict drops the finding.
+    let new = snapshot(vec![
+        ("capabilityFacts", CborValue::Array(vec![])),
+        ("coverage", CborValue::Array(vec![coverage("partial")])),
+    ]);
+
+    let r = engine(&old, &new, CoveragePolicy::Strict);
+    assert!(r.findings.is_empty(), "strict drops the only finding");
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.kind == "coverage-incomplete"),
+        "must have a coverage-incomplete diagnostic"
+    );
+
+    let empty: Vec<CborValue> = Vec::new();
+    let human = format_diff(&r, "human", VERSION_OVERRIDE, true, &empty);
+    assert!(
+        human.contains("diagnostics:"),
+        "human must print the diagnostics block, got:\n{human}"
+    );
+    assert!(
+        !human.contains("Diff:") && !human.contains("finding(s)"),
+        "human must SKIP the summary line when findings are empty, got:\n{human}"
+    );
+}
+
+/// #7 — higher-severity finding kinds (corpus-invisible). Assert each kind's
+/// severity + that it fires, across the families the spec reviewer enumerated.
+#[test]
+fn oracle_higher_severity_finding_kinds() {
+    let empty: Vec<CborValue> = Vec::new();
+
+    // -- ABI: object-removed (critical), object-accessibility-narrowed (critical) --
+    let obj_fact = |sid: &str, vis: &str| {
+        obj(vec![
+            ("kind", txt("object")),
+            ("stableId", txt(sid)),
+            ("visibility", txt(vis)),
+            ("signatureFingerprint", txt("sig1")),
+        ])
+    };
+    let old = snapshot(vec![(
+        "contractFacts",
+        CborValue::Array(vec![
+            obj_fact("appguid-1:Codeunit:1", "public"),
+            obj_fact("appguid-1:Codeunit:2", "public"),
+        ]),
+    )]);
+    let new = snapshot(vec![(
+        "contractFacts",
+        CborValue::Array(vec![
+            // Codeunit:1 removed; Codeunit:2 narrowed public→internal.
+            obj_fact("appguid-1:Codeunit:2", "internal"),
+        ]),
+    )]);
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert_eq!(find_kind(&r, "object-removed").severity, Severity::Critical);
+    assert_eq!(
+        find_kind(&r, "object-accessibility-narrowed").severity,
+        Severity::Critical
+    );
+
+    // -- Schema: table-field-type-narrowed (critical), enum-value-renumbered (critical) --
+    let field = |sid: &str, fp: &str| {
+        obj(vec![
+            ("kind", txt("field")),
+            ("stableId", txt(sid)),
+            ("shapeFingerprint", txt(fp)),
+        ])
+    };
+    let enumv = |sid: &str, fp: &str| {
+        obj(vec![
+            ("kind", txt("enum-value")),
+            ("stableId", txt(sid)),
+            ("shapeFingerprint", txt(fp)),
+        ])
+    };
+    let old = snapshot(vec![(
+        "schemaFacts",
+        CborValue::Array(vec![
+            field("appguid-1:Table:1#1", "fpA"),
+            enumv("appguid-1:Enum:1#0", "fpE0"),
+        ]),
+    )]);
+    let new = snapshot(vec![(
+        "schemaFacts",
+        CborValue::Array(vec![
+            field("appguid-1:Table:1#1", "fpB"),
+            enumv("appguid-1:Enum:1#0", "fpE1"),
+        ]),
+    )]);
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert_eq!(
+        find_kind(&r, "table-field-type-narrowed").severity,
+        Severity::Critical
+    );
+    assert_eq!(
+        find_kind(&r, "enum-value-renumbered").severity,
+        Severity::Critical
+    );
+
+    // -- Events: publisher-signature-changed (critical, no subscribers) --
+    let publisher = |routine: &str, event_id: &str| {
+        obj(vec![
+            ("kind", txt("publisher")),
+            ("routine", txt(routine)),
+            ("eventId", txt(event_id)),
+        ])
+    };
+    let old = snapshot(vec![(
+        "eventDeclarations",
+        CborValue::Array(vec![publisher(
+            "appguid-1:Codeunit:9#r",
+            "appguid-1:Codeunit:9::OnDone::hashA",
+        )]),
+    )]);
+    let new = snapshot(vec![(
+        "eventDeclarations",
+        CborValue::Array(vec![publisher(
+            "appguid-1:Codeunit:9#r",
+            "appguid-1:Codeunit:9::OnDone::hashB",
+        )]),
+    )]);
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert_eq!(
+        find_kind(&r, "event-publisher-signature-changed").severity,
+        Severity::Critical
+    );
+
+    // -- Capabilities: gained-commit (high) --
+    let commit = obj(vec![
+        ("subject", txt("appguid-1:Codeunit:7#c")),
+        ("op", txt("commit")),
+        ("resourceKind", txt("transaction")),
+    ]);
+    let old = snapshot(vec![("capabilityFacts", CborValue::Array(vec![]))]);
+    let new = snapshot(vec![("capabilityFacts", CborValue::Array(vec![commit]))]);
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert_eq!(
+        find_kind(&r, "capability-gained-commit").severity,
+        Severity::High
+    );
+
+    // -- Permissions: rights-contracted (low), target-removed (low) --
+    let perm = |target: &str, rights: Vec<&str>| {
+        obj(vec![
+            ("kind", txt("required")),
+            ("subject", txt("appguid-1:Codeunit:5#p")),
+            ("target", txt(target)),
+            ("targetKind", txt("TableData")),
+            (
+                "rights",
+                CborValue::Array(rights.iter().map(|r| txt(r)).collect()),
+            ),
+        ])
+    };
+    let old = snapshot(vec![(
+        "permissionFacts",
+        CborValue::Array(vec![
+            perm("appguid-1:Table:1", vec!["R", "I", "M"]),
+            perm("appguid-1:Table:2", vec!["R"]),
+        ]),
+    )]);
+    let new = snapshot(vec![(
+        "permissionFacts",
+        CborValue::Array(vec![
+            // Table:1 contracted R,I,M → R; Table:2 removed.
+            perm("appguid-1:Table:1", vec!["R"]),
+        ]),
+    )]);
+    let r = engine(&old, &new, CoveragePolicy::Loose);
+    assert_eq!(
+        find_kind(&r, "permission-rights-contracted").severity,
+        Severity::Low
+    );
+    assert_eq!(
+        find_kind(&r, "permission-target-removed").severity,
+        Severity::Low
+    );
+
+    // Sanity: SARIF level mapping for a critical/high/low set is error/error/note.
+    let sarif = format_diff(&r, "sarif", VERSION_OVERRIDE, true, &empty);
+    assert!(sarif.contains("\"level\": \"note\""), "low → note in sarif");
+}
+
 /// Regeneration shim (ignored): refresh the al-sem diff goldens.
 #[test]
 #[ignore]

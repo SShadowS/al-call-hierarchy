@@ -185,6 +185,12 @@ pub fn run_diff_engine(
 /// The deterministic finding sort: severity rank, then category (string <),
 /// then kind (string <), then id (string <). STABLE. Mirrors `runDiffEngine`'s
 /// final `.slice().sort(...)`.
+///
+/// String comparisons use Rust's ordinal `str::cmp` (byte order). al-sem's `<`
+/// on JS strings is UTF-16 code-unit order; for the category/kind/id values here
+/// — all ASCII (lowercase hyphenated kinds, hex/guid ids) — ordinal byte order ==
+/// UTF-16 order, so this is byte-faithful. (The engine-wide ordinal-vs-localeCompare
+/// comparator parity is the known tracked item; not exercised by any non-ASCII id.)
 fn sort_findings(findings: &mut [DiffFinding]) {
     findings.sort_by(|a, b| {
         let sa = a.severity.rank();
