@@ -1048,11 +1048,10 @@ fn build_inventory_doc(
     // Extract the shared sub-values verbatim from the full snapshot CborValue,
     // mirroring build_envelope's key-lift pattern (apps/identities/coverage/
     // rootClassifications are in the snapshot map, not the envelope wrapper).
-    let get = |key: &str| -> CborValue {
-        snap.get(key)
-            .cloned()
-            .unwrap_or(CborValue::Array(Vec::new()))
-    };
+    // A missing key defaults to `Null` — NOT `[]`: these keys are always composed
+    // today, but `coverage` is an object, so an `[]` fallback would be a shape lie.
+    // `Null` fails honestly if a future snapshot-map change drops a key.
+    let get = |key: &str| -> CborValue { snap.get(key).cloned().unwrap_or(CborValue::Null) };
     let apps = get("apps");
     let identities = get("identities");
     let coverage = get("coverage");

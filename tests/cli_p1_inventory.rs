@@ -240,3 +240,43 @@ fn inventory_only_cbor_rejected() {
         "--inventory-only + cbor must be rejected by the pipeline"
     );
 }
+
+/// `--inventory-only` with a query selector (e.g. `--routine`) must be REJECTED.
+/// Without this, a selector makes `is_query_requested` true, which routes the
+/// pipeline past the B0 inventory branch into the QUERY path — silently ignoring
+/// `--inventory-only` and emitting a query result instead.
+#[test]
+fn inventory_only_query_selector_rejected() {
+    let ws = corpus_dir().join(FIXTURE);
+    assert!(
+        ws.is_dir(),
+        "fixture {FIXTURE} not found at {}",
+        ws.display()
+    );
+    let opts = FingerprintOptions {
+        workspace: &ws,
+        alsem_version: "p1-test-v1",
+        format: FingerprintFormat::Json,
+        out: None,
+        shard: None,
+        witness_limit: None,
+        roots: None,
+        routine_selectors: vec!["SomeRoutine".to_string()],
+        include_inherited: true,
+        // A --routine selector sets is_query_requested true at the CLI layer.
+        is_query_requested: true,
+        deterministic: true,
+        strict: false,
+        verbosity: "compact",
+        inventory_only: true,
+    };
+    // FingerprintRunResult is not Debug, so match the Result rather than unwrap_err().
+    let msg = match run_fingerprint_pipeline(&opts) {
+        Err(m) => m,
+        Ok(_) => panic!("--inventory-only + query selector must be rejected by the pipeline"),
+    };
+    assert!(
+        msg.contains("query selectors"),
+        "rejection message must mention query selectors, got: {msg}"
+    );
+}

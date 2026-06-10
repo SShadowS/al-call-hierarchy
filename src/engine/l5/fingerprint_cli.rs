@@ -323,7 +323,10 @@ pub fn format_selector_errors_human(diags: &[FingerprintQueryDiagnostic]) -> Str
 /// upstream by the CLI (`default_format` + `reject_illegal_combos`) so the exact
 /// TS exit codes / stderr land; this function assumes a legal invocation.
 pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<FingerprintRunResult, String> {
-    // --inventory-only: json-only; reject binary formats and shard mode.
+    // --inventory-only: json-only; reject binary formats, shard mode, and query
+    // selectors. The selector rejection is load-bearing: a query selector makes
+    // `is_query_requested` true, which would route past the B0 inventory branch into
+    // the QUERY path (silently ignoring --inventory-only). Reject up front instead.
     if opts.inventory_only {
         if opts.shard.is_some() {
             return Err("--inventory-only cannot be combined with --shard".to_string());
@@ -333,6 +336,12 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
                 "--inventory-only requires --format=json (got {:?})",
                 opts.format
             ));
+        }
+        if opts.is_query_requested {
+            return Err(
+                "--inventory-only cannot be combined with query selectors (--routine/--roots/--witness/--no-include-inherited)"
+                    .to_string(),
+            );
         }
     }
 
