@@ -82,7 +82,8 @@ fn inventory_only_projection_subset_self_consistency() {
         serde_json::from_str(&inv_json).expect("inventory doc must parse as JSON");
 
     // (a) Envelope header checks: kind must be "routine-inventory", schemaVersion
-    //     must be "1.0.0" for the inventory doc.
+    //     must be "1.1.0" for the inventory doc (engine-e2: additive enclosingMember/
+    //     originatingObject fields).
     assert_eq!(
         inv_doc["kind"].as_str().unwrap_or(""),
         "routine-inventory",
@@ -90,8 +91,8 @@ fn inventory_only_projection_subset_self_consistency() {
     );
     assert_eq!(
         inv_doc["schemaVersion"].as_str().unwrap_or(""),
-        "1.0.0",
-        "inventory doc schemaVersion must be '1.0.0'"
+        "1.1.0",
+        "inventory doc schemaVersion must be '1.1.0'"
     );
 
     // (a) Projection-subset self-consistency: apps, coverage, rootClassifications,
@@ -239,6 +240,205 @@ fn inventory_only_cbor_rejected() {
         result.is_err(),
         "--inventory-only + cbor must be rejected by the pipeline"
     );
+}
+
+// ===========================================================================
+// engine-e2: enclosingMember / originatingObject inventory fields + 3-key sort.
+//
+// Builds a scratch workspace (NOT a corpus fixture — the differential suites
+// enumerate `r0-corpus/` and would expect goldens for a new dir). Exercises the
+// real `build_inventory_doc` path via `run_fingerprint_pipeline --inventory-only`.
+// ===========================================================================
+
+/// A scratch workspace under the OS temp dir (unique per process + nanos).
+fn scratch_ws(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "alsem-cli-p1-inv-{tag}-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(dir.join("src")).expect("create scratch ws src dir");
+    dir
+}
+
+/// Write a minimal one-app workspace (app.json + a single .al file) and run the
+/// inventory-only pipeline, returning the parsed envelope.
+fn inventory_doc_for(tag: &str, al_file: &str, al_source: &str) -> serde_json::Value {
+    let ws = scratch_ws(tag);
+    std::fs::write(
+        ws.join("app.json"),
+        r#"{"id":"22222222-2222-2222-2222-222222222222","name":"E2 Inv","publisher":"PT","version":"1.0.0.0","dependencies":[]}"#,
+    )
+    .expect("write app.json");
+    std::fs::write(ws.join("src").join(al_file), al_source).expect("write al source");
+
+    let opts = FingerprintOptions {
+        workspace: &ws,
+        alsem_version: "p1-test-v1",
+        format: FingerprintFormat::Json,
+        out: None,
+        shard: None,
+        witness_limit: None,
+        roots: None,
+        routine_selectors: Vec::new(),
+        include_inherited: true,
+        is_query_requested: false,
+        deterministic: true,
+        strict: false,
+        verbosity: "compact",
+        inventory_only: true,
+    };
+    let result = run_fingerprint_pipeline(&opts)
+        .unwrap_or_else(|e| panic!("inventory pipeline error for {tag}: {e}"));
+    let json = match result.output {
+        FingerprintOutput::Text(t) => t,
+        _ => panic!("expected Text output"),
+    };
+    serde_json::from_str(&json).expect("inventory doc must parse")
+}
+
+const TWO_FIELD_TABLE: &str = r#"
+table 50100 "Two Field"
+{
+    fields
+    {
+        field(1; "Bravo Field"; Integer)
+        {
+            trigger OnValidate()
+            begin
+            end;
+        }
+        field(2; "alpha field"; Integer)
+        {
+            trigger OnValidate()
+            begin
+            end;
+        }
+    }
+
+    trigger OnInsert()
+    begin
+    end;
+}
+"#;
+
+/// Two field OnValidate triggers collapse to ONE stableRoutineId but carry DISTINCT
+/// enclosingMember; the rows are emitted in deterministic case-insensitive member
+/// order ("alpha field" before "Bravo Field" despite the lowercase/uppercase mix).
+#[test]
+fn two_field_rows_share_stable_id_distinct_member_case_insensitive_order() {
+    let doc = inventory_doc_for("two-field", "twofield.al", TWO_FIELD_TABLE);
+    let rows = doc["payload"]["routineInventory"]
+        .as_array()
+        .expect("routineInventory array");
+
+    // Collect the two OnValidate rows (same routineName "OnValidate").
+    let validate_rows: Vec<&serde_json::Value> = rows
+        .iter()
+        .filter(|r| r["routineName"].as_str() == Some("OnValidate"))
+        .collect();
+    assert_eq!(
+        validate_rows.len(),
+        2,
+        "two OnValidate rows expected, got {validate_rows:?}"
+    );
+
+    // Same stableRoutineId.
+    let sid0 = validate_rows[0]["stableRoutineId"].as_str().unwrap();
+    let sid1 = validate_rows[1]["stableRoutineId"].as_str().unwrap();
+    assert_eq!(
+        sid0, sid1,
+        "both field OnValidate rows must share one stableRoutineId"
+    );
+
+    // Distinct enclosingMember, present on both.
+    let m0 = validate_rows[0]["enclosingMember"]
+        .as_str()
+        .expect("row 0 enclosingMember present");
+    let m1 = validate_rows[1]["enclosingMember"]
+        .as_str()
+        .expect("row 1 enclosingMember present");
+    assert_ne!(m0, m1, "the two rows must carry distinct enclosingMember");
+
+    // Deterministic case-insensitive member order: "alpha field" < "Bravo Field".
+    // The duplicate-stableRoutineId tie-break (RE-6) is case-insensitive, so the
+    // lowercase "alpha field" sorts before "Bravo Field" regardless of casing.
+    assert_eq!(
+        (m0, m1),
+        ("alpha field", "Bravo Field"),
+        "duplicate-stableRoutineId rows ordered by case-insensitive enclosingMember"
+    );
+
+    // originatingObject present on the member-trigger rows (the declaring table).
+    assert!(
+        validate_rows[0]["originatingObject"].is_string(),
+        "member-trigger row carries originatingObject"
+    );
+
+    // The object-level OnInsert trigger row has NO enclosingMember key.
+    let oninsert = rows
+        .iter()
+        .find(|r| r["routineName"].as_str() == Some("OnInsert"))
+        .expect("OnInsert row present");
+    assert!(
+        oninsert.get("enclosingMember").is_none(),
+        "object-level OnInsert row must NOT carry an enclosingMember key"
+    );
+    assert!(
+        oninsert.get("originatingObject").is_none(),
+        "object-level OnInsert row must NOT carry an originatingObject key"
+    );
+
+    // Determinism: a second run is byte-identical.
+    let doc2 = inventory_doc_for("two-field-2", "twofield.al", TWO_FIELD_TABLE);
+    assert_eq!(
+        doc["payload"]["routineInventory"], doc2["payload"]["routineInventory"],
+        "inventory routine rows must be deterministic across runs"
+    );
+}
+
+const OBJECT_LEVEL_CODEUNIT: &str = r#"
+codeunit 50101 "Runner E2"
+{
+    trigger OnRun()
+    begin
+    end;
+
+    procedure Helper()
+    begin
+    end;
+}
+"#;
+
+/// An object-level trigger (OnRun) and a plain procedure carry NEITHER
+/// enclosingMember NOR originatingObject keys.
+#[test]
+fn object_level_trigger_row_has_no_member_keys() {
+    let doc = inventory_doc_for("obj-level", "runner.al", OBJECT_LEVEL_CODEUNIT);
+    let rows = doc["payload"]["routineInventory"]
+        .as_array()
+        .expect("routineInventory array");
+
+    for name in &["OnRun", "Helper"] {
+        let row = rows
+            .iter()
+            .find(|r| r["routineName"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("{name} row present"));
+        assert!(
+            row.get("enclosingMember").is_none(),
+            "{name} (object-level / procedure) must NOT carry enclosingMember"
+        );
+        assert!(
+            row.get("originatingObject").is_none(),
+            "{name} (object-level / procedure) must NOT carry originatingObject"
+        );
+    }
+
+    // schemaVersion is 1.1.0 on this doc too.
+    assert_eq!(doc["schemaVersion"].as_str(), Some("1.1.0"));
 }
 
 /// `--inventory-only` with a query selector (e.g. `--routine`) must be REJECTED.

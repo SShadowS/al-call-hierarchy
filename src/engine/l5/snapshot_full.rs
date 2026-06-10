@@ -1033,7 +1033,25 @@ pub fn build_inventory_envelope(
 }
 
 /// The schemaVersion for the routine-inventory document kind.
-pub const INVENTORY_SCHEMA_VERSION: &str = "1.0.0";
+/// 1.1.0 (engine-e2): additive optional per-routine fields `enclosingMember` and
+/// `originatingObject` for member-trigger routines (field/control/action/dataitem
+/// trigger). Rust-only projection (not in the byte-parity harness).
+pub const INVENTORY_SCHEMA_VERSION: &str = "1.1.0";
+
+/// Case-insensitive secondary-sort comparator for the inventory `enclosingMember`
+/// key (RE-6). `None` orders before `Some`; two `Some`s compare on their
+/// lowercased form so duplicate-`stableRoutineId` rows are content-stable
+/// regardless of developer casing. Deterministic (locale-compare on lowercased
+/// text; ties resolve only on the tertiary originatingObject key in the caller).
+fn case_insensitive_compare_opt(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(x), Some(y)) => locale_compare(&x.to_lowercase(), &y.to_lowercase()),
+    }
+}
 
 fn build_inventory_doc(
     tree: &CborValue,
@@ -1058,9 +1076,14 @@ fn build_inventory_doc(
     let root_classifications = get("rootClassifications");
 
     // Per-routine inventory: every source routine → (objectType, objectNumber,
-    // routineName, stableRoutineId). Sorted by stableRoutineId (locale-compare safe
-    // per M8: single-case characters at all discriminating positions).
-    let mut routine_rows: Vec<(String, CborValue)> = resolved
+    // routineName, [enclosingMember], [originatingObject], stableRoutineId). The
+    // two member fields (engine-e2, schema 1.1.0) are emitted only for member-
+    // trigger routines (field/control/action/dataitem trigger). Sort is three-key
+    // (RE-6): primary stableRoutineId (locale_compare) → secondary enclosingMember
+    // (case-insensitive; None first) → tertiary originatingObject (locale_compare).
+    // The secondary/tertiary keys give duplicate-stableRoutineId rows (two field
+    // triggers that collapse to one StableRoutineId) a content-stable order.
+    let mut routine_rows: Vec<(String, Option<String>, Option<String>, CborValue)> = resolved
         .workspace
         .routines
         .iter()
@@ -1069,15 +1092,36 @@ fn build_inventory_doc(
             m.insert("objectType".into(), CborValue::Text(r.object_type.clone()));
             m.insert("objectNumber".into(), CborValue::Int(r.object_number));
             m.insert("routineName".into(), CborValue::Text(r.name.clone()));
+            if let Some(member) = &r.enclosing_member {
+                m.insert("enclosingMember".into(), CborValue::Text(member.clone()));
+            }
+            if let Some(obj) = &r.originating_object {
+                m.insert("originatingObject".into(), CborValue::Text(obj.clone()));
+            }
             m.insert(
                 "stableRoutineId".into(),
                 CborValue::Text(r.stable_routine_id.clone()),
             );
-            (r.stable_routine_id.clone(), CborValue::Map(m))
+            (
+                r.stable_routine_id.clone(),
+                r.enclosing_member.clone(),
+                r.originating_object.clone(),
+                CborValue::Map(m),
+            )
         })
         .collect();
-    routine_rows.sort_by(|a, b| locale_compare(&a.0, &b.0));
-    let routine_inventory = CborValue::Array(routine_rows.into_iter().map(|(_, v)| v).collect());
+    routine_rows.sort_by(|a, b| {
+        locale_compare(&a.0, &b.0)
+            .then_with(|| case_insensitive_compare_opt(&a.1, &b.1))
+            .then_with(|| match (&a.2, &b.2) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(x), Some(y)) => locale_compare(x, y),
+            })
+    });
+    let routine_inventory =
+        CborValue::Array(routine_rows.into_iter().map(|(_, _, _, v)| v).collect());
 
     let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(deterministic);
 
