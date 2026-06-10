@@ -1,0 +1,430 @@
+//! cli-b/b4 — the `diff` CLI differential.
+//!
+//! For each snapshot pair / variant in the al-sem diff manifest, deserialize the
+//! committed snapshot inputs (`scripts/cli-b-goldens/diff/snapshots/`), run the
+//! Rust diff engine + formatters, and byte-compare every `.human.txt` / `.json` /
+//! `.sarif` golden under `scripts/cli-b-goldens/diff/`. Also asserts:
+//!   - the rename variant (`--renames rename-overlay.json`),
+//!   - the strict-coverage exit code (1) + strict json golden,
+//!   - the `--fail-on medium` exit code (1),
+//!   - the ws-mode stderr note (byte-exact).
+//!
+//! Ungated: a divergence is a Rust bug to fix, never a KNOWN_DIVERGENCES entry.
+//!
+//! Refresh (ignored): `refresh_goldens` shells `bun run scripts/dump-diff.ts`
+//! under `AL_SEM_DIR`.
+
+use std::path::PathBuf;
+
+use al_call_hierarchy::engine::gate::cbor::CborValue;
+use al_call_hierarchy::engine::gate::diff::cli::{run_diff, DiffCliOptions};
+use al_call_hierarchy::engine::gate::diff::format::format_diff;
+use al_call_hierarchy::engine::gate::diff::renames::parse_rename_overlay;
+use al_call_hierarchy::engine::gate::diff::{
+    run_diff_engine, CoveragePolicy, DiffEngineOptions, Severity,
+};
+use al_call_hierarchy::engine::gate::snapshot_deserialize::{deserialize_snapshot, SnapshotFormat};
+
+const VERSION_OVERRIDE: &str = "cli-b-v1";
+
+fn al_sem_dir() -> PathBuf {
+    std::env::var("AL_SEM_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"U:\Git\al-sem"))
+}
+
+fn goldens_dir() -> PathBuf {
+    al_sem_dir()
+        .join("scripts")
+        .join("cli-b-goldens")
+        .join("diff")
+}
+
+fn snapshots_dir() -> PathBuf {
+    goldens_dir().join("snapshots")
+}
+
+fn load_snap(name: &str) -> CborValue {
+    let path = snapshots_dir().join(name);
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    deserialize_snapshot(&bytes, Some(SnapshotFormat::Json))
+        .unwrap_or_else(|e| panic!("deserialize {}: {e}", path.display()))
+}
+
+fn read_golden(name: &str) -> String {
+    let path = goldens_dir().join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
+}
+
+fn assert_bytes_eq(label: &str, golden: &str, actual: &str) {
+    if golden.as_bytes() != actual.as_bytes() {
+        let first = golden
+            .bytes()
+            .zip(actual.bytes())
+            .position(|(g, a)| g != a)
+            .unwrap_or(golden.len().min(actual.len()));
+        let ctx_g = &golden[first.saturating_sub(40)..(first + 40).min(golden.len())];
+        let ctx_a = &actual[first.saturating_sub(40)..(first + 40).min(actual.len())];
+        panic!(
+            "{label}: BYTE MISMATCH at offset {first}\n  golden len={} actual len={}\n  golden …{ctx_g}…\n  actual …{ctx_a}…",
+            golden.len(),
+            actual.len()
+        );
+    }
+}
+
+/// The 5 corpus pairs (snapshot-input mode, loose).
+const PAIRS: &[&str] = &[
+    "schema-field-removed",
+    "capability-gained-http",
+    "permission-rights-expanded",
+    "abi-signature-changed",
+    "event-added",
+];
+
+fn run_engine(
+    old: &CborValue,
+    new: &CborValue,
+    policy: CoveragePolicy,
+) -> al_call_hierarchy::engine::gate::diff::DiffEngineResult {
+    run_diff_engine(
+        old,
+        new,
+        &DiffEngineOptions {
+            coverage_policy: policy,
+            deterministic: true,
+            rename_overlay: None,
+        },
+    )
+}
+
+#[test]
+fn diff_pairs_human_json_sarif_byte_match() {
+    let empty: Vec<CborValue> = Vec::new();
+    for pair in PAIRS {
+        let old = load_snap(&format!("{pair}-old.snap.json"));
+        let new = load_snap(&format!("{pair}-new.snap.json"));
+        let result = run_engine(&old, &new, CoveragePolicy::Loose);
+
+        let human = format_diff(&result, "human", VERSION_OVERRIDE, true, &empty);
+        assert_bytes_eq(
+            &format!("{pair}.human.txt"),
+            &read_golden(&format!("{pair}.human.txt")),
+            &human,
+        );
+
+        let json = format_diff(&result, "json", VERSION_OVERRIDE, true, &empty);
+        assert_bytes_eq(
+            &format!("{pair}.json"),
+            &read_golden(&format!("{pair}.json")),
+            &json,
+        );
+
+        let sarif = format_diff(&result, "sarif", VERSION_OVERRIDE, true, &empty);
+        assert_bytes_eq(
+            &format!("{pair}.sarif"),
+            &read_golden(&format!("{pair}.sarif")),
+            &sarif,
+        );
+    }
+}
+
+#[test]
+fn diff_rename_variant_from_overlay_byte_match() {
+    // The rename pair's snapshots aren't committed (the dump composes them from the
+    // ws-diff-rename fixture). Reanalyze both sides via the ws-mode path and apply
+    // the committed overlay, then byte-compare rename.renamed.json.
+    let fixtures = al_sem_dir()
+        .join("test")
+        .join("fixtures")
+        .join("ws-diff-rename");
+    let a = fixtures.join("a");
+    let b = fixtures.join("b");
+    if !a.is_dir() || !b.is_dir() {
+        eprintln!("ws-diff-rename fixture missing; skipping rename variant");
+        return;
+    }
+    let old = compose_ws(&a);
+    let new = compose_ws(&b);
+
+    let overlay_text = read_golden("rename-overlay.json");
+    let overlay = parse_rename_overlay(&overlay_text).expect("parse overlay");
+
+    let result = run_diff_engine(
+        &old,
+        &new,
+        &DiffEngineOptions {
+            coverage_policy: CoveragePolicy::Loose,
+            deterministic: true,
+            rename_overlay: Some(overlay),
+        },
+    );
+    let empty: Vec<CborValue> = Vec::new();
+    let json = format_diff(&result, "json", VERSION_OVERRIDE, true, &empty);
+    assert_bytes_eq(
+        "rename.renamed.json",
+        &read_golden("rename.renamed.json"),
+        &json,
+    );
+    let human = format_diff(&result, "human", VERSION_OVERRIDE, true, &empty);
+    assert_bytes_eq(
+        "rename.renamed.human.txt",
+        &read_golden("rename.renamed.human.txt"),
+        &human,
+    );
+}
+
+fn compose_ws(dir: &std::path::Path) -> CborValue {
+    use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
+    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
+    use al_call_hierarchy::engine::l5::snapshot_full::{
+        compose_full_snapshot, FullSnapshotOptions,
+    };
+    let model_id = compute_gate_model_instance_id(dir).expect("modelInstanceId");
+    let resolved = assemble_and_resolve_workspace(dir, &model_id).expect("resolve");
+    let opts = FullSnapshotOptions {
+        workspace_dir: dir,
+        alsem_version: VERSION_OVERRIDE,
+        deterministic: true,
+        roots_config_ignored: false,
+    };
+    compose_full_snapshot(&resolved, &opts)
+}
+
+#[test]
+fn diff_strict_coverage_json_and_exit_byte_match() {
+    let old = load_snap("coverage-strict-old.snap.json");
+    let new = load_snap("coverage-strict-new.snap.json");
+
+    // Strict json golden.
+    let strict = run_engine(&old, &new, CoveragePolicy::Strict);
+    let empty: Vec<CborValue> = Vec::new();
+    let json = format_diff(&strict, "json", VERSION_OVERRIDE, true, &empty);
+    assert_bytes_eq(
+        "coverage-strict.strict.json",
+        &read_golden("coverage-strict.strict.json"),
+        &json,
+    );
+
+    // Strict exit code = 1 (coverage-incomplete).
+    let strict_exit = read_golden("coverage-strict.strict.exitcode.txt");
+    assert_eq!(strict_exit.trim(), "1");
+    let strict_failed = strict
+        .diagnostics
+        .iter()
+        .any(|d| d.kind == "coverage-incomplete");
+    assert!(
+        strict_failed,
+        "strict run must produce a coverage-incomplete diagnostic"
+    );
+
+    // Loose json + human goldens.
+    let loose = run_engine(&old, &new, CoveragePolicy::Loose);
+    let loose_json = format_diff(&loose, "json", VERSION_OVERRIDE, true, &empty);
+    assert_bytes_eq(
+        "coverage-strict.loose.json",
+        &read_golden("coverage-strict.loose.json"),
+        &loose_json,
+    );
+    let loose_human = format_diff(&loose, "human", VERSION_OVERRIDE, true, &empty);
+    assert_bytes_eq(
+        "coverage-strict.loose.human.txt",
+        &read_golden("coverage-strict.loose.human.txt"),
+        &loose_human,
+    );
+
+    // fail-on medium exit code = 1.
+    let failon_exit = read_golden("coverage-strict.failon.exitcode.txt");
+    assert_eq!(failon_exit.trim(), "1");
+    let t = Severity::Medium.rank();
+    let triggers = loose.findings.iter().any(|f| f.severity.rank() <= t);
+    assert!(
+        triggers,
+        "fail-on medium must trigger on the loose findings"
+    );
+}
+
+#[test]
+fn diff_strict_exit_via_cli_orchestrator() {
+    // Drive the full CLI orchestrator (run_diff) so the exit-gate wiring is covered.
+    let old_path = snapshots_dir().join("coverage-strict-old.snap.json");
+    let new_path = snapshots_dir().join("coverage-strict-new.snap.json");
+    let old_s = old_path.to_string_lossy().to_string();
+    let new_s = new_path.to_string_lossy().to_string();
+
+    // strict → exit 1.
+    let outcome = run_diff(&DiffCliOptions {
+        old_arg: &old_s,
+        new_arg: &new_s,
+        format: "json",
+        out: None,
+        coverage_policy: CoveragePolicy::Strict,
+        renames_path: None,
+        fail_on: None,
+        strict: false,
+        deterministic: true,
+        alsem_version: VERSION_OVERRIDE,
+    });
+    assert_eq!(outcome.exit_code, 1, "strict CLI exit must be 1");
+    assert!(outcome.error_message.is_none());
+
+    // fail-on medium → exit 1.
+    let outcome = run_diff(&DiffCliOptions {
+        old_arg: &old_s,
+        new_arg: &new_s,
+        format: "human",
+        out: None,
+        coverage_policy: CoveragePolicy::Loose,
+        renames_path: None,
+        fail_on: Some(Severity::Medium),
+        strict: false,
+        deterministic: true,
+        alsem_version: VERSION_OVERRIDE,
+    });
+    assert_eq!(outcome.exit_code, 1, "fail-on medium CLI exit must be 1");
+}
+
+#[test]
+fn diff_app_input_rejected() {
+    // A `.app` argument is rejected cleanly (CONFIG_ERROR), not a panic. Use a real
+    // file path that ends with .app by pointing at any existing file renamed in mind;
+    // simplest: create a temp .app file.
+    let tmp = std::env::temp_dir().join("alsem-diff-test.app");
+    std::fs::write(&tmp, b"not a real app").expect("write temp .app");
+    let tmp_s = tmp.to_string_lossy().to_string();
+    let outcome = run_diff(&DiffCliOptions {
+        old_arg: &tmp_s,
+        new_arg: &tmp_s,
+        format: "json",
+        out: None,
+        coverage_policy: CoveragePolicy::Loose,
+        renames_path: None,
+        fail_on: None,
+        strict: false,
+        deterministic: true,
+        alsem_version: VERSION_OVERRIDE,
+    });
+    let _ = std::fs::remove_file(&tmp);
+    assert_eq!(outcome.exit_code, 2, "app input → CONFIG_ERROR exit 2");
+    assert!(outcome.error_message.is_some());
+    assert!(outcome.output.is_none());
+}
+
+#[test]
+fn diff_ws_mode_stderr_note_byte_match() {
+    // The ws-mode stderr note must be byte-exact. Drive run_diff over the two
+    // fixture directories and compare its first stderr line to the golden.
+    let fixture = al_sem_dir()
+        .join("test")
+        .join("fixtures")
+        .join("ws-diff-removed-field");
+    let a = fixture.join("a");
+    let b = fixture.join("b");
+    if !a.is_dir() || !b.is_dir() {
+        eprintln!("ws-diff-removed-field fixture missing; skipping ws-mode note check");
+        return;
+    }
+    let a_s = a.to_string_lossy().to_string();
+    let b_s = b.to_string_lossy().to_string();
+    let outcome = run_diff(&DiffCliOptions {
+        old_arg: &a_s,
+        new_arg: &b_s,
+        format: "human",
+        out: None,
+        coverage_policy: CoveragePolicy::Loose,
+        renames_path: None,
+        fail_on: None,
+        strict: false,
+        deterministic: true,
+        alsem_version: VERSION_OVERRIDE,
+    });
+
+    // stderr golden has a trailing newline; our stderr_lines join with newline + the
+    // bin adds one per line. Compare the note line text.
+    let golden_stderr = read_golden("ws-mode-schema-field-removed.stderr.txt");
+    let expected_note = golden_stderr.trim_end_matches('\n');
+    assert_eq!(
+        outcome.stderr_lines.len(),
+        1,
+        "ws-mode emits exactly the note"
+    );
+    assert_eq!(outcome.stderr_lines[0], expected_note);
+
+    // stdout (human) byte-match.
+    let stdout_golden = read_golden("ws-mode-schema-field-removed.stdout.txt");
+    assert_bytes_eq(
+        "ws-mode-schema-field-removed.stdout.txt",
+        &stdout_golden,
+        outcome.output.as_ref().expect("ws-mode stdout"),
+    );
+}
+
+/// CBOR / cbor.gz round-trip oracle over a REAL committed snapshot: load the JSON
+/// snapshot, re-encode it to CBOR (B0) and cbor.gz, decode both back, and assert
+/// the diff engine produces a byte-identical json golden from the round-tripped
+/// trees. This locks the deserializer's CBOR + gunzip paths against real snapshot
+/// data (the committed inputs are JSON, so CBOR is otherwise corpus-invisible).
+#[test]
+fn cbor_and_gz_roundtrip_drives_identical_diff() {
+    use al_call_hierarchy::engine::l5::snapshot_full::{serialize_cbor, serialize_cbor_gz};
+
+    let empty: Vec<CborValue> = Vec::new();
+    let pair = "abi-signature-changed";
+    let old_json = load_snap(&format!("{pair}-old.snap.json"));
+    let new_json = load_snap(&format!("{pair}-new.snap.json"));
+
+    // JSON → tree → CBOR → decode → tree' ; and via cbor.gz.
+    let old_cbor = serialize_cbor(&old_json);
+    let new_cbor = serialize_cbor(&new_json);
+    let old_from_cbor =
+        deserialize_snapshot(&old_cbor, Some(SnapshotFormat::Cbor)).expect("decode cbor old");
+    let new_from_cbor =
+        deserialize_snapshot(&new_cbor, Some(SnapshotFormat::Cbor)).expect("decode cbor new");
+
+    let old_gz = serialize_cbor_gz(&old_json);
+    let new_gz = serialize_cbor_gz(&new_json);
+    let old_from_gz =
+        deserialize_snapshot(&old_gz, Some(SnapshotFormat::CborGz)).expect("decode gz old");
+    let new_from_gz =
+        deserialize_snapshot(&new_gz, Some(SnapshotFormat::CborGz)).expect("decode gz new");
+
+    let golden = read_golden(&format!("{pair}.json"));
+
+    for (label, o, n) in [
+        ("cbor", &old_from_cbor, &new_from_cbor),
+        ("cbor.gz", &old_from_gz, &new_from_gz),
+    ] {
+        let result = run_engine(o, n, CoveragePolicy::Loose);
+        let json = format_diff(&result, "json", VERSION_OVERRIDE, true, &empty);
+        assert_bytes_eq(&format!("{pair}.json (via {label})"), &golden, &json);
+    }
+
+    // Auto-detect path (no hint): gz magic 1f 8b, cbor magic b9.
+    let auto_gz = deserialize_snapshot(&old_gz, None).expect("auto gz");
+    let auto_cbor = deserialize_snapshot(&old_cbor, None).expect("auto cbor");
+    let r1 = run_engine(&auto_gz, &new_from_gz, CoveragePolicy::Loose);
+    let r2 = run_engine(&auto_cbor, &new_from_cbor, CoveragePolicy::Loose);
+    assert_bytes_eq(
+        &format!("{pair}.json (auto gz)"),
+        &golden,
+        &format_diff(&r1, "json", VERSION_OVERRIDE, true, &empty),
+    );
+    assert_bytes_eq(
+        &format!("{pair}.json (auto cbor)"),
+        &golden,
+        &format_diff(&r2, "json", VERSION_OVERRIDE, true, &empty),
+    );
+}
+
+/// Regeneration shim (ignored): refresh the al-sem diff goldens.
+#[test]
+#[ignore]
+fn refresh_goldens() {
+    let al_sem = al_sem_dir();
+    let status = std::process::Command::new("bun")
+        .args(["run", "scripts/dump-diff.ts"])
+        .current_dir(&al_sem)
+        .status()
+        .expect("run bun dump-diff.ts");
+    assert!(status.success(), "dump-diff.ts failed");
+}

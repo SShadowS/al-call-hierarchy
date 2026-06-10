@@ -56,6 +56,46 @@ enum Commands {
     Prove(ProveCli),
     /// Fingerprint an AL workspace: root-classification capability summary (cli-b/b3).
     Fingerprint(FingerprintCli),
+    /// Diff two capability snapshots (or workspaces): ABI/schema/events/capabilities/permissions (cli-b/b4).
+    Diff(DiffCli),
+}
+
+/// `DiffCli` — arguments for `alsem diff <old> <new>`.
+#[derive(Parser)]
+struct DiffCli {
+    /// Old side: a snapshot file (.json/.cbor/.cbor.gz) or a workspace directory.
+    old: String,
+
+    /// New side: a snapshot file (.json/.cbor/.cbor.gz) or a workspace directory.
+    new: String,
+
+    /// Output format: human | json | sarif. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Coverage policy: loose | strict. Strict drops findings under incomplete coverage.
+    #[arg(long = "coverage-policy", default_value = "loose")]
+    coverage_policy: String,
+
+    /// Path to a rename-overlay JSON ({oldStableId: newStableId}).
+    #[arg(long = "renames")]
+    renames: Option<String>,
+
+    /// Exit 1 if any finding is at/above this severity: critical|high|medium|low|info.
+    #[arg(long = "fail-on")]
+    fail_on: Option<String>,
+
+    /// Exit 1 on any error-severity analyzer diagnostic (workspace mode).
+    #[arg(long = "strict", default_value_t = false)]
+    strict: bool,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
 }
 
 #[derive(Parser)]
@@ -267,7 +307,91 @@ fn main() -> ExitCode {
         Commands::Digest(d) => run_digest_cmd(d),
         Commands::Prove(p) => run_prove_cmd(p),
         Commands::Fingerprint(f) => run_fingerprint_cmd(f),
+        Commands::Diff(d) => run_diff_cmd(d),
     }
+}
+
+// ── diff command ────────────────────────────────────────────────────────────
+
+fn run_diff_cmd(d: DiffCli) -> ExitCode {
+    use al_call_hierarchy::engine::gate::diff::cli::{run_diff, DiffCliOptions};
+    use al_call_hierarchy::engine::gate::diff::{CoveragePolicy, Severity};
+
+    // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
+    const VALID_FORMATS: &[&str] = &["human", "json", "sarif"];
+    if !VALID_FORMATS.contains(&d.format.as_str()) {
+        eprintln!(
+            "unknown --format '{}'; valid: {}",
+            d.format,
+            VALID_FORMATS.join(", ")
+        );
+        return ExitCode::from(1);
+    }
+
+    // Validate --coverage-policy (loose | strict).
+    let coverage_policy = match d.coverage_policy.as_str() {
+        "loose" => CoveragePolicy::Loose,
+        "strict" => CoveragePolicy::Strict,
+        other => {
+            eprintln!("--coverage-policy must be loose|strict (got '{other}')");
+            return ExitCode::from(1);
+        }
+    };
+
+    // Validate --fail-on.
+    let fail_on = match d.fail_on.as_deref() {
+        None => None,
+        Some("critical") => Some(Severity::Critical),
+        Some("high") => Some(Severity::High),
+        Some("medium") => Some(Severity::Medium),
+        Some("low") => Some(Severity::Low),
+        Some("info") => Some(Severity::Info),
+        Some(_) => {
+            eprintln!("--fail-on must be one of: critical|high|medium|low|info");
+            return ExitCode::from(1);
+        }
+    };
+
+    let opts = DiffCliOptions {
+        old_arg: &d.old,
+        new_arg: &d.new,
+        format: &d.format,
+        out: d.out.as_deref(),
+        coverage_policy,
+        renames_path: d.renames.as_deref(),
+        fail_on,
+        strict: d.strict,
+        deterministic: d.deterministic,
+        alsem_version: DEFAULT_ALSEM_VERSION,
+    };
+
+    let outcome = run_diff(&opts);
+
+    if let Some(msg) = outcome.error_message {
+        eprintln!("{msg}");
+        return ExitCode::from(outcome.exit_code);
+    }
+
+    if let Some(text) = outcome.output {
+        let write_result = if let Some(ref out_path) = d.out {
+            std::fs::write(out_path, &text).map_err(|e| format!("{e}"))
+        } else {
+            use std::io::Write;
+            std::io::stdout()
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("{e}"))
+        };
+        if let Err(e) = write_result {
+            eprintln!("failed to write: {e}");
+            return ExitCode::from(1);
+        }
+    }
+
+    for line in &outcome.stderr_lines {
+        eprintln!("{line}");
+    }
+
+    ExitCode::from(outcome.exit_code)
 }
 
 const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "file"];

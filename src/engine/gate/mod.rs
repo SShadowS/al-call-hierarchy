@@ -14,6 +14,7 @@
 pub mod app_attribution;
 pub mod baseline;
 pub mod cbor;
+pub mod diff;
 pub mod exit_code;
 pub mod filter;
 pub mod format_html;
@@ -27,5 +28,6 @@ pub mod preflight;
 pub mod presets;
 pub mod projection;
 pub mod run;
+pub mod snapshot_deserialize;
 pub mod version;
 pub mod workspace_diagnostics;
