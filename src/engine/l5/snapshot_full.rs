@@ -54,6 +54,15 @@ pub struct FullSnapshotOptions<'a> {
 /// Compose the FULL `CapabilitySnapshot` as an insertion-ordered `CborValue` tree,
 /// in the exact `composeSnapshot` literal key order. This is the single source for
 /// all four serializers.
+/// Compute just the `workspaceFingerprint` string for a workspace, WITHOUT composing
+/// a full snapshot tree. Used by the digest pipeline so it doesn't pay for a second
+/// `compose_snapshot` (which `compose_full_snapshot` calls internally) just to fish
+/// the fingerprint out of a CBOR map (#19).
+pub fn workspace_fingerprint_of(workspace_dir: &std::path::Path, alsem_version: &str) -> String {
+    let inputs = derive_inputs(workspace_dir);
+    compute_workspace_fingerprint(&inputs, alsem_version)
+}
+
 pub fn compose_full_snapshot(resolved: &L3Resolved, opts: &FullSnapshotOptions) -> CborValue {
     // The consumed-core (identities, capabilityFacts, typedEdges, …, eventDeclarations,
     // rootClassifications, [routineOrderFrames]).

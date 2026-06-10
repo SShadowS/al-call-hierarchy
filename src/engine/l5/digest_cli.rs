@@ -20,20 +20,12 @@ use crate::engine::gate::format_json::serialize_document_value;
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::run::compute_analyzer_diagnostics;
 use crate::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
-use crate::engine::l5::conditionality::{
-    context_to_conditionality, effect_conditionality, path_conditionality, EffectConditionality,
-    UNKNOWN,
-};
+use crate::engine::l5::conditionality::EffectConditionality;
 use crate::engine::l5::detector_context::build_detector_context;
 use crate::engine::l5::detectors::registered_detectors;
 use crate::engine::l5::diff_parser::{parse_unified_diff, DiffFileKind};
-use crate::engine::l5::digest::{
-    compute_digest_effects_cli, DigestEffectResult, DigestEntryResult,
-};
-use crate::engine::l5::snapshot::{
-    compose_snapshot, CapabilitySnapshot, SnapshotCallsiteEvidence, SnapshotOperationEvidence,
-};
-use crate::engine::l5::snapshot_full::{compose_full_snapshot, FullSnapshotOptions};
+use crate::engine::l5::digest::{compute_digest_effects_cli, DigestEntryResult};
+use crate::engine::l5::snapshot::{compose_snapshot, CapabilitySnapshot};
 use crate::engine::l5::transaction_spans::SeedKind;
 use crate::engine::l5::unresolved_cone::{
     unresolved_cone, UnresolvedConeItem, UnresolvedTraversal,
@@ -101,6 +93,212 @@ fn strip_scheme(p: &str) -> String {
 /// Normalize an input path for comparison: strip scheme, forward-slash, lowercase.
 fn normalize_input(p: &str) -> String {
     strip_scheme(p).to_lowercase()
+}
+
+// ---------------------------------------------------------------------------
+// --changed alias auto-detection (port of cli/digest.ts autoDetectChanged) (#12)
+// ---------------------------------------------------------------------------
+
+/// The category a `--changed <value>` resolves to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangedAutoDetect {
+    /// Existing file path → treat as --diff.
+    Diff(String),
+    /// Comma-list with any `.al` entry → treat as --changed-files.
+    Files(Vec<String>),
+    /// Else → treat as --changed-routines.
+    Routines(Vec<String>),
+}
+
+/// `autoDetectChanged` (cli/digest.ts). A non-existent path that is not a `.al`
+/// comma-list falls through to a routine selector (graceful miscategorization,
+/// NOT an OS error). `exists` is injected so this stays a pure, testable function.
+pub fn auto_detect_changed_with(value: &str, exists: impl Fn(&str) -> bool) -> ChangedAutoDetect {
+    if exists(value) {
+        return ChangedAutoDetect::Diff(value.to_string());
+    }
+    let parts: Vec<String> = value
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.iter().any(|p| p.to_lowercase().ends_with(".al")) {
+        ChangedAutoDetect::Files(parts)
+    } else {
+        ChangedAutoDetect::Routines(parts)
+    }
+}
+
+/// Convenience wrapper that probes the real filesystem.
+pub fn auto_detect_changed(value: &str) -> ChangedAutoDetect {
+    auto_detect_changed_with(value, |p| std::path::Path::new(p).exists())
+}
+
+// ---------------------------------------------------------------------------
+// Routine selector resolution (port of fingerprint-query.ts resolveSelector +
+// indexes.ts normalizeDisplayKey / displayToStableIds). 5-form cascade. (#6)
+// ---------------------------------------------------------------------------
+
+const ROUTINE_ID_SEPARATOR: char = '#';
+
+/// `normalizeDisplayKey` (indexes.ts) — lowercase, trim, collapse internal whitespace.
+fn normalize_display_key(s: &str) -> String {
+    let trimmed = s.trim().to_lowercase();
+    // Collapse runs of ASCII/Unicode whitespace into a single space (JS \s+).
+    let mut out = String::with_capacity(trimmed.len());
+    let mut prev_ws = false;
+    for c in trimmed.chars() {
+        if c.is_whitespace() {
+            if !prev_ws {
+                out.push(' ');
+            }
+            prev_ws = true;
+        } else {
+            out.push(c);
+            prev_ws = false;
+        }
+    }
+    out
+}
+
+/// Strip a leading type-word + whitespace prefix (`/^\w+\s+/`), returning None when
+/// the line doesn't match (mirrors `display.replace(typeWordPrefix, "")` checked via
+/// `stripped !== display`).
+fn strip_type_word_prefix(display: &str) -> Option<&str> {
+    let bytes = display.as_bytes();
+    let mut i = 0usize;
+    // \w+ : [A-Za-z0-9_]
+    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    let word_end = i;
+    // \s+
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i == word_end {
+        return None; // no whitespace after the word → no match
+    }
+    Some(&display[i..])
+}
+
+/// Ordered selector indexes: preserves the identity-table insertion order so the
+/// two-segment / one-segment loops iterate exactly like the TS Map. Built once.
+struct SelectorIndexes {
+    /// stableId → display (routine-only).
+    routine_display_by_id: HashMap<String, String>,
+    /// normalizeDisplayKey(display) → [stableId...], buckets in insertion order;
+    /// keys also in first-insertion order (Vec of (key, ids)).
+    display_to_stable_ids: Vec<(String, Vec<String>)>,
+}
+
+fn build_selector_indexes(snap: &CapabilitySnapshot) -> SelectorIndexes {
+    let mut routine_display_by_id: HashMap<String, String> = HashMap::new();
+    let mut display_to_stable_ids: Vec<(String, Vec<String>)> = Vec::new();
+    let mut key_pos: HashMap<String, usize> = HashMap::new();
+
+    for i in 0..snap.identities.stable_ids.len() {
+        let id = snap
+            .identities
+            .stable_ids
+            .get(i)
+            .cloned()
+            .unwrap_or_default();
+        let display = snap
+            .identities
+            .display_names
+            .get(i)
+            .cloned()
+            .unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        if id.contains(ROUTINE_ID_SEPARATOR) {
+            routine_display_by_id.insert(id.clone(), display.clone());
+            let key = normalize_display_key(&display);
+            if let Some(&pos) = key_pos.get(&key) {
+                display_to_stable_ids[pos].1.push(id);
+            } else {
+                key_pos.insert(key.clone(), display_to_stable_ids.len());
+                display_to_stable_ids.push((key, vec![id]));
+            }
+        }
+    }
+
+    SelectorIndexes {
+        routine_display_by_id,
+        display_to_stable_ids,
+    }
+}
+
+fn display_to_ids<'a>(idx: &'a SelectorIndexes, key: &str) -> Option<&'a Vec<String>> {
+    idx.display_to_stable_ids
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v)
+}
+
+/// `resolveSelector` (fingerprint-query.ts) — the 5-form cascade. Returns the
+/// matched stable IDs in deterministic order.
+fn resolve_selector(selector: &str, idx: &SelectorIndexes) -> Vec<String> {
+    // Form 1: exact StableRoutineId (case-sensitive).
+    if idx.routine_display_by_id.contains_key(selector) {
+        return vec![selector.to_string()];
+    }
+
+    // Form 2: full display name (normalized).
+    let key = normalize_display_key(selector);
+    if let Some(full) = display_to_ids(idx, &key) {
+        if !full.is_empty() {
+            return full.clone();
+        }
+    }
+
+    // Form 3: two-segment — strip leading type-word from the (already-normalized)
+    // bucket KEY, compare to `key`. Matches TS, which iterates over the map keys.
+    let mut two: Vec<String> = Vec::new();
+    for (bucket_key, ids) in idx.display_to_stable_ids.iter() {
+        if let Some(stripped) = strip_type_word_prefix(bucket_key) {
+            // TS guard `stripped !== display`: strip_type_word_prefix returns None
+            // when nothing was stripped, so reaching here already means stripped != key-holder.
+            if stripped == key {
+                two.extend(ids.iter().cloned());
+            }
+        }
+    }
+    if !two.is_empty() {
+        return two;
+    }
+
+    // Form 4: one-segment — routine name after the last "::" in the bucket KEY.
+    let mut one: Vec<String> = Vec::new();
+    for (bucket_key, ids) in idx.display_to_stable_ids.iter() {
+        let last = match bucket_key.rfind("::") {
+            Some(sep) => &bucket_key[sep + 2..],
+            None => bucket_key.as_str(),
+        };
+        if normalize_display_key(last) == key {
+            one.extend(ids.iter().cloned());
+        }
+    }
+    if !one.is_empty() {
+        return one;
+    }
+
+    // Form 5: object-qualified — routine segment after the LAST "::".
+    if let Some(sep) = selector.rfind("::") {
+        let routine_key = normalize_display_key(&selector[sep + 2..]);
+        if let Some(qualified) = display_to_ids(idx, &routine_key) {
+            if !qualified.is_empty() {
+                return qualified.clone();
+            }
+        }
+    }
+
+    Vec::new()
 }
 
 /// Changed-roots diagnostics (mirrors ChangedRootsDiagnostic).
@@ -189,25 +387,8 @@ pub fn resolve_changed_roots(
 
     let (by_file, line_entries) = build_routine_file_index(snap);
 
-    // Build display-by-id for selector matching
-    let mut display_by_id: HashMap<String, String> = HashMap::new();
-    for i in 0..snap.identities.stable_ids.len() {
-        let id = snap
-            .identities
-            .stable_ids
-            .get(i)
-            .cloned()
-            .unwrap_or_default();
-        let name = snap
-            .identities
-            .display_names
-            .get(i)
-            .cloned()
-            .unwrap_or_default();
-        if !id.is_empty() {
-            display_by_id.insert(id, name);
-        }
-    }
+    // Selector indexes (5-form resolveSelector cascade).
+    let selector_idx = build_selector_indexes(snap);
 
     // 1. File-based matching
     for file in input.files.iter().flatten() {
@@ -224,24 +405,25 @@ pub fn resolve_changed_roots(
         }
     }
 
-    // 2. Routine selector matching (simple: by displayName or stableId)
+    // 2. Routine selector matching (port of resolveSelector — 5-form cascade).
     for selector in input.routines.iter().flatten() {
-        let matches: Vec<String> = display_by_id
-            .iter()
-            .filter(|(id, name)| {
-                // Match by display name (case-insensitive contains) or exact stable id
-                name.eq_ignore_ascii_case(selector) || id.as_str() == selector.as_str()
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
+        let matches = resolve_selector(selector, &selector_idx);
         if matches.is_empty() {
             diagnostics.push(ChangedRootsDiagnostic::SelectorUnmatched {
                 selector: selector.clone(),
             });
         } else if matches.len() >= 2 {
+            // candidates = matches.map(id => routineDisplayById.get(id) ?? id)
+            // — deterministic (matches preserve identity-table / bucket order).
             let candidates: Vec<String> = matches
                 .iter()
-                .map(|id| display_by_id.get(id).cloned().unwrap_or_else(|| id.clone()))
+                .map(|id| {
+                    selector_idx
+                        .routine_display_by_id
+                        .get(id)
+                        .cloned()
+                        .unwrap_or_else(|| id.clone())
+                })
                 .collect();
             diagnostics.push(ChangedRootsDiagnostic::SelectorAmbiguous {
                 selector: selector.clone(),
@@ -303,10 +485,12 @@ pub fn resolve_changed_roots(
                         }
                     }
                     if matched.is_empty() {
+                        // endLine = newStart + max(newCount - 1, 0). When newCount == 0
+                        // (pure deletion hunk) TS yields newStart, NOT newStart - 1 (#14).
                         diagnostics.push(ChangedRootsDiagnostic::HunkOutsideRoutines {
                             file: diff_file.path.clone(),
                             start_line: hunk.new_start,
-                            end_line: hunk.new_start + hunk.new_count.max(0) - 1,
+                            end_line: hunk.new_start + (hunk.new_count - 1).max(0),
                         });
                     } else {
                         for r in matched {
@@ -326,78 +510,6 @@ pub fn resolve_changed_roots(
         roots: sorted,
         diagnostics,
     }
-}
-
-// ---------------------------------------------------------------------------
-// Conditionality computation from WitnessPath/DigestEffectResult
-// ---------------------------------------------------------------------------
-// NOTE: The existing digest_query (in digest.rs) does NOT compute conditionality —
-// it was the "order:false dead code" path. We re-run a supplemental pass here that
-// computes conditionality from the effect's viaPaths and the snapshot's callsite/op indexes.
-//
-// The approach: for each effect, iterate its viaPaths (already projected
-// QueryWitnessHops). For each hop in a via-path, look up the callsite's
-// controlContext in the callsiteIndex. The terminal evidence is looked up from
-// evidenceOperationId or evidenceCallsiteId. Apply pathConditionality per path,
-// then effectConditionality across paths.
-
-fn compute_conditionality_for_effect(
-    eff: &DigestEffectResult,
-    callsite_by_id: &HashMap<&str, &SnapshotCallsiteEvidence>,
-    operation_by_id: &HashMap<&str, &SnapshotOperationEvidence>,
-) -> EffectConditionality {
-    if eff.via_paths.is_empty() {
-        // No paths at all → unknown
-        return UNKNOWN;
-    }
-
-    // Reconstruct per-path conditionalities from via_paths (projected hops).
-    // For each via-path:
-    //   hop_contexts: for each non-terminal hop, look up callsiteId → controlContext
-    //   terminal_ctx: look up evidenceOperationId or evidenceCallsiteId → controlContext
-    //
-    // Since we're working from projected hops (which don't carry controlContext),
-    // we use the evidence ids to get the terminal context and the hop callsiteIds
-    // for the hop contexts.
-    let mut all_path_conds: Vec<EffectConditionality> = Vec::new();
-    let truncated = eff.via_paths_truncated;
-
-    for path_hops in &eff.via_paths {
-        // Hop contexts: iterate projected hops (they carry callsite_id for non-terminal)
-        let mut hop_ctxs: Vec<EffectConditionality> = Vec::new();
-        for hop in path_hops {
-            let csid = hop.inner.callsite_id.as_deref();
-            if let Some(csid) = csid {
-                let ctx = callsite_by_id
-                    .get(csid)
-                    .and_then(|cs| cs.control_context.as_deref());
-                hop_ctxs.push(context_to_conditionality(ctx));
-            } else {
-                // event-dispatch / implicit-trigger → unknown (no local callsite context)
-                hop_ctxs.push(UNKNOWN);
-            }
-        }
-
-        // Terminal context: look up from evidenceOperationId / evidenceCallsiteId
-        let terminal_ctx = if let Some(op_id) = &eff.evidence_operation_id {
-            let ctx = operation_by_id
-                .get(op_id.as_str())
-                .and_then(|op| op.control_context.as_deref());
-            context_to_conditionality(ctx)
-        } else if let Some(cs_id) = &eff.evidence_callsite_id {
-            let ctx = callsite_by_id
-                .get(cs_id.as_str())
-                .and_then(|cs| cs.control_context.as_deref());
-            context_to_conditionality(ctx)
-        } else {
-            UNKNOWN
-        };
-
-        let pc = path_conditionality(&hop_ctxs, terminal_ctx);
-        all_path_conds.push(pc);
-    }
-
-    effect_conditionality(&all_path_conds, truncated)
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +589,20 @@ pub struct EntryDiagnostic {
     pub fact_subject: Option<String>,
 }
 
+/// Query-level diagnostics (mirrors `DigestQueryDiagnostic` in digest-query.ts).
+/// These feed BOTH the envelope diagnostics channel AND rootsRequested (#5).
+#[derive(Debug, Clone)]
+pub enum DigestQueryDiagnostic {
+    RootNotInSnapshot { routine_id: String },
+    NoCoverageRecord { routine_id: String },
+}
+
+/// Result of the full digest query — entries plus query-level diagnostics.
+pub struct DigestQueryFullResult {
+    pub entries: Vec<DigestEntryFull>,
+    pub query_diagnostics: Vec<DigestQueryDiagnostic>,
+}
+
 fn split_object_routine(display: &str) -> (&str, &str) {
     if let Some(idx) = display.rfind("::") {
         (&display[..idx], &display[idx + 2..])
@@ -492,16 +618,8 @@ pub fn run_digest_query_full_from_entries(
     roots: &[String],
     base_entries: &[DigestEntryResult],
     tx_ctx_map: &HashMap<String, TransactionContext>,
-) -> Vec<DigestEntryFull> {
-    // Indexes for conditionality
-    let mut callsite_by_id: HashMap<&str, &SnapshotCallsiteEvidence> = HashMap::new();
-    for cs in &snap.callsite_index {
-        callsite_by_id.insert(cs.callsite_id.as_str(), cs);
-    }
-    let mut operation_by_id: HashMap<&str, &SnapshotOperationEvidence> = HashMap::new();
-    for op in &snap.operation_index {
-        operation_by_id.insert(op.operation_id.as_str(), op);
-    }
+) -> DigestQueryFullResult {
+    let mut query_diagnostics: Vec<DigestQueryDiagnostic> = Vec::new();
 
     // Coverage map
     let mut coverage_by_id: HashMap<&str, (&str, Vec<&str>)> = HashMap::new();
@@ -589,17 +707,27 @@ pub fn run_digest_query_full_from_entries(
     let mut out: Vec<DigestEntryFull> = Vec::new();
 
     for rid in roots {
-        let display_full = display_by_id
-            .get(rid.as_str())
-            .copied()
-            .unwrap_or(rid.as_str());
+        // Verify the routine exists in the snapshot. Missing display → emit
+        // `root-not-in-snapshot` and skip (no entry). Mirrors digest-query.ts.
+        let Some(display_full) = display_by_id.get(rid.as_str()).copied() else {
+            query_diagnostics.push(DigestQueryDiagnostic::RootNotInSnapshot {
+                routine_id: rid.clone(),
+            });
+            continue;
+        };
         let (obj_display, rtn_display) = split_object_routine(display_full);
 
-        // Coverage
-        let (cov_status, cov_reasons) = coverage_by_id
-            .get(rid.as_str())
-            .map(|(s, r)| (*s, r.iter().map(|x| x.to_string()).collect::<Vec<_>>()))
-            .unwrap_or(("unknown", Vec::new()));
+        // Coverage. Missing record → emit `no-coverage-record` but STILL build the
+        // entry with status "unknown" (TS: covRec === undefined still produces an entry).
+        let (cov_status, cov_reasons) = match coverage_by_id.get(rid.as_str()) {
+            Some((s, r)) => (*s, r.iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+            None => {
+                query_diagnostics.push(DigestQueryDiagnostic::NoCoverageRecord {
+                    routine_id: rid.clone(),
+                });
+                ("unknown", Vec::new())
+            }
+        };
 
         // Routine anchor
         let routine_anchor = anchor_by_rid.remove(rid.as_str()).map(|a| FullAnchor {
@@ -618,9 +746,9 @@ pub fn run_digest_query_full_from_entries(
 
         if let Some(entry) = base_entry {
             for eff in &entry.effects {
-                // Conditionality
-                let cond =
-                    compute_conditionality_for_effect(eff, &callsite_by_id, &operation_by_id);
+                // Conditionality — the per-path value computed in digest_query and
+                // stored on the effect (#8 / #17). No recomputation here.
+                let cond = eff.conditionality;
 
                 // Transaction context for COMMIT
                 let tx_ctx = if eff.effect_type == "COMMIT" {
@@ -688,22 +816,11 @@ pub fn run_digest_query_full_from_entries(
             }
         }
 
-        // Unresolved cone
+        // Unresolved cone. (gapsInCone — TS digestQuery computes it onto the internal
+        // DigestEntryResult for the prove engine, but it is NOT part of the digest JSON
+        // contract (contracts/digest.ts omits it) and the CLI does not expose queryEntries,
+        // so it is intentionally not computed here (#20).)
         let cone = unresolved_cone(snap, rid);
-
-        // Gaps-in-cone
-        let visited_set = &cone.visited_ids;
-        let _gaps_in_cone: Vec<&crate::engine::l5::snapshot::SnapshotAnalysisGap> = snap
-            .analysis_gaps
-            .iter()
-            .filter(|g| {
-                if visited_set.contains(g.subject.as_str()) {
-                    return true;
-                }
-                let prefix = format!("{}:", g.subject);
-                visited_set.iter().any(|v| v.starts_with(&prefix))
-            })
-            .collect();
 
         out.push(DigestEntryFull {
             routine_id: rid.clone(),
@@ -721,7 +838,10 @@ pub fn run_digest_query_full_from_entries(
 
     // Sort by routineId (already sorted from resolve_changed_roots, but be safe)
     out.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-    out
+    DigestQueryFullResult {
+        entries: out,
+        query_diagnostics,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1101,31 @@ fn changed_roots_diagnostic_to_value(d: &ChangedRootsDiagnostic) -> serde_json::
     serde_json::Value::Object(m)
 }
 
+/// Project a query-level diagnostic into the envelope `{code, severity, message}`
+/// shape. Mirrors `projectQueryDiagnostics` in contracts/digest.ts.
+fn project_query_diagnostic(d: &DigestQueryDiagnostic) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    match d {
+        DigestQueryDiagnostic::RootNotInSnapshot { routine_id } => {
+            m.insert("code".into(), "DIAG-digest-root-not-in-snapshot".into());
+            m.insert("severity".into(), "warning".into());
+            m.insert(
+                "message".into(),
+                format!("Root routine '{routine_id}' not found in snapshot").into(),
+            );
+        }
+        DigestQueryDiagnostic::NoCoverageRecord { routine_id } => {
+            m.insert("code".into(), "DIAG-digest-no-coverage-record".into());
+            m.insert("severity".into(), "warning".into());
+            m.insert(
+                "message".into(),
+                format!("No coverage record for routine '{routine_id}'").into(),
+            );
+        }
+    }
+    serde_json::Value::Object(m)
+}
+
 /// Build the DocumentEnvelope<"digest", DigestPayload> as a serde_json::Value,
 /// then serialize with serialize_document_value (sorted keys, null-drop, trailing \n).
 pub fn project_digest_document(
@@ -988,12 +1133,14 @@ pub fn project_digest_document(
     changed_input: &ChangedInputContract,
     changed_roots_result: &ChangedRootsResult,
     entries: &[DigestEntryFull],
+    query_diagnostics: &[DigestQueryDiagnostic],
     diagnostics_json: serde_json::Value, // pre-built array from analyzer
     alsem_ver: &str,
     deterministic: bool,
 ) -> String {
     // payload.summary
-    let roots_requested = changed_roots_result.roots.len() + 0; // query diags not tracked here
+    // rootsRequested = roots.length + queryResult.diagnostics.length (contracts/digest.ts:443).
+    let roots_requested = changed_roots_result.roots.len() + query_diagnostics.len();
     let roots_resolved = entries.len();
     let total_effects: usize = entries.iter().map(|e| e.effects.len()).sum();
     let total_unresolved: usize = entries.iter().map(|e| e.unresolved.len()).sum();
@@ -1040,17 +1187,26 @@ pub fn project_digest_document(
     );
 
     // Envelope
-    let generated_at = if deterministic {
-        "1970-01-01T00:00:00Z".to_string()
-    } else {
-        // Use the gate helper if available; fallback to epoch
-        "1970-01-01T00:00:00Z".to_string()
+    // makeEnvelope: deterministic ? pinned epoch : live ISO-8601 (#18 — was a dead
+    // both-branches-identical block). The shared gate helper drives both cases.
+    let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(deterministic);
+
+    // Envelope diagnostics = [...analyzerDiagnostics, ...projectQueryDiagnostics] (#5).
+    let diagnostics_with_query = {
+        let mut arr = match diagnostics_json {
+            serde_json::Value::Array(a) => a,
+            other => vec![other],
+        };
+        for qd in query_diagnostics {
+            arr.push(project_query_diagnostic(qd));
+        }
+        serde_json::Value::Array(arr)
     };
 
     let mut env = serde_json::Map::new();
     env.insert("alsemVersion".into(), alsem_ver.into());
     env.insert("deterministic".into(), deterministic.into());
-    env.insert("diagnostics".into(), diagnostics_json);
+    env.insert("diagnostics".into(), diagnostics_with_query);
     env.insert("generatedAt".into(), generated_at.into());
     env.insert("kind".into(), "digest".into());
     env.insert("payload".into(), serde_json::Value::Object(payload));
@@ -1184,41 +1340,11 @@ pub fn run_digest_pipeline(
     let resolved = assemble_and_resolve_workspace(workspace, &model_id)
         .ok_or_else(|| "digest: workspace did not resolve".to_string())?;
 
-    // Compose snapshot
-    let opts = FullSnapshotOptions {
-        workspace_dir: workspace,
-        alsem_version: alsem_ver,
-        deterministic,
-        roots_config_ignored: false,
-    };
+    // Compose snapshot ONCE. The workspace fingerprint is computed directly via the
+    // shared helper (no second full-snapshot composition just to fish it out) (#19).
     let snap = compose_snapshot(&resolved);
-
-    // Attach workspace fingerprint to the snap for use in the document.
-    // compose_full_snapshot builds the fingerprint; compose_snapshot doesn't.
-    // We need the workspace fingerprint. Compute it via the full snapshot.
-    let full_tree = compose_full_snapshot(&resolved, &opts);
-    let workspace_fp = {
-        // Extract workspaceFingerprint from the full tree
-        use crate::engine::gate::cbor::CborValue;
-        match &full_tree {
-            CborValue::Map(m) => m
-                .get("workspaceFingerprint")
-                .and_then(|v| {
-                    if let CborValue::Text(s) = v {
-                        Some(s.clone())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-            _ => String::new(),
-        }
-    };
-
-    // We need a snapshot with workspaceFingerprint accessible.
-    // The snap from compose_snapshot doesn't have it.
-    // Build a wrapper.
-    let snap_with_fp = SnapshotWithFingerprint { snap, workspace_fp };
+    let workspace_fp =
+        crate::engine::l5::snapshot_full::workspace_fingerprint_of(workspace, alsem_ver);
 
     // Resolve changed roots
     let changed_input = ChangedInput {
@@ -1247,7 +1373,7 @@ pub fn run_digest_pipeline(
         );
     }
 
-    let changed_roots = resolve_changed_roots(&snap_with_fp.snap, &changed_input);
+    let changed_roots = resolve_changed_roots(&snap, &changed_input);
 
     // Compute transaction context map (for COMMIT effects).
     // Mirrors TS pipeline: computeTransactionSpans → transactionContextByOperationId.
@@ -1255,15 +1381,17 @@ pub fn run_digest_pipeline(
 
     // Compute S4 ordering effects for ALL reportable roots (then filter to roots we care about).
     // Use compute_digest_effects_cli which matches TS runDigestPipeline (no routineReturnSummaries).
-    let all_s4_entries = compute_digest_effects_cli(&snap_with_fp.snap, &resolved);
+    let all_s4_entries = compute_digest_effects_cli(&snap, &resolved);
 
     // Run full digest query for the resolved roots
-    let entries = run_digest_query_full_from_entries(
-        &snap_with_fp.snap,
+    let query_full = run_digest_query_full_from_entries(
+        &snap,
         &changed_roots.roots,
         &all_s4_entries,
         &tx_ctx_map,
     );
+    let entries = query_full.entries;
+    let query_diagnostics = query_full.query_diagnostics;
 
     let exit_code: u8 = if changed_roots.roots.is_empty() { 2 } else { 0 };
 
@@ -1295,10 +1423,11 @@ pub fn run_digest_pipeline(
 
     // JSON
     let json_text = project_digest_document(
-        &snap_with_fp.workspace_fp,
+        &workspace_fp,
         &changed_input_contract,
         &changed_roots,
         &entries,
+        &query_diagnostics,
         diagnostics_json,
         alsem_ver,
         deterministic,
@@ -1314,11 +1443,159 @@ pub fn run_digest_pipeline(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Snapshot with workspace fingerprint
-// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::l5::snapshot::SnapshotIdentityTable;
 
-struct SnapshotWithFingerprint {
-    snap: CapabilitySnapshot,
-    workspace_fp: String,
+    fn snap_with_identities(rows: &[(&str, &str)]) -> CapabilitySnapshot {
+        let mut ids = SnapshotIdentityTable {
+            stable_ids: Vec::new(),
+            display_names: Vec::new(),
+        };
+        for (id, display) in rows {
+            ids.stable_ids.push((*id).into());
+            ids.display_names.push((*display).into());
+        }
+        CapabilitySnapshot {
+            identities: ids,
+            capability_facts: Vec::new(),
+            typed_edges: Vec::new(),
+            operation_index: Vec::new(),
+            callsite_index: Vec::new(),
+            callsite_resolutions: Vec::new(),
+            analysis_gaps: Vec::new(),
+            coverage: Vec::new(),
+            event_declarations: Vec::new(),
+            root_classifications: Vec::new(),
+            routine_order_frames: None,
+        }
+    }
+
+    // --- #6 resolveSelector cascade ---------------------------------------
+
+    #[test]
+    fn selector_form1_exact_stable_id() {
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
+        let idx = build_selector_indexes(&snap);
+        assert_eq!(
+            resolve_selector("app:Codeunit:1#abc", &idx),
+            vec!["app:Codeunit:1#abc".to_string()]
+        );
+    }
+
+    #[test]
+    fn selector_form2_full_display_case_insensitive() {
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
+        let idx = build_selector_indexes(&snap);
+        assert_eq!(
+            resolve_selector("codeunit \"x\"::run", &idx),
+            vec!["app:Codeunit:1#abc".to_string()]
+        );
+    }
+
+    #[test]
+    fn selector_form3_two_segment_strips_typeword() {
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
+        let idx = build_selector_indexes(&snap);
+        // Drop the leading "Codeunit " type-word.
+        assert_eq!(
+            resolve_selector("\"X\"::Run", &idx),
+            vec!["app:Codeunit:1#abc".to_string()]
+        );
+    }
+
+    #[test]
+    fn selector_form4_one_segment_routine_name() {
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
+        let idx = build_selector_indexes(&snap);
+        assert_eq!(
+            resolve_selector("Run", &idx),
+            vec!["app:Codeunit:1#abc".to_string()]
+        );
+    }
+
+    #[test]
+    fn selector_form5_object_qualified() {
+        // Form 5 fires when the FULL routine index has a bucket keyed by the bare
+        // routine name (e.g. a trigger routine whose display IS just "OnRun"), and the
+        // selector is object-qualified ("Obj::OnRun"): the segment after the last "::"
+        // is looked up directly. Here the identity display is the bare "OnRun".
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "OnRun")]);
+        let idx = build_selector_indexes(&snap);
+        assert_eq!(
+            resolve_selector("Codeunit \"X\"::OnRun", &idx),
+            vec!["app:Codeunit:1#abc".to_string()]
+        );
+    }
+
+    #[test]
+    fn selector_ambiguous_is_deterministic_in_identity_order() {
+        // Two routines share the bare name "Run" → one-segment form returns BOTH,
+        // in identity-table insertion order (deterministic, not HashMap order).
+        let snap = snap_with_identities(&[
+            ("app:Codeunit:1#aaa", "Codeunit \"A\"::Run"),
+            ("app:Codeunit:2#bbb", "Codeunit \"B\"::Run"),
+        ]);
+        let idx = build_selector_indexes(&snap);
+        let m = resolve_selector("Run", &idx);
+        assert_eq!(
+            m,
+            vec![
+                "app:Codeunit:1#aaa".to_string(),
+                "app:Codeunit:2#bbb".to_string()
+            ],
+            "ambiguous matches must be in deterministic identity order"
+        );
+    }
+
+    #[test]
+    fn selector_unmatched_returns_empty() {
+        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
+        let idx = build_selector_indexes(&snap);
+        assert!(resolve_selector("DoesNotExist", &idx).is_empty());
+    }
+
+    #[test]
+    fn normalize_display_key_collapses_whitespace() {
+        assert_eq!(normalize_display_key("  Foo   Bar  "), "foo bar");
+        assert_eq!(
+            normalize_display_key("Codeunit\t\"X\"::Run"),
+            "codeunit \"x\"::run"
+        );
+    }
+
+    // --- #12 autoDetectChanged --------------------------------------------
+
+    #[test]
+    fn auto_detect_existing_path_is_diff() {
+        let r = auto_detect_changed_with("some.patch", |_| true);
+        assert_eq!(r, ChangedAutoDetect::Diff("some.patch".to_string()));
+    }
+
+    #[test]
+    fn auto_detect_al_comma_list_is_files() {
+        let r = auto_detect_changed_with("src/A.al, src/B.al", |_| false);
+        assert_eq!(
+            r,
+            ChangedAutoDetect::Files(vec!["src/A.al".into(), "src/B.al".into()])
+        );
+    }
+
+    #[test]
+    fn auto_detect_nonexistent_nonal_is_routines() {
+        // A non-existent `--changed bad.patch` → NOT a file, not `.al` → routine
+        // selector ["bad.patch"] (graceful miscategorization, not an OS error) (#12).
+        let r = auto_detect_changed_with("bad.patch", |_| false);
+        assert_eq!(r, ChangedAutoDetect::Routines(vec!["bad.patch".into()]));
+    }
+
+    #[test]
+    fn auto_detect_routine_names() {
+        let r = auto_detect_changed_with("MyCodeunit::DoWork, Other", |_| false);
+        assert_eq!(
+            r,
+            ChangedAutoDetect::Routines(vec!["MyCodeunit::DoWork".into(), "Other".into()])
+        );
+    }
 }

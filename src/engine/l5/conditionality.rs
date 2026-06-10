@@ -121,3 +121,82 @@ pub fn effect_conditionality(
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_mapping_covers_all_values() {
+        // error-path + guarded-by-IsHandled have 0 corpus coverage — pin them here.
+        assert_eq!(context_to_conditionality(Some("top-level")), UNCONDITIONAL);
+        assert_eq!(context_to_conditionality(Some("conditional")), CONDITIONAL);
+        assert_eq!(context_to_conditionality(Some("loop-body")), LOOP_BODY);
+        assert_eq!(context_to_conditionality(Some("error-path")), ERROR_PATH);
+        assert_eq!(
+            context_to_conditionality(Some("is-handled-guarded")),
+            GUARDED_BY_ISHANDLED
+        );
+        // unreachable + None + unknown → defensive UNKNOWN.
+        assert_eq!(context_to_conditionality(Some("unreachable")), UNKNOWN);
+        assert_eq!(context_to_conditionality(None), UNKNOWN);
+        assert_eq!(context_to_conditionality(Some("weird")), UNKNOWN);
+    }
+
+    #[test]
+    fn path_conditionality_unknown_contaminates() {
+        // ANY unknown hop or terminal contaminates the whole path → unknown.
+        assert_eq!(path_conditionality(&[UNCONDITIONAL], UNKNOWN), UNKNOWN);
+        assert_eq!(path_conditionality(&[UNKNOWN], UNCONDITIONAL), UNKNOWN);
+        // Otherwise: most-restrictive (highest rank) wins.
+        assert_eq!(
+            path_conditionality(&[UNCONDITIONAL, CONDITIONAL], LOOP_BODY),
+            LOOP_BODY
+        );
+        assert_eq!(path_conditionality(&[CONDITIONAL], ERROR_PATH), ERROR_PATH);
+        assert_eq!(path_conditionality(&[], UNCONDITIONAL), UNCONDITIONAL);
+    }
+
+    #[test]
+    fn effect_conditionality_filters_unknown_not_contaminate() {
+        // ASYMMETRY (#7): effectConditionality FILTERS OUT unknown paths (least-restrictive
+        // across the NON-unknown ones), it does NOT contaminate like pathConditionality.
+        // A mix of unknown + unconditional → unconditional (the unknown is dropped).
+        assert_eq!(
+            effect_conditionality(&[UNKNOWN, UNCONDITIONAL], false),
+            UNCONDITIONAL
+        );
+        // least-restrictive across known paths.
+        assert_eq!(
+            effect_conditionality(&[ERROR_PATH, CONDITIONAL], false),
+            CONDITIONAL
+        );
+        // all unknown → unknown.
+        assert_eq!(effect_conditionality(&[UNKNOWN, UNKNOWN], false), UNKNOWN);
+        assert_eq!(effect_conditionality(&[], false), UNKNOWN);
+        // truncated && no unconditional found → unknown.
+        assert_eq!(effect_conditionality(&[CONDITIONAL], true), UNKNOWN);
+        // truncated but an unconditional path exists → keep unconditional.
+        assert_eq!(
+            effect_conditionality(&[UNCONDITIONAL, CONDITIONAL], true),
+            UNCONDITIONAL
+        );
+    }
+
+    #[test]
+    fn multi_path_asymmetry_combination() {
+        // The #8-relevant scenario: an effect reached via TWO paths terminating at
+        // different contexts — one unconditional (top-level), one conditional. Each
+        // path is computed independently (per-path terminal), then the effect folds
+        // least-restrictive → unconditional. If the two phases used the SAME logic
+        // (e.g. both contaminating), a known+unknown mix would compute wrong.
+        let p_uncond = path_conditionality(&[], UNCONDITIONAL); // top-level terminal
+        let p_cond = path_conditionality(&[CONDITIONAL], UNCONDITIONAL); // conditional hop
+        assert_eq!(p_uncond, UNCONDITIONAL);
+        assert_eq!(p_cond, CONDITIONAL);
+        assert_eq!(
+            effect_conditionality(&[p_uncond, p_cond], false),
+            UNCONDITIONAL
+        );
+    }
+}

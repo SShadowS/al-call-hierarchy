@@ -288,3 +288,199 @@ fn edge_to(e: &SnapshotGraphEdge) -> Option<&str> {
         SnapshotGraphEdge::ObjectRunUnresolved { .. } => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::l5::snapshot::{
+        CapabilitySnapshot, SnapshotCallsiteEvidence, SnapshotCallsiteResolution,
+        SnapshotIdentityTable, SnapshotRange, SnapshotSourceAnchor,
+    };
+
+    fn empty_snap() -> CapabilitySnapshot {
+        CapabilitySnapshot {
+            identities: SnapshotIdentityTable {
+                stable_ids: Vec::new(),
+                display_names: Vec::new(),
+            },
+            capability_facts: Vec::new(),
+            typed_edges: Vec::new(),
+            operation_index: Vec::new(),
+            callsite_index: Vec::new(),
+            callsite_resolutions: Vec::new(),
+            analysis_gaps: Vec::new(),
+            coverage: Vec::new(),
+            event_declarations: Vec::new(),
+            root_classifications: Vec::new(),
+            routine_order_frames: None,
+        }
+    }
+
+    fn cs_ev(id: &str, routine: &str, file: &str, line: u32) -> SnapshotCallsiteEvidence {
+        SnapshotCallsiteEvidence {
+            callsite_id: id.into(),
+            routine: routine.into(),
+            source_file: file.into(),
+            start_line: line,
+            start_column: 4,
+            end_line: line,
+            end_column: 20,
+            callee_display: "Callee".into(),
+            control_context: None,
+            order: None,
+            under_asserterror: None,
+        }
+    }
+
+    fn resolution(
+        cs_id: &str,
+        from: &str,
+        callee: &str,
+        status: &str,
+        candidates: Option<Vec<String>>,
+        open_world: Option<bool>,
+    ) -> SnapshotCallsiteResolution {
+        SnapshotCallsiteResolution {
+            callsite_id: cs_id.into(),
+            from: from.into(),
+            callee_display: callee.into(),
+            dispatch_kind: "interface".into(),
+            status: status.into(),
+            resolved_edges: Vec::new(),
+            candidates,
+            open_world,
+            unresolved_candidates: None,
+            result_consumed: None,
+            under_asserterror: None,
+        }
+    }
+
+    #[test]
+    fn polymorphic_row_with_candidates_and_open_world_included() {
+        // ORACLE: a polymorphic (interface-dispatch) ledger row is INCLUDED in the
+        // cone even though "polymorphic" is a distinct (non-resolved) status, and it
+        // carries candidates[] + openWorld:true. 0 corpus coverage.
+        let mut snap = empty_snap();
+        snap.identities
+            .stable_ids
+            .push("app:Codeunit:1#root".into());
+        snap.identities
+            .display_names
+            .push("Codeunit X::Root".into());
+        snap.callsite_index
+            .push(cs_ev("cs1", "app:Codeunit:1#root", "ws:src/X.al", 12));
+        snap.callsite_resolutions.push(resolution(
+            "cs1",
+            "app:Codeunit:1#root",
+            "IFoo.Bar",
+            "polymorphic",
+            Some(vec![
+                "app:Codeunit:2#impl".into(),
+                "app:Codeunit:3#impl".into(),
+            ]),
+            Some(true),
+        ));
+
+        let r = unresolved_cone(&snap, "app:Codeunit:1#root");
+        assert_eq!(r.items.len(), 1, "polymorphic row must be included");
+        let it = &r.items[0];
+        assert_eq!(it.status, "polymorphic");
+        assert_eq!(it.open_world, Some(true));
+        assert_eq!(
+            it.candidates.as_ref().map(|v| v.len()),
+            Some(2),
+            "candidates carried"
+        );
+        assert_eq!(it.callsite_file.as_deref(), Some("ws:src/X.al"));
+        assert_eq!(it.callsite_line, Some(12));
+        assert_eq!(it.owning_routine, "app:Codeunit:1#root");
+        assert_eq!(it.owning_routine_display, "Codeunit X::Root");
+    }
+
+    #[test]
+    fn resolved_and_builtin_rows_excluded() {
+        let mut snap = empty_snap();
+        snap.identities.stable_ids.push("r#1".into());
+        snap.identities.display_names.push("R::One".into());
+        snap.callsite_resolutions
+            .push(resolution("csA", "r#1", "A", "resolved", None, None));
+        snap.callsite_resolutions
+            .push(resolution("csB", "r#1", "B", "builtin", None, None));
+        let r = unresolved_cone(&snap, "r#1");
+        assert!(r.items.is_empty(), "resolved + builtin are excluded");
+    }
+
+    #[test]
+    fn depth_cap_truncation_only_on_unvisited_edge() {
+        // ORACLE (#13): with maxDepth forced low via a deep chain, truncated=true only
+        // when an outgoing edge points to an UNVISITED node. We build a chain longer
+        // than DEFAULT_MAX_DEPTH so the cap trips on an unvisited target.
+        let mut snap = empty_snap();
+        // Build a linear chain r0 -> r1 -> ... -> r(N) with N > maxDepth.
+        let n = (DEFAULT_MAX_DEPTH as usize) + 5;
+        for i in 0..=n {
+            let id = format!("r#{i}");
+            snap.identities.stable_ids.push(id.clone());
+            snap.identities.display_names.push(format!("R::{i}"));
+        }
+        for i in 0..n {
+            let cs = format!("cs{i}");
+            snap.typed_edges.push(SnapshotGraphEdge::DirectCall {
+                kind: "direct-call",
+                callsite_id: cs.clone(),
+                from: format!("r#{i}"),
+                to: format!("r#{}", i + 1),
+                source_anchor: SnapshotSourceAnchor {
+                    source_unit_id: "ws:src/Chain.al".into(),
+                    range: SnapshotRange {
+                        start_line: i as u32,
+                        start_column: 0,
+                        end_line: i as u32,
+                        end_column: 1,
+                    },
+                    enclosing_routine_id: format!("r#{i}"),
+                    syntax_kind: "call_expression".into(),
+                },
+                edge_id: format!("e{i}"),
+            });
+        }
+        let r = unresolved_cone(&snap, "r#0");
+        assert!(
+            r.traversal.truncated,
+            "a chain longer than maxDepth must truncate on an unvisited edge"
+        );
+        assert_eq!(r.traversal.max_depth, DEFAULT_MAX_DEPTH);
+    }
+
+    #[test]
+    fn no_truncation_when_all_targets_visited() {
+        // A short chain entirely within maxDepth → not truncated.
+        let mut snap = empty_snap();
+        for i in 0..=2 {
+            snap.identities.stable_ids.push(format!("r#{i}"));
+            snap.identities.display_names.push(format!("R::{i}"));
+        }
+        for i in 0..2 {
+            snap.typed_edges.push(SnapshotGraphEdge::DirectCall {
+                kind: "direct-call",
+                callsite_id: format!("cs{i}"),
+                from: format!("r#{i}"),
+                to: format!("r#{}", i + 1),
+                source_anchor: SnapshotSourceAnchor {
+                    source_unit_id: "ws:src/Chain.al".into(),
+                    range: SnapshotRange {
+                        start_line: 0,
+                        start_column: 0,
+                        end_line: 0,
+                        end_column: 1,
+                    },
+                    enclosing_routine_id: format!("r#{i}"),
+                    syntax_kind: "call_expression".into(),
+                },
+                edge_id: format!("e{i}"),
+            });
+        }
+        let r = unresolved_cone(&snap, "r#0");
+        assert!(!r.traversal.truncated);
+    }
+}

@@ -17,7 +17,9 @@ use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
 use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
-use al_call_hierarchy::engine::l5::digest_cli::run_digest_pipeline;
+use al_call_hierarchy::engine::l5::digest_cli::{
+    auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
+};
 use clap::{Parser, Subcommand};
 
 /// The engine's default (unpinned) SARIF `driver.version`. The differential always
@@ -134,6 +136,11 @@ struct DigestCli {
     #[arg(long = "diff")]
     diff: Option<String>,
 
+    /// Convenience alias — auto-detect: existing file path → --diff; comma-list with
+    /// `.al` entries → --changed-files; else → --changed-routines.
+    #[arg(long = "changed")]
+    changed: Option<String>,
+
     /// Maximum number of via-paths per effect (reserved; wired but not yet honoured).
     #[arg(long = "max-paths")]
     max_paths: Option<usize>,
@@ -178,19 +185,51 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
         return ExitCode::from(exit::CONFIG_ERROR);
     }
 
-    // Validate --format
+    // Validate --format. al-sem (cli/index.ts:578) writes this exact message and
+    // exits 1 (FINDINGS), NOT CONFIG_ERROR (3) — the digest format check is at the
+    // CLI layer, distinct from analyze's enum-flag CONFIG_ERROR exits (#4).
     const VALID_DIGEST_FORMATS: &[&str] = &["json", "human"];
     if !VALID_DIGEST_FORMATS.contains(&d.format.as_str()) {
         eprintln!(
-            "al-sem: invalid --format '{}'. Expected one of: {}",
-            d.format,
-            VALID_DIGEST_FORMATS.join(", ")
+            "al-sem digest: invalid --format '{}'. Expected: json | human",
+            d.format
         );
-        return ExitCode::from(exit::CONFIG_ERROR);
+        return ExitCode::from(1);
+    }
+
+    // Resolve the --changed alias FIRST (auto-detect into diff / files / routines),
+    // mirroring cli/index.ts. The detected values are merged with explicit flags.
+    let mut file_inputs: Vec<String> = d.file.clone();
+    let mut routine_inputs: Vec<String> = d.routine.clone();
+    let mut diff_arg: Option<String> = d.diff.clone();
+    if let Some(changed) = d.changed.as_deref() {
+        if !changed.trim().is_empty() {
+            match auto_detect_changed(changed) {
+                ChangedAutoDetect::Diff(p) => diff_arg = Some(p),
+                ChangedAutoDetect::Files(fs) => file_inputs.extend(fs),
+                ChangedAutoDetect::Routines(rs) => routine_inputs.extend(rs),
+            }
+        }
+    }
+
+    // No-input check (cli/digest.ts:138): emit the exact CLI message + exit 1.
+    // Done at the CLI layer BEFORE the pipeline so the user sees the --changed-files
+    // wording (the pipeline's own message is the internal run-digest-pipeline one).
+    let has_files = !file_inputs.is_empty();
+    let has_routines = !routine_inputs.is_empty();
+    let has_diff = diff_arg
+        .as_deref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    if !has_files && !has_routines && !has_diff {
+        eprintln!(
+            "digest: at least one of --changed-files, --changed-routines, --diff, or --changed is required"
+        );
+        return ExitCode::from(1);
     }
 
     // Read diff input
-    let diff_text: Option<String> = match d.diff.as_deref() {
+    let diff_text: Option<String> = match diff_arg.as_deref() {
         None => None,
         Some("-") => {
             // stdin: buffer all of it
@@ -211,8 +250,16 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
         },
     };
 
-    let changed_files = if d.file.is_empty() { None } else { Some(d.file) };
-    let changed_routines = if d.routine.is_empty() { None } else { Some(d.routine) };
+    let changed_files = if file_inputs.is_empty() {
+        None
+    } else {
+        Some(file_inputs)
+    };
+    let changed_routines = if routine_inputs.is_empty() {
+        None
+    } else {
+        Some(routine_inputs)
+    };
 
     let workspace = std::path::Path::new(&d.workspace);
 
@@ -226,13 +273,11 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
         d.max_paths,
     ) {
         Err(msg) => {
-            // "at least one of …" → clean exit 2 (no changed input)
-            if msg.contains("at least one of") {
-                eprintln!("al-sem: {msg}");
-                return ExitCode::from(2);
-            }
-            eprintln!("al-sem: {msg}");
-            ExitCode::from(3)
+            // A DigestPipelineError (input/analyze phase) → write the message verbatim
+            // and exit 1, mirroring cli/digest.ts's catch. The message already starts
+            // with "digest:" so no prefix is added (#3).
+            eprintln!("{msg}");
+            ExitCode::from(1)
         }
         Ok(result) => {
             let output = if d.format == "human" {

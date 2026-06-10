@@ -1675,6 +1675,11 @@ pub struct DigestEffectResult {
     pub evidence_callsite_id: Option<String>,
     pub via_paths: Vec<Vec<ProjectedHop>>,
     pub via_paths_truncated: bool,
+    /// Effect conditionality, computed PER-PATH from each raw witness path's OWN
+    /// terminal hop (digest-query.ts computePathConditionality), folded with
+    /// effectConditionality across all pre-capping paths. (#8 — was previously
+    /// recomputed downstream from the effect-level shortest-path terminal only.)
+    pub conditionality: crate::engine::l5::conditionality::EffectConditionality,
     pub fact_id: String,
     /// The originating CapabilityFact's subject stable id — used for the
     /// evidence-unavailable diagnostic's `factSubject` field.
@@ -1712,6 +1717,62 @@ pub struct DigestEntryResult {
     pub effects: Vec<DigestEffectResult>,
 }
 
+/// The callsiteId of a NON-terminal witness hop (the `callsiteId?` field TS reads on
+/// the hop). EventDispatch has none. Terminal hops are handled separately.
+fn hop_nonterminal_callsite_id(hop: &WitnessHop) -> Option<&str> {
+    match hop {
+        WitnessHop::Call { callsite_id, .. }
+        | WitnessHop::VariableTypedCall { callsite_id, .. }
+        | WitnessHop::InterfaceDispatch { callsite_id, .. } => Some(callsite_id),
+        WitnessHop::ObjectRun { callsite_id, .. } => callsite_id.as_deref(),
+        WitnessHop::EventDispatch { .. } => None,
+        WitnessHop::Terminal { .. } => None,
+    }
+}
+
+/// `computePathConditionality` (digest-query.ts) — conditionality of ONE raw witness
+/// path, derived from each hop's OWN context. The terminal context comes from THIS
+/// path's terminal hop (its operationId, else callsiteId), NOT the effect-level
+/// shortest-path terminal. This is the #8 fix: per-path terminal threading.
+fn compute_path_conditionality(
+    path: &WitnessPath,
+    cs_ctx: &HashMap<&str, Option<&str>>,
+    op_ctx: &HashMap<&str, Option<&str>>,
+) -> crate::engine::l5::conditionality::EffectConditionality {
+    use crate::engine::l5::conditionality::{
+        context_to_conditionality, path_conditionality, UNKNOWN,
+    };
+    let mut hop_contexts: Vec<crate::engine::l5::conditionality::EffectConditionality> = Vec::new();
+    let mut terminal_ctx = UNKNOWN;
+    for hop in &path.hops {
+        match hop {
+            WitnessHop::Terminal {
+                operation_id,
+                callsite_id,
+                ..
+            } => {
+                terminal_ctx = if let Some(op) = operation_id {
+                    context_to_conditionality(op_ctx.get(op.as_str()).copied().flatten())
+                } else if let Some(cs) = callsite_id {
+                    context_to_conditionality(cs_ctx.get(cs.as_str()).copied().flatten())
+                } else {
+                    UNKNOWN
+                };
+            }
+            _ => {
+                if let Some(csid) = hop_nonterminal_callsite_id(hop) {
+                    hop_contexts.push(context_to_conditionality(
+                        cs_ctx.get(csid).copied().flatten(),
+                    ));
+                } else {
+                    hop_contexts.push(UNKNOWN);
+                }
+            }
+        }
+    }
+    path_conditionality(&hop_contexts, terminal_ctx)
+}
+
 /// `digestQuery` (digest-query.ts) — per-root effect build. Roots in input order;
 /// entries sorted by routineId at the end. `return_summaries` + `isolated_event_ids`
 /// drive the S4 ordering engine (compute_ordering) — None for the S3-only path.
@@ -1730,6 +1791,18 @@ fn digest_query(
     for cs in &snap.callsite_index {
         callsite_by_id_str.insert(cs.callsite_id.as_str(), cs);
     }
+
+    // controlContext lookups for per-path conditionality (#8). Built once.
+    let cs_ctx: HashMap<&str, Option<&str>> = snap
+        .callsite_index
+        .iter()
+        .map(|cs| (cs.callsite_id.as_str(), cs.control_context.as_deref()))
+        .collect();
+    let op_ctx: HashMap<&str, Option<&str>> = snap
+        .operation_index
+        .iter()
+        .map(|op| (op.operation_id.as_str(), op.control_context.as_deref()))
+        .collect();
 
     for rid in roots {
         let Some(display) = idx.routine_display_by_id.get(rid).cloned() else {
@@ -1764,6 +1837,9 @@ fn digest_query(
             via_paths: Vec<Vec<QueryWitnessHop>>,
             had_truncation: bool,
             all_paths: Vec<Vec<QueryWitnessHop>>,
+            /// Per-path conditionality, parallel to `all_paths` (PRE-capping). Computed
+            /// from each raw path's own terminal hop (#8).
+            all_path_conds: Vec<crate::engine::l5::conditionality::EffectConditionality>,
             /// S4-internal (NOT serialized in the digest-effects golden): the
             /// originating table-write fact's tempState (for the physical-write filter).
             temp_state: Option<SnapTempState>,
@@ -1799,11 +1875,18 @@ fn digest_query(
                 _ => None,
             };
 
-            // Project all paths to QueryWitnessHop[][].
+            // Project all paths to QueryWitnessHop[][] AND compute each raw path's
+            // conditionality from its OWN terminal hop (#8 — must be done before
+            // projection, which strips terminals).
             let projected_paths: Vec<Vec<QueryWitnessHop>> = outcome
                 .paths
                 .iter()
                 .map(|p| project_path(p, rid, &display, &idx))
+                .collect();
+            let path_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> = outcome
+                .paths
+                .iter()
+                .map(|p| compute_path_conditionality(p, &cs_ctx, &op_ctx))
                 .collect();
 
             let key = dedupe_key(effect_type, terminal, fact, &detail);
@@ -1818,29 +1901,52 @@ fn digest_query(
             let existing_pos = effect_map.iter().position(|(k, _)| k == &key);
 
             if let Some(pos) = existing_pos {
-                // Merge: combine all paths, sort shortest-first + JSON tiebreak, dedupe exact dups.
-                let mut merged: Vec<Vec<QueryWitnessHop>> = Vec::new();
-                merged.extend(effect_map[pos].1.all_paths.clone());
-                merged.extend(projected_paths.clone());
-                merged.sort_by(|a, b| {
-                    if a.len() != b.len() {
-                        return a.len().cmp(&b.len());
+                // Merge: combine (path, cond) pairs, sort shortest-first + JSON tiebreak,
+                // dedupe exact dups by hops-JSON. Conds travel WITH their paths (#8).
+                let mut merged: Vec<(
+                    Vec<QueryWitnessHop>,
+                    crate::engine::l5::conditionality::EffectConditionality,
+                )> = Vec::new();
+                {
+                    let existing = &effect_map[pos].1;
+                    for (i, p) in existing.all_paths.iter().enumerate() {
+                        let c = existing
+                            .all_path_conds
+                            .get(i)
+                            .copied()
+                            .unwrap_or(crate::engine::l5::conditionality::UNKNOWN);
+                        merged.push((p.clone(), c));
                     }
-                    query_hops_json(a).cmp(&query_hops_json(b))
+                }
+                for (p, c) in projected_paths
+                    .iter()
+                    .cloned()
+                    .zip(path_conds.iter().copied())
+                {
+                    merged.push((p, c));
+                }
+                merged.sort_by(|a, b| {
+                    if a.0.len() != b.0.len() {
+                        return a.0.len().cmp(&b.0.len());
+                    }
+                    query_hops_json(&a.0).cmp(&query_hops_json(&b.0))
                 });
                 let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-                let mut unique: Vec<Vec<QueryWitnessHop>> = Vec::new();
-                for p in merged {
+                let mut unique_paths: Vec<Vec<QueryWitnessHop>> = Vec::new();
+                let mut unique_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> =
+                    Vec::new();
+                for (p, c) in merged {
                     let k = query_hops_json(&p);
                     if seen.insert(k) {
-                        unique.push(p);
+                        unique_paths.push(p);
+                        unique_conds.push(c);
                     }
                 }
                 let had_truncation = effect_map[pos].1.had_truncation
                     || outcome.truncated
-                    || unique.len() > MAX_PATHS;
+                    || unique_paths.len() > MAX_PATHS;
                 let via: Vec<Vec<QueryWitnessHop>> =
-                    unique.iter().take(MAX_PATHS).cloned().collect();
+                    unique_paths.iter().take(MAX_PATHS).cloned().collect();
                 // Merge tempState conservatively: stays known-temp only if BOTH are.
                 let is_known_temp = |t: &Option<SnapTempState>| {
                     matches!(t, Some(SnapTempState::Known { value: true }))
@@ -1857,7 +1963,8 @@ fn digest_query(
                 let acc = &mut effect_map[pos].1;
                 acc.via_paths = via;
                 acc.had_truncation = had_truncation;
-                acc.all_paths = unique;
+                acc.all_paths = unique_paths;
+                acc.all_path_conds = unique_conds;
                 acc.temp_state = merged_temp;
             } else {
                 let via: Vec<Vec<QueryWitnessHop>> =
@@ -1879,6 +1986,7 @@ fn digest_query(
                         via_paths: via,
                         had_truncation,
                         all_paths: projected_paths,
+                        all_path_conds: path_conds,
                         temp_state: fact_temp_state,
                         fact_subject: fact.subject.clone(),
                     },
@@ -1912,6 +2020,12 @@ fn digest_query(
             let sort_file = acc.evidence.file.clone().unwrap_or_default();
             let sort_line = acc.evidence.line.unwrap_or(0);
 
+            // effectConditionality across ALL pre-capping paths (#8).
+            let conditionality = crate::engine::l5::conditionality::effect_conditionality(
+                &acc.all_path_conds,
+                acc.had_truncation,
+            );
+
             effects.push(DigestEffectResult {
                 effect_type: acc.effect_type.to_string(),
                 detail: acc.detail,
@@ -1931,6 +2045,7 @@ fn digest_query(
                     .map(|p| p.into_iter().map(|h| ProjectedHop { inner: h }).collect())
                     .collect(),
                 via_paths_truncated: acc.had_truncation,
+                conditionality,
                 fact_id: String::new(), // filled below (after sort, via seenCanonicalKeys)
                 fact_subject: acc.fact_subject,
                 canonical_key,
@@ -1974,48 +2089,9 @@ fn digest_query(
         // return_summaries is forwarded as-is to compute_ordering; when None, the engine
         // degrades gracefully (checkCalleeReturnability → "ok"; errorEscapesChain → false).
         {
-            // Pre-compute conditionality for each effect (needed by COMMIT_ON_SUCCESS_PATH).
-            // Mirrors `computeConditionalityForEffect` from digest-query.ts.
-            let compute_eff_conditionality = |e: &DigestEffectResult| -> &'static str {
-                use crate::engine::l5::conditionality::{
-                    context_to_conditionality, effect_conditionality, path_conditionality, UNKNOWN,
-                };
-                if e.via_paths.is_empty() {
-                    return UNKNOWN;
-                }
-                let cs_idx: HashMap<&str, Option<&str>> = snap
-                    .callsite_index
-                    .iter()
-                    .map(|cs| (cs.callsite_id.as_str(), cs.control_context.as_deref()))
-                    .collect();
-                let op_idx: HashMap<&str, Option<&str>> = snap
-                    .operation_index
-                    .iter()
-                    .map(|op| (op.operation_id.as_str(), op.control_context.as_deref()))
-                    .collect();
-                let terminal_ctx = if let Some(op_id) = &e.evidence_operation_id {
-                    context_to_conditionality(op_idx.get(op_id.as_str()).copied().flatten())
-                } else if let Some(cs_id) = &e.evidence_callsite_id {
-                    context_to_conditionality(cs_idx.get(cs_id.as_str()).copied().flatten())
-                } else {
-                    UNKNOWN
-                };
-                let mut all_path_conds = Vec::new();
-                for path_hops in &e.via_paths {
-                    let mut hop_ctxs: Vec<&'static str> = Vec::new();
-                    for hop in path_hops {
-                        let csid = hop.inner.callsite_id.as_deref();
-                        if let Some(csid) = csid {
-                            let ctx = cs_idx.get(csid).copied().flatten();
-                            hop_ctxs.push(context_to_conditionality(ctx));
-                        } else {
-                            hop_ctxs.push(UNKNOWN);
-                        }
-                    }
-                    all_path_conds.push(path_conditionality(&hop_ctxs, terminal_ctx));
-                }
-                effect_conditionality(&all_path_conds, e.via_paths_truncated)
-            };
+            // The ordering engine consumes each effect's conditionality (for
+            // COMMIT_ON_SUCCESS_PATH). It is the SAME per-path value already stored on
+            // the effect (#17 — the duplicated effect-level closure is gone).
             let ordering_inputs: Vec<crate::engine::l5::ordering_engine::OrderingEffectInput> =
                 effects
                     .iter()
@@ -2032,7 +2108,7 @@ fn digest_query(
                             via_paths_truncated: e.via_paths_truncated,
                             temp_state: e.temp_state.clone(),
                             occurrence_id: e.fact_id.clone(),
-                            conditionality: compute_eff_conditionality(e),
+                            conditionality: e.conditionality,
                         },
                     )
                     .collect();
@@ -2931,6 +3007,104 @@ mod tests {
         assert!(
             key.starts_with("COMMIT|synthetic:commit:table:g/table/50000|"),
             "dedupe_key synthetic branch must embed op/resourceKind/resourceId: {key:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Oracle 7 (#8): PER-PATH terminal conditionality. An effect reached via TWO
+    // paths terminating at DIFFERENT controlContexts must compute each path's
+    // conditionality from its OWN terminal hop — NOT from a single effect-level
+    // (shortest-path) terminal applied to all paths. We build two raw WitnessPaths:
+    //   - Path A: a top-level callsite hop, terminating at a top-level operation.
+    //   - Path B: a conditional callsite hop, terminating at a loop-body operation.
+    // Per-path: A → unconditional-on-success, B → loop-body (most-restrictive).
+    // Effect fold (least-restrictive across paths) → unconditional-on-success.
+    // If the engine used ONE terminal for both paths, B would not be loop-body.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn per_path_terminal_conditionality_differs_per_path() {
+        use crate::engine::l5::conditionality::{CONDITIONAL, LOOP_BODY, UNCONDITIONAL};
+
+        // Terminal-context maps: op "opTop" is top-level; op "opLoop" is loop-body.
+        let mut op_ctx: HashMap<&str, Option<&str>> = HashMap::new();
+        op_ctx.insert("opTop", Some("top-level"));
+        op_ctx.insert("opLoop", Some("loop-body"));
+        // Callsite ctx: cs "csTop" top-level, cs "csCond" conditional.
+        let mut cs_ctx: HashMap<&str, Option<&str>> = HashMap::new();
+        cs_ctx.insert("csTop", Some("top-level"));
+        cs_ctx.insert("csCond", Some("conditional"));
+
+        let path_a = WitnessPath {
+            hops: vec![
+                WitnessHop::Call {
+                    routine_id: "r#callee".into(),
+                    routine_display: "Callee".into(),
+                    callee_display: "Do".into(),
+                    callsite_id: "csTop".into(),
+                    source_file: None,
+                    line: None,
+                    column: None,
+                },
+                WitnessHop::Terminal {
+                    evidence_kind: TerminalKind::Operation,
+                    operation_id: Some("opTop".into()),
+                    callsite_id: None,
+                    display_text: String::new(),
+                    source_file: None,
+                    line: None,
+                    column: None,
+                },
+            ],
+        };
+        let path_b = WitnessPath {
+            hops: vec![
+                WitnessHop::Call {
+                    routine_id: "r#callee".into(),
+                    routine_display: "Callee".into(),
+                    callee_display: "Do".into(),
+                    callsite_id: "csCond".into(),
+                    source_file: None,
+                    line: None,
+                    column: None,
+                },
+                WitnessHop::Terminal {
+                    evidence_kind: TerminalKind::Operation,
+                    operation_id: Some("opLoop".into()),
+                    callsite_id: None,
+                    display_text: String::new(),
+                    source_file: None,
+                    line: None,
+                    column: None,
+                },
+            ],
+        };
+
+        let ca = compute_path_conditionality(&path_a, &cs_ctx, &op_ctx);
+        let cb = compute_path_conditionality(&path_b, &cs_ctx, &op_ctx);
+        // Path A: hops [top-level] + terminal top-level → most-restrictive = unconditional.
+        assert_eq!(ca, UNCONDITIONAL);
+        // Path B: hops [conditional] + terminal loop-body → most-restrictive = loop-body.
+        assert_eq!(cb, LOOP_BODY);
+        assert_ne!(
+            ca, cb,
+            "the two paths MUST yield different conditionalities (#8 per-path terminal)"
+        );
+
+        // Effect fold: least-restrictive across the two paths → unconditional.
+        let folded = crate::engine::l5::conditionality::effect_conditionality(&[ca, cb], false);
+        assert_eq!(folded, UNCONDITIONAL);
+
+        // Control: if (buggily) BOTH paths used path B's loop-body terminal, path A would
+        // become loop-body and the fold would be loop-body — NOT unconditional. Assert the
+        // buggy outcome differs, proving the per-path threading matters.
+        let buggy_a =
+            crate::engine::l5::conditionality::path_conditionality(&[CONDITIONAL], LOOP_BODY); // A's hop + B's terminal
+        assert_eq!(buggy_a, LOOP_BODY);
+        let buggy_fold =
+            crate::engine::l5::conditionality::effect_conditionality(&[buggy_a, cb], false);
+        assert_ne!(
+            buggy_fold, folded,
+            "shared-terminal (buggy) fold must differ from per-path fold"
         );
     }
 }
