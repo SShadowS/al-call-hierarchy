@@ -100,6 +100,17 @@ fn match_operator(op: PredicateOperator, actual: &FieldValue, expected: &Predica
     }
 }
 
+/// Test-only re-export of [`match_operator`] so the differential's glob-vs-glob-in
+/// array-asymmetry oracle can drive the operator directly.
+#[doc(hidden)]
+pub fn match_operator_for_test(
+    op: PredicateOperator,
+    actual: &FieldValue,
+    expected: &PredicateValue,
+) -> bool {
+    match_operator(op, actual, expected)
+}
+
 /// al-sem `actualToString`: strings pass through, arrays join with `,`.
 fn actual_to_string(v: &FieldValue) -> String {
     match v {
@@ -110,81 +121,87 @@ fn actual_to_string(v: &FieldValue) -> String {
     }
 }
 
-/// Case-insensitive anchored glob. al-sem `globMatch` / `compileGlob`: `*` → match
-/// any chars, `?` → match single char, other regex metachars escaped, `^...$`
-/// anchored, ASCII-insensitive, `.` excludes newline.
+/// Case-insensitive anchored glob, byte-parity with al-sem's `globToRegExp`
+/// (`predicate-evaluator.ts` `compileGlob`): `new RegExp("^" + escaped + "$", "i")`
+/// where `escaped` escapes the regex metachars `. + ^ $ { } ( ) | [ ] \`, then
+/// `*` → `.*` and `?` → `.`.
 ///
-/// We compile to a hand-rolled matcher (no regex dep). Semantics match the JS
-/// `RegExp("^"+escaped+"$","i")` with `*`→`.*`, `?`→`.` where `.` matches any char
-/// EXCEPT newline. Case-insensitivity is full Unicode simple case folding via
-/// `to_lowercase`, matching JS `i`-flag for the BMP table/event names compared here.
+/// CRITICAL no-ReDoS / no-overflow guarantee: we compile to the `regex` crate
+/// (a non-backtracking finite automaton — LINEAR time, no recursion), so a
+/// malicious user policy glob (e.g. `*a*a*…*a` against a long value, or a 10k-char
+/// pattern) can never hang or stack-overflow the engine. The previous hand-rolled
+/// backtracking matcher was catastrophically exponential AND recursed per char.
+///
+/// Line-terminator parity: a JS `RegExp` `.` WITHOUT the `s` flag excludes the four
+/// ECMAScript line terminators (`\n` U+000A, `\r` U+000D, U+2028 LS, U+2029 PS).
+/// Rust regex `.` (default `(?-s)`) excludes only `\n`, so we translate `*`/`?` to
+/// the EXPLICIT negated class `[^\n\r\u{2028}\u{2029}]` to match al-sem exactly
+/// (this also fixes a latent `\r`/LS/PS divergence in the old matcher).
+///
+/// Case-insensitivity: al-sem's `i`-flag (no `u`) is UTF-16 default case folding.
+/// We use ASCII-case-insensitive matching (`ascii_case_insensitive(true)`): for the
+/// ASCII/BMP table/event/routine/object names the policy corpus compares, this is
+/// identical to JS; full-Unicode `case_insensitive` would ADD folds JS-without-`u`
+/// does NOT do (Kelvin sign K↔k, long-s ſ↔s), so ASCII-CI is the closer match. The
+/// non-ASCII UTF-16-vs-unicode-case edge is the tracked cross-cutting comparator
+/// item (shared with `compareStrings`), not a policy-specific divergence.
 pub fn glob_match(pattern: &str, value: &str) -> bool {
-    // Tokenize the pattern into a sequence of matcher ops.
-    enum Tok {
-        Star,          // .*  (any run, including empty; excludes newline per char)
-        AnyNonNewline, // .   (exactly one non-newline char)
-        Lit(char),     // a literal char (case-insensitive compare)
-    }
-    let mut toks: Vec<Tok> = Vec::with_capacity(pattern.chars().count());
-    for c in pattern.chars() {
-        match c {
-            '*' => toks.push(Tok::Star),
-            '?' => toks.push(Tok::AnyNonNewline),
-            other => toks.push(Tok::Lit(other)),
+    // ASCII-case-insensitivity is implemented by folding ASCII letters on BOTH sides
+    // (literal pattern chars + the value) rather than the regex `i` flag, because the
+    // regex needs `unicode(true)` for the `\x{2028}`/`\x{2029}` line-terminator class
+    // but we want ASCII-only folding (full-Unicode `case_insensitive` would add
+    // Kelvin/long-s folds JS-without-`u` does not). `to_ascii_lowercase` touches only
+    // A-Z, leaving every other codepoint (incl. the 4 line terminators) intact.
+    let folded_value = value.to_ascii_lowercase();
+    GLOB_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(re) = cache.get(pattern) {
+            return re.is_match(&folded_value);
         }
-    }
-    let value_chars: Vec<char> = value.chars().collect();
-
-    // Backtracking matcher (anchored). Patterns are short (policy globs), so the
-    // recursive star-backtrack is fine.
-    fn matches(toks: &[Tok], ti: usize, val: &[char], vi: usize) -> bool {
-        if ti == toks.len() {
-            return vi == val.len();
-        }
-        match &toks[ti] {
-            Tok::Star => {
-                // `.*` — `.` excludes newline, so a `*` cannot span a newline.
-                // Try consuming 0..k non-newline chars.
-                // First try zero-width:
-                if matches(toks, ti + 1, val, vi) {
-                    return true;
-                }
-                let mut j = vi;
-                while j < val.len() && val[j] != '\n' {
-                    j += 1;
-                    if matches(toks, ti + 1, val, j) {
-                        return true;
-                    }
-                }
-                false
-            }
-            Tok::AnyNonNewline => {
-                if vi < val.len() && val[vi] != '\n' {
-                    matches(toks, ti + 1, val, vi + 1)
-                } else {
-                    false
-                }
-            }
-            Tok::Lit(p) => {
-                if vi < val.len() && chars_eq_ci(*p, val[vi]) {
-                    matches(toks, ti + 1, val, vi + 1)
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    matches(&toks, 0, &value_chars, 0)
+        let re = compile_glob(pattern);
+        let m = re.is_match(&folded_value);
+        cache.insert(pattern.to_string(), re);
+        m
+    })
 }
 
-/// Case-insensitive char equality (JS RegExp `i` flag, simple case folding).
-fn chars_eq_ci(a: char, b: char) -> bool {
-    if a == b {
-        return true;
+thread_local! {
+    /// Per-thread compiled-regex cache (mirrors al-sem's module-level `globCache`).
+    static GLOB_CACHE: std::cell::RefCell<std::collections::HashMap<String, regex::Regex>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Translate a glob pattern to an anchored `regex::Regex` (case folding is done by
+/// the caller via ASCII-lowercasing both sides, so literal chars are lowercased here
+/// and the regex itself is case-SENSITIVE).
+fn compile_glob(pattern: &str) -> regex::Regex {
+    // `[^\n\r\u{2028}\u{2029}]` — JS `.`-without-`s` (excludes the 4 line terminators).
+    const NON_LT: &str = "[^\\n\\r\\x{2028}\\x{2029}]";
+    let mut re = String::with_capacity(pattern.len() + 4);
+    re.push('^');
+    for c in pattern.chars() {
+        match c {
+            '*' => {
+                re.push_str(NON_LT);
+                re.push('*');
+            }
+            '?' => re.push_str(NON_LT),
+            // Escape the regex metachars al-sem escapes: . + ^ $ { } ( ) | [ ] \
+            '.' | '+' | '^' | '$' | '{' | '}' | '(' | ')' | '|' | '[' | ']' | '\\' => {
+                re.push('\\');
+                re.push(c.to_ascii_lowercase());
+            }
+            // Literal: ASCII-lowercase (the value is folded the same way) — this is
+            // the ASCII-CI implementation. Non-ASCII literals pass through verbatim.
+            other => re.push(other.to_ascii_lowercase()),
+        }
     }
-    // Compare simple lowercase folds (handles ASCII + BMP letters).
-    a.to_lowercase().eq(b.to_lowercase())
+    re.push('$');
+    // On the off-chance a pathological pattern exceeds the default regex size limit,
+    // fall back to a never-match regex rather than aborting (engine-never-throws).
+    regex::Regex::new(&re).unwrap_or_else(|_| {
+        regex::Regex::new("[^\\x00-\\x{10FFFF}]").expect("never-match regex is valid")
+    })
 }
 
 /// Evaluate a single field predicate to a tristate. `mode` controls fact-scope

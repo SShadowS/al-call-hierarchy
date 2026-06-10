@@ -114,17 +114,12 @@ pub struct RuleRunSummary {
 //   all:   { kind, children }
 //   any:   { kind, children }
 //   not:   { kind, child }
-// We build a tiny ordered JSON value tree and serialize with 2-space indent.
+// Built on the shared `gate::ordered_json` insertion-order serializer.
 // ---------------------------------------------------------------------------
 
-/// A minimal insertion-order JSON value tree (mirrors the events serializer's `Jv`).
-enum AstJv {
-    Str(String),
-    Obj(Vec<(&'static str, AstJv)>),
-    Arr(Vec<AstJv>),
-}
+use crate::engine::gate::ordered_json::{serialize_jv, Jv};
 
-fn predicate_to_jv(p: &Predicate) -> AstJv {
+fn predicate_to_jv(p: &Predicate) -> Jv {
     match p {
         Predicate::Field {
             field,
@@ -132,117 +127,39 @@ fn predicate_to_jv(p: &Predicate) -> AstJv {
             value,
         } => {
             let value_jv = match value {
-                PredicateValue::Str(s) => AstJv::Str(s.clone()),
-                PredicateValue::List(xs) => {
-                    AstJv::Arr(xs.iter().map(|x| AstJv::Str(x.clone())).collect())
-                }
+                PredicateValue::Str(s) => Jv::s(s),
+                PredicateValue::List(xs) => Jv::Arr(xs.iter().map(|x| Jv::s(x)).collect()),
             };
-            AstJv::Obj(vec![
-                ("kind", AstJv::Str("field".to_string())),
-                ("field", AstJv::Str(field.clone())),
-                ("operator", AstJv::Str(operator.as_str().to_string())),
-                ("value", value_jv),
+            Jv::Obj(vec![
+                ("kind".to_string(), Jv::s("field")),
+                ("field".to_string(), Jv::s(field)),
+                ("operator".to_string(), Jv::s(operator.as_str())),
+                ("value".to_string(), value_jv),
             ])
         }
-        Predicate::All { children } => AstJv::Obj(vec![
-            ("kind", AstJv::Str("all".to_string())),
+        Predicate::All { children } => Jv::Obj(vec![
+            ("kind".to_string(), Jv::s("all")),
             (
-                "children",
-                AstJv::Arr(children.iter().map(predicate_to_jv).collect()),
+                "children".to_string(),
+                Jv::Arr(children.iter().map(predicate_to_jv).collect()),
             ),
         ]),
-        Predicate::Any { children } => AstJv::Obj(vec![
-            ("kind", AstJv::Str("any".to_string())),
+        Predicate::Any { children } => Jv::Obj(vec![
+            ("kind".to_string(), Jv::s("any")),
             (
-                "children",
-                AstJv::Arr(children.iter().map(predicate_to_jv).collect()),
+                "children".to_string(),
+                Jv::Arr(children.iter().map(predicate_to_jv).collect()),
             ),
         ]),
-        Predicate::Not { child } => AstJv::Obj(vec![
-            ("kind", AstJv::Str("not".to_string())),
-            ("child", predicate_to_jv(child)),
+        Predicate::Not { child } => Jv::Obj(vec![
+            ("kind".to_string(), Jv::s("not")),
+            ("child".to_string(), predicate_to_jv(child)),
         ]),
-    }
-}
-
-fn ast_escape(s: &str, buf: &mut String) {
-    buf.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => buf.push_str("\\\""),
-            '\\' => buf.push_str("\\\\"),
-            '\n' => buf.push_str("\\n"),
-            '\r' => buf.push_str("\\r"),
-            '\t' => buf.push_str("\\t"),
-            '\u{0008}' => buf.push_str("\\b"),
-            '\u{000C}' => buf.push_str("\\f"),
-            c if (c as u32) < 0x20 => buf.push_str(&format!("\\u{:04x}", c as u32)),
-            c => buf.push(c),
-        }
-    }
-    buf.push('"');
-}
-
-fn write_ast(v: &AstJv, buf: &mut String, indent: usize) {
-    match v {
-        AstJv::Str(s) => ast_escape(s, buf),
-        AstJv::Obj(pairs) => {
-            if pairs.is_empty() {
-                buf.push_str("{}");
-                return;
-            }
-            buf.push('{');
-            let inner = indent + 2;
-            for (i, (k, val)) in pairs.iter().enumerate() {
-                buf.push('\n');
-                for _ in 0..inner {
-                    buf.push(' ');
-                }
-                buf.push('"');
-                buf.push_str(k);
-                buf.push_str("\": ");
-                write_ast(val, buf, inner);
-                if i + 1 < pairs.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            for _ in 0..indent {
-                buf.push(' ');
-            }
-            buf.push('}');
-        }
-        AstJv::Arr(items) => {
-            if items.is_empty() {
-                buf.push_str("[]");
-                return;
-            }
-            buf.push('[');
-            let inner = indent + 2;
-            for (i, val) in items.iter().enumerate() {
-                buf.push('\n');
-                for _ in 0..inner {
-                    buf.push(' ');
-                }
-                write_ast(val, buf, inner);
-                if i + 1 < items.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            for _ in 0..indent {
-                buf.push(' ');
-            }
-            buf.push(']');
-        }
     }
 }
 
 /// Serialize the predicate AST to `JSON.stringify(p, undefined, 2)` form (no
 /// trailing newline). Used by `policy explain`'s "Normalized AST" block.
 pub fn predicate_to_json(p: &Predicate) -> String {
-    let jv = predicate_to_jv(p);
-    let mut buf = String::new();
-    write_ast(&jv, &mut buf, 0);
-    buf
+    serialize_jv(&predicate_to_jv(p))
 }

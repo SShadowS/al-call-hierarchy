@@ -167,7 +167,10 @@ impl<'a> PolicyModel<'a> {
 pub fn run_policy_engine(model: &PolicyModel, policy: &PolicyDoc) -> RunOutput {
     let mut findings: Vec<Finding> = Vec::new();
     let mut rule_summaries: Vec<RuleRunSummary> = Vec::new();
-    let mut diagnostics: Vec<PolicyDiagnostic> = Vec::new();
+    // Always empty: al-sem pushes a `detect`-stage warning when a rule's predicate
+    // evaluation THROWS, but Rust predicate evaluation is total (it cannot throw),
+    // so this stays empty. Carried for envelope parity (`diagnostics: []`).
+    let diagnostics: Vec<PolicyDiagnostic> = Vec::new();
 
     // Sort rules by id.
     let mut sorted_rules: Vec<&Rule> = policy.rules.iter().collect();
@@ -288,9 +291,6 @@ pub fn run_policy_engine(model: &PolicyModel, policy: &PolicyDoc) -> RunOutput {
     }
 
     findings.sort_by(|a, b| a.id.cmp(&b.id));
-
-    // Suppress an unused-variable warning when no rule ever throws (it never does).
-    let _ = &mut diagnostics;
 
     RunOutput {
         rule_summaries,

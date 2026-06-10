@@ -35,6 +35,13 @@ serde_json = "1"
 # feeds malformed YAML).
 serde_yaml = "0.9"
 
+# Regex — policy glob compiler (cli-c/c2). The hand-rolled backtracking glob matcher
+# was catastrophically exponential (ReDoS) AND stack-overflowed on long inputs. The
+# `regex` crate is non-backtracking (linear, no recursion), so a malicious user policy
+# glob can never hang or abort the engine. We translate al-sem's `globToRegExp`
+# (`new RegExp('^'+escaped+'$','i')`) faithfully (see policy `glob_compile`).
+regex = "1"
+
 # Hashing (R0 identity encoders)
 sha2 = "0.10"
 

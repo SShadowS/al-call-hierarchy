@@ -8,105 +8,10 @@
 //!     skip-if-none.
 //!   - `human`: literal TAB-indented summary + findings list.
 
+use crate::engine::gate::ordered_json::{serialize_jv, Jv};
 use crate::engine::gate::policy::policy_engine::PolicyRunResult;
 use crate::engine::gate::policy::policy_types::RuleRunSummary;
 use crate::engine::l5::finding::{EvidenceStep, Finding, SourceAnchor};
-
-// ---------------------------------------------------------------------------
-// Insertion-order JSON value tree (mirrors events.rs `Jv`).
-// ---------------------------------------------------------------------------
-
-pub(crate) enum Jv {
-    Str(String),
-    Num(i64),
-    Obj(Vec<(String, Jv)>),
-    Arr(Vec<Jv>),
-}
-
-impl Jv {
-    fn s(s: &str) -> Jv {
-        Jv::Str(s.to_string())
-    }
-}
-
-fn esc(s: &str, buf: &mut String) {
-    buf.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => buf.push_str("\\\""),
-            '\\' => buf.push_str("\\\\"),
-            '\n' => buf.push_str("\\n"),
-            '\r' => buf.push_str("\\r"),
-            '\t' => buf.push_str("\\t"),
-            '\u{0008}' => buf.push_str("\\b"),
-            '\u{000C}' => buf.push_str("\\f"),
-            c if (c as u32) < 0x20 => buf.push_str(&format!("\\u{:04x}", c as u32)),
-            c => buf.push(c),
-        }
-    }
-    buf.push('"');
-}
-
-fn write_jv(v: &Jv, buf: &mut String, indent: usize) {
-    match v {
-        Jv::Str(s) => esc(s, buf),
-        Jv::Num(n) => buf.push_str(&n.to_string()),
-        Jv::Obj(pairs) => {
-            if pairs.is_empty() {
-                buf.push_str("{}");
-                return;
-            }
-            buf.push('{');
-            let inner = indent + 2;
-            for (i, (k, val)) in pairs.iter().enumerate() {
-                buf.push('\n');
-                for _ in 0..inner {
-                    buf.push(' ');
-                }
-                esc(k, buf);
-                buf.push_str(": ");
-                write_jv(val, buf, inner);
-                if i + 1 < pairs.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            for _ in 0..indent {
-                buf.push(' ');
-            }
-            buf.push('}');
-        }
-        Jv::Arr(items) => {
-            if items.is_empty() {
-                buf.push_str("[]");
-                return;
-            }
-            buf.push('[');
-            let inner = indent + 2;
-            for (i, val) in items.iter().enumerate() {
-                buf.push('\n');
-                for _ in 0..inner {
-                    buf.push(' ');
-                }
-                write_jv(val, buf, inner);
-                if i + 1 < items.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            for _ in 0..indent {
-                buf.push(' ');
-            }
-            buf.push(']');
-        }
-    }
-}
-
-pub(crate) fn serialize_jv(v: &Jv) -> String {
-    let mut buf = String::new();
-    write_jv(v, &mut buf, 0);
-    buf
-}
 
 // ---------------------------------------------------------------------------
 // Finding serializer (policy-specific — insertion order, fingerprint LAST).

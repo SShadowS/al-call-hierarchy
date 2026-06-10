@@ -133,9 +133,17 @@ pub fn load_policy_from_string(yaml: &str) -> LoadResult {
         }
     }
 
-    // version must be the integer 1.
+    // version must coerce to the JS number 1. al-sem checks `top.version !== 1`
+    // where `top.version` is `doc.toJS()` — so a YAML scalar that the parser yields
+    // as the number 1 passes. eemeli yaml v2 (YAML 1.2 core) yields a *number* for
+    // both `1` and `1.0`; serde_yaml agrees (`Number(1)` / `Number(1.0)`), so we
+    // accept any Number whose value == 1.0 (covers `1`, `1.0`, `0x1`). A quoted
+    // `"1"`/`"1.0"` is a string in both → `"1" !== 1` errors (kept). The leading-zero
+    // `01` is a STRING in YAML 1.2 core (serde_yaml agrees) → errors in both; it is
+    // corpus-invisible (the only `version` value in the differential is the literal
+    // `1`), so this is not byte-checked.
     let version_ok =
-        matches!(get(&top, "version"), Some(Value::Number(n)) if n.as_i64() == Some(1));
+        matches!(get(&top, "version"), Some(Value::Number(n)) if n.as_f64() == Some(1.0));
     if !version_ok {
         errors.push(format!(
             "policy version must be 1 (got {})",

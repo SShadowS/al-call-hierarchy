@@ -36,112 +36,11 @@ use crate::engine::l5::event_flow::{
 };
 
 // ---------------------------------------------------------------------------
-// JSON insertion-order serializer
+// JSON insertion-order serializer — the shared `gate::ordered_json` module (one
+// source of truth for the cli-c hand-built envelopes; see that module's docs).
 // ---------------------------------------------------------------------------
 
-/// A minimal ordered JSON value tree for insertion-order serialization.
-enum Jv {
-    Str(String),
-    Num(usize),
-    Bool(bool),
-    /// Insertion-order object — emit keys in push order.
-    Obj(Vec<(String, Jv)>),
-    Arr(Vec<Jv>),
-}
-
-impl Jv {
-    fn s(s: &str) -> Jv {
-        Jv::Str(s.to_string())
-    }
-    fn n(n: usize) -> Jv {
-        Jv::Num(n)
-    }
-}
-
-fn write_jv(v: &Jv, buf: &mut String, indent: usize) {
-    match v {
-        Jv::Str(s) => {
-            buf.push('"');
-            for c in s.chars() {
-                match c {
-                    '"' => buf.push_str("\\\""),
-                    '\\' => buf.push_str("\\\\"),
-                    '\n' => buf.push_str("\\n"),
-                    '\r' => buf.push_str("\\r"),
-                    '\t' => buf.push_str("\\t"),
-                    '\u{0008}' => buf.push_str("\\b"),
-                    '\u{000C}' => buf.push_str("\\f"),
-                    // Other C0 control chars (< U+0020) → \u00XX, matching
-                    // JSON.stringify (lowercase hex, 4 digits).
-                    c if (c as u32) < 0x20 => {
-                        buf.push_str(&format!("\\u{:04x}", c as u32));
-                    }
-                    c => buf.push(c),
-                }
-            }
-            buf.push('"');
-        }
-        Jv::Num(n) => buf.push_str(&n.to_string()),
-        Jv::Bool(b) => buf.push_str(if *b { "true" } else { "false" }),
-        Jv::Obj(pairs) => {
-            if pairs.is_empty() {
-                buf.push_str("{}");
-                return;
-            }
-            buf.push('{');
-            let inner = indent + 2;
-            for (i, (k, v)) in pairs.iter().enumerate() {
-                buf.push('\n');
-                push_spaces(buf, inner);
-                // key
-                buf.push('"');
-                buf.push_str(k);
-                buf.push_str("\": ");
-                write_jv(v, buf, inner);
-                if i + 1 < pairs.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            push_spaces(buf, indent);
-            buf.push('}');
-        }
-        Jv::Arr(items) => {
-            if items.is_empty() {
-                buf.push_str("[]");
-                return;
-            }
-            buf.push('[');
-            let inner = indent + 2;
-            for (i, v) in items.iter().enumerate() {
-                buf.push('\n');
-                push_spaces(buf, inner);
-                write_jv(v, buf, inner);
-                if i + 1 < items.len() {
-                    buf.push(',');
-                }
-            }
-            buf.push('\n');
-            push_spaces(buf, indent);
-            buf.push(']');
-        }
-    }
-}
-
-fn push_spaces(buf: &mut String, n: usize) {
-    for _ in 0..n {
-        buf.push(' ');
-    }
-}
-
-/// Serialize an insertion-order `Jv` to a JSON string (2-space indent, NO trailing newline).
-/// The caller does not append a newline — the golden files have NO trailing newline
-/// beyond what `JSON.stringify` emits (which is a bare close-brace at column 0).
-fn serialize_jv(v: &Jv) -> String {
-    let mut buf = String::new();
-    write_jv(v, &mut buf, 0);
-    buf
-}
+use crate::engine::gate::ordered_json::{serialize_jv, Jv};
 
 // ---------------------------------------------------------------------------
 // FanoutEntry → Jv

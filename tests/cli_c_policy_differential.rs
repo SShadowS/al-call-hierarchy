@@ -366,6 +366,90 @@ mod oracles {
         assert!(!glob_match("a*c", "a\nc")); // * excludes newline
     }
 
+    // ---- glob no-ReDoS / no-overflow guarantees (Critical hard rule) ----
+
+    /// The classic ReDoS pattern `*a*a…*a` against a long non-matching value is
+    /// exponential under a backtracking matcher (45s+ with ~10 stars). The `regex`
+    /// crate is a linear automaton — this must return effectively instantly.
+    #[test]
+    fn glob_redos_pattern_returns_fast() {
+        let pattern = "*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a"; // 15 `*a` groups
+        let value = "a".repeat(60) + "b"; // forces full scan, then fails
+        let start = std::time::Instant::now();
+        let m = glob_match(pattern, &value);
+        let elapsed = start.elapsed();
+        // Linear: well under a second (generous bound for CI). Backtracking would hang.
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "glob ReDoS pattern took {elapsed:?} — matcher is not linear"
+        );
+        // It does NOT match (value ends in 'b', no trailing 'a').
+        assert!(!m);
+        // And the matching variant resolves fast too.
+        assert!(glob_match(pattern, &"a".repeat(60)));
+    }
+
+    /// A `*`/`?` must NOT match the four JS line terminators (`\n \r U+2028 U+2029`)
+    /// — parity with JS `.`-without-`s`. (Rust regex `.` would wrongly include `\r`,
+    /// LS, PS — the explicit negated class prevents that latent divergence.)
+    #[test]
+    fn glob_excludes_all_line_terminators() {
+        for lt in ["\n", "\r", "\u{2028}", "\u{2029}"] {
+            let v = format!("a{lt}c");
+            assert!(
+                !glob_match("a*c", &v),
+                "* must not span line terminator {lt:?}"
+            );
+            assert!(
+                !glob_match("a?c", &v),
+                "? must not match line terminator {lt:?}"
+            );
+        }
+        // A `*` DOES span ordinary chars incl. a space/tab.
+        assert!(glob_match("a*c", "a x\tc"));
+    }
+
+    /// A ~10k-char literal pattern AND value must not stack-overflow / abort (the old
+    /// recursive matcher recursed once per char → STATUS_STACK_OVERFLOW).
+    #[test]
+    fn glob_long_literal_does_not_abort() {
+        let big = "x".repeat(10_000);
+        assert!(glob_match(&big, &big)); // identical long literal matches
+        let big_pat = format!("{}*", "y".repeat(10_000));
+        assert!(glob_match(&big_pat, &format!("{}zzz", "y".repeat(10_000))));
+        assert!(!glob_match(&big, &"x".repeat(9_999))); // length mismatch → no match
+    }
+
+    /// glob-vs-glob-in ARRAY asymmetry (predicate-evaluator.ts:133 vs 141 +
+    /// actualToString): a single-pattern `glob` on an ARRAY actual JOINS via `,`
+    /// then anchored-matches the joined string (so it FAILS to match one element);
+    /// `glob-in` ITERATES so it CAN match one element. Exercised here through the
+    /// real `match_operator` via the field values.
+    #[test]
+    fn glob_vs_glob_in_array_asymmetry() {
+        use al_call_hierarchy::engine::gate::policy::policy_types::{
+            PredicateOperator, PredicateValue,
+        };
+        use al_call_hierarchy::engine::gate::policy::predicate_evaluator::match_operator_for_test as m;
+        use al_call_hierarchy::engine::gate::policy::predicate_fields::FieldValue;
+
+        let arr = FieldValue::KnownList(vec!["api-page".to_string(), "trigger".to_string()]);
+
+        // `glob "api-page"` on the array → joins to "api-page,trigger" → anchored
+        // `^api-page$` does NOT match → false.
+        assert!(!m(
+            PredicateOperator::Glob,
+            &arr,
+            &PredicateValue::Str("api-page".to_string())
+        ));
+        // `glob-in ["api-page"]` ITERATES the array → matches the "api-page" element → true.
+        assert!(m(
+            PredicateOperator::GlobIn,
+            &arr,
+            &PredicateValue::List(vec!["api-page".to_string()])
+        ));
+    }
+
     // ---- the 3 KLEENE truth tables ----
 
     #[test]
@@ -419,6 +503,28 @@ mod oracles {
         assert!(e.contains("policy version must be 1 (got 2)"), "got {e}");
     }
 
+    /// Version coercion parity: a YAML scalar the parser yields as the *number* 1
+    /// passes (`1`, `1.0`, `0x1` — all `Number(1.0)`), matching al-sem's
+    /// `top.version !== 1` over `doc.toJS()`. Quoted `"1"` is a STRING → errors in
+    /// both. (`01` is a string in YAML 1.2 core → errors in both; corpus-invisible.)
+    #[test]
+    fn loader_version_coercion() {
+        use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
+        for ok in [
+            "version: 1\nrules: []\n",
+            "version: 1.0\nrules: []\n",
+            "version: 0x1\nrules: []\n",
+        ] {
+            assert!(
+                matches!(load_policy_from_string(ok), LoadResult::Ok { .. }),
+                "expected OK for: {ok:?}"
+            );
+        }
+        // Quoted "1" is a string → not === number 1 → errors (parity with al-sem).
+        let e = load_err("version: \"1\"\nrules: []\n");
+        assert!(e.contains("policy version must be 1"), "got {e}");
+    }
+
     #[test]
     fn loader_unknown_top_field() {
         let e = load_err("version: 1\nrules: []\nbogus: x\n");
@@ -462,6 +568,59 @@ mod oracles {
             LoadResult::Ok { .. }
         ));
     }
+
+    /// `capability.resource.ui.kind` declares 6 enum values but the op→ui-kind
+    /// mapping only covers ui-confirm/ui-message/ui-error; the other 3
+    /// (dialog/modalPage/requestPage) have no op mapping → the field returns UNKNOWN
+    /// (a policy using them fail-closes). Verify the field evaluator + that the
+    /// compiler ACCEPTS those enum values (they are valid in a predicate, they just
+    /// never resolve to a known op).
+    #[test]
+    fn ui_kind_unmapped_values_compile_but_evaluate_unknown() {
+        // The compiler accepts all 6 declared enum values.
+        let p = compile_when("      capability.resource.ui.kind: [dialog, modalPage, requestPage]");
+        assert!(matches!(p, Predicate::Field { .. }), "got {p:?}");
+        // The field's op-derivation only maps ui-confirm/ui-message/ui-error; every
+        // other op (or a non-ui resourceKind) is unknown — pinned in predicate-fields:
+        // for resourceKind=="ui" with op not in {ui-confirm,ui-message,ui-error} the
+        // evaluator returns Unknown(FieldNotApplicable). (End-to-end the custom policy
+        // does not exercise these, so this is the targeted oracle.)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Vendored policy-default.yaml byte-parity guard.
+// ---------------------------------------------------------------------------
+
+/// The engine embeds (`include_str!`) a VENDORED copy of al-sem's
+/// `src/policy/policy-default.yaml`. This test (AL_SEM_DIR-gated) asserts the two are
+/// byte-identical, so a future al-sem edit to the bundled default is CAUGHT here
+/// rather than silently diverging.
+#[test]
+fn vendored_default_policy_matches_al_sem_source() {
+    let al_sem_yaml = al_sem_dir()
+        .join("src")
+        .join("policy")
+        .join("policy-default.yaml");
+    if !al_sem_yaml.is_file() {
+        eprintln!(
+            "SKIP: al-sem source not found at {} (set AL_SEM_DIR)",
+            al_sem_yaml.display()
+        );
+        return;
+    }
+    let source = std::fs::read_to_string(&al_sem_yaml).expect("read al-sem policy-default.yaml");
+    let vendored =
+        al_call_hierarchy::engine::gate::policy::policy_loader::BUNDLED_DEFAULT_POLICY_YAML;
+    // Normalize CRLF→LF on both sides (git autocrlf on Windows may rewrite either
+    // working copy); the load-bearing assertion is content identity, and the loader
+    // is newline-agnostic (serde_yaml).
+    let norm = |s: &str| s.replace("\r\n", "\n");
+    assert_eq!(
+        norm(vendored),
+        norm(&source),
+        "vendored policy-default.yaml has drifted from al-sem src/policy/policy-default.yaml"
+    );
 }
 
 // ---------------------------------------------------------------------------
