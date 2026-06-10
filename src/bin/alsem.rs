@@ -20,6 +20,11 @@ use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
 use al_call_hierarchy::engine::l5::digest_cli::{
     auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
 };
+use al_call_hierarchy::engine::l5::fingerprint_cli::{
+    run_fingerprint_pipeline, write_fingerprint_output, FingerprintFormat, FingerprintOptions,
+    FingerprintOutput,
+};
+use al_call_hierarchy::engine::l5::fingerprint_query::WitnessLimit;
 use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
 
@@ -49,6 +54,8 @@ enum Commands {
     Digest(DigestCli),
     /// Prove an absence-safety question about a single routine (cli-b/b2).
     Prove(ProveCli),
+    /// Fingerprint an AL workspace: root-classification capability summary (cli-b/b3).
+    Fingerprint(FingerprintCli),
 }
 
 #[derive(Parser)]
@@ -154,6 +161,49 @@ struct ProveCli {
     alpackages: Option<String>,
 }
 
+/// `FingerprintCli` — arguments for `alsem fingerprint <ws>`.
+#[derive(Parser)]
+struct FingerprintCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Output format: json | human | cbor | cbor.gz. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Emit sharded JSON output (one file per app) instead of a single file.
+    #[arg(long = "shard", default_value_t = false)]
+    shard: bool,
+
+    /// Witness reconstruction limit: false | all | N (0–256). Default: 3.
+    #[arg(long = "witness")]
+    witness: Option<String>,
+
+    /// Root-kind filter (comma-separated: entry-point, integration-event-subscriber, etc.).
+    #[arg(long = "roots", action = clap::ArgAction::Append)]
+    roots: Vec<String>,
+
+    /// Routine selector (display name or StableRoutineId). May be repeated.
+    #[arg(long = "routine", action = clap::ArgAction::Append)]
+    routine: Vec<String>,
+
+    /// Include inherited (transitive) facts in the output.
+    #[arg(long = "include-inherited", default_value_t = false)]
+    include_inherited: bool,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// Human output verbosity: compact | full. Defaults to compact.
+    #[arg(long = "verbosity", default_value = "compact")]
+    verbosity: String,
+}
+
 /// `DigestCli` — arguments for `alsem digest <ws>`.
 #[derive(Parser)]
 struct DigestCli {
@@ -205,6 +255,7 @@ fn main() -> ExitCode {
         Commands::Analyze(a) => run_analyze_cmd(a),
         Commands::Digest(d) => run_digest_cmd(d),
         Commands::Prove(p) => run_prove_cmd(p),
+        Commands::Fingerprint(f) => run_fingerprint_cmd(f),
     }
 }
 
@@ -404,6 +455,114 @@ fn run_prove_cmd(p: ProveCli) -> ExitCode {
             if let Err(e) = write_result {
                 eprintln!("al-sem: prove: write error: {e}");
                 return ExitCode::from(1);
+            }
+
+            ExitCode::from(result.exit_code)
+        }
+    }
+}
+
+// ── fingerprint command ─────────────────────────────────────────────────────
+
+fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
+    // Validate --format.
+    let format = match FingerprintFormat::parse(&f.format) {
+        Some(fmt) => fmt,
+        None => {
+            eprintln!(
+                "al-sem fingerprint: invalid --format '{}'. Expected: json | human | cbor | cbor.gz",
+                f.format
+            );
+            return ExitCode::from(1);
+        }
+    };
+
+    // Validate --verbosity.
+    if !matches!(f.verbosity.as_str(), "compact" | "full") {
+        eprintln!(
+            "al-sem fingerprint: invalid --verbosity '{}'. Expected: compact | full",
+            f.verbosity
+        );
+        return ExitCode::from(1);
+    }
+
+    // Parse --witness.
+    let witness_limit: Option<WitnessLimit> = match f.witness.as_deref() {
+        None => None,
+        Some(w) => match WitnessLimit::parse(w) {
+            Some(wl) => Some(wl),
+            None => {
+                eprintln!(
+                    "al-sem fingerprint: invalid --witness '{w}'. Expected: false | all | 0–256"
+                );
+                return ExitCode::from(1);
+            }
+        },
+    };
+
+    // Parse --roots.
+    let roots: Option<std::collections::BTreeSet<String>> = if f.roots.is_empty() {
+        None
+    } else {
+        let mut set = std::collections::BTreeSet::new();
+        for r in &f.roots {
+            for part in r.split(',') {
+                let trimmed = part.trim().to_string();
+                if !trimmed.is_empty() {
+                    set.insert(trimmed);
+                }
+            }
+        }
+        if set.is_empty() {
+            None
+        } else {
+            Some(set)
+        }
+    };
+
+    // `isQueryRequested`: any of witness/roots/routine/include-inherited specified.
+    let is_query_requested =
+        f.witness.is_some() || !f.roots.is_empty() || !f.routine.is_empty() || f.include_inherited;
+
+    let workspace = std::path::Path::new(&f.workspace);
+
+    let opts = FingerprintOptions {
+        workspace,
+        alsem_version: DEFAULT_ALSEM_VERSION,
+        format,
+        out: f.out.as_deref(),
+        shard: f.shard,
+        witness_limit,
+        roots,
+        routine_selectors: f.routine.clone(),
+        include_inherited: f.include_inherited,
+        is_query_requested,
+        deterministic: f.deterministic,
+        verbosity: &f.verbosity,
+    };
+
+    match run_fingerprint_pipeline(&opts) {
+        Err(msg) => {
+            eprintln!("{msg}");
+            ExitCode::from(1)
+        }
+        Ok(result) => {
+            // Human format: selector errors go to stderr, no stdout.
+            if let Some(ref err_msg) = result.selector_error_message {
+                eprintln!("{err_msg}");
+                return ExitCode::from(result.exit_code);
+            }
+
+            // Write output (skip empty text for human selector errors).
+            let should_write = match &result.output {
+                FingerprintOutput::Text(t) => !t.is_empty(),
+                _ => true,
+            };
+            if should_write {
+                if let Err(e) = write_fingerprint_output(&result.output, f.out.as_deref()) {
+                    eprintln!("{e}");
+                    return ExitCode::from(1);
+                }
             }
 
             ExitCode::from(result.exit_code)

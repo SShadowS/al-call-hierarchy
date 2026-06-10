@@ -83,5 +83,12 @@ pub mod unresolved_cone;
 // cli-b/b2 — PROVE CLI (tristate absence-safety query + json/human formatters).
 pub mod prove;
 
+// cli-b/b3 — FINGERPRINT QUERY + projection + human renderer.
+// Reuses B1's witness machinery (digest.rs public exports).
+pub mod fingerprint_query;
+
+// cli-b/b3 — FINGERPRINT CLI pipeline (format dispatch, workspace loading).
+pub mod fingerprint_cli;
+
 #[cfg(test)]
 mod test_support;
