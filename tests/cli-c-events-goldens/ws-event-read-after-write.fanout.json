@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 1,
+    "totalEvents": 1,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "0e30d75dac7a63ae/9e1e6b0771b4bdb5de60aef74eaa7546b18a69264eef32468b66904317e024f4",
+      "eventId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/Codeunit/50000/event/onafteradjust",
+      "eventName": "OnAfterAdjust",
+      "eventKind": "integration",
+      "directSubscriberCount": 2,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

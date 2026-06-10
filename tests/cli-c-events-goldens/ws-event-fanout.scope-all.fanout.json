@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 1,
+    "totalEvents": 1,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 1,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "8bc243b7cbab6592/95cd05cf885ec68ac8c618e64490b83ba1773847d93a61121c645934aae1168c",
+      "eventId": "66666666-6666-6666-6666-666666666666/Codeunit/50000/event/one",
+      "eventName": "OnE",
+      "eventKind": "integration",
+      "directSubscriberCount": 6,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

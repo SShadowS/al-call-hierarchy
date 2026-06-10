@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 1,
+    "totalEvents": 1,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "323c302a83ac644b/cef6be65ffad540c497f12505e92be6971f278eddb0f9cf1180f61e12fe6ef20",
+      "eventId": "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc",
+      "eventName": "OnAfterPostSalesDoc",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

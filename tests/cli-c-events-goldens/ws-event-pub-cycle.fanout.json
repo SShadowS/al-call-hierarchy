@@ -1,0 +1,38 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 2,
+    "totalEvents": 2,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "923f038c25dd33d5/7c54ab6a0f00e4cfac57b9a08521197c89172bb69de8da86d66eb5aae22954a1",
+      "eventId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/Codeunit/50001/event/onb",
+      "eventName": "OnB",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    },
+    {
+      "publisher": "923f038c25dd33d5/804d57935506c43d82d8b2f32c5386357cd9d79f3aea09b31bd57e05ea5e28ba",
+      "eventId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/Codeunit/50000/event/ona",
+      "eventName": "OnA",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

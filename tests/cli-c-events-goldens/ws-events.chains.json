@@ -1,0 +1,32 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.chains",
+  "summary": {
+    "totalRoots": 1,
+    "rootsWithEvents": 1,
+    "maxChainDepth": 2,
+    "cyclesDetected": 0,
+    "depthTruncatedNodes": 0
+  },
+  "chains": [
+    {
+      "kind": "root",
+      "routineId": "8ef077c43e81b792/fb61ffca7cfc70125c6c53f415ebd78a1a37364f533a88968b68adeff38e3008",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "88888888-8888-8888-8888-888888888888/Codeunit/51200/event/onafterdowork",
+          "eventName": "OnAfterDoWork",
+          "children": [
+            {
+              "kind": "subscriber",
+              "routineId": "8ef077c43e81b792/672d2b49a97856667f3941fc91ea6ebe7666b3041ae865d71b7a8ff93826b9c2",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

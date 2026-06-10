@@ -1,0 +1,32 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.chains",
+  "summary": {
+    "totalRoots": 1,
+    "rootsWithEvents": 1,
+    "maxChainDepth": 2,
+    "cyclesDetected": 0,
+    "depthTruncatedNodes": 0
+  },
+  "chains": [
+    {
+      "kind": "root",
+      "routineId": "b604c4a94147977a/5b5c2ece65baf318c6aa32cc7831fcb10ea9d5b0e922af53aa2e4eda9ff52606",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "11111111-1111-1111-1111-111111111111/Codeunit/50000/event/onbeforepost",
+          "eventName": "OnBeforePost",
+          "children": [
+            {
+              "kind": "subscriber",
+              "routineId": "b604c4a94147977a/523a94c2befe4db5f9449d1a0f52de3f932a081ad3fdf3a4b193c63fa86d1a2e",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 1,
+    "totalEvents": 1,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "8ef077c43e81b792/fb61ffca7cfc70125c6c53f415ebd78a1a37364f533a88968b68adeff38e3008",
+      "eventId": "88888888-8888-8888-8888-888888888888/Codeunit/51200/event/onafterdowork",
+      "eventName": "OnAfterDoWork",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

@@ -23,14 +23,14 @@
     "capabilityFactsDirect",
     "rootClassifications"
   ],
-  "fixtureCount": 31,
+  "fixtureCount": 32,
   "coverageMatrix": {
-    "integrationPublishers": 40,
+    "integrationPublishers": 42,
     "businessPublishers": 5,
     "unknownKindSymbols": 8,
     "isolatedPublishers": 5,
     "symbolsWithElementName": 1,
-    "resolvedEdges": 41,
+    "resolvedEdges": 43,
     "maybeEdges": 7,
     "unknownEdges": 3
   },
@@ -438,6 +438,28 @@
       "edgeCount": 2,
       "coverage": {
         "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 2,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 0,
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-pub-cycle",
+      "goldenFile": "ws-event-pub-cycle.l3eg.golden.json",
+      "eventCount": 2,
+      "edgeCount": 2,
+      "coverage": {
+        "integrationPublishers": 2,
         "businessPublishers": 0,
         "unknownKindSymbols": 0,
         "isolatedPublishers": 0,

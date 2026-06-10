@@ -1,0 +1,4 @@
+Event fanout report  (2 publishers, 2 events, 0 hot)
+
+  OnAfterSales  (integration) → 1 subscriber(s) [✓✓✓]
+  OnNotifyComplete  (integration) → 1 subscriber(s) [✓✓✓]

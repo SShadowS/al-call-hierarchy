@@ -1,0 +1,3 @@
+Event fanout report  (1 publishers, 1 events, 1 hot)
+
+  OnE  (integration) → 6 subscriber(s) [✓✓✓]

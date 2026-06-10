@@ -1,0 +1,38 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 2,
+    "totalEvents": 2,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "920729537d4cb08f/5bb994ddbc480751ae3d89df05a0ee3a22f66901520dbd052f6dca38d10e53ca",
+      "eventId": "cccccccc-cccc-cccc-cccc-cccccccccccc/Codeunit/50000/event/onaftersales",
+      "eventName": "OnAfterSales",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    },
+    {
+      "publisher": "920729537d4cb08f/b803e1b083798099b85066a831d6f27688e2721ab4621892b65f6191e46e7948",
+      "eventId": "cccccccc-cccc-cccc-cccc-cccccccccccc/Codeunit/50001/event/onnotifycomplete",
+      "eventName": "OnNotifyComplete",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

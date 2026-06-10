@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.chains",
+  "summary": {
+    "totalRoots": 1,
+    "rootsWithEvents": 1,
+    "maxChainDepth": 1,
+    "cyclesDetected": 0,
+    "depthTruncatedNodes": 0
+  },
+  "chains": [
+    {
+      "kind": "root",
+      "routineId": "fb75564f2c10e967/c1ccd8b8425a7c65bb030c5e2529e0f12fe9ee96c956cecdb0733cee23001bc7",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "11111111-0000-0000-0000-00000000d12a/Codeunit/50112/event/onafterdostuff",
+          "eventName": "OnAfterDoStuff",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

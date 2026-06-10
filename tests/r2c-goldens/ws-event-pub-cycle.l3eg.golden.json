@@ -1,0 +1,56 @@
+{
+  "events": [
+    {
+      "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50000::OnA::8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+      "publisherObjectId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50000",
+      "eventName": "OnA",
+      "eventKind": "integration",
+      "signatureHash": "8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50000#8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e"
+    },
+    {
+      "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50001::OnB::c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+      "publisherObjectId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50001",
+      "eventName": "OnB",
+      "eventKind": "integration",
+      "signatureHash": "c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50001#c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50000::OnA::8c4b7025f4e73b832b8a89cb3a77c97a7cab8eaf987070a2bb93106a2d25154e",
+      "subscriberRoutineId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50001#3ed9bbda22bf69091903725c2bdb8c2c3eb1528c206be7856333d0d5c6500efd",
+      "subscriberAppId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50001::OnB::c20b962c170f5f2341d4bd8a092c2f45f560251730f811fe1c3c61570a71d064",
+      "subscriberRoutineId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee:Codeunit:50000#359367501180d759d0f9f4c9f64ccd5528a37ad0ce9bf86df61880fb7283759d",
+      "subscriberAppId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

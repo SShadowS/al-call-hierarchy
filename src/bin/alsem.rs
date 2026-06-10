@@ -12,6 +12,9 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
+use al_call_hierarchy::engine::gate::events::{
+    run_events_chains, run_events_fanout, EventsChainsOptions, EventsFanoutOptions,
+};
 use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
@@ -20,6 +23,7 @@ use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
 use al_call_hierarchy::engine::l5::digest_cli::{
     auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
 };
+use al_call_hierarchy::engine::l5::event_flow::Scope as EventScope;
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
     default_format, normalize_witness, reject_illegal_combos, run_fingerprint_pipeline,
     validate_roots, write_fingerprint_output, FingerprintOptions, FingerprintOutput, ShardMode,
@@ -58,6 +62,93 @@ enum Commands {
     Fingerprint(FingerprintCli),
     /// Diff two capability snapshots (or workspaces): ABI/schema/events/capabilities/permissions (cli-b/b4).
     Diff(DiffCli),
+    /// Event fan-out and chain reports (cli-c/c1).
+    Events(EventsCli),
+}
+
+/// `EventsCli` — top-level `events` subcommand group.
+#[derive(Parser)]
+struct EventsCli {
+    #[command(subcommand)]
+    command: EventsCommands,
+}
+
+#[derive(Subcommand)]
+enum EventsCommands {
+    /// Event fan-out report: publishers → subscriber counts + coverage.
+    Fanout(EventsFanoutCli),
+    /// Event chain report: transitive walk from each publisher root.
+    Chains(EventsChainsCli),
+}
+
+/// `EventsFanoutCli` — arguments for `alsem events fanout <ws>`.
+#[derive(Parser)]
+struct EventsFanoutCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Output format: human | json. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Scope: primary (default) | all.
+    #[arg(long = "scope", default_value = "primary")]
+    scope: String,
+
+    /// Coverage policy: warn (default) | strict | ignore.
+    #[arg(long = "coverage-policy", default_value = "warn")]
+    coverage_policy: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// Exit 1 if any analyzer error-severity diagnostic.
+    #[arg(long, default_value_t = false)]
+    strict: bool,
+}
+
+/// `EventsChainsCli` — arguments for `alsem events chains <ws>`.
+#[derive(Parser)]
+struct EventsChainsCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Output format: human | json. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Scope: primary (default) | all.
+    #[arg(long = "scope", default_value = "primary")]
+    scope: String,
+
+    /// Coverage policy: warn (default) | strict | ignore.
+    #[arg(long = "coverage-policy", default_value = "warn")]
+    coverage_policy: String,
+
+    /// Maximum chain depth (0..256). Default 16.
+    #[arg(long = "max-depth")]
+    max_depth: Option<usize>,
+
+    /// Maximum chain node budget. Default 1024.
+    #[arg(long = "max-nodes")]
+    max_nodes: Option<usize>,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// Exit 1 if any analyzer error-severity diagnostic.
+    #[arg(long, default_value_t = false)]
+    strict: bool,
 }
 
 /// `DiffCli` — arguments for `alsem diff <old> <new>`.
@@ -308,6 +399,10 @@ fn main() -> ExitCode {
         Commands::Prove(p) => run_prove_cmd(p),
         Commands::Fingerprint(f) => run_fingerprint_cmd(f),
         Commands::Diff(d) => run_diff_cmd(d),
+        Commands::Events(e) => match e.command {
+            EventsCommands::Fanout(f) => run_events_fanout_cmd(f),
+            EventsCommands::Chains(c) => run_events_chains_cmd(c),
+        },
     }
 }
 
@@ -735,6 +830,137 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
             ExitCode::from(result.exit_code)
         }
     }
+}
+
+// ── events fanout command ───────────────────────────────────────────────────
+
+fn run_events_fanout_cmd(f: EventsFanoutCli) -> ExitCode {
+    const VALID_FORMATS: &[&str] = &["human", "json"];
+    if !VALID_FORMATS.contains(&f.format.as_str()) {
+        eprintln!("al-sem events fanout: invalid --format '{}'", f.format);
+        return ExitCode::from(1);
+    }
+
+    const VALID_COVERAGE: &[&str] = &["warn", "strict", "ignore"];
+    if !VALID_COVERAGE.contains(&f.coverage_policy.as_str()) {
+        eprintln!(
+            "al-sem events fanout: invalid --coverage-policy '{}'",
+            f.coverage_policy
+        );
+        return ExitCode::from(1);
+    }
+
+    let scope = match f.scope.as_str() {
+        "primary" => EventScope::Primary,
+        "all" => EventScope::All,
+        other => {
+            eprintln!("al-sem events fanout: invalid --scope '{other}'. Expected: primary | all");
+            return ExitCode::from(1);
+        }
+    };
+
+    let workspace = std::path::Path::new(&f.workspace);
+    let opts = EventsFanoutOptions {
+        workspace,
+        format: &f.format,
+        scope,
+        alsem_version: DEFAULT_ALSEM_VERSION,
+        deterministic: f.deterministic,
+        strict: f.strict,
+    };
+
+    let result = run_events_fanout(&opts);
+
+    if !result.text.is_empty() {
+        let write_result = if let Some(ref out_path) = f.out {
+            std::fs::write(out_path, &result.text).map_err(|e| format!("{e}"))
+        } else {
+            use std::io::Write;
+            std::io::stdout()
+                .write_all(result.text.as_bytes())
+                .map_err(|e| format!("{e}"))
+        };
+        if let Err(e) = write_result {
+            eprintln!("failed to write: {e}");
+            return ExitCode::from(1);
+        }
+    }
+
+    for line in &result.stderr_lines {
+        eprintln!("{line}");
+    }
+
+    ExitCode::from(result.exit_code)
+}
+
+// ── events chains command ───────────────────────────────────────────────────
+
+fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
+    const VALID_FORMATS: &[&str] = &["human", "json"];
+    if !VALID_FORMATS.contains(&c.format.as_str()) {
+        eprintln!("al-sem events chains: invalid --format '{}'", c.format);
+        return ExitCode::from(1);
+    }
+
+    const VALID_COVERAGE: &[&str] = &["warn", "strict", "ignore"];
+    if !VALID_COVERAGE.contains(&c.coverage_policy.as_str()) {
+        eprintln!(
+            "al-sem events chains: invalid --coverage-policy '{}'",
+            c.coverage_policy
+        );
+        return ExitCode::from(1);
+    }
+
+    let scope = match c.scope.as_str() {
+        "primary" => EventScope::Primary,
+        "all" => EventScope::All,
+        other => {
+            eprintln!("al-sem events chains: invalid --scope '{other}'. Expected: primary | all");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Some(md) = c.max_depth {
+        if md > 256 {
+            eprintln!("al-sem events chains: --max-depth must be in 0..256");
+            return ExitCode::from(1);
+        }
+    }
+
+    let workspace = std::path::Path::new(&c.workspace);
+    let opts = EventsChainsOptions {
+        workspace,
+        format: &c.format,
+        scope,
+        max_depth: c.max_depth,
+        max_nodes: c.max_nodes,
+        alsem_version: DEFAULT_ALSEM_VERSION,
+        deterministic: c.deterministic,
+        strict: c.strict,
+    };
+
+    let result = run_events_chains(&opts);
+
+    if !result.text.is_empty() {
+        let write_result = if let Some(ref out_path) = c.out {
+            std::fs::write(out_path, &result.text).map_err(|e| format!("{e}"))
+        } else {
+            use std::io::Write;
+            std::io::stdout()
+                .write_all(result.text.as_bytes())
+                .map_err(|e| format!("{e}"))
+        };
+        if let Err(e) = write_result {
+            eprintln!("failed to write: {e}");
+            return ExitCode::from(1);
+        }
+    }
+
+    for line in &result.stderr_lines {
+        eprintln!("{line}");
+    }
+
+    ExitCode::from(result.exit_code)
 }
 
 /// The exact stderr message emitted when `--dump-model` is used. The full-model JSON

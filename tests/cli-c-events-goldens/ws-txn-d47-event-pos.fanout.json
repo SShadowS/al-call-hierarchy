@@ -1,0 +1,26 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.fanout",
+  "summary": {
+    "totalPublishers": 1,
+    "totalEvents": 1,
+    "zeroSubscriberEvents": 0,
+    "hotEvents": 0,
+    "coveragePartialEvents": 0
+  },
+  "entries": [
+    {
+      "publisher": "8ce978d396a9be42/8ecd741f61ab0d2e54f53d737d95b2f4bd6f9ec711ba71c9d1ade8f050239b50",
+      "eventId": "11111111-0000-0000-0000-0000000d4720/Codeunit/50000/event/onafterprocess",
+      "eventName": "OnAfterProcess",
+      "eventKind": "integration",
+      "directSubscriberCount": 1,
+      "coverage": {
+        "dispatchEdges": "complete",
+        "subscriberDiscovery": "complete",
+        "capabilityComposition": "complete"
+      }
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "description": "Stage cli-c events goldens — events fanout + chains reports produced by runEventsFanout / runEventsChains with {deterministic:true}. Four golden files per main fixture: .fanout.human.txt, .fanout.json, .chains.human.txt, .chains.json. Plus scope=all variant (4 files) and maxDepth=1 chains variant (2 files) on their respective fixtures. The Rust engine must byte-match the .json goldens.",
+  "capturePoint": "runEventsFanout({workspace, format, scope, deterministic:true, out}) and runEventsChains({workspace, format, scope, maxDepth, deterministic:true, out})",
+  "jsonEnvelope": "JSON.stringify({al_sem_version, generated_at, kind, summary, entries|chains}, undefined, 2) — insertion-order keys, generated_at='0' under deterministic:true.",
+  "versionPin": "cli-c-v1",
+  "scopeVariantFixture": "ws-event-fanout",
+  "depthTruncationFixture": "ws-event-d45-deep",
+  "depthTruncationMaxDepth": 1,
+  "cycleNote": "cycleDetected:true fires in walkEventChain when a subscriber routineId == a publisher routineId on the active path. In the current engine this requires the same AL procedure to have both [IntegrationEvent] (kind=event-publisher) and appear as subscriberRoutineId in an event edge. The routine-indexer assigns a single kind= (first-match wins), so this is not expressible via real AL source — it is only exercised in unit tests with mocked EventGraph data (test/engine/event-flow.test.ts). ws-event-pub-cycle documents the nearest real-AL structure (mutual subscriptions) but produces cyclesDetected=0.",
+  "alSemGitSha": "3ac48435b87439526e876122d22034b7678312c0",
+  "fixtureCount": 12,
+  "totalGoldens": 54,
+  "fixtures": [
+    {
+      "fixtureName": "ws-event-d45-deep",
+      "fanoutEntryCount": 2,
+      "chainCount": 2,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-fanout",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-chains",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-pub-cycle",
+      "fanoutEntryCount": 2,
+      "chainCount": 2,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-cycle",
+      "fanoutEntryCount": 2,
+      "chainCount": 2,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-ishandled",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-multi-sub-overlap",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-read-after-write",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-events",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-d8-commit-in-tx",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-txn-d47-event-pos",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-d12-dead-event",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-fanout.scope-all",
+      "fanoutEntryCount": 1,
+      "chainCount": 1,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 0
+    },
+    {
+      "fixtureName": "ws-event-d45-deep.max-depth-1",
+      "fanoutEntryCount": 0,
+      "chainCount": 2,
+      "cyclesDetected": 0,
+      "depthTruncatedNodes": 2
+    }
+  ],
+  "zeroFanoutFixtures": [
+    "ws-event-d45-deep.max-depth-1"
+  ],
+  "zeroChainFixtures": []
+}

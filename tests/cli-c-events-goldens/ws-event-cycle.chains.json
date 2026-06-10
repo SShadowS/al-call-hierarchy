@@ -1,0 +1,50 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.chains",
+  "summary": {
+    "totalRoots": 2,
+    "rootsWithEvents": 2,
+    "maxChainDepth": 2,
+    "cyclesDetected": 0,
+    "depthTruncatedNodes": 0
+  },
+  "chains": [
+    {
+      "kind": "root",
+      "routineId": "b7ee13a94b342064/7c18ecbda4e0b41b032deda14388a3cb77440cfe64f2a66d390f7d8a8d65b195",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "55555555-5555-5555-5555-555555555555/Codeunit/50001/event/onb",
+          "eventName": "OnB",
+          "children": [
+            {
+              "kind": "subscriber",
+              "routineId": "b7ee13a94b342064/56718b69e8682c4fc6ab7b0f6168d5b3643284c96b4dce22e489fda1ac652f79",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "root",
+      "routineId": "b7ee13a94b342064/e27ce28ad69a0f0d97aee4c308bf2a271f48b64d6a9918adc39ebc5ad129b353",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "55555555-5555-5555-5555-555555555555/Codeunit/50000/event/ona",
+          "eventName": "OnA",
+          "children": [
+            {
+              "kind": "subscriber",
+              "routineId": "b7ee13a94b342064/72895166af9e82df79491df51f1dac6630de7cb9842c0716f245fa44fca36cca",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
