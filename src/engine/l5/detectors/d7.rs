@@ -281,6 +281,6 @@ pub fn detect_d7(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     DetectorOutput {
         findings,
         stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
-            diagnostics: vec![],
+        diagnostics: vec![],
     }
 }

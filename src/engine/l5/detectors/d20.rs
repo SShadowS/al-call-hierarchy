@@ -122,6 +122,6 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     DetectorOutput {
         findings,
         stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
-            diagnostics: vec![],
+        diagnostics: vec![],
     }
 }

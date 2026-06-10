@@ -80,5 +80,8 @@ pub mod diff_parser;
 pub mod digest_cli;
 pub mod unresolved_cone;
 
+// cli-b/b2 — PROVE CLI (tristate absence-safety query + json/human formatters).
+pub mod prove;
+
 #[cfg(test)]
 mod test_support;

@@ -20,6 +20,7 @@ use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
 use al_call_hierarchy::engine::l5::digest_cli::{
     auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
 };
+use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
 
 /// The engine's default (unpinned) SARIF `driver.version`. The differential always
@@ -46,6 +47,8 @@ enum Commands {
     Analyze(AnalyzeCli),
     /// Digest an AL workspace: changed-root effect summary (cli-b/b1).
     Digest(DigestCli),
+    /// Prove an absence-safety question about a single routine (cli-b/b2).
+    Prove(ProveCli),
 }
 
 #[derive(Parser)]
@@ -117,6 +120,40 @@ struct AnalyzeCli {
     dump_model: bool,
 }
 
+/// `ProveCli` — arguments for `alsem prove <ws> <routine> <question>`.
+#[derive(Parser)]
+struct ProveCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Routine selector: display name or StableRoutineId.
+    routine: String,
+
+    /// Prove question: may-commit | commits-on-success-path | writes-table:<name>
+    ///   | publishes-event:<name> | reaches-ui | throws-error.
+    question: String,
+
+    /// Output format: json | human. Defaults to json.
+    #[arg(long = "format", default_value = "json")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+
+    /// Skip loading roots.config.json (pass the workspace as-is).
+    #[arg(long = "no-roots-config", default_value_t = false)]
+    no_roots_config: bool,
+
+    /// Path to the .alpackages directory.
+    #[arg(long = "alpackages")]
+    alpackages: Option<String>,
+}
+
 /// `DigestCli` — arguments for `alsem digest <ws>`.
 #[derive(Parser)]
 struct DigestCli {
@@ -167,6 +204,7 @@ fn main() -> ExitCode {
     match cli.command {
         Commands::Analyze(a) => run_analyze_cmd(a),
         Commands::Digest(d) => run_digest_cmd(d),
+        Commands::Prove(p) => run_prove_cmd(p),
     }
 }
 
@@ -298,6 +336,74 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
 
             if let Err(e) = write_result {
                 eprintln!("al-sem: digest: write error: {e}");
+                return ExitCode::from(1);
+            }
+
+            ExitCode::from(result.exit_code)
+        }
+    }
+}
+
+// ── prove command ───────────────────────────────────────────────────────────
+
+fn run_prove_cmd(p: ProveCli) -> ExitCode {
+    // Validate --format
+    const VALID_PROVE_FORMATS: &[&str] = &["json", "human"];
+    if !VALID_PROVE_FORMATS.contains(&p.format.as_str()) {
+        eprintln!(
+            "al-sem prove: invalid --format '{}'. Expected: json | human",
+            p.format
+        );
+        return ExitCode::from(1);
+    }
+
+    // Validate question early (mirrors prove.ts exit 1 for unknown question)
+    if parse_question(&p.question).is_none() {
+        let valid: Vec<&str> = question_ids().to_vec();
+        eprintln!(
+            "prove: unknown question '{}'\nValid questions:\n{}",
+            p.question,
+            valid
+                .iter()
+                .map(|q| format!("  {q}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        return ExitCode::from(1);
+    }
+
+    let workspace = std::path::Path::new(&p.workspace);
+
+    match run_prove_pipeline(
+        workspace,
+        &p.routine,
+        &p.question,
+        DEFAULT_ALSEM_VERSION,
+        p.deterministic,
+        None, // max_paths
+    ) {
+        Err(msg) => {
+            eprintln!("{msg}");
+            ExitCode::from(1)
+        }
+        Ok(result) => {
+            let output = if p.format == "human" {
+                result.human_text
+            } else {
+                result.json_text
+            };
+
+            let write_result = if let Some(ref out_path) = p.out {
+                std::fs::write(out_path, &output).map_err(|e| format!("{e}"))
+            } else {
+                use std::io::Write;
+                std::io::stdout()
+                    .write_all(output.as_bytes())
+                    .map_err(|e| format!("{e}"))
+            };
+
+            if let Err(e) = write_result {
+                eprintln!("al-sem: prove: write error: {e}");
                 return ExitCode::from(1);
             }
 

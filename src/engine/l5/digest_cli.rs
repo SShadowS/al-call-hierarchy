@@ -848,7 +848,7 @@ pub fn run_digest_query_full_from_entries(
 // JSON document projection
 // ---------------------------------------------------------------------------
 
-fn anchor_to_value(a: &FullAnchor) -> serde_json::Value {
+pub fn anchor_to_value(a: &FullAnchor) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     m.insert("sourceKind".into(), a.source_kind.into());
     if let Some(ref f) = a.file {
@@ -905,7 +905,7 @@ fn scoped_guarantee_to_value(
     serde_json::Value::Object(m)
 }
 
-fn effect_to_value(eff: &DigestEffectFull) -> serde_json::Value {
+pub fn effect_to_value(eff: &DigestEffectFull) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     m.insert("type".into(), eff.effect_type.clone().into());
 
