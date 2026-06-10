@@ -351,6 +351,9 @@ mod tests {
             has_branching: false,
             var_assignments: vec![],
             condition_references: vec![],
+            enclosing_member: None,
+            originating_object: None,
+            enclosing_member_range: None,
         }
     }
 

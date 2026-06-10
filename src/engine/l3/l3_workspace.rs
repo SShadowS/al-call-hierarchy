@@ -318,6 +318,26 @@ pub struct L3Routine {
     /// guard positions, with their reference anchors. Read by `enumerate_dispatch_sites`
     /// (d43) to find post-call IsHandled guards. Additive — forwarded verbatim from L2.
     pub condition_references: Vec<crate::engine::l2::features::PConditionReference>,
+    /// Field/control/action/dataitem member name for a member-trigger routine — the
+    /// unescaped logical identifier (inner `""` collapsed to `"`) of the enclosing
+    /// member wrapper (field_declaration / page_field / action_declaration /
+    /// report_dataitem / query_dataitem). `None` for procedures and object-level
+    /// triggers (OnRun / OnOpenPage). Additive — `L3Routine` is NOT `Serialize`-derived
+    /// (it has only `#[derive(Debug, Clone)]`), so this never reaches an R0–R3 golden.
+    /// (RE-3 / RE-4)
+    pub enclosing_member: Option<String>,
+    /// StableObjectId of the object that DECLARES this trigger (the object decl in
+    /// scope at assembly — the EXTENSION object for an extension-declared trigger).
+    /// Honest metadata; the AL CPU-profile frame carries no extension identity, so this
+    /// is profile-UNJOINABLE for the multi-extension collision (RE-5). `None` for
+    /// non-member routines. Additive — never reaches an R0–R3 golden.
+    pub originating_object: Option<String>,
+    /// Source range of the member WRAPPER node (field_declaration / page_field /
+    /// action_declaration / report_dataitem / query_dataitem) — the boundary the
+    /// finding-side position discriminator (E3) matches a finding's primaryLocation
+    /// against. `None` for non-member routines. Additive — never reaches an R0–R3
+    /// golden. (RE-2)
+    pub enclosing_member_range: Option<crate::engine::l2::features::PAnchor>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -603,12 +623,19 @@ fn anchor_from_node(
 }
 
 /// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
-fn collect_routine_nodes(decl: Node) -> Vec<Node> {
+///
+/// Returns `(parent, routine)` pairs: the routine node plus its immediate
+/// `node.parent()` at the DFS match point (RE-7), captured WITHOUT restructuring the
+/// stack / push order so the traversal — and therefore the routine set + order — is
+/// byte-for-byte unchanged from the pre-E1 `Vec<Node>` form. The parent enables the
+/// member-trigger enclosing-member derivation (`enclosing_member_of`); object-level
+/// triggers / procedures carry a non-member-bearing parent and resolve to `None`.
+fn collect_routine_nodes(decl: Node) -> Vec<(Option<Node>, Node)> {
     let mut out = Vec::new();
     let mut stack = vec![decl];
     while let Some(node) = stack.pop() {
         if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
-            out.push(node);
+            out.push((node.parent(), node));
             continue;
         }
         for child in named_children(node).into_iter().rev() {
@@ -616,6 +643,32 @@ fn collect_routine_nodes(decl: Node) -> Vec<Node> {
         }
     }
     out
+}
+
+/// Unescape an AL identifier's logical name: a quoted AL identifier escapes an inner
+/// double-quote by doubling it (`""`), so the logical name collapses each `""` back to
+/// a single `"`. Called AFTER `strip_quotes` (which only trims the boundary quotes), so
+/// the input here is the inner text. Matches the profiler's display form (RE-4).
+fn unescape_al_identifier(inner: &str) -> String {
+    inner.replace("\"\"", "\"")
+}
+
+/// Returns `(unescaped-logical-member-name, wrapper_node)` when `parent` is a
+/// member-bearing wrapper, else `None`.
+///
+/// RULE (RE-3): a member-bearing parent is any immediate parent that is NOT the object
+/// declaration AND exposes a `name` field — `field_declaration` (whose first named child
+/// is the integer field NUMBER, so the name MUST come via `child_by_field_name("name")`,
+/// not "first child"), `page_field`, `action_declaration`, `report_dataitem`,
+/// `query_dataitem`. Object declarations expose `object_name` (not `name`) so they are
+/// excluded by construction; true object-level triggers (`OnRun` / `OnOpenPage`) have a
+/// non-member parent → `None`. `actionref_declaration` uses `promoted_name` (no `name`)
+/// → `None`. The name is `strip_quotes`'d then `unescape_al_identifier`'d (RE-4).
+fn enclosing_member_of<'a>(parent: Option<Node<'a>>, source: &str) -> Option<(String, Node<'a>)> {
+    let p = parent?;
+    let name_node = p.child_by_field_name("name")?;
+    let raw = node_text(name_node, source);
+    Some((unescape_al_identifier(strip_quotes(raw)), p))
 }
 
 // ---------------------------------------------------------------------------
@@ -727,7 +780,7 @@ fn project_file(
         let object_globals = scope::extract_object_globals(decl, source_unit_id, source);
         let routine_nodes = collect_routine_nodes(decl);
         let mut object_procedure_names = std::collections::HashSet::new();
-        for n in &routine_nodes {
+        for (_parent, n) in &routine_nodes {
             if let Some(nm) = n.child_by_field_name("name") {
                 object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
             }
@@ -738,7 +791,7 @@ fn project_file(
             source_unit_id,
         };
 
-        for routine in routine_nodes {
+        for (member_parent, routine) in routine_nodes {
             let Some(nm) = routine.child_by_field_name("name") else {
                 continue;
             };
@@ -887,6 +940,23 @@ fn project_file(
             let access_modifier =
                 crate::engine::l2::l2_workspace::classify_access_modifier(routine, source);
 
+            // E1: enclosing-member capture (additive — never serialized into a golden).
+            // A member-trigger (parent is a member-bearing wrapper) gets the unescaped
+            // logical member name + the WRAPPER node's source range (RE-2/RE-3/RE-4) and
+            // `originatingObject` = the StableObjectId of the object decl in scope (the
+            // EXTENSION object for an extension-declared trigger — RE-5). Procedures and
+            // object-level triggers (OnRun / OnOpenPage) carry a non-member parent → all
+            // `None`.
+            let (enclosing_member, enclosing_member_range, originating_object) =
+                match enclosing_member_of(member_parent, source) {
+                    Some((member_name, wrapper)) => (
+                        Some(member_name),
+                        Some(anchor_from_node(wrapper, source_unit_id, cols)),
+                        Some(stable_object_id.clone()),
+                    ),
+                    None => (None, None, None),
+                };
+
             workspace.routines.push(L3Routine {
                 id: routine_id,
                 stable_routine_id,
@@ -917,6 +987,9 @@ fn project_file(
                 has_branching,
                 var_assignments,
                 condition_references,
+                enclosing_member,
+                originating_object,
+                enclosing_member_range,
             });
         }
     }

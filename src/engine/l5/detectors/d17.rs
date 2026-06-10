@@ -383,6 +383,9 @@ mod tests {
             has_branching: false,
             var_assignments: Vec::new(),
             condition_references: Vec::new(),
+            enclosing_member: None,
+            originating_object: None,
+            enclosing_member_range: None,
         }
     }
 

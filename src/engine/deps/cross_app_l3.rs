@@ -218,6 +218,12 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         has_branching: false,
         var_assignments: Vec::new(),
         condition_references: Vec::new(),
+        // Dep routines are ABI symbol-only (no AST parent wrapper) — the enclosing-member
+        // capture (E1) is a native-parser-only signal, so these are always `None` for a
+        // projected dep routine. Additive: `L3Routine` is not `Serialize`-derived.
+        enclosing_member: None,
+        originating_object: None,
+        enclosing_member_range: None,
     }
 }
 
