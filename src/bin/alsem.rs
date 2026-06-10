@@ -440,6 +440,12 @@ struct FingerprintCli {
     /// Human output verbosity: compact | full. Defaults to compact.
     #[arg(long = "verbosity", default_value = "compact")]
     verbosity: String,
+
+    /// Emit the lean routine-inventory projection (apps + identities + per-routine
+    /// inventory + coverage + rootClassifications). Omits the heavy consumed-core
+    /// keys. Implies --format=json; incompatible with --shard and binary formats.
+    #[arg(long = "inventory-only", default_value_t = false)]
+    inventory_only: bool,
 }
 
 /// `DigestCli` — arguments for `alsem digest <ws>`.
@@ -986,6 +992,7 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
         deterministic: f.deterministic,
         strict: f.strict,
         verbosity: &f.verbosity,
+        inventory_only: f.inventory_only,
     };
 
     match run_fingerprint_pipeline(&opts) {

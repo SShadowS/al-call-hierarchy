@@ -996,6 +996,120 @@ fn build_envelope(
 }
 
 // ===========================================================================
+// `--inventory-only` lean projection: routine-inventory document.
+//
+// The doc kind is "routine-inventory", schemaVersion "1.0.0". It reuses the
+// ALREADY-composed full-snapshot CborValue tree to extract apps / identities /
+// coverage / rootClassifications — byte-identical to the full snapshot's
+// corresponding sub-values (projection-subset self-consistency). The heavy
+// keys (capabilityFacts, typedEdges, operationIndex, callsiteIndex,
+// callsiteResolutions, analysisGaps, inputs, inputsMetadata) are omitted.
+//
+// The per-routine inventory list (`routineInventory`) is derived directly from
+// `resolved.workspace.routines` — every routine's (objectType, objectNumber,
+// routineName, stableRoutineId). The source is the same workspace the full
+// snapshot's contractFacts and identities derive from, so there is no risk of
+// drift; the stableRoutineId is the same field `L3Routine::stable_routine_id`
+// that the identity table indexes.
+//
+// Serialized sorted-key JSON (the same `write_sorted_json_inner` the full
+// snapshot envelope uses), so consumers can rely on stable key order.
+// ===========================================================================
+
+/// Build and serialize the lean `routine-inventory` DocumentEnvelope as sorted-key
+/// JSON. Reuses `tree` (the already-composed full-snapshot `CborValue`) to extract
+/// the shared sub-values, so they are byte-identical to those in the full snapshot.
+pub fn build_inventory_envelope(
+    tree: &CborValue,
+    resolved: &L3Resolved,
+    alsem_version: &str,
+    deterministic: bool,
+) -> String {
+    let doc = build_inventory_doc(tree, resolved, alsem_version, deterministic);
+    let mut s = String::new();
+    write_sorted_json_inner(&doc, 0, true, &mut s);
+    s.push('\n');
+    s
+}
+
+/// The schemaVersion for the routine-inventory document kind.
+pub const INVENTORY_SCHEMA_VERSION: &str = "1.0.0";
+
+fn build_inventory_doc(
+    tree: &CborValue,
+    resolved: &L3Resolved,
+    alsem_version: &str,
+    deterministic: bool,
+) -> CborValue {
+    let CborValue::Map(snap) = tree else {
+        return CborValue::Null;
+    };
+
+    // Extract the shared sub-values verbatim from the full snapshot CborValue,
+    // mirroring build_envelope's key-lift pattern (apps/identities/coverage/
+    // rootClassifications are in the snapshot map, not the envelope wrapper).
+    let get = |key: &str| -> CborValue {
+        snap.get(key)
+            .cloned()
+            .unwrap_or(CborValue::Array(Vec::new()))
+    };
+    let apps = get("apps");
+    let identities = get("identities");
+    let coverage = get("coverage");
+    let root_classifications = get("rootClassifications");
+
+    // Per-routine inventory: every source routine → (objectType, objectNumber,
+    // routineName, stableRoutineId). Sorted by stableRoutineId (locale-compare safe
+    // per M8: single-case characters at all discriminating positions).
+    let mut routine_rows: Vec<(String, CborValue)> = resolved
+        .workspace
+        .routines
+        .iter()
+        .map(|r| {
+            let mut m: IndexMap<String, CborValue> = IndexMap::new();
+            m.insert("objectType".into(), CborValue::Text(r.object_type.clone()));
+            m.insert("objectNumber".into(), CborValue::Int(r.object_number));
+            m.insert("routineName".into(), CborValue::Text(r.name.clone()));
+            m.insert(
+                "stableRoutineId".into(),
+                CborValue::Text(r.stable_routine_id.clone()),
+            );
+            (r.stable_routine_id.clone(), CborValue::Map(m))
+        })
+        .collect();
+    routine_rows.sort_by(|a, b| locale_compare(&a.0, &b.0));
+    let routine_inventory = CborValue::Array(routine_rows.into_iter().map(|(_, v)| v).collect());
+
+    let generated_at = crate::engine::gate::format_json::pinned_or_now_iso8601(deterministic);
+
+    // Build the lean payload (omits all heavy keys).
+    let mut payload: IndexMap<String, CborValue> = IndexMap::new();
+    payload.insert("apps".into(), apps);
+    payload.insert("identities".into(), identities);
+    payload.insert("routineInventory".into(), routine_inventory);
+    payload.insert("coverage".into(), coverage);
+    payload.insert("rootClassifications".into(), root_classifications);
+
+    // Build the envelope (same shape as the capability-snapshot envelope but
+    // with a different kind + schemaVersion).
+    let mut env: IndexMap<String, CborValue> = IndexMap::new();
+    env.insert("kind".into(), CborValue::Text("routine-inventory".into()));
+    env.insert(
+        "schemaVersion".into(),
+        CborValue::Text(INVENTORY_SCHEMA_VERSION.to_string()),
+    );
+    env.insert(
+        "alsemVersion".into(),
+        CborValue::Text(alsem_version.to_string()),
+    );
+    env.insert("deterministic".into(), CborValue::Bool(deterministic));
+    env.insert("generatedAt".into(), CborValue::Text(generated_at));
+    env.insert("diagnostics".into(), CborValue::Array(Vec::new()));
+    env.insert("payload".into(), CborValue::Map(payload));
+    CborValue::Map(env)
+}
+
+// ===========================================================================
 // Sharding (snapshot/shard.ts). Per-app shard files + manifest.json. Source-only:
 // the single primary app → one `primary.<ext>` shard. format "json" only for the
 // committed goldens.

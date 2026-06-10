@@ -38,8 +38,8 @@ use crate::engine::l5::fingerprint_query::{
 };
 use crate::engine::l5::snapshot::compose_snapshot;
 use crate::engine::l5::snapshot_full::{
-    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_envelope,
-    serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
+    build_inventory_envelope, compose_full_snapshot, serialize_cbor, serialize_cbor_gz,
+    serialize_envelope, serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
 };
 
 /// The format the fingerprint command outputs.
@@ -259,6 +259,10 @@ pub struct FingerprintOptions<'a> {
     pub strict: bool,
     /// Verbosity for human output: "compact" | "full".
     pub verbosity: &'a str,
+    /// `--inventory-only`: emit the lean routine-inventory projection instead of
+    /// the full capability-snapshot. Implies json-only; rejected with any binary
+    /// format (cbor / cbor.gz) or shard mode.
+    pub inventory_only: bool,
 }
 
 /// Result returned from `run_fingerprint_pipeline`.
@@ -319,6 +323,19 @@ pub fn format_selector_errors_human(diags: &[FingerprintQueryDiagnostic]) -> Str
 /// upstream by the CLI (`default_format` + `reject_illegal_combos`) so the exact
 /// TS exit codes / stderr land; this function assumes a legal invocation.
 pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<FingerprintRunResult, String> {
+    // --inventory-only: json-only; reject binary formats and shard mode.
+    if opts.inventory_only {
+        if opts.shard.is_some() {
+            return Err("--inventory-only cannot be combined with --shard".to_string());
+        }
+        if opts.format != FingerprintFormat::Json {
+            return Err(format!(
+                "--inventory-only requires --format=json (got {:?})",
+                opts.format
+            ));
+        }
+    }
+
     // Assemble workspace.
     let model_id = compute_gate_model_instance_id(opts.workspace)
         .ok_or_else(|| "fingerprint: could not compute modelInstanceId".to_string())?;
@@ -391,7 +408,14 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
             });
         }
 
-        let output = if let Some(mode) = opts.shard {
+        let output = if opts.inventory_only {
+            // Lean routine-inventory projection — reuses the already-composed full
+            // snapshot tree so apps/identities/coverage/rootClassifications are
+            // byte-identical. The consumed-core (heavy) keys are not included.
+            let text =
+                build_inventory_envelope(&tree, &resolved, opts.alsem_version, opts.deterministic);
+            FingerprintOutput::Text(text)
+        } else if let Some(mode) = opts.shard {
             // serialize_sharded: primaryOnly = (mode == PrimaryOnly).
             let primary_only = mode == ShardMode::PrimaryOnly;
             let shards = serialize_sharded(&tree, opts.alsem_version, primary_only);
