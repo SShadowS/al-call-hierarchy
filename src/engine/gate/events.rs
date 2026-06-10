@@ -24,14 +24,15 @@
 //! `--deterministic` pins `generated_at = "0"` and reads the version override from
 //! the caller rather than the live version. Used by every differential test.
 
-use std::collections::HashMap;
-
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
+use crate::engine::gate::run::compute_analyzer_diagnostics;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::detector_context::build_detector_context;
+use crate::engine::l5::detectors::registered_detectors;
+use crate::engine::l5::digest_cli::DEFAULT_DETECTOR_NAMES;
 use crate::engine::l5::event_flow::{
     compute_chain_report, compute_fanout_report, ChainNode, ChainReport, ChainWalkOptions,
-    FanoutReport, Scope,
+    FanoutCoverage, FanoutReport, Scope,
 };
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,13 @@ fn write_jv(v: &Jv, buf: &mut String, indent: usize) {
                     '\n' => buf.push_str("\\n"),
                     '\r' => buf.push_str("\\r"),
                     '\t' => buf.push_str("\\t"),
+                    '\u{0008}' => buf.push_str("\\b"),
+                    '\u{000C}' => buf.push_str("\\f"),
+                    // Other C0 control chars (< U+0020) → \u00XX, matching
+                    // JSON.stringify (lowercase hex, 4 digits).
+                    c if (c as u32) < 0x20 => {
+                        buf.push_str(&format!("\\u{:04x}", c as u32));
+                    }
                     c => buf.push(c),
                 }
             }
@@ -207,7 +215,10 @@ fn chain_node_to_jv(node: &ChainNode) -> Jv {
             Jv::Obj(pairs)
         }
         "subscriber" => {
-            // subscriber → {kind, routineId, children[, cycleDetected:true | depthTruncated:true]}
+            // subscriber → {kind, routineId, children[, cycleDetected:true]}
+            // TS `walkEventChain` only sets `depthTruncated` on event-dispatch
+            // nodes — never on subscriber nodes — so there is no `depthTruncated`
+            // branch here (matching format-events.ts).
             let mut pairs: Vec<(String, Jv)> = Vec::new();
             pairs.push(("kind".to_string(), Jv::s("subscriber")));
             if let Some(rid) = &node.routine_id {
@@ -219,8 +230,6 @@ fn chain_node_to_jv(node: &ChainNode) -> Jv {
             ));
             if node.cycle_detected {
                 pairs.push(("cycleDetected".to_string(), Jv::Bool(true)));
-            } else if node.depth_truncated {
-                pairs.push(("depthTruncated".to_string(), Jv::Bool(true)));
             }
             Jv::Obj(pairs)
         }
@@ -373,14 +382,10 @@ fn render_chain(node: &ChainNode, depth: usize, lines: &mut Vec<String>) {
             lines.push(format!("{indent}↪ {name}{tail}"));
         }
         "subscriber" => {
+            // TS `walkEventChain` never sets `depthTruncated` on a subscriber node
+            // (only on event-dispatch), so the only reachable marker is `(cycle)`.
             let rid = node.routine_id.as_deref().unwrap_or("");
-            let marker = if node.cycle_detected {
-                "  (cycle)"
-            } else if node.depth_truncated {
-                "  (depth truncated)"
-            } else {
-                ""
-            };
+            let marker = if node.cycle_detected { "  (cycle)" } else { "" };
             lines.push(format!("{indent}• {rid}{marker}"));
         }
         _ => {}
@@ -432,6 +437,11 @@ pub struct EventsFanoutOptions<'a> {
     pub workspace: &'a std::path::Path,
     pub format: &'a str, // "human" | "json"
     pub scope: Scope,
+    /// "warn" (default) | "strict" | "ignore". Mirrors `--coverage-policy` in
+    /// al-sem `events-fanout.ts`. `strict` drops entries whose `dispatchEdges` OR
+    /// `capabilityComposition` is "partial" (emitting a stderr line + exit 1);
+    /// `ignore` rewrites every entry's coverage to all-"complete".
+    pub coverage_policy: &'a str,
     pub alsem_version: &'a str,
     pub deterministic: bool,
     pub strict: bool,
@@ -464,13 +474,11 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
         }
     };
 
-    // Collect workspace + infra diagnostics for stderr (mirrors events-fanout.ts
-    // which emits `analyzeWorkspace` diagnostics to stderr).
-    let diag_lines: Vec<String> = resolved
-        .infra_diagnostics
-        .iter()
-        .map(|d| format!("{}: {}", d.severity, d.message))
-        .collect();
+    // `analyzeWorkspace` diagnostics: workspace + overlay + ALL default-detector
+    // diagnostics (e.g. `d43-event-ishandled-skip`). events-fanout.ts emits these
+    // to stderr at the end. `infra_diagnostics` alone is NOT enough — it omits the
+    // detector-stage diagnostics that the goldens' `.stderr.txt` capture.
+    let diag_lines = analyze_workspace_diagnostic_lines(opts.workspace, &resolved);
 
     if opts.strict && diag_lines.iter().any(|l| l.starts_with("error:")) {
         return EventsRunResult {
@@ -483,21 +491,82 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
     // Build detector context to get event_flow_indexes + summaries + event_graph.
     let ctx = build_detector_context(&resolved);
     let ix = &ctx.event_flow_indexes;
-    let summaries: HashMap<String, crate::engine::l5::full_summary::FullRoutineSummary> =
-        ctx.summaries.clone();
 
-    let report = compute_fanout_report(&ctx.event_graph, ix, &summaries, opts.scope);
+    let mut report = compute_fanout_report(&ctx.event_graph, ix, &ctx.summaries, opts.scope);
+
+    // --- --coverage-policy application (fanout only; chains validates but no-ops) ---
+    //
+    // CRITICAL: NEITHER branch recomputes `report.summary` — the summary counters
+    // (totalEvents / coveragePartialEvents / …) pass through with their PRE-filter
+    // values, exactly as al-sem does (it spreads `{ ...report, entries: ... }`).
+    let mut coverage_stderr: Vec<String> = Vec::new();
+    let mut coverage_exit_elevated = false;
+    match opts.coverage_policy {
+        "strict" => {
+            // Drop entries where dispatchEdges OR capabilityComposition is "partial".
+            // (subscriberDiscovery / "unknown" do NOT trigger a drop.)
+            let mut kept: Vec<crate::engine::l5::event_flow::FanoutEntry> =
+                Vec::with_capacity(report.entries.len());
+            for e in report.entries.drain(..) {
+                if e.coverage.dispatch_edges == "partial"
+                    || e.coverage.capability_composition == "partial"
+                {
+                    coverage_stderr.push(format!(
+                        "coverage-incomplete: event {} dispatchEdges={} capability={}",
+                        e.event_id, e.coverage.dispatch_edges, e.coverage.capability_composition
+                    ));
+                    coverage_exit_elevated = true;
+                } else {
+                    kept.push(e);
+                }
+            }
+            report.entries = kept;
+        }
+        "ignore" => {
+            // Rewrite every entry's coverage to all-"complete".
+            for e in report.entries.iter_mut() {
+                e.coverage = FanoutCoverage {
+                    dispatch_edges: "complete",
+                    subscriber_discovery: "complete",
+                    capability_composition: "complete",
+                };
+            }
+        }
+        _ => {} // "warn" (default): pass through unchanged.
+    }
 
     let text = match opts.format {
         "json" => format_fanout_json(&report, opts.alsem_version, opts.deterministic),
         _ => format_fanout_human(&report),
     };
 
+    // stderr ordering mirrors al-sem: coverage-incomplete lines are written DURING
+    // the strict filter (before stdout), then analyzer diagnostics at the very end.
+    let mut stderr_lines = coverage_stderr;
+    stderr_lines.extend(diag_lines);
+
     EventsRunResult {
         text,
-        exit_code: 0,
-        stderr_lines: diag_lines,
+        exit_code: if coverage_exit_elevated { 1 } else { 0 },
+        stderr_lines,
     }
+}
+
+/// Compute the `analyzeWorkspace`-equivalent diagnostic lines (`<severity>: <message>`)
+/// for the events commands' stderr. Runs the DEFAULT detector set so detector-stage
+/// diagnostics (e.g. `d43-event-ishandled-skip`) surface exactly as al-sem does.
+fn analyze_workspace_diagnostic_lines(
+    workspace: &std::path::Path,
+    resolved: &crate::engine::l3::l3_workspace::L3Resolved,
+) -> Vec<String> {
+    let default_detectors: Vec<_> = registered_detectors()
+        .into_iter()
+        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
+        .collect();
+    compute_analyzer_diagnostics(workspace, resolved, &default_detectors)
+        .iter()
+        .map(|d| format!("{}: {}", d.severity, d.message))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +578,11 @@ pub struct EventsChainsOptions<'a> {
     pub workspace: &'a std::path::Path,
     pub format: &'a str,
     pub scope: Scope,
+    /// "warn" | "strict" | "ignore". al-sem `events-chains.ts` VALIDATES this flag
+    /// (rejecting unknown values) but NEVER applies it — chains ignores coverage
+    /// policy entirely. Carried here only so the CLI layer can validate it; the
+    /// pipeline below does NOT read it (matching TS exactly).
+    pub coverage_policy: &'a str,
     pub max_depth: Option<usize>,
     pub max_nodes: Option<usize>,
     pub alsem_version: &'a str,
@@ -543,11 +617,7 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
         }
     };
 
-    let diag_lines: Vec<String> = resolved
-        .infra_diagnostics
-        .iter()
-        .map(|d| format!("{}: {}", d.severity, d.message))
-        .collect();
+    let diag_lines = analyze_workspace_diagnostic_lines(opts.workspace, &resolved);
 
     if opts.strict && diag_lines.iter().any(|l| l.starts_with("error:")) {
         return EventsRunResult {
@@ -556,6 +626,9 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
             stderr_lines: diag_lines,
         };
     }
+
+    // NOTE: `opts.coverage_policy` is intentionally UNUSED here — al-sem
+    // `events-chains.ts` validates it but never applies it to the chain report.
 
     let ctx = build_detector_context(&resolved);
     let ix = &ctx.event_flow_indexes;

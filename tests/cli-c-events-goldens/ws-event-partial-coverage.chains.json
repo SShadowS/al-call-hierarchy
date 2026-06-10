@@ -1,0 +1,32 @@
+{
+  "al_sem_version": "cli-c-v1",
+  "generated_at": "0",
+  "kind": "events.chains",
+  "summary": {
+    "totalRoots": 1,
+    "rootsWithEvents": 1,
+    "maxChainDepth": 2,
+    "cyclesDetected": 0,
+    "depthTruncatedNodes": 0
+  },
+  "chains": [
+    {
+      "kind": "root",
+      "routineId": "b022562a20b2f6d9/2ce6f2d185735f9cf3c7b059ade99c63c56b0708f5eed2d624a89317f6a181a9",
+      "children": [
+        {
+          "kind": "event-dispatch",
+          "eventId": "dddddddd-dddd-dddd-dddd-dddddddddddd/Codeunit/50000/event/one",
+          "eventName": "OnE",
+          "children": [
+            {
+              "kind": "subscriber",
+              "routineId": "b022562a20b2f6d9/5832c7c60a9dc95285ec4a82a1955f759b43e9b1d1b3e92f5dc91b071c26c56d",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

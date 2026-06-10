@@ -23,14 +23,14 @@
     "capabilityFactsDirect",
     "rootClassifications"
   ],
-  "fixtureCount": 32,
+  "fixtureCount": 33,
   "coverageMatrix": {
-    "integrationPublishers": 42,
+    "integrationPublishers": 43,
     "businessPublishers": 5,
     "unknownKindSymbols": 8,
     "isolatedPublishers": 5,
     "symbolsWithElementName": 1,
-    "resolvedEdges": 43,
+    "resolvedEdges": 44,
     "maybeEdges": 7,
     "unknownEdges": 3
   },
@@ -472,6 +472,28 @@
         "total": 0,
         "error": 0,
         "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "fixture": "ws-event-partial-coverage",
+      "goldenFile": "ws-event-partial-coverage.l3eg.golden.json",
+      "eventCount": 1,
+      "edgeCount": 1,
+      "coverage": {
+        "integrationPublishers": 1,
+        "businessPublishers": 0,
+        "unknownKindSymbols": 0,
+        "isolatedPublishers": 0,
+        "symbolsWithElementName": 0,
+        "resolvedEdges": 1,
+        "maybeEdges": 0,
+        "unknownEdges": 0
+      },
+      "diagnostics": {
+        "total": 1,
+        "error": 0,
+        "warning": 1,
         "info": 0
       }
     },

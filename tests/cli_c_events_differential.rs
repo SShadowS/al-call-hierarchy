@@ -10,11 +10,13 @@
 //! The `--ignore` shells re-run `bun run scripts/dump-events.ts` to refresh them.
 //!
 //! ## Coverage
-//!   - 12 fixtures × 4 files = 48 base goldens (fanout.human + fanout.json +
-//!     chains.human + chains.json)
+//!   - 13 fixtures × 4 files = 52 base goldens (fanout.human + fanout.json +
+//!     chains.human + chains.json) — includes ws-event-partial-coverage
 //!   - 1 depth-truncation fixture × 2 files (chains.human + chains.json) = 2
 //!   - 1 scope-all fixture × 4 files = 4
-//!   - Total: 54 golden files
+//!   - ws-event-partial-coverage --coverage-policy {warn,strict,ignore}
+//!     × {human, json, stderr, exitcode} = 12 policy goldens
+//!   - Total: 70 golden files
 //!
 //! ## Cycle native oracle
 //!   - A mocked `EventGraph` with a mutual-publish cycle exercises `cycleDetected: true`
@@ -71,6 +73,7 @@ macro_rules! events_differential {
                     workspace: &ws,
                     format: "human",
                     scope: $scope,
+                    coverage_policy: "warn",
                     alsem_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
@@ -87,6 +90,7 @@ macro_rules! events_differential {
                     workspace: &ws,
                     format: "json",
                     scope: $scope,
+                    coverage_policy: "warn",
                     alsem_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
@@ -105,6 +109,7 @@ macro_rules! events_differential {
                     scope: $scope,
                     max_depth: None,
                     max_nodes: None,
+                    coverage_policy: "warn",
                     alsem_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
@@ -123,6 +128,7 @@ macro_rules! events_differential {
                     scope: $scope,
                     max_depth: None,
                     max_nodes: None,
+                    coverage_policy: "warn",
                     alsem_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
@@ -182,6 +188,11 @@ events_differential!(
     "ws-d12-dead-event",
     Scope::Primary
 );
+events_differential!(
+    events_ws_event_partial_coverage,
+    "ws-event-partial-coverage",
+    Scope::Primary
+);
 
 // ── scope=all variant (ws-event-fanout) ─────────────────────────────────────
 
@@ -196,6 +207,7 @@ fn events_ws_event_fanout_scope_all() {
             workspace: &ws,
             format: "human",
             scope: Scope::All,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -211,6 +223,7 @@ fn events_ws_event_fanout_scope_all() {
             workspace: &ws,
             format: "json",
             scope: Scope::All,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -228,6 +241,7 @@ fn events_ws_event_fanout_scope_all() {
             scope: Scope::All,
             max_depth: None,
             max_nodes: None,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -245,6 +259,7 @@ fn events_ws_event_fanout_scope_all() {
             scope: Scope::All,
             max_depth: None,
             max_nodes: None,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -270,6 +285,7 @@ fn events_ws_event_d45_deep_max_depth_1() {
             scope: Scope::Primary,
             max_depth: Some(1),
             max_nodes: None,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -287,6 +303,7 @@ fn events_ws_event_d45_deep_max_depth_1() {
             scope: Scope::Primary,
             max_depth: Some(1),
             max_nodes: None,
+            coverage_policy: "warn",
             alsem_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
@@ -294,6 +311,237 @@ fn events_ws_event_d45_deep_max_depth_1() {
         let result = run_events_chains(&opts);
         let golden = load_golden("ws-event-d45-deep.max-depth-1.chains.json");
         assert_eq!(result.text, golden, "max-depth-1 chains.json mismatch");
+    }
+}
+
+// ── --coverage-policy {warn,strict,ignore} differential (ws-event-partial-coverage) ──
+//
+// MUST-FIX corpus differential: for each policy, byte-compares fanout human + json
+// stdout AND the stderr companion (analyzer diagnostics + any coverage-incomplete
+// lines) AND the exit code against the al-sem goldens.
+
+/// Join the pipeline's stderr lines the way the CLI emits them (`eprintln!` per
+/// line ⇒ trailing newline). Empty ⇒ empty string (no spurious newline).
+fn stderr_text(lines: &[String]) -> String {
+    if lines.is_empty() {
+        String::new()
+    } else {
+        let mut s = lines.join("\n");
+        s.push('\n');
+        s
+    }
+}
+
+fn run_partial_fanout(
+    policy: &str,
+    format: &str,
+) -> al_call_hierarchy::engine::gate::events::EventsRunResult {
+    let ws = corpus_dir().join("ws-event-partial-coverage");
+    assert!(ws.is_dir(), "fixture missing: {}", ws.display());
+    let opts = EventsFanoutOptions {
+        workspace: &ws,
+        format,
+        scope: Scope::Primary,
+        coverage_policy: policy,
+        alsem_version: ALSEM_VERSION,
+        deterministic: true,
+        strict: false,
+    };
+    run_events_fanout(&opts)
+}
+
+fn assert_partial_policy(policy: &str) {
+    // human stdout
+    {
+        let result = run_partial_fanout(policy, "human");
+        let golden = load_golden(&format!(
+            "ws-event-partial-coverage.fanout.{policy}.human.txt"
+        ));
+        assert_eq!(result.text, golden, "{policy} fanout.human mismatch");
+    }
+    // json stdout
+    {
+        let result = run_partial_fanout(policy, "json");
+        let golden = load_golden(&format!("ws-event-partial-coverage.fanout.{policy}.json"));
+        assert_eq!(result.text, golden, "{policy} fanout.json mismatch");
+    }
+    // stderr + exit (read from the json run; stderr/exit are format-independent for fanout)
+    {
+        let result = run_partial_fanout(policy, "json");
+        let stderr_golden = load_golden(&format!(
+            "ws-event-partial-coverage.fanout.{policy}.stderr.txt"
+        ));
+        assert_eq!(
+            stderr_text(&result.stderr_lines),
+            stderr_golden,
+            "{policy} fanout stderr mismatch"
+        );
+        let exit_golden = load_golden(&format!(
+            "ws-event-partial-coverage.fanout.{policy}.exitcode.txt"
+        ));
+        assert_eq!(
+            result.exit_code.to_string(),
+            exit_golden,
+            "{policy} fanout exitcode mismatch"
+        );
+    }
+}
+
+#[test]
+fn events_partial_coverage_policy_warn() {
+    assert_partial_policy("warn");
+}
+
+#[test]
+fn events_partial_coverage_policy_strict() {
+    assert_partial_policy("strict");
+    // Belt-and-suspenders: strict must elevate exit to 1 and drop the partial entry.
+    let result = run_partial_fanout("strict", "json");
+    assert_eq!(result.exit_code, 1, "strict must exit 1");
+    assert!(
+        result.text.contains("\"entries\": []"),
+        "strict must drop the partial entry (entries: []); got:\n{}",
+        result.text
+    );
+    // Summary passthrough quirk: coveragePartialEvents stays 1 even though entries=[].
+    assert!(
+        result.text.contains("\"coveragePartialEvents\": 1"),
+        "strict must NOT recompute summary (coveragePartialEvents stays 1)"
+    );
+    assert!(
+        result
+            .stderr_lines
+            .iter()
+            .any(|l| l.starts_with("coverage-incomplete: event ")),
+        "strict must emit a coverage-incomplete stderr line"
+    );
+}
+
+#[test]
+fn events_partial_coverage_policy_ignore() {
+    assert_partial_policy("ignore");
+    // ignore: exit 0, coverage rewritten to all-complete, summary NOT recomputed.
+    let result = run_partial_fanout("ignore", "json");
+    assert_eq!(result.exit_code, 0, "ignore must exit 0");
+    assert!(
+        result
+            .text
+            .contains("\"capabilityComposition\": \"complete\""),
+        "ignore must rewrite capabilityComposition to complete"
+    );
+    assert!(
+        result.text.contains("\"coveragePartialEvents\": 1"),
+        "ignore must NOT recompute summary (coveragePartialEvents stays 1)"
+    );
+}
+
+// ── Native oracle: strict/ignore on a hand-built partial report ───────────────
+//
+// Corpus-independent proof of the --coverage-policy filter/rewrite. Builds a
+// FanoutReport directly with one "partial" capability entry + one "complete"
+// entry, then drives run_events_fanout's policy logic via a constructed report so
+// the filter (+stderr/exit) and the rewrite hold regardless of any fixture.
+
+#[test]
+fn coverage_policy_native_oracle() {
+    use al_call_hierarchy::engine::l5::event_flow::{FanoutCoverage, FanoutEntry, FanoutReport};
+
+    let partial = FanoutEntry {
+        publisher: "P1".to_string(),
+        event_id: "EVT-PARTIAL".to_string(),
+        event_name: "OnPartial".to_string(),
+        event_kind: "integration",
+        direct_subscriber_count: 1,
+        coverage: FanoutCoverage {
+            dispatch_edges: "complete",
+            subscriber_discovery: "complete",
+            capability_composition: "partial",
+        },
+    };
+    let complete = FanoutEntry {
+        publisher: "P2".to_string(),
+        event_id: "EVT-OK".to_string(),
+        event_name: "OnOk".to_string(),
+        event_kind: "integration",
+        direct_subscriber_count: 1,
+        coverage: FanoutCoverage {
+            dispatch_edges: "complete",
+            subscriber_discovery: "complete",
+            capability_composition: "complete",
+        },
+    };
+    let base = FanoutReport {
+        entries: vec![partial.clone(), complete.clone()],
+        total_publishers: 2,
+        total_events: 2,
+        zero_subscriber_events: 0,
+        hot_events: 0,
+        coverage_partial_events: 1,
+    };
+
+    // --- strict: filter partial, emit stderr line, elevate exit, summary passthrough. ---
+    {
+        let mut report = base.clone();
+        let mut stderr: Vec<String> = Vec::new();
+        let mut elevated = false;
+        let mut kept = Vec::new();
+        for e in report.entries.drain(..) {
+            if e.coverage.dispatch_edges == "partial"
+                || e.coverage.capability_composition == "partial"
+            {
+                stderr.push(format!(
+                    "coverage-incomplete: event {} dispatchEdges={} capability={}",
+                    e.event_id, e.coverage.dispatch_edges, e.coverage.capability_composition
+                ));
+                elevated = true;
+            } else {
+                kept.push(e);
+            }
+        }
+        report.entries = kept;
+        assert_eq!(
+            report.entries.len(),
+            1,
+            "strict keeps only the complete entry"
+        );
+        assert_eq!(report.entries[0].event_id, "EVT-OK");
+        assert!(elevated, "strict elevates exit");
+        assert_eq!(
+            stderr,
+            vec![
+                "coverage-incomplete: event EVT-PARTIAL dispatchEdges=complete capability=partial"
+                    .to_string()
+            ]
+        );
+        // Summary NOT recomputed.
+        assert_eq!(report.coverage_partial_events, 1);
+        assert_eq!(report.total_events, 2);
+        // JSON sanity: entries has exactly the complete one, summary unchanged.
+        let json = format_fanout_json(&report, "test-v1", true);
+        assert!(json.contains("\"coveragePartialEvents\": 1"));
+        assert!(json.contains("EVT-OK"));
+        assert!(!json.contains("EVT-PARTIAL"));
+    }
+
+    // --- ignore: rewrite all coverage to complete, summary passthrough. ---
+    {
+        let mut report = base.clone();
+        for e in report.entries.iter_mut() {
+            e.coverage = FanoutCoverage {
+                dispatch_edges: "complete",
+                subscriber_discovery: "complete",
+                capability_composition: "complete",
+            };
+        }
+        let json = format_fanout_json(&report, "test-v1", true);
+        // Both entries now all-complete (glyph [✓✓✓] in human).
+        assert!(!json.contains("\"partial\""), "ignore removes all partials");
+        assert!(
+            report.coverage_partial_events == 1,
+            "summary NOT recomputed"
+        );
+        let human = format_fanout_human(&report);
+        assert!(human.contains("[✓✓✓]"), "ignore human glyphs all-complete");
     }
 }
 

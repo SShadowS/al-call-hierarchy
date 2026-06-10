@@ -1,0 +1,2 @@
+coverage-incomplete: event dddddddd-dddd-dddd-dddd-dddddddddddd/Codeunit/50000/event/one dispatchEdges=complete capability=partial
+warning: d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited
