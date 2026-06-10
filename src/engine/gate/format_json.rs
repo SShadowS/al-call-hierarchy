@@ -26,7 +26,22 @@
 
 use crate::engine::gate::projection::FindingSummary;
 use crate::engine::l3::coverage::AnalysisCoverage;
+use crate::engine::l5::finding::StableEvidenceStep;
 use crate::engine::l5::registry::{DetectorStats, Diagnostic};
+
+/// Per-finding opt-in evidence augmentation (only built/consumed under
+/// `--with-evidence`). Aligned BY INDEX with `JsonFormatInputs.findings`.
+///
+/// - `evidence_path` is the stable-projected call chain (routineIds in `:`-form).
+/// - `enclosing_member` / `originating_object` are the POSITION-derived member-trigger
+///   discriminator (RE-1/RE-2): the member-wrapper whose range CONTAINS the finding's
+///   primaryLocation start, smallest containing range. `None` when no member-trigger
+///   wrapper contains the finding (object-level / procedure findings) — omitted.
+pub struct FindingEvidence {
+    pub evidence_path: Vec<StableEvidenceStep>,
+    pub enclosing_member: Option<String>,
+    pub originating_object: Option<String>,
+}
 
 // ---------------------------------------------------------------------------
 // Canonical serializer (mirrors `serializeDocument` / `sortedReplacer`)
@@ -103,10 +118,30 @@ fn location_to_value(loc: &crate::engine::gate::projection::FindingLocation) -> 
     serde_json::Value::Object(obj)
 }
 
+/// Like `location_to_value`, but additionally attaches the POSITION-derived
+/// `enclosingMember`/`originatingObject` discriminator (RE-1/RE-2) when present.
+/// Used ONLY for a finding's `primaryLocation` under `--with-evidence`; both keys
+/// are OMITTED when `None` (object-level/procedure findings) so absence is honest.
+fn primary_location_to_value(
+    loc: &crate::engine::gate::projection::FindingLocation,
+    ev: &FindingEvidence,
+) -> serde_json::Value {
+    let mut v = location_to_value(loc);
+    if let serde_json::Value::Object(ref mut obj) = v {
+        if let Some(ref member) = ev.enclosing_member {
+            obj.insert("enclosingMember".to_string(), member.clone().into());
+        }
+        if let Some(ref oo) = ev.originating_object {
+            obj.insert("originatingObject".to_string(), oo.clone().into());
+        }
+    }
+    v
+}
+
 /// Project a `FindingSummary` to a `serde_json::Value` (the `findings[]` element
 /// shape from `src/projection/finding-summary.ts` as consumed by
 /// `buildCompactReport`). Key order is irrelevant — `sort_and_drop_nulls` sorts.
-fn finding_summary_to_value(s: &FindingSummary) -> serde_json::Value {
+fn finding_summary_to_value(s: &FindingSummary, ev: Option<&FindingEvidence>) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
 
     // affectedObjects (always present, even when empty)
@@ -131,6 +166,16 @@ fn finding_summary_to_value(s: &FindingSummary) -> serde_json::Value {
     obj.insert("confidence".to_string(), serde_json::Value::Object(conf));
 
     obj.insert("detector".to_string(), s.detector.clone().into());
+
+    // evidencePath (opt-in, --with-evidence only) — the stable-projected call chain.
+    // Always emitted under the flag (even when empty []) so the key's presence is the
+    // schema signal; OMITTED entirely on the default path (ev is None).
+    if let Some(e) = ev {
+        let steps = serde_json::to_value(&e.evidence_path)
+            .expect("StableEvidenceStep[] serializes to JSON");
+        obj.insert("evidencePath".to_string(), steps);
+    }
+
     obj.insert("fingerprint".to_string(), s.fingerprint.clone().into());
 
     // fixHint (optional — omit when absent)
@@ -150,10 +195,14 @@ fn finding_summary_to_value(s: &FindingSummary) -> serde_json::Value {
         serde_json::Value::Number(s.path_count.into()),
     );
 
-    // primaryLocation (always present)
+    // primaryLocation (always present). Under --with-evidence it additionally carries the
+    // position-derived enclosingMember/originatingObject discriminator (omitted when None).
     obj.insert(
         "primaryLocation".to_string(),
-        location_to_value(&s.primary_location),
+        match ev {
+            Some(e) => primary_location_to_value(&s.primary_location, e),
+            None => location_to_value(&s.primary_location),
+        },
     );
 
     obj.insert("rootCause".to_string(), s.root_cause.clone().into());
@@ -217,6 +266,11 @@ pub struct JsonFormatInputs<'a> {
     pub deterministic: bool,
     /// Effective al-sem version (from `alsem_version()`).
     pub alsem_version: String,
+    /// Opt-in `--with-evidence` augmentation. `None` ⇒ default path: NO `evidencePath`,
+    /// NO `enclosingMember`/`originatingObject`, `schemaVersion "1.0.0"` (byte-identical
+    /// to today). `Some(slice)` ⇒ per-finding evidence aligned BY INDEX with `findings`,
+    /// emitted on each finding (+ its `primaryLocation`), and `schemaVersion "1.1.0"`.
+    pub evidence: Option<&'a [FindingEvidence]>,
 }
 
 /// Build the `DocumentEnvelope<"analyze-report", _>` as a `serde_json::Value`,
@@ -287,10 +341,14 @@ pub fn build_analyze_json(inputs: &JsonFormatInputs<'_>) -> String {
     summary.insert("totalFindings".to_string(), inputs.findings.len().into());
 
     // --- payload.findings ---
+    // Under --with-evidence (`inputs.evidence` Some), each finding is paired BY INDEX with
+    // its FindingEvidence; on the default path (None) evidence is None for every finding so
+    // no new keys are emitted (byte-identical to today).
     let findings_arr: Vec<serde_json::Value> = inputs
         .findings
         .iter()
-        .map(finding_summary_to_value)
+        .enumerate()
+        .map(|(i, f)| finding_summary_to_value(f, inputs.evidence.and_then(|e| e.get(i))))
         .collect();
 
     // --- payload ---
@@ -319,7 +377,14 @@ pub fn build_analyze_json(inputs: &JsonFormatInputs<'_>) -> String {
     envelope.insert("generatedAt".to_string(), generated_at.into());
     envelope.insert("kind".to_string(), "analyze-report".into());
     envelope.insert("payload".to_string(), serde_json::Value::Object(payload));
-    envelope.insert("schemaVersion".to_string(), "1.0.0".into());
+    // RE-8: default (no --with-evidence) keeps "1.0.0" (the differential asserts it);
+    // under the flag emit "1.1.0". The no-flag output stays byte-identical.
+    let schema_version = if inputs.evidence.is_some() {
+        "1.1.0"
+    } else {
+        "1.0.0"
+    };
+    envelope.insert("schemaVersion".to_string(), schema_version.into());
 
     // Serialize (sort all keys, drop nulls, 2-space indent, trailing newline).
     // Strip the trailing newline — the caller appends it.

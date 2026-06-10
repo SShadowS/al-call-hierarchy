@@ -352,6 +352,13 @@ struct AnalyzeCli {
     /// Use the TS CLI (`al-sem analyze ... --dump-model`) for full-model debug dumps.
     #[arg(long = "dump-model", default_value_t = false, hide = true)]
     dump_model: bool,
+
+    /// Opt-in: augment each finding in `--format json` with `evidencePath` (the call
+    /// chain) and a POSITION-derived `enclosingMember`/`originatingObject` discriminator
+    /// on its `primaryLocation`, and bump the envelope `schemaVersion` to `1.1.0`.
+    /// OFF by default — the default analyze output is byte-identical to today.
+    #[arg(long = "with-evidence", default_value_t = false)]
+    with_evidence: bool,
 }
 
 /// `ProveCli` — arguments for `alsem prove <ws> <routine> <question>`.
@@ -1304,6 +1311,7 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         disable_inline_suppression: false,
         group_by,
         deterministic: a.deterministic,
+        with_evidence: a.with_evidence,
     };
 
     match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
@@ -1409,6 +1417,7 @@ mod tests {
                 disable_inline_suppression: false,
                 group_by: None,
                 deterministic: false,
+                with_evidence: false,
             };
             let result = run_analyze_with_exit(&args, "test");
             assert!(
@@ -1434,6 +1443,7 @@ mod tests {
                 disable_inline_suppression: false,
                 group_by: None,
                 deterministic: false,
+                with_evidence: false,
             };
             let result = run_analyze_with_exit(&args, "test");
             assert!(

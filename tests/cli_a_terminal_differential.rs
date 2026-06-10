@@ -146,6 +146,7 @@ fn run_terminal(fixture: &str, detector_csv: &str, group_by: Option<&str>) -> St
         disable_inline_suppression: false,
         group_by: group_by.map(|s| s.to_string()),
         deterministic: true,
+        with_evidence: false,
     };
     match run_analyze_with_exit(&args, "engine-default") {
         Ok((out, _, _)) => format!("{out}\n"),

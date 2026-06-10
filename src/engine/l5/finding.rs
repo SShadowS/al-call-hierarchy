@@ -331,6 +331,20 @@ fn project_anchor(a: &SourceAnchor, map: &HashMap<String, String>) -> StableSour
     }
 }
 
+/// Project an internal `EvidenceStep[]` to stable form (routineIds → `:`-form via the
+/// supplied internal→stable map). Used by the gate's opt-in `--with-evidence` JSON path
+/// to surface a finding's `evidence_path` with the SAME stable id mapping the R4 finding
+/// projection applies. Not on any default/parity surface (gated behind the flag).
+pub fn project_evidence_path(
+    steps: &[EvidenceStep],
+    map: &HashMap<String, String>,
+) -> Vec<StableEvidenceStep> {
+    steps
+        .iter()
+        .map(|s| project_evidence_step(s, map))
+        .collect()
+}
+
 fn project_evidence_step(s: &EvidenceStep, map: &HashMap<String, String>) -> StableEvidenceStep {
     StableEvidenceStep {
         routine_id: map_routine_id(&s.routine_id, map),

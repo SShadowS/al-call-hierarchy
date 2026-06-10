@@ -28,7 +28,7 @@ use crate::engine::gate::baseline::{apply_baseline, load_baseline, save_baseline
 use crate::engine::gate::exit_code::{compute_finding_exit, exit};
 use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
 use crate::engine::gate::format_html::{format_html, HtmlFormatInputs};
-use crate::engine::gate::format_json::{build_analyze_json, JsonFormatInputs};
+use crate::engine::gate::format_json::{build_analyze_json, FindingEvidence, JsonFormatInputs};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
 use crate::engine::gate::format_terminal::{format_terminal, format_terminal_grouped, GroupBy};
@@ -97,6 +97,13 @@ pub struct AnalyzeArgs {
     /// `--deterministic` — pins timestamps and version for byte-stable output.
     /// Used by the `json` formatter to pin `generatedAt` to the UNIX epoch.
     pub deterministic: bool,
+    /// `--with-evidence` — opt-in augmentation of the `--format json` output: each
+    /// finding gains an `evidencePath` (the stable-projected call chain) plus a
+    /// POSITION-derived `enclosingMember`/`originatingObject` discriminator on its
+    /// `primaryLocation`, and the envelope `schemaVersion` becomes `"1.1.0"`. When
+    /// `false` (the default, and ALWAYS in the parity harness) the JSON output is
+    /// byte-identical to today (all new keys absent, `schemaVersion "1.0.0"`). (RE-8)
+    pub with_evidence: bool,
 }
 
 /// Read the workspace root `app.json` identity (`id` / `publisher` / `name` / `version`)
@@ -362,6 +369,17 @@ pub fn run_analyze_with_exit(
         }
         OutputFormat::Json => {
             let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+            // Opt-in evidence augmentation (aligned BY INDEX with `summaries`, which is
+            // built from `paired` in the same order). None on the default path ⇒ output
+            // byte-identical to today + schemaVersion "1.0.0".
+            let evidence: Option<Vec<FindingEvidence>> = if args.with_evidence {
+                Some(build_finding_evidence(
+                    &paired,
+                    &resolved.workspace.routines,
+                ))
+            } else {
+                None
+            };
             build_analyze_json(&JsonFormatInputs {
                 findings: &summaries,
                 diagnostics: &run_diagnostics,
@@ -369,6 +387,7 @@ pub fn run_analyze_with_exit(
                 coverage: &coverage,
                 deterministic: args.deterministic,
                 alsem_version: alsem_version(),
+                evidence: evidence.as_deref(),
             })
         }
         OutputFormat::Terminal => {
@@ -465,6 +484,10 @@ pub(crate) fn empty_output_result(
             let ws_path = Path::new(&args.workspace);
             let diagnostics =
                 crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
+            // Fail-closed path has zero findings; --with-evidence still bumps the
+            // schemaVersion to "1.1.0" (an empty evidence slice carries no per-finding
+            // keys), keeping the flag's schema signal consistent.
+            let empty_evidence: Vec<FindingEvidence> = Vec::new();
             build_analyze_json(&JsonFormatInputs {
                 findings: &[],
                 diagnostics: &diagnostics,
@@ -472,6 +495,11 @@ pub(crate) fn empty_output_result(
                 coverage: &empty_coverage,
                 deterministic: args.deterministic,
                 alsem_version: alsem_version(),
+                evidence: if args.with_evidence {
+                    Some(&empty_evidence)
+                } else {
+                    None
+                },
             })
         }
         OutputFormat::Terminal => {
@@ -527,6 +555,93 @@ pub(crate) fn empty_output_result(
         }
     };
     Ok((out, exit::CLEAN, None))
+}
+
+/// Build the opt-in `--with-evidence` augmentation for the kept findings, aligned BY
+/// INDEX with `paired`. For each finding it computes:
+///
+/// - `evidence_path`: the internal `Finding.evidence_path` projected to STABLE form
+///   (routineIds in `:`-form via the SAME internal→stable map the R4 finding projection
+///   uses — `build_routine_stable_map`).
+/// - `enclosing_member` / `originating_object`: the POSITION-derived discriminator
+///   (RE-1/RE-2). NOT keyed off `enclosingRoutineId` (which COLLAPSES identically for two
+///   field triggers). Instead: of the member-trigger routines whose `enclosing_member_range`
+///   shares the finding's `source_unit_id` AND CONTAINS the finding's primaryLocation start
+///   (0-based line/col), pick the SMALLEST containing range; use its member/originating
+///   object. `None` when no member-trigger wrapper contains the finding (object-level /
+///   procedure findings) — the engine never throws.
+fn build_finding_evidence(
+    paired: &[(
+        crate::engine::gate::projection::FindingSummary,
+        &crate::engine::l5::finding::Finding,
+    )],
+    routines: &[crate::engine::l3::l3_workspace::L3Routine],
+) -> Vec<FindingEvidence> {
+    use crate::engine::l2::features::PAnchor;
+
+    let stable_map = crate::engine::l4::summary::build_routine_stable_map(routines);
+
+    // Position index: member-trigger routines that carry a wrapper range.
+    let members: Vec<(&PAnchor, &Option<String>, &Option<String>)> = routines
+        .iter()
+        .filter_map(|r| {
+            r.enclosing_member_range
+                .as_ref()
+                .map(|range| (range, &r.enclosing_member, &r.originating_object))
+        })
+        .collect();
+
+    paired
+        .iter()
+        .map(|(_, finding)| {
+            let loc = &finding.primary_location;
+            // Find the smallest member-wrapper range (same source unit) containing the
+            // finding's primaryLocation start. "Smallest" = fewest spanned lines, then
+            // fewest spanned columns (a stable, deterministic total order on extent).
+            let best = members
+                .iter()
+                .filter(|(range, _, _)| {
+                    range.source_unit_id == loc.source_unit_id
+                        && range_contains(range, loc.start_line, loc.start_column)
+                })
+                .min_by(|(a, _, _), (b, _, _)| range_extent_cmp(a, b));
+            let (enclosing_member, originating_object) = match best {
+                Some((_, member, oo)) => ((*member).clone(), (*oo).clone()),
+                None => (None, None),
+            };
+            FindingEvidence {
+                evidence_path: crate::engine::l5::finding::project_evidence_path(
+                    &finding.evidence_path,
+                    &stable_map,
+                ),
+                enclosing_member,
+                originating_object,
+            }
+        })
+        .collect()
+}
+
+/// 0-based containment: is `(line, column)` within `[start, end]` of `range` (inclusive)?
+fn range_contains(range: &crate::engine::l2::features::PAnchor, line: u32, column: u32) -> bool {
+    let after_start = (line, column) >= (range.start_line, range.start_column);
+    let before_end = (line, column) <= (range.end_line, range.end_column);
+    after_start && before_end
+}
+
+/// Total order on range EXTENT (smaller = tighter container): primary by spanned lines,
+/// secondary by spanned columns on the start line. Deterministic for the smallest-range
+/// selection (two disjoint field triggers never tie because only one contains the point).
+fn range_extent_cmp(
+    a: &crate::engine::l2::features::PAnchor,
+    b: &crate::engine::l2::features::PAnchor,
+) -> std::cmp::Ordering {
+    let a_lines = a.end_line.saturating_sub(a.start_line);
+    let b_lines = b.end_line.saturating_sub(b.start_line);
+    a_lines.cmp(&b_lines).then_with(|| {
+        let a_cols = a.end_column.saturating_sub(a.start_column);
+        let b_cols = b.end_column.saturating_sub(b.start_column);
+        a_cols.cmp(&b_cols)
+    })
 }
 
 /// Aggregate the analyzer diagnostics for a resolved workspace, in al-sem

@@ -161,6 +161,7 @@ fn run_html(fixture: &str, detector_csv: &str) -> String {
         disable_inline_suppression: false,
         group_by: None,
         deterministic: true,
+        with_evidence: false,
     };
     // The pipeline returns (output, exit_code, warning); we only need the output.
     // The trailing newline is appended by the bin — add it here to match the golden.
