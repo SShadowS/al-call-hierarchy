@@ -51,6 +51,19 @@ fn corpus_available() -> bool {
     fixture_cache_dir().is_dir()
 }
 
+/// Returns `true` when the corpus is MISSING — and prints a visible skip notice
+/// so an absent corpus is never mistaken for passing coverage.
+fn skip_if_no_corpus(test_name: &str) -> bool {
+    if corpus_available() {
+        return false;
+    }
+    eprintln!(
+        "skipping cli_c_cache::{test_name}: corpus unavailable (fixture-cache not found at {})",
+        fixture_cache_dir().display()
+    );
+    true
+}
+
 fn load_golden(name: &str) -> String {
     let path = cache_goldens_dir().join(name);
     std::fs::read_to_string(&path)
@@ -84,7 +97,7 @@ const FIXTURE_CLASSIFICATIONS: &[(&str, PruneStatus)] = &[
 
 #[test]
 fn classification_oracle_content_hash_mismatch() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_content_hash_mismatch") {
         return;
     }
     let file = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef.json";
@@ -98,7 +111,7 @@ fn classification_oracle_content_hash_mismatch() {
 
 #[test]
 fn classification_oracle_version_mismatch() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_version_mismatch") {
         return;
     }
     let file = "babebabebabebabebabebabebabebabebabebabebabebabebabebabebabebabe.json";
@@ -112,7 +125,7 @@ fn classification_oracle_version_mismatch() {
 
 #[test]
 fn classification_oracle_kept() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_kept") {
         return;
     }
     let file = "cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe.json";
@@ -126,7 +139,7 @@ fn classification_oracle_kept() {
 
 #[test]
 fn classification_oracle_unreadable() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_unreadable") {
         return;
     }
     let file = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.json";
@@ -140,7 +153,7 @@ fn classification_oracle_unreadable() {
 
 #[test]
 fn classification_oracle_bad_name() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_bad_name") {
         return;
     }
     let file = "nothex.json";
@@ -155,7 +168,7 @@ fn classification_oracle_bad_name() {
 /// Aggregate oracle: verify ALL 5 statuses against classification.json.
 #[test]
 fn classification_oracle_all_vs_golden_json() {
-    if !corpus_available() {
+    if skip_if_no_corpus("classification_oracle_all_vs_golden_json") {
         return;
     }
 
@@ -199,7 +212,7 @@ fn classification_oracle_all_vs_golden_json() {
 
 #[test]
 fn dry_run_differential_vs_golden() {
-    if !corpus_available() {
+    if skip_if_no_corpus("dry_run_differential_vs_golden") {
         return;
     }
 
@@ -230,7 +243,7 @@ fn dry_run_differential_vs_golden() {
 
 #[test]
 fn integration_real_prune_deletes_removed_files() {
-    if !corpus_available() {
+    if skip_if_no_corpus("integration_real_prune_deletes_removed_files") {
         return;
     }
 
@@ -291,6 +304,263 @@ fn integration_real_prune_deletes_removed_files() {
 
     // Clean up.
     let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Corpus-invisible native oracles — classification edges the 5 fixtures don't
+// cover. These build their own temp-dir fixtures (no al-sem checkout needed).
+// ---------------------------------------------------------------------------
+
+/// A canonical, valid (kept-equivalent) artifact body for the CURRENT engine
+/// version tuple, with `<KEY>` / `<HASH>` placeholders to be filled in by tests.
+/// The byte layout matches al-sem's `writeCachedArtifact` canonical output
+/// (recursively key-sorted, compact). The content hash is computed over the
+/// body with `artifactContentHash` cleared, so a test can produce a genuinely
+/// `kept` file by computing the hash itself.
+fn canonical_artifact_with_versions(key: &str, versions_json: &str) -> String {
+    // `abi` sorts before `header`; within `header`, keys are alphabetical, and
+    // `artifactContentHash` sits between `appIdentity` and `artifactKey`.
+    // We leave artifactContentHash empty here; the test fills it in.
+    format!(
+        "{{\"abi\":{{\"eventPublishers\":[],\"objects\":[],\"routines\":[],\"tables\":[]}},\
+\"diagnostics\":[],\
+\"header\":{{\"appIdentity\":{{\"appGuid\":\"00000000-0000-0000-0000-000000000000\",\
+\"name\":\"Synthetic\",\"publisher\":\"AlSemTest\",\"sourceKind\":\"symbol-only\",\
+\"version\":\"1.0.0.0\"}},\
+\"artifactContentHash\":\"<HASH>\",\
+\"artifactKey\":\"{key}\",\
+\"directDependencies\":[],\
+\"packageHash\":\"{key}\",\
+\"packageSemanticHash\":\"{key}\",\
+\"schemaVersion\":2,\
+\"summaryMode\":\"structural-only-no-dep-summaries\",\
+\"versions\":{versions_json}}}}}"
+    )
+}
+
+/// The current-build version JSON object (the tuple the `kept` classification
+/// requires). Reproduced from al-sem's cache-versions.ts + dev fingerprint.
+fn current_versions_json(extra_key: Option<(&str, &str)>) -> String {
+    // Sorted keys (canonical): analyzer, depCache, devFingerprint, grammar,
+    // resourcePolicy, summarySchema, symbolReader — plus any extra key in sort
+    // position. We build a serde_json object then canonicalize manually.
+    let mut map = serde_json::Map::new();
+    map.insert("analyzer".into(), "0.0.12".into());
+    map.insert("depCache".into(), "8".into());
+    map.insert("devFingerprint".into(), "dev".into());
+    map.insert("grammar".into(), "tree-sitter-al-v2.5.2-native".into());
+    map.insert("resourcePolicy".into(), "1".into());
+    map.insert("summarySchema".into(), "33".into());
+    map.insert("symbolReader".into(), "17".into());
+    if let Some((k, v)) = extra_key {
+        map.insert(k.into(), v.into());
+    }
+    // serde_json::to_string sorts keys when the map preserves insertion order?
+    // No — Map iterates insertion order. We want a STABLE, key-sorted render to
+    // match canonical bytes. Collect, sort, render.
+    let mut pairs: Vec<(String, String)> = map
+        .into_iter()
+        .map(|(k, v)| (k, v.as_str().unwrap_or_default().to_string()))
+        .collect();
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    let body = pairs
+        .iter()
+        .map(|(k, v)| format!("\"{k}\":\"{v}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{body}}}")
+}
+
+/// Make a unique temp dir for a synthetic-oracle test.
+fn synth_temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "al-sem-cache-synth-{tag}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create synth temp dir");
+    dir
+}
+
+/// (item 3) A non-`.json`, non-hex64 file (`junk.txt`) classifies as
+/// `removed-bad-name` — the listing must NOT pre-filter by `.json` extension.
+#[test]
+fn oracle_junk_txt_is_bad_name() {
+    let dir = synth_temp_dir("junk");
+    let path = dir.join("junk.txt");
+    std::fs::write(&path, "not even json").unwrap();
+    assert_eq!(
+        classify_artifact_for_prune(&path),
+        PruneStatus::RemovedBadName,
+        "junk.txt must classify as removed-bad-name"
+    );
+
+    // And prune_cache must SWEEP it (it must appear in entries, not be ignored).
+    let result = prune_cache(Some(&dir.to_string_lossy()), true);
+    let entry = result
+        .entries
+        .iter()
+        .find(|e| e.file == "junk.txt")
+        .expect("junk.txt must appear in prune entries (not pre-filtered away)");
+    assert_eq!(entry.status, PruneStatus::RemovedBadName);
+    assert_eq!(
+        result.files_removed, 1,
+        "junk.txt should be counted as removed"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (item 4) A valid artifact whose `versions` carries an EXTRA/unknown key
+/// still classifies as `kept` — the version check iterates EXPECTED keys only
+/// (a struct/map `==` would wrongly reject it).
+#[test]
+fn oracle_extra_version_key_still_kept() {
+    let dir = synth_temp_dir("extrakey");
+    let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    // Build the body with an extra version key, then compute the real content hash.
+    let versions = current_versions_json(Some(("futureField", "999")));
+    let body_empty_hash = canonical_artifact_with_versions(key, &versions).replace("<HASH>", "");
+    // sha256 of the empty-hash body (mirror writeCachedArtifact).
+    let content_hash = sha256_hex_test(&body_empty_hash);
+    let final_body =
+        canonical_artifact_with_versions(key, &versions).replace("<HASH>", &content_hash);
+
+    let path = dir.join(format!("{key}.json"));
+    std::fs::write(&path, &final_body).unwrap();
+
+    assert_eq!(
+        classify_artifact_for_prune(&path),
+        PruneStatus::Kept,
+        "artifact with an extra version key must still be kept (expected-keys-only compare)"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (item 5) A `<hex>.tmp.N.json` file is SKIPPED by prune_cache (substring
+/// `.tmp.` match) — it never appears in entries and is not classified/listed.
+#[test]
+fn oracle_tmp_file_is_skipped() {
+    let dir = synth_temp_dir("tmp");
+    let key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let tmp_name = format!("{key}.tmp.5.json");
+    std::fs::write(dir.join(&tmp_name), "anything at all").unwrap();
+
+    let result = prune_cache(Some(&dir.to_string_lossy()), true);
+    assert!(
+        result.entries.iter().all(|e| e.file != tmp_name),
+        "{tmp_name} must be skipped (not classified/listed)"
+    );
+    assert_eq!(result.files_removed, 0, "no files should be removed");
+    assert!(result.entries.is_empty(), "tmp-only dir → no entries");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (item 6) An artifact with an invalid `summaryMode` (not one of the 4 verbose
+/// literals) fails `isDependencyArtifact` → `removed-unreadable`, NOT a panic.
+#[test]
+fn oracle_wrong_summary_mode_is_unreadable() {
+    let dir = synth_temp_dir("summode");
+    let key = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+    // Build a body with the BASE "structural-only" (a wrong/short value), keeping
+    // all else valid. summaryMode is not one of the 4 verbose literals → guard fails.
+    let versions = current_versions_json(None);
+    let body = canonical_artifact_with_versions(key, &versions)
+        .replace(
+            "<HASH>",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .replace(
+            "\"summaryMode\":\"structural-only-no-dep-summaries\"",
+            "\"summaryMode\":\"structural-only\"",
+        );
+    let path = dir.join(format!("{key}.json"));
+    std::fs::write(&path, &body).unwrap();
+
+    assert_eq!(
+        classify_artifact_for_prune(&path),
+        PruneStatus::RemovedUnreadable,
+        "wrong summaryMode must degrade to removed-unreadable (shape guard), not panic"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (item 6 precedence) When BOTH the shape is invalid AND the versions differ,
+/// the shape guard runs FIRST → `removed-unreadable` (NOT version-mismatch).
+#[test]
+fn oracle_shape_invalid_beats_version_mismatch() {
+    let dir = synth_temp_dir("precedence");
+    let key = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+    // Stale version (symbolReader "1") AND an invalid summaryMode. Shape guard
+    // (summaryMode) fires before the version check → removed-unreadable.
+    let mut stale = current_versions_json(None);
+    stale = stale.replace("\"symbolReader\":\"17\"", "\"symbolReader\":\"1\"");
+    let body = canonical_artifact_with_versions(key, &stale)
+        .replace(
+            "<HASH>",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .replace(
+            "\"summaryMode\":\"structural-only-no-dep-summaries\"",
+            "\"summaryMode\":\"bogus-mode\"",
+        );
+    let path = dir.join(format!("{key}.json"));
+    std::fs::write(&path, &body).unwrap();
+
+    assert_eq!(
+        classify_artifact_for_prune(&path),
+        PruneStatus::RemovedUnreadable,
+        "shape-invalid artifact is removed-unreadable even when versions also differ"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (item 6 negative control) A stale-version-ONLY artifact (valid shape) →
+/// `removed-version-mismatch`, proving the precedence test above isn't trivially
+/// passing for the wrong reason.
+#[test]
+fn oracle_stale_version_only_is_version_mismatch() {
+    let dir = synth_temp_dir("staleonly");
+    let key = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+    let mut stale = current_versions_json(None);
+    stale = stale.replace("\"symbolReader\":\"17\"", "\"symbolReader\":\"1\"");
+    // Valid shape (correct summaryMode), but the content hash need not match —
+    // the version check (step 5) runs BEFORE the content-hash recompute (step 6),
+    // so a stale version short-circuits to version-mismatch regardless of hash.
+    let body = canonical_artifact_with_versions(key, &stale).replace(
+        "<HASH>",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    );
+    let path = dir.join(format!("{key}.json"));
+    std::fs::write(&path, &body).unwrap();
+
+    assert_eq!(
+        classify_artifact_for_prune(&path),
+        PruneStatus::RemovedVersionMismatch,
+        "valid-shape stale-version artifact must be removed-version-mismatch"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Local SHA-256 helper for the synthetic oracles (mirrors the engine's
+/// `sha256_hex` — UTF-8 bytes, lowercase hex). Kept test-local so the test does
+/// not depend on the engine exposing `ids::sha256_hex` publicly.
+fn sha256_hex_test(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    let bytes = hasher.finalize();
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

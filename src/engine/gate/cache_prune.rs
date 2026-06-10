@@ -27,24 +27,31 @@ use crate::engine::ids::sha256_hex;
 // ---------------------------------------------------------------------------
 // CACHE_VERSIONS constants — MUST match al-sem's `src/deps/cache-versions.ts`
 // and `src/providers/discover.ts` EXACTLY. The `kept` fixture pins this tuple.
+//
+// SOURCE OF TRUTH: al-sem `src/deps/cache-versions.ts` (CACHE_VERSIONS) +
+// `src/providers/discover.ts` (ANALYZER_VERSION / GRAMMAR_VERSION). The 5 schema
+// stamps below (grammar / symbolReader / summarySchema / depCache / resourcePolicy)
+// have no Rust engine "home" yet — bump them here in lockstep with al-sem.
+//
+// The `analyzer` stamp is NOT a const here: it is resolved at runtime from
+// `crate::engine::gate::version::alsem_version()` (DEFAULT_ALSEM_VERSION +
+// the `AL_SEM_VERSION_OVERRIDE` hook), so it never drifts from version.rs and
+// honours the override the differential harness uses.
 // ---------------------------------------------------------------------------
 
-/// al-sem analyzer version (mirrors `ANALYZER_VERSION` in `discover.ts`).
-pub const CACHE_VERSION_ANALYZER: &str = "0.0.12";
-
-/// Grammar version tag (mirrors `GRAMMAR_VERSION` in `discover.ts`).
+/// Grammar version tag (mirrors `GRAMMAR_VERSION` in al-sem `discover.ts`).
 pub const CACHE_VERSION_GRAMMAR: &str = "tree-sitter-al-v2.5.2-native";
 
-/// Symbol-reader schema version.
+/// Symbol-reader schema version (al-sem `cache-versions.ts` `symbolReader`).
 pub const CACHE_VERSION_SYMBOL_READER: &str = "17";
 
-/// Summary schema version.
+/// Summary schema version (al-sem `cache-versions.ts` `summarySchema`).
 pub const CACHE_VERSION_SUMMARY_SCHEMA: &str = "33";
 
-/// Dep-cache serialization format version.
+/// Dep-cache serialization format version (al-sem `cache-versions.ts` `depCache`).
 pub const CACHE_VERSION_DEP_CACHE: &str = "8";
 
-/// Resource policy version.
+/// Resource policy version (al-sem `cache-versions.ts` `resourcePolicy`).
 pub const CACHE_VERSION_RESOURCE_POLICY: &str = "1";
 
 /// The dev fingerprint used when not in a release build.
@@ -166,26 +173,29 @@ pub fn classify_artifact_for_prune(path: &Path) -> PruneStatus {
     }
 
     // ── Step 5: version stamp must match the current build ────────────────
+    // We iterate the EXPECTED keys only (mirrors al-sem's
+    // `for (const [k,val] of Object.entries(expected))`): the artifact must
+    // carry the matching value for each expected key, but is ALLOWED to have
+    // extra/unknown version keys (a struct/map `==` would wrongly reject those).
+    // `analyzer` resolves from version.rs (override-aware), never a const.
     let v = &parsed["header"]["versions"];
     let fp = dev_fingerprint();
-    let expected = [
-        ("analyzer", CACHE_VERSION_ANALYZER),
+    let analyzer = crate::engine::gate::version::alsem_version();
+    let expected: [(&str, &str); 7] = [
+        ("analyzer", analyzer.as_str()),
         ("grammar", CACHE_VERSION_GRAMMAR),
         ("symbolReader", CACHE_VERSION_SYMBOL_READER),
         ("summarySchema", CACHE_VERSION_SUMMARY_SCHEMA),
         ("depCache", CACHE_VERSION_DEP_CACHE),
         ("resourcePolicy", CACHE_VERSION_RESOURCE_POLICY),
+        // devFingerprint is a version field too (release-build aware).
+        ("devFingerprint", fp.as_str()),
     ];
     for (k, expected_val) in &expected {
         match v[k].as_str() {
             Some(actual) if actual == *expected_val => {}
             _ => return PruneStatus::RemovedVersionMismatch,
         }
-    }
-    // devFingerprint is also a version field
-    match v["devFingerprint"].as_str() {
-        Some(actual) if actual == fp => {}
-        _ => return PruneStatus::RemovedVersionMismatch,
     }
 
     // ── Step 6: content hash recompute ────────────────────────────────────
@@ -275,14 +285,17 @@ pub fn prune_cache(cache_dir_override: Option<&str>, dry_run: bool) -> PruneCach
             continue;
         }
 
-        // Accumulate freed bytes/count (dry-run still accumulates).
+        // al-sem (dependency-cache.ts:251-259) attempts the unlink FIRST and on
+        // failure `continue`s WITHOUT counting the file — leaving it on disk and
+        // out of the freed totals (honest accounting). Dry-run never unlinks and
+        // always accumulates. So only the real-delete path gates the increment on
+        // a successful unlink.
+        if !dry_run && std::fs::remove_file(&full_path).is_err() {
+            continue;
+        }
+
         bytes_freed += bytes;
         files_removed += 1;
-
-        if !dry_run {
-            // Best-effort delete — leave on failure (same as al-sem).
-            let _ = std::fs::remove_file(&full_path);
-        }
     }
 
     PruneCacheResult {
@@ -386,7 +399,8 @@ fn extract_hex_key(file_name: &str) -> Option<&str> {
 fn kb(bytes: u64) -> String {
     // bytes / 1024, rounded to 1 decimal place (round-half-away-from-zero).
     // scaled = floor((bytes * 10 + 512) / 1024)  →  tenths of KB, rounded.
-    let scaled = (bytes * 10 + 512) / 1024;
+    // Compute in u128 so `bytes * 10` cannot overflow (debug-panic) at absurd sizes.
+    let scaled = (bytes as u128 * 10 + 512) / 1024;
     let whole = scaled / 10;
     let frac = scaled % 10;
     format!("{}.{} KB", whole, frac)
@@ -406,7 +420,11 @@ fn is_dependency_artifact(v: &serde_json::Value) -> bool {
         None => return false,
     };
 
-    // schemaVersion must be 2 (DEPENDENCY_ARTIFACT_SCHEMA_VERSION)
+    // schemaVersion must be 2 (DEPENDENCY_ARTIFACT_SCHEMA_VERSION).
+    // TS checks `h.schemaVersion !== 2` (JS numeric ===). `as_u64() == Some(2)`
+    // would reject a `2.0` JSON float where TS keeps it — but unreachable in
+    // practice: every writer emits the integer literal 2 (canonicalStringify
+    // renders the number 2 as "2", never "2.0").
     if header.get("schemaVersion").and_then(|s| s.as_u64()) != Some(2) {
         return false;
     }
@@ -504,6 +522,15 @@ mod tests {
         assert_eq!(kb(1024), "1.0 KB");
         // 512 bytes = 0.5 KB
         assert_eq!(kb(512), "0.5 KB");
+    }
+
+    /// kb() must not overflow (debug-panic) at absurd byte counts — the u128
+    /// widening (item 7) guards `bytes * 10`. u64::MAX bytes is ~16 exabytes.
+    #[test]
+    fn kb_does_not_overflow_at_u64_max() {
+        // Just verify it computes a value without panicking.
+        let s = kb(u64::MAX);
+        assert!(s.ends_with(" KB"), "kb(u64::MAX) = {s}");
     }
 
     #[test]
