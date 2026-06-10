@@ -380,7 +380,6 @@ fn run_prove_cmd(p: ProveCli) -> ExitCode {
         &p.question,
         DEFAULT_ALSEM_VERSION,
         p.deterministic,
-        None, // max_paths
     ) {
         Err(msg) => {
             eprintln!("{msg}");

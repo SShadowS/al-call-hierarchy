@@ -24,60 +24,17 @@
 use std::collections::HashMap;
 
 use crate::engine::gate::format_json::serialize_document_value;
-use crate::engine::gate::run::compute_analyzer_diagnostics;
 use crate::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
 use crate::engine::l5::conditionality::UNCONDITIONAL;
 use crate::engine::l5::detector_context::build_detector_context;
-use crate::engine::l5::detectors::registered_detectors;
 use crate::engine::l5::digest::compute_digest_effects_cli;
 use crate::engine::l5::digest_cli::{
-    resolve_changed_roots, run_digest_query_full_from_entries, ChangedInput, DigestEffectFull,
-    DigestEntryFull, FullAnchor,
+    build_envelope_diagnostics_json, resolve_changed_roots, run_digest_query_full_from_entries,
+    ChangedInput, DigestEffectFull, DigestEntryFull, FullAnchor,
 };
 use crate::engine::l5::snapshot::compose_snapshot;
 use crate::engine::l5::transaction_spans::SeedKind;
 use crate::engine::l5::unresolved_cone::unresolved_cone;
-
-// ---------------------------------------------------------------------------
-// DEFAULT_DETECTOR_NAMES — same 34-detector set as the digest pipeline.
-// ---------------------------------------------------------------------------
-
-const DEFAULT_DETECTOR_NAMES: &[&str] = &[
-    "d1-db-op-in-loop",
-    "d2-event-fanout-in-loop",
-    "d3-missing-setloadfields",
-    "d4-repeated-lookup-in-loop",
-    "d5-set-based-opportunity",
-    "d7-recursive-event-expansion",
-    "d8-commit-in-transaction",
-    "d9-transaction-span-summary",
-    "d10-self-modifying-loop",
-    "d11-modify-without-get",
-    "d12-dead-integration-event",
-    "d13-cross-app-internal-call",
-    "d14-dead-routine",
-    "d16-blob-in-loop",
-    "d17-non-setbased-on-large-table",
-    "d18-event-subscriber-heavy",
-    "d19-flowfield-in-loop",
-    "d20-unbounded-result-set",
-    "d21-temp-table-misuse",
-    "d22-deprecated-api-use",
-    "d29-onaftergetrecord-heavy",
-    "d32-internal-event-publisher",
-    "d33-event-without-subscribers",
-    "d34-page-source-heavy",
-    "d35-implicit-transaction-scope",
-    "d36-redundant-calcfields",
-    "d37-record-passed-by-value",
-    "d38-page-trigger-heavy",
-    "d39-codeunit-instantiation-in-loop",
-    "d41-unindexed-filter",
-    "d42-locktable-late",
-    "d43-event-ishandled-skip",
-    "d44-event-recursive-publish",
-    "d45-text-encoding-mismatch",
-];
 
 const TX_SPAN_KNOWN_WRITES: &str = "span-has-known-writes";
 const TX_SPAN_NO_WRITES: &str = "span-has-no-known-writes";
@@ -161,8 +118,10 @@ impl ProveAnswer {
     }
 }
 
-/// Anchor for a blocker.
-/// source_kind is always "source" when present.
+/// Anchor for a blocker. `source_kind` is "source" for callsite-derived blockers, but
+/// can be "source" OR "symbol" for the non-unconditional-effect-exists blocker (it
+/// carries the effect's evidence anchor verbatim — kept whenever sourceKind !=
+/// "unavailable", mirroring TS prove-engine.ts:386).
 #[derive(Debug, Clone)]
 pub struct BlockerAnchor {
     pub source_kind: String,
@@ -195,6 +154,42 @@ pub struct ProveResult {
     pub evidence: Option<Vec<usize>>,
     pub blocked_by: Option<Vec<ProveBlocker>>,
     pub obligations: ProveObligations,
+}
+
+// ---------------------------------------------------------------------------
+// Internal: gaps-in-cone intersection (mirrors digest-query.ts:729-751)
+// ---------------------------------------------------------------------------
+
+/// Count analysis gaps whose subject intersects the visited cone.
+///
+/// A gap subject is EITHER:
+///   - a StableRoutineId (parse-incomplete / body-unavailable gaps) → DIRECT match
+///     against the visited set, OR
+///   - a bare app GUID (symbol-only-boundary gaps, snapshot.rs:1860-1867) → matches
+///     when ANY visited routine's stable id starts with `{appGuid}:` (stable ids use
+///     ":" separators, NOT "/" — see digest-query.ts:722-728's documented soundness
+///     fix). WITHOUT this app-level branch every symbol-only-boundary gap is invisible,
+///     so a cone entering an opaque `.app` dep reports analysisGaps=0 → a FALSE absence
+///     proof. This is the exact class of bug digest-query.ts documents.
+fn count_gaps_in_cone(
+    gap_subjects: &[&str],
+    visited_ids: &std::collections::HashSet<String>,
+) -> usize {
+    let mut count = 0usize;
+    for subject in gap_subjects {
+        // Direct routine-subject match.
+        if visited_ids.contains(*subject) {
+            count += 1;
+            continue;
+        }
+        // App-level (symbol-only-boundary) match: subject is a bare app GUID and some
+        // visited routine has a stable id of the form `{appGuid}:Type:{n}#hash`.
+        let prefix = format!("{}:", subject);
+        if visited_ids.iter().any(|v| v.starts_with(&prefix)) {
+            count += 1;
+        }
+    }
+    count
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +324,10 @@ fn sort_blockers(mut blockers: Vec<ProveBlocker>) -> Vec<ProveBlocker> {
     blockers.sort_by(|a, b| {
         let ka = blocker_sort_key(a);
         let kb = blocker_sort_key(b);
+        // Ordinal `.cmp()` is correct here: every key component is ASCII (kind literals,
+        // normalized ws:/app: paths, zero-padded digits, ASCII details), so Rust's byte
+        // ordering == TS's UTF-16 code-unit ordering. This is the engine-wide tracked
+        // UTF-16-comparator item — consistent with the rest of the engine.
         ka.cmp(&kb)
     });
     blockers
@@ -504,12 +503,13 @@ fn evaluate_must_question(
     // non-unconditional-effect-exists blockers for each non-unconditional COMMIT
     for idx in &non_unconditional_indices {
         let eff = &entry.effects[*idx];
-        let cond_str: &str = eff.conditionality.into();
         // Anchor from effect evidence — full evidence anchor (includes excerpt),
-        // only when sourceKind == "source" (mirrors TS prove-engine.ts line 385).
-        let anchor = if eff.evidence.source_kind == "source" {
+        // kept when sourceKind !== "unavailable" (i.e. BOTH "source" AND "symbol"),
+        // mirroring TS prove-engine.ts:386. A COMMIT from a `.app` symbol routine
+        // (sourceKind "symbol") still carries its anchor + excerpt.
+        let anchor = if eff.evidence.source_kind != "unavailable" {
             Some(BlockerAnchor {
-                source_kind: "source".to_string(),
+                source_kind: eff.evidence.source_kind.to_string(),
                 file: eff.evidence.file.clone(),
                 line: eff.evidence.line,
                 column: eff.evidence.column,
@@ -520,7 +520,7 @@ fn evaluate_must_question(
         };
         blockers.push(ProveBlocker {
             kind: "non-unconditional-effect-exists",
-            detail: format!("COMMIT with conditionality \"{}\"", cond_str),
+            detail: format!("COMMIT with conditionality \"{}\"", eff.conditionality),
             anchor,
         });
     }
@@ -759,15 +759,14 @@ pub fn format_prove_human(
                     .line
                     .map(|l| format!(":{}", l))
                     .unwrap_or_default();
-                let cond_str: &str = eff.conditionality.into();
                 // Mirror TS: `[${eff.type}] ${eff.provenance} — ${evFile}${evLine}`
-                // The em-dash is U+2014.
+                // The em-dash is U+2014. `conditionality` is already a &'static str.
                 lines.push(format!(
                     "    [{}] {} \u{2014} {}{}",
                     eff.effect_type, eff.provenance, ev_file, ev_line
                 ));
-                if cond_str != "unknown" {
-                    lines.push(format!("      conditionality: {}", cond_str));
+                if eff.conditionality != "unknown" {
+                    lines.push(format!("      conditionality: {}", eff.conditionality));
                 }
             }
         }
@@ -778,15 +777,17 @@ pub fn format_prove_human(
         if !blockers.is_empty() {
             lines.push(format!("  blockedBy: {} blocker(s)", blockers.len()));
             for b in blockers {
-                let anchor_str = match &b.anchor {
-                    Some(a) => {
-                        let f = a.file.as_deref().unwrap_or("");
-                        if !f.is_empty() {
-                            let line_str = a.line.map(|l| format!(":{}", l)).unwrap_or_default();
-                            format!(" @ {}{}", f, line_str)
-                        } else {
-                            String::new()
-                        }
+                // TS (prove.ts:60-63) gates on `anchor?.file !== undefined` — present
+                // (even if "", which never occurs in practice), NOT on non-empty.
+                let anchor_str = match b.anchor.as_ref().and_then(|a| a.file.as_ref()) {
+                    Some(f) => {
+                        let line_str = b
+                            .anchor
+                            .as_ref()
+                            .and_then(|a| a.line)
+                            .map(|l| format!(":{}", l))
+                            .unwrap_or_default();
+                        format!(" @ {}{}", f, line_str)
                     }
                     None => String::new(),
                 };
@@ -861,6 +862,9 @@ pub struct ProveRunResult {
 
 /// Run the full prove pipeline for a workspace + routine selector + question text.
 ///
+/// `maxPaths` is hardcoded to 3 (prove.ts:124) inside the digest substrate — there is
+/// no caller-tunable knob, so no parameter is exposed.
+///
 /// Returns:
 ///   Ok(result) with exit_code 0 (answered) or 2 (routine not resolved → dummy-doc).
 ///   Err(message) for workspace/pipeline errors → emit to stderr, exit 1.
@@ -870,7 +874,6 @@ pub fn run_prove_pipeline(
     question_text: &str,
     alsem_ver: &str,
     deterministic: bool,
-    _max_paths_override: Option<usize>,
 ) -> Result<ProveRunResult, String> {
     use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 
@@ -885,25 +888,8 @@ pub fn run_prove_pipeline(
     let workspace_fp =
         crate::engine::l5::snapshot_full::workspace_fingerprint_of(workspace, alsem_ver);
 
-    // Build envelope diagnostics (same 34-detector set as digest pipeline)
-    let default_detectors: Vec<_> = registered_detectors()
-        .into_iter()
-        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
-        .collect();
-    let diag_vec = compute_analyzer_diagnostics(workspace, &resolved, &default_detectors);
-    let diagnostics_json = {
-        let arr: Vec<serde_json::Value> = diag_vec
-            .iter()
-            .map(|d| {
-                let mut m = serde_json::Map::new();
-                m.insert("code".into(), format!("DIAG-{}", d.stage).into());
-                m.insert("message".into(), d.message.clone().into());
-                m.insert("severity".into(), d.severity.clone().into());
-                serde_json::Value::Object(m)
-            })
-            .collect();
-        serde_json::Value::Array(arr)
-    };
+    // Build envelope diagnostics (same 34-detector set, shared with digest).
+    let diagnostics_json = build_envelope_diagnostics_json(workspace, &resolved);
 
     // Resolve the routine selector → root IDs
     let changed_input = ChangedInput {
@@ -974,13 +960,14 @@ pub fn run_prove_pipeline(
     let entry = &query_full.entries[0];
 
     // Compute gaps_in_cone count: re-run unresolved_cone to get the visited_ids,
-    // then count snap.analysis_gaps whose subject is in the cone.
+    // then count snap.analysis_gaps whose subject intersects the cone.
     let cone_result = unresolved_cone(&snap, root_id);
-    let gaps_in_cone_count = snap
+    let gap_subjects: Vec<&str> = snap
         .analysis_gaps
         .iter()
-        .filter(|g| cone_result.visited_ids.contains(g.subject.as_str()))
-        .count();
+        .map(|g| g.subject.as_str())
+        .collect();
+    let gaps_in_cone_count = count_gaps_in_cone(&gap_subjects, &cone_result.visited_ids);
 
     // Parse question (already validated at CLI layer, but re-check cleanly)
     let parsed_question = parse_question(question_text)
@@ -1229,23 +1216,36 @@ mod tests {
 
     // -- Blocker sort oracle ------------------------------------------------
 
-    /// Blockers are sorted deterministically: (kind, anchor file, anchor line, detail).
+    /// Blockers are sorted deterministically by the FULL key tier:
+    /// (kind, anchor file, anchor line, detail). This drives all four tiers:
+    ///   - kind:   "analysis-gap" < "open-world-dispatch" < "unresolved-callsite"
+    ///   - file:   same file for the two unresolved-callsite rows
+    ///   - line:   5 before 20
+    ///   - detail: "A in TestRoutine" < "Z in TestRoutine"
     #[test]
     fn blockers_are_deterministically_sorted() {
+        // Two unresolved-callsite items in reverse callee/line order, one open-world
+        // item, plus an analysis gap (count > 0). The expected sorted output exercises
+        // every tier of the key.
         let entry = minimal_entry(
             "complete",
             vec![
-                // Two non-openWorld items in reverse-alphabetical callee order
                 {
                     let mut item = unresolved_item(None);
-                    item.callee_display = "ZCallee".to_string();
+                    item.callee_display = "Z".to_string();
                     item.callsite_line = Some(20);
                     item
                 },
                 {
                     let mut item = unresolved_item(None);
-                    item.callee_display = "ACallee".to_string();
+                    item.callee_display = "A".to_string();
                     item.callsite_line = Some(5);
+                    item
+                },
+                {
+                    let mut item = unresolved_item(Some(true));
+                    item.callee_display = "OW".to_string();
+                    item.callsite_line = Some(9);
                     item
                 },
             ],
@@ -1253,15 +1253,171 @@ mod tests {
             vec![],
             false,
         );
-        let result = prove(&entry, 0, &ProveQuestion::MayCommit);
+        // gaps_in_cone_count = 2 → one analysis-gap blocker
+        let result = prove(&entry, 2, &ProveQuestion::MayCommit);
         let blockers = result.blocked_by.as_deref().unwrap_or(&[]);
-        assert_eq!(blockers.len(), 2);
-        // Both are unresolved-callsite, same file. Sort by line (5 before 20).
-        let line0 = blockers[0].anchor.as_ref().and_then(|a| a.line);
-        let line1 = blockers[1].anchor.as_ref().and_then(|a| a.line);
-        assert!(
-            line0 <= line1,
-            "blockers should be sorted by anchor line: {line0:?} > {line1:?}"
+
+        // Expected canonical order: analysis-gap < open-world-dispatch < unresolved-callsite,
+        // and within unresolved-callsite (same file) by line then detail.
+        let seq: Vec<(&str, Option<u32>, &str)> = blockers
+            .iter()
+            .map(|b| {
+                (
+                    b.kind,
+                    b.anchor.as_ref().and_then(|a| a.line),
+                    b.detail.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            seq,
+            vec![
+                ("analysis-gap", None, "2 analysis gap(s) in cone"),
+                ("open-world-dispatch", Some(9), "OW in TestRoutine"),
+                ("unresolved-callsite", Some(5), "A in TestRoutine"),
+                ("unresolved-callsite", Some(20), "Z in TestRoutine"),
+            ],
+            "blockers must be sorted by (kind, file, line, detail) tiers"
         );
+    }
+
+    // -- #1 symbol-evidence anchor survives oracle --------------------------
+
+    /// A non-unconditional COMMIT whose evidence has sourceKind "symbol" (a `.app`
+    /// dependency routine) STILL produces a blocker with the FULL anchor (incl. excerpt),
+    /// because the TS gate is `sourceKind !== "unavailable"` (BOTH source AND symbol),
+    /// not `== "source"`. Corpus-invisible — the prove corpus only has "source" commits.
+    #[test]
+    fn non_unconditional_symbol_evidence_keeps_anchor() {
+        use crate::engine::l5::conditionality::LOOP_BODY;
+        let effect = DigestEffectFull {
+            effect_type: "COMMIT".to_string(),
+            detail: vec![],
+            provenance: "transitive",
+            evidence: FullAnchor {
+                source_kind: "symbol", // ← from a .app symbol routine
+                file: Some("app:dep/src/Sym.al".to_string()),
+                line: Some(42),
+                column: Some(8),
+                excerpt: Some("Commit()".to_string()),
+            },
+            via_paths: vec![],
+            via_paths_truncated: false,
+            conditionality: LOOP_BODY, // non-unconditional
+            transaction_context: "unknown",
+            guarantees: vec![],
+            fact_id: "1234567890abcdef".to_string(),
+            scoped_guarantees: vec![],
+        };
+        let entry = minimal_entry("complete", vec![], vec![effect], vec![], false);
+        let result = prove(&entry, 0, &ProveQuestion::CommitsOnSuccessPath);
+        assert_eq!(result.answer, ProveAnswer::Unknown);
+        let blockers = result.blocked_by.as_deref().unwrap_or(&[]);
+        let nu = blockers
+            .iter()
+            .find(|b| b.kind == "non-unconditional-effect-exists")
+            .expect("expected non-unconditional-effect-exists blocker");
+        let anchor = nu
+            .anchor
+            .as_ref()
+            .expect("symbol-evidence anchor must survive (sourceKind != unavailable)");
+        assert_eq!(anchor.source_kind, "symbol");
+        assert_eq!(anchor.file.as_deref(), Some("app:dep/src/Sym.al"));
+        assert_eq!(anchor.line, Some(42));
+        assert_eq!(
+            anchor.excerpt.as_deref(),
+            Some("Commit()"),
+            "the full evidence anchor (incl. excerpt) must be kept"
+        );
+    }
+
+    /// Counter-case: an "unavailable" evidence anchor on a non-unconditional COMMIT
+    /// drops the blocker anchor (the only sourceKind that drops it).
+    #[test]
+    fn non_unconditional_unavailable_evidence_drops_anchor() {
+        use crate::engine::l5::conditionality::LOOP_BODY;
+        let effect = DigestEffectFull {
+            effect_type: "COMMIT".to_string(),
+            detail: vec![],
+            provenance: "transitive",
+            evidence: FullAnchor {
+                source_kind: "unavailable",
+                file: None,
+                line: None,
+                column: None,
+                excerpt: None,
+            },
+            via_paths: vec![],
+            via_paths_truncated: false,
+            conditionality: LOOP_BODY,
+            transaction_context: "unknown",
+            guarantees: vec![],
+            fact_id: "fedcba0987654321".to_string(),
+            scoped_guarantees: vec![],
+        };
+        let entry = minimal_entry("complete", vec![], vec![effect], vec![], false);
+        let result = prove(&entry, 0, &ProveQuestion::CommitsOnSuccessPath);
+        let blockers = result.blocked_by.as_deref().unwrap_or(&[]);
+        let nu = blockers
+            .iter()
+            .find(|b| b.kind == "non-unconditional-effect-exists")
+            .expect("expected non-unconditional-effect-exists blocker");
+        assert!(
+            nu.anchor.is_none(),
+            "unavailable evidence must drop the blocker anchor"
+        );
+    }
+
+    // -- #2 gaps-in-cone app-level prefix oracle ----------------------------
+
+    /// The SOUNDNESS fix: a symbol-only-boundary gap whose subject is a bare app GUID
+    /// is counted when ANY visited routine's stable id starts with `{appGuid}:`. A
+    /// direct-match-only filter (the pre-fix bug) would report 0 → a false absence proof.
+    #[test]
+    fn gaps_in_cone_matches_app_level_prefix() {
+        use std::collections::HashSet;
+        // Visited routine inside an opaque dep app GUID "11112222...".
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert("11112222-0000-0000-0000-00000000aaaa:Codeunit:50000#deadbeef".to_string());
+        visited.insert("33334444-0000-0000-0000-00000000bbbb:Codeunit:60000#cafef00d".to_string());
+
+        // Gap subjects: one bare app GUID (symbol-only-boundary) that matches the prefix,
+        // one bare app GUID that does NOT match any visited routine.
+        let gap_subjects = vec![
+            "11112222-0000-0000-0000-00000000aaaa", // matches via `{guid}:` prefix
+            "99998888-0000-0000-0000-00000000cccc", // no visited routine in this app
+        ];
+        let count = count_gaps_in_cone(&gap_subjects, &visited);
+        assert_eq!(
+            count, 1,
+            "exactly the app-level-matching gap is in cone (the prefix branch must fire)"
+        );
+    }
+
+    /// Direct routine-subject gaps still match (the non-app branch).
+    #[test]
+    fn gaps_in_cone_matches_direct_routine_subject() {
+        use std::collections::HashSet;
+        let mut visited: HashSet<String> = HashSet::new();
+        let rid = "aaaa1111-0000-0000-0000-00000000dddd:Codeunit:70000#beadfeed".to_string();
+        visited.insert(rid.clone());
+
+        // A parse-incomplete gap whose subject IS a visited StableRoutineId.
+        let gap_subjects = vec![rid.as_str()];
+        let count = count_gaps_in_cone(&gap_subjects, &visited);
+        assert_eq!(count, 1, "direct routine-subject gap must match");
+    }
+
+    /// Negative: a gap subject neither directly present nor an app-prefix of any
+    /// visited routine is NOT counted.
+    #[test]
+    fn gaps_in_cone_excludes_unrelated_subject() {
+        use std::collections::HashSet;
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert("aaaa1111-0000-0000-0000-00000000dddd:Codeunit:70000#beadfeed".to_string());
+
+        let gap_subjects = vec!["zzzz9999-0000-0000-0000-00000000eeee"];
+        let count = count_gaps_in_cone(&gap_subjects, &visited);
+        assert_eq!(count, 0, "unrelated gap subject must not be counted");
     }
 }

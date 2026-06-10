@@ -1,8 +1,10 @@
 //! cli-b/b2 — the PROVE CLI differential.
 //!
-//! For each (fixture, routine, question) in the manifest, runs `run_prove_pipeline`
-//! with `deterministic:true` and version `cli-b-v1`, and byte-compares the `.json` and
-//! `.human.txt` goldens from `U:\Git\al-sem\scripts\cli-b-goldens\prove\`.
+//! For each (fixture, routine, question) in the hardcoded `PROVE_CORPUS` const (which
+//! mirrors the al-sem `scripts/cli-b-goldens/prove/manifest.json` entries), runs
+//! `run_prove_pipeline` with `deterministic:true` and version `cli-b-v1`, and
+//! byte-compares the `.json` and `.human.txt` goldens from
+//! `U:\Git\al-sem\scripts\cli-b-goldens\prove\`.
 //!
 //! Additionally, verifies the dummy-doc case (ws-d8-commit-in-tx, NonExistentRoutineXYZ)
 //! exits with code 2.
@@ -231,7 +233,6 @@ fn run_one(fixture: &str, routine: &str, question: &str) -> Result<(String, Stri
         question,
         VERSION_OVERRIDE,
         true, // deterministic
-        None, // max_paths
     ) {
         Ok(result) => Ok((result.json_text, result.human_text, result.exit_code)),
         Err(msg) => Err(msg),

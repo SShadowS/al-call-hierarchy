@@ -33,9 +33,11 @@ use crate::engine::l5::unresolved_cone::{
 
 // ---------------------------------------------------------------------------
 // DEFAULT_DETECTOR_NAMES — same as cli_b_snapshot_differential (the 34-detector set).
+// Shared by the digest AND prove CLI pipelines (the next detector added must land
+// here so BOTH stay in sync — see build_envelope_diagnostics_json below).
 // ---------------------------------------------------------------------------
 
-const DEFAULT_DETECTOR_NAMES: &[&str] = &[
+pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d1-db-op-in-loop",
     "d2-event-fanout-in-loop",
     "d3-missing-setloadfields",
@@ -71,6 +73,35 @@ const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d44-event-recursive-publish",
     "d45-text-encoding-mismatch",
 ];
+
+// ---------------------------------------------------------------------------
+// Shared envelope-diagnostics projection
+// ---------------------------------------------------------------------------
+
+/// Build the envelope `diagnostics` JSON array (the analyzer's per-stage diagnostics
+/// over the DEFAULT_DETECTOR_NAMES set). Shared by the digest AND prove CLI pipelines
+/// so they cannot desync. Each entry is `{code: "DIAG-<stage>", message, severity}`.
+pub fn build_envelope_diagnostics_json(
+    workspace: &std::path::Path,
+    resolved: &L3Resolved,
+) -> serde_json::Value {
+    let default_detectors: Vec<_> = registered_detectors()
+        .into_iter()
+        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
+        .collect();
+    let diag_vec = compute_analyzer_diagnostics(workspace, resolved, &default_detectors);
+    let arr: Vec<serde_json::Value> = diag_vec
+        .iter()
+        .map(|d| {
+            let mut m = serde_json::Map::new();
+            m.insert("code".into(), format!("DIAG-{}", d.stage).into());
+            m.insert("message".into(), d.message.clone().into());
+            m.insert("severity".into(), d.severity.clone().into());
+            serde_json::Value::Object(m)
+        })
+        .collect();
+    serde_json::Value::Array(arr)
+}
 
 // ---------------------------------------------------------------------------
 // Changed-root resolution
@@ -1395,25 +1426,8 @@ pub fn run_digest_pipeline(
 
     let exit_code: u8 = if changed_roots.roots.is_empty() { 2 } else { 0 };
 
-    // Build envelope diagnostics (same 34-detector set as snapshot differential)
-    let default_detectors: Vec<_> = registered_detectors()
-        .into_iter()
-        .filter(|d| DEFAULT_DETECTOR_NAMES.contains(&d.name.as_str()))
-        .collect();
-    let diag_vec = compute_analyzer_diagnostics(workspace, &resolved, &default_detectors);
-    let diagnostics_json = {
-        let arr: Vec<serde_json::Value> = diag_vec
-            .iter()
-            .map(|d| {
-                let mut m = serde_json::Map::new();
-                m.insert("code".into(), format!("DIAG-{}", d.stage).into());
-                m.insert("message".into(), d.message.clone().into());
-                m.insert("severity".into(), d.severity.clone().into());
-                serde_json::Value::Object(m)
-            })
-            .collect();
-        serde_json::Value::Array(arr)
-    };
+    // Build envelope diagnostics (same 34-detector set, shared with prove).
+    let diagnostics_json = build_envelope_diagnostics_json(workspace, &resolved);
 
     let changed_input_contract = ChangedInputContract {
         files: changed_files,
