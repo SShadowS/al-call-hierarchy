@@ -268,6 +268,33 @@ Add an order/set invariant: assert `workspace.routines` (count + the `(id, sourc
 sequence) is identical pre/post the E1 `collect_routine_nodes` change on a multi-trigger fixture — the
 real risk is an accidental retraversal, which a green differential might not localize.
 
+### RE-10 — Empirical validation from real .alcpuprofile data (corrects RE-3/RE-5) [user-provided profiles]
+Verified against real BC profiles at `U:\Git\al-perf\exampledata\` (sampling + instrumentation). The
+profile node shape: `callFrame.{functionName, scriptId, url, lineNumber}` + `declaringApplication.{appName,
+appPublisher, appVersion, appId}`. Findings:
+- **`enclosingMember` join CONFIRMED for fields.** Field-trigger frames are exactly `"<member> - <Trigger>"`
+  with member = the UNQUOTED display name (e.g. `"Sell-to Customer No. - OnValidate"`, `"Ship-to
+  Country/Region Code - OnValidate"`, `"Line Discount % - OnValidate"`). Matches the AL field name →
+  the engine's `strip_quotes`'d `enclosingMember` byte-matches. No escaped-quote cases in the corpus
+  (the RE-4 unescape stays as correct defensive handling). Separator is `" - "`; procedures with an
+  "OnValidate" SUBSTRING (`NoOnAfterValidateCRE`, `Sales Line_OnValidate…`) have NO `" - "` → reliably
+  distinguished from field triggers.
+- **RE-5 CORRECTED — `originatingObject` IS joinable (the review's pessimism was wrong).** An
+  extension-declared field trigger frame carries `scriptId:"PageExtension_50022"` (the EXTENSION object,
+  not the base) + `declaringApplication.appId:"0c88…"` (the extension's app). So the profile DOES carry
+  the declaring-object identity. al-perf can match `originatingObject` (the declaring object's
+  StableObjectId = appGuid:objectType:objectNumber) against `(declaringApplication.appId, scriptId→
+  objectType/number)`. The two-extensions case IS resolvable. KEEP `originatingObject` as a real
+  disambiguator. (Frames also carry `lineNumber` — a secondary position signal if ever needed.)
+- **RE-3 REFINED — ACTION triggers carry the CAPTION with `&`, not the action name.** Frames like
+  `"Re&lease - OnAction"` / `"Re&open - OnAction"` use the action Caption (with the `&` accelerator),
+  whereas the engine's `enclosingMember` (from `child_by_field_name("name")`) is the action NAME
+  (`Release`). So action-trigger `enclosingMember` will NOT byte-match the profile. DOCUMENT in the
+  al-perf P3.2 spec: al-perf must strip `&` from action frames before joining, and treat action-trigger
+  attribution as best-effort (field triggers — the dominant fusion case — join cleanly). The engine
+  emits the action NAME (correct, source-faithful); the accelerator/caption mismatch is a join-side
+  normalization al-perf owns. (Page/field/dataitem members are unaffected.)
+
 ### RE testing additions
 - Two-field-`OnValidate` fixture: inventory emits distinct `enclosingMember` per row sharing a
   `stableRoutineId` (E2); `analyze --with-evidence` attaches `evidencePath` + per-FINDING distinct
