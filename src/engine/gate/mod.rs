@@ -12,6 +12,7 @@
 //! The `alsem` bin (`src/bin/alsem.rs`) is a thin clap wrapper over `run::run_analyze`.
 
 pub mod app_attribution;
+pub mod cache_prune;
 pub mod baseline;
 pub mod cbor;
 pub mod diff;

@@ -12,6 +12,7 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
+use al_call_hierarchy::engine::gate::cache_prune::{format_prune_report, prune_cache};
 use al_call_hierarchy::engine::gate::events::{
     run_events_chains, run_events_fanout, EventsChainsOptions, EventsFanoutOptions,
 };
@@ -66,6 +67,8 @@ enum Commands {
     Events(EventsCli),
     /// Policy check + explain over rootClassifications + capabilities (cli-c/c2).
     Policy(PolicyCli),
+    /// Inspect and maintain the dependency cache (cli-c/c3).
+    Cache(CacheCli),
 }
 
 /// `PolicyCli` — top-level `policy` subcommand group.
@@ -132,6 +135,31 @@ struct PolicyExplainCli {
     /// for CLI compatibility with `policy check`.
     #[arg(long = "format", default_value = "human")]
     format: String,
+}
+
+/// `CacheCli` — top-level `cache` subcommand group.
+#[derive(Parser)]
+struct CacheCli {
+    #[command(subcommand)]
+    command: CacheCommands,
+}
+
+#[derive(Subcommand)]
+enum CacheCommands {
+    /// Remove dependency cache entries this build can no longer use.
+    Prune(CachePruneCli),
+}
+
+/// `CachePruneCli` — arguments for `alsem cache prune`.
+#[derive(Parser)]
+struct CachePruneCli {
+    /// Override the dependency cache directory (default ~/.al-sem/cache/).
+    #[arg(long = "dep-cache-dir")]
+    dep_cache_dir: Option<String>,
+
+    /// Report what would be removed without deleting anything.
+    #[arg(long = "dry-run", default_value_t = false)]
+    dry_run: bool,
 }
 
 /// `EventsCli` — top-level `events` subcommand group.
@@ -474,6 +502,9 @@ fn main() -> ExitCode {
         Commands::Policy(p) => match p.command {
             PolicyCommands::Check(c) => run_policy_check_cmd(c),
             PolicyCommands::Explain(e) => run_policy_explain_cmd(e),
+        },
+        Commands::Cache(c) => match c.command {
+            CacheCommands::Prune(p) => run_cache_prune_cmd(p),
         },
     }
 }
@@ -1130,6 +1161,19 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
     }
 
     ExitCode::from(result.exit_code)
+}
+
+// ── cache prune command ─────────────────────────────────────────────────────
+
+fn run_cache_prune_cmd(c: CachePruneCli) -> ExitCode {
+    let result = prune_cache(c.dep_cache_dir.as_deref(), c.dry_run);
+    let report = format_prune_report(&result, c.dry_run);
+    use std::io::Write;
+    if std::io::stdout().write_all(report.as_bytes()).is_err() {
+        eprintln!("al-sem: cache prune: write error");
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
 }
 
 /// The exact stderr message emitted when `--dump-model` is used. The full-model JSON
