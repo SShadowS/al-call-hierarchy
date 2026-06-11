@@ -886,7 +886,11 @@ fn project_file(
             // global clobber the local in pass 1 — the WRONG result). Each promoted
             // global keeps `scope: Some("global")`, its `table_name`, and its
             // `temp_state` (the Known(true/false) the L2 walk could not derive).
-            {
+            //
+            // Perf: most objects have NO global record vars (the dominant case), so
+            // skip the whole block — including the per-routine `own_names` build —
+            // entirely when there is nothing to promote.
+            if !object_global_record_vars.is_empty() {
                 let own_names: std::collections::HashSet<String> = record_variables
                     .iter()
                     .map(|rv| rv.name.to_lowercase())
@@ -1612,8 +1616,9 @@ impl RoutineView<'_> {
 
     /// The resolved `temp_state` Known value of the FIRST record OP on the named
     /// record variable, or None if absent / not `known`. Test-facing accessor for
-    /// the Task 3 member-var op temp_state backfill.
-    pub fn record_op_temp_known(&self, var_name: &str) -> Option<bool> {
+    /// the Task 3 member-var op temp_state backfill. Returns the FIRST matching op's
+    /// state (walk order) — sufficient for the single-op-per-var test fixtures.
+    pub fn first_record_op_temp_known(&self, var_name: &str) -> Option<bool> {
         let want = var_name.to_lowercase();
         self.routine
             .record_operations

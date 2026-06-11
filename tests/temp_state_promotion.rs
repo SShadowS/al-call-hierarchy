@@ -71,7 +71,7 @@ codeunit 50902 "CdoProbe"
     // The member-var OP must resolve its temp_state from the promoted global —
     // the CDO false-critical fix (was Unknown before promotion).
     assert_eq!(
-        routine.record_op_temp_known("Buf"),
+        routine.first_record_op_temp_known("Buf"),
         Some(true),
         "`Buf.DeleteAll()` must resolve temp_state Known(true) from the promoted \
          object-global temporary record var (the CDO false-critical root-cause fix)",
@@ -122,7 +122,7 @@ codeunit 50902 "CdoProbe"
         .routine_by_name("ClearGlobal")
         .expect("ClearGlobal routine must be resolved");
     assert_eq!(
-        global_routine.record_op_temp_known("Buf"),
+        global_routine.first_record_op_temp_known("Buf"),
         Some(true),
         "ClearGlobal has no own `Buf`, so it resolves the promoted temp global Known(true)",
     );
@@ -143,7 +143,7 @@ codeunit 50902 "CdoProbe"
          the shadowed temp global must NOT be promoted into this routine",
     );
     assert_eq!(
-        local_routine.record_op_temp_known("Buf"),
+        local_routine.first_record_op_temp_known("Buf"),
         Some(false),
         "`Buf.DeleteAll()` in ClearLocal must resolve Known(false) — the LOCAL physical \
          `Buf: Record Baz` shadows the object-global temporary `Buf`",
