@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Shared per-PATH temp-state resolver `resolve_temp_along_path` (Task 9 / ts9,
+  Component 3, RV-6) in `src/engine/l5/path_temp_resolve.rs`. A path-walker terminal
+  db-op may carry `temp_state = ParameterDependent(i)` (depends on param `i` of the
+  routine the op lives in); that symbolic index is only resolvable along a CONCRETE
+  caller chain, so the SAME op reached from two different callers can resolve
+  differently (per-finding truth: caller passing a temp local → `Known(true)`;
+  caller passing a physical var → `Known(false)`). The helper starts from the
+  terminal op's `TempStateKind`, then steps ONE frame toward the path ROOT per
+  `ParameterDependent` level — using each hop's `callsite_id` to look up the parent
+  routine's `argument_bindings` and applying the SAME substitution table as the L4
+  per-callsite fold (`Some(Known(v))` → `Known(v)`; `Some(PD(j))` → `PD(j)` then chase
+  `j` in the next frame up; `Some(Unknown)` / `None` / missing binding / missing
+  callsite → `Unknown`). Still-PD at the path root (the op's tempness depends on an
+  entry param with no caller in this path) → `Unknown`. The callee-param index RV-6
+  asks the walker to expose per hop is DERIVED at resolve time from the L3 routine map
+  (the same `ctx.routine_by_id` d1 builds) rather than added as a new serialized field
+  — so NO walker/`EvidenceStep` struct changed and no R3a/trace/R4 golden moves.
+  `WalkResult.path` orientation confirmed ROOT→TERMINAL. Sound by construction: only
+  resolves to `Known(true)` when a concrete binding source on the path is itself
+  `Known(true)`; all uncertainty → `Unknown` (fires). The helper is SHARED and not yet
+  wired into any detector (d1 wiring is Task 10), so detector behaviour is unchanged.
 - Param-source argument-binding resolution at the L4 PD substitution (Task 8 /
   ts8, RV-7 binding gap). When a caller FORWARDS its OWN record parameter as the
   argument (e.g. `procedure A(var Rec: Record X)` calls `Helper(Rec)`), the

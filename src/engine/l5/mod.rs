@@ -47,6 +47,7 @@ pub mod detectors;
 pub mod event_flow;
 pub mod finding;
 pub mod fingerprint;
+pub mod path_temp_resolve;
 pub mod path_walker;
 pub mod registry;
 
