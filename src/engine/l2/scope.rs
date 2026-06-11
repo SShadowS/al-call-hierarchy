@@ -239,6 +239,82 @@ fn normalize_declared_type(var_decl: Node, source: &str) -> String {
     canonicalize_type_text(raw)
 }
 
+/// Capture object-global record variables with their `temporary_keyword` flag.
+///
+/// Returns one [`crate::engine::l2::features::PRecordVariable`] for every
+/// `variable_declaration` inside an object-level `var_section` whose
+/// `type_specification` contains a `record_type` child.  Non-record declarations
+/// (Integer, Text, …) are silently skipped.
+///
+/// The `temporary_keyword` child presence on the `record_type` node is the ONLY
+/// allowed temp signal — string-sniffing "temporary" from raw type text is
+/// intentionally avoided because table names such as `Record "My temporary stuff"`
+/// would produce false positives.
+///
+/// **RV-8 conservative gaps** — the following sections are NOT walked and fall
+/// through to `Unknown` (fires a miss) rather than producing incorrect results:
+///
+/// - `preproc_conditional_var_block` — object-level var sections inside `#if`
+///   preprocessing directives.  Their content is conditional on the build
+///   environment and cannot be reliably evaluated at analysis time.
+/// - Dataitem-scoped var sections in Report and Query objects.  These sit at a
+///   deeper nesting level than a top-level `var_section` child and are therefore
+///   not reached by this function's single-level child scan.
+///
+/// Task 3 will re-key global record variables per-routine when promoting them
+/// into the routine's `record_variables` vector.
+pub fn extract_object_global_record_vars(
+    object_node: Node,
+    object_id: &str,
+    source: &str,
+) -> Vec<super::features::PRecordVariable> {
+    let mut out = Vec::new();
+    for child in named_children(object_node) {
+        if child.kind() != "var_section" {
+            continue;
+        }
+        for var_decl in named_children(child) {
+            if var_decl.kind() != "variable_declaration" {
+                continue;
+            }
+            let name_node = named_children(var_decl)
+                .into_iter()
+                .find(|c| c.kind() == "identifier" || c.kind() == "quoted_identifier");
+            let type_spec_node = child_of_kind(var_decl, "type_specification");
+            let (Some(name_node), Some(type_spec_node)) = (name_node, type_spec_node) else {
+                continue;
+            };
+            let Some(record_type_node) = child_of_kind(type_spec_node, "record_type") else {
+                continue; // Not a record — skip.
+            };
+            let name = if name_node.kind() == "quoted_identifier" {
+                strip_quotes(node_text(name_node, source)).to_string()
+            } else {
+                node_text(name_node, source).to_string()
+            };
+            let mut table_name = None;
+            if let Some(q) = child_of_kind(record_type_node, "quoted_identifier") {
+                table_name = Some(strip_quotes(node_text(q, source)).to_string());
+            } else if let Some(id) = child_of_kind(record_type_node, "identifier") {
+                table_name = Some(node_text(id, source).to_string());
+            }
+            let is_temporary = named_children(record_type_node)
+                .iter()
+                .any(|c| c.kind() == "temporary_keyword");
+            out.push(super::features::PRecordVariable {
+                id: format!("{}/grv/{}", object_id, name.to_lowercase()),
+                name,
+                table_name,
+                temp_state: ts_known(is_temporary),
+                is_parameter: false,
+                parameter_index: None,
+                scope: Some("global".to_string()),
+            });
+        }
+    }
+    out
+}
+
 /// `extractObjectGlobals` — object-level var_section declarations (scope global).
 pub fn extract_object_globals(
     object_node: Node,

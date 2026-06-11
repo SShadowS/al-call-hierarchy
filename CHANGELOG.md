@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `extract_object_global_record_vars` in `scope.rs` (Task 2 / ts2, G1): captures
+  the `temporary_keyword` on object-level `var_section` record variable declarations,
+  producing `PRecordVariable` with `temp_state = Known(true/false)` and
+  `scope = Some("global")`.  Non-record vars are skipped; `preproc_conditional_var_block`
+  and dataitem-scoped var sections are conservative gaps (fall to Unknown, RV-8).
+  Not yet wired into L3 projection (Task 3).
 - Additive model fields for temp-state tracking epoch (Task 1 / ts1):
   - `PRecordVariable.scope: Option<String>` (`"local"` | `"parameter"` |
     `"global"`; `skip_serializing_if` keeps goldens stable; populated by later tasks).
