@@ -60,6 +60,45 @@ pub(crate) fn before_anchor(a: &PAnchor, b: &PAnchor) -> bool {
     a.start_column < b.start_column
 }
 
+/// G-9: page triggers in which the platform has already loaded the implicit
+/// `Rec` before the trigger body runs (docs/engine-gaps.md G-9).
+const PAGE_TRIGGERS_REC_LOADED: &[&str] = &[
+    "OnValidate",
+    "OnAction",
+    "OnAfterGetRecord",
+    "OnDrillDown",
+    "OnAfterGetCurrRecord",
+];
+
+/// G-9 suppression signal (exact, structural): true iff `routine` is a page
+/// trigger (`OnValidate` / `OnAction` / `OnAfterGetRecord` / `OnDrillDown` /
+/// `OnAfterGetCurrRecord`) or a table field `OnValidate` trigger, AND the op's
+/// receiver is the trigger's implicit current record `Rec`. In all of these the
+/// AL platform loaded `Rec` before the trigger ran, so "never loaded" /
+/// "never persisted" detectors (d11/d21/d37) must not fire on it. When unsure
+/// (any other kind / object type / trigger name / receiver) returns `false` —
+/// the detectors keep firing.
+pub(crate) fn is_platform_loaded_trigger_rec(
+    routine: &L3Routine,
+    record_variable_name: &str,
+) -> bool {
+    if !record_variable_name.eq_ignore_ascii_case("rec") {
+        return false;
+    }
+    if routine.kind != "trigger" {
+        return false;
+    }
+    match routine.object_type.as_str() {
+        "Page" | "PageExtension" => PAGE_TRIGGERS_REC_LOADED
+            .iter()
+            .any(|t| routine.name.eq_ignore_ascii_case(t)),
+        // A `trigger OnValidate` in a table object is always a FIELD trigger
+        // (table-level triggers are OnInsert/OnModify/OnDelete/OnRename).
+        "Table" | "TableExtension" => routine.name.eq_ignore_ascii_case("OnValidate"),
+        _ => false,
+    }
+}
+
 /// `unquotedFieldName` from `model/expression.ts`:
 /// Resolve a field-name argument to its unquoted form. Prefers `.value` (set on
 /// `quoted_identifier` / `string_literal` / `qualified_enum_value`) over `.text`.

@@ -10,7 +10,7 @@
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{anchor_of, before_anchor, is_platform_loaded_trigger_rec};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -38,6 +38,7 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut candidates_considered = 0usize;
     let mut skipped_parse_incomplete = 0u64;
     let mut skipped_parameter = 0u64;
+    let mut skipped_trigger_rec = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -66,6 +67,12 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             let var_key = op.record_variable_name.to_lowercase();
             if param_record_names.contains(&var_key) {
                 skipped_parameter += 1;
+                continue;
+            }
+            // G-9: the platform loaded the implicit `Rec` before a page/table
+            // field trigger runs — a read on it is not "without load".
+            if is_platform_loaded_trigger_rec(routine, &op.record_variable_name) {
+                skipped_trigger_rec += 1;
                 continue;
             }
 
@@ -148,5 +155,6 @@ pub fn detect_d21(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("parameter", skipped_parameter);
+    stats.add_skip("triggerRec", skipped_trigger_rec);
     DetectorOutput::no_diag(findings, stats)
 }

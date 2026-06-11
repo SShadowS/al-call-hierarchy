@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- G-9 (docs/engine-gaps.md): `d11-modify-without-get`, `d21-read-without-load` and
+  `d37-validate-without-persist` no longer fire on the implicit `Rec` inside page triggers
+  (`OnValidate`, `OnAction`, `OnAfterGetRecord`, `OnDrillDown`, `OnAfterGetCurrRecord`) or
+  table field `OnValidate` triggers — the AL platform has already loaded `Rec` before those
+  triggers run, and a field `OnValidate` calling `Validate(...)` on a sibling field is normal
+  field-chain validation whose persistence is the caller's job (the single largest medium/low
+  FP class in the CDO triage, ~40+ FPs). The suppression is an exact structural gate
+  (`is_platform_loaded_trigger_rec` in `src/engine/l5/detectors/mod.rs`): routine
+  `kind == "trigger"` + owning object type Page/PageExtension (page trigger-name set) or
+  Table/TableExtension (`OnValidate`) + op receiver `Rec` (case-insensitive); anything
+  uncertain keeps firing (suppression-direction safe). Each detector reports the skip under
+  a new `triggerRec` stats key (omitted when zero, so existing stats output is unchanged).
+  Covered by `tests/gap_g9_trigger_rec.rs` (page-trigger + table-field-trigger suppression,
+  plus non-trigger and non-Rec controls that must keep firing). No in-repo golden moved —
+  no r4/cli/r3a fixture exercises trigger-Rec for these detectors.
+
 ### Added
 - Metamorphic soundness oracle for the temp-state epoch (Task 14 / ts14 — RV-2, the
   mechanical guard for the whole epoch's suppression direction; `tests/temp_state_oracle.rs`).

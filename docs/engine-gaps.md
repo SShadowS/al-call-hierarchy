@@ -150,6 +150,16 @@ dominated by detectors that reason about *load state* (d3/d11/d21/d37) rather th
 
 ## G-9 — page/table trigger `Rec` is platform-loaded (NEW, the biggest medium/low FP class)
 
+**Status: FIXED (commit `fix(engine-g9): suppress d11/d21/d37 on Rec in page/table triggers (platform-loaded)`).**
+Shared structural gate `is_platform_loaded_trigger_rec` (`src/engine/l5/detectors/mod.rs`):
+`routine.kind == "trigger"` AND (Page/PageExtension trigger named `OnValidate`/`OnAction`/
+`OnAfterGetRecord`/`OnDrillDown`/`OnAfterGetCurrRecord`, OR Table/TableExtension `OnValidate`
+— always a field trigger) AND the op's receiver is `Rec` (case-insensitive). Wired into
+d11/d21/d37 as a skip (`triggerRec` stat). Anything uncertain keeps firing. Tests:
+`tests/gap_g9_trigger_rec.rs` (suppression + non-trigger / non-Rec controls). No in-repo
+golden moved (no fixture exercises trigger-Rec for these detectors); CDO-run rebaseline
+remains with the consolidated rebaseline task.
+
 **Symptom:** `d11-modify-without-get`, `d21-read-without-load`, and `d37-validate-without-persist`
 fire on `Rec` inside **page triggers** (`OnValidate`, `OnAction`, `OnAfterGetRecord`,
 `OnDrillDown`, `OnAfterGetCurrRecord`) and **table field `OnValidate`** triggers. In all of

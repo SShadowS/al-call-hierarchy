@@ -21,7 +21,7 @@ use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{anchor_of, before_anchor, is_platform_loaded_trigger_rec};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -52,6 +52,7 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut skipped_helper_persists_unknown = 0u64;
     let mut skipped_temp_record = 0u64;
     let mut skipped_parameter = 0u64;
+    let mut skipped_trigger_rec = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -84,6 +85,13 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             }
             if param_record_names.contains(&var_key) {
                 skipped_parameter += 1;
+                continue;
+            }
+            // G-9: `Validate` on the implicit `Rec` inside a page/table field
+            // trigger is normal field-chain validation — persisting is the
+            // (platform) caller's job, not the trigger's.
+            if is_platform_loaded_trigger_rec(routine, &op.record_variable_name) {
+                skipped_trigger_rec += 1;
                 continue;
             }
 
@@ -126,6 +134,7 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("helperPersistsUnknown", skipped_helper_persists_unknown);
     stats.add_skip("tempRecord", skipped_temp_record);
     stats.add_skip("parameter", skipped_parameter);
+    stats.add_skip("triggerRec", skipped_trigger_rec);
     DetectorOutput::no_diag(findings, stats)
 }
 
