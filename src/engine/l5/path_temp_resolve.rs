@@ -41,14 +41,30 @@
 //! R3a/trace/R4 golden can move (lower golden impact — the explicitly preferred
 //! option). The resolver receives the routine map it needs as an explicit argument.
 //!
+//! ## Edge-kind allowlist guard (Component 3 / RV-6 soundness, Task 10)
+//!
+//! L4's `substitute_pd_temp_state` only substitutes bindings across the
+//! `direct | method | implicit-trigger` edge kinds; ANY other kind
+//! (`dynamic | interface | codeunit-run | report-run | page-run | event-dispatch`,
+//! or an unknown/missing kind) carries NO usable binding semantics and falls to
+//! `Unknown`. d1's path expansion FOLLOWS `dynamic`/`interface`/run hops, and those
+//! hops DO carry a `callsite_id`, so a naive resolver would chase a binding down
+//! such a hop and could resolve `Known(true)` where L4 returns `Unknown` — an
+//! UNSOUND divergence that would SUPPRESS a real finding. The resolver therefore
+//! takes an `edge_kind_by_callsite` lookup and, before stepping ANY hop, checks the
+//! hop's edge kind against the allowlist; a non-allowlisted (or unknown) kind stops
+//! the chase and returns `Unknown`.
+//!
 //! ## Soundness
 //!
 //! Resolution only ever yields `Known(true)` when a concrete binding source ON THE
-//! PATH is itself `Known(true)`. EVERY uncertainty — a missing caller hop, a missing
-//! callsite, a missing binding, a `Some(Unknown)` / `None` source, or a still-`PD`
-//! state at the path root — collapses to `Unknown` (the conservative, FIRING
-//! direction). This mirrors the L4 per-callsite substitution table
-//! (`summary_runner::substitute_pd_temp_state`) applied frame-by-frame.
+//! PATH is itself `Known(true)` AND every hop chased to reach it is an
+//! allowlisted binding-carrying edge. EVERY uncertainty — a missing caller hop, a
+//! missing callsite, a missing binding, a non-allowlisted edge kind, a
+//! `Some(Unknown)` / `None` source, or a still-`PD` state at the path root —
+//! collapses to `Unknown` (the conservative, FIRING direction). This mirrors the L4
+//! per-callsite substitution table (`summary_runner::substitute_pd_temp_state`)
+//! applied frame-by-frame.
 
 use std::collections::HashMap;
 
@@ -67,6 +83,12 @@ use crate::engine::l5::finding::EvidenceStep;
 /// - `routine_by_id` maps each routine's INTERNAL id to its `L3Routine` (so a hop's
 ///   `callsite_id` can be resolved against the parent routine's call sites). This is
 ///   the same `ctx.routine_by_id` index d1 already builds.
+/// - `edge_kind_by_callsite` maps a hop's `callsite_id` to the edge KIND of the
+///   resolved call edge for that callsite (derivable from the `CombinedGraph` d1
+///   already holds). Used to enforce the edge-kind allowlist (see module docs):
+///   only `direct | method | implicit-trigger` hops carry usable binding semantics;
+///   ANY other kind — or a callsite missing from the map — stops the chase and
+///   returns `Unknown` (sound = fires).
 ///
 /// Steps one frame toward the path root per `ParameterDependent` level, applying the
 /// L4 substitution table at each hop; terminates because each step consumes one more
@@ -79,6 +101,7 @@ pub fn resolve_temp_along_path(
     path: &[EvidenceStep],
     terminal_state: TempStateKind,
     routine_by_id: &HashMap<&str, &L3Routine>,
+    edge_kind_by_callsite: &HashMap<&str, &str>,
 ) -> TempStateKind {
     // The hop steps that carry a real caller callsite, in ROOT→TERMINAL order. The
     // terminal step (last, callsite_id == None) and any seed loop step (callsite_id
@@ -87,7 +110,7 @@ pub fn resolve_temp_along_path(
     let caller_hops: Vec<&EvidenceStep> = path.iter().filter(|s| s.callsite_id.is_some()).collect();
 
     let mut state = terminal_state;
-    // `next_hop` indexes the caller_hops vec; we start at the LAST hop (the one
+    // `hop_idx` indexes the caller_hops vec; we start at the LAST hop (the one
     // entering the terminal frame) and walk backward (toward root) per PD level.
     let mut hop_idx = caller_hops.len();
 
@@ -105,6 +128,20 @@ pub fn resolve_temp_along_path(
         }
         hop_idx -= 1;
         let hop = caller_hops[hop_idx];
+
+        // EDGE-KIND ALLOWLIST GUARD (RV-6 soundness). The hop carries a
+        // `callsite_id`; resolve its edge kind. Only `direct | method |
+        // implicit-trigger` carry usable binding semantics. ANY other kind — or a
+        // callsite absent from the lookup — has no caller-frame binding semantics,
+        // so the chase STOPS here → Unknown (sound = fires). Mirrors L4's positive
+        // allowlist in `substitute_pd_temp_state`.
+        let edge_kind = hop
+            .callsite_id
+            .as_deref()
+            .and_then(|cs| edge_kind_by_callsite.get(cs).copied());
+        if !matches!(edge_kind, Some("direct" | "method" | "implicit-trigger")) {
+            return TempStateKind::Unknown;
+        }
 
         // The hop's parent routine (it OWNS the callsite). `routine_id` is the
         // caller (edge.from); `callsite_id` is the call site in that caller.

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- d1 (`db-op-in-loop`) now consumes the PATH-RESOLVED temp state instead of the
+  terminal op's RAW `temp_state` (Task 10 / ts10, Component 3, RV-6 — the first real
+  detector behaviour change of the temp-state epoch). For each finding, d1 calls
+  `resolve_temp_along_path` over THAT finding's evidence path: resolved `Known(true)`
+  → downgrade to `info` (existing suppression); resolved `Known(false)` → fires at
+  normal severity with NO temp note (honest physical); resolved `Unknown` → "(temp
+  state uncertain)" + normal severity (existing uncertain behaviour). A terminal op
+  that is ALREADY `Known(_)`/`Unknown` (non-PD) resolves immediately with no stepping,
+  so behaviour is UNCHANGED for it; only PD-terminal (by-var param) findings gain
+  per-path precision — previously they fell to "(temp state uncertain)", now they
+  resolve to a precise verdict per caller path.
+- `resolve_temp_along_path` now enforces the L4 edge-kind ALLOWLIST (Task 10 / ts10,
+  RV-6 soundness). It takes an `edge_kind_by_callsite` lookup (callsite id → resolved
+  edge kind, derived from the combined graph d1 already holds) and, before stepping a
+  hop, checks the kind is in `{direct, method, implicit-trigger}`; ANY other kind
+  (`dynamic | interface | codeunit-run | report-run | page-run | event-dispatch`) or a
+  callsite missing from the map STOPS the chase → `Unknown` (sound = fires). Without
+  this guard a PD chased down a dynamic/interface/run hop with a `Known(true)`-sourced
+  binding would resolve `Known(true)` where L4 returns `Unknown` — an unsound
+  divergence that could SUPPRESS a real finding. Mirrors `substitute_pd_temp_state`.
+- d1 merge-tie rule (Task 10 / ts10, RV-6). `merge_by_terminal` collapses every path
+  sharing a terminal op into one finding; post path-resolution, two paths can DISAGREE
+  on the temp-derived severity (caller-A path → info/temporary; caller-B path →
+  normal/physical). The WORST severity now wins (deterministic, conservative — never
+  let a temp path hide a physical path's finding) AND the temp note lists BOTH verdicts
+  ("temp state varies by caller: physical via B; temporary via A", sorted). Reconciled
+  before the merge so the canonical lift carries the worst severity + dual-verdict note.
+- DESIGNED golden moves (deferred to Task 16 rebaseline): d1/r4 + downstream
+  (cli-a json/html/terminal, gate SARIF) goldens move for multi-caller PD-terminal
+  findings — temp-derived severity/note changes only (e.g. `ws-d1-multi-caller` drops
+  its "(temp state uncertain)" note because all callers pass a physical record;
+  severity unchanged). No non-PD finding moves; no non-temp severity changes.
+
 ### Added
 - Shared per-PATH temp-state resolver `resolve_temp_along_path` (Task 9 / ts9,
   Component 3, RV-6) in `src/engine/l5/path_temp_resolve.rs`. A path-walker terminal

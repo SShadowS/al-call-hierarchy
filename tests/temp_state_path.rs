@@ -165,6 +165,16 @@ fn routine_map<'a>(routines: &'a [L3Routine]) -> HashMap<&'a str, &'a L3Routine>
     routines.iter().map(|r| (r.id.as_str(), r)).collect()
 }
 
+/// An edge-kind lookup mapping every callsite in `routines` to a binding-carrying
+/// `"direct"` edge — the common case for these stepping tests. Case (c) builds its
+/// own map with a non-allowlisted kind to exercise the guard.
+fn direct_edge_kinds<'a>(routines: &'a [L3Routine]) -> HashMap<&'a str, &'a str> {
+    routines
+        .iter()
+        .flat_map(|r| r.call_sites.iter().map(|cs| (cs.id.as_str(), "direct")))
+        .collect()
+}
+
 // --- (a) mixed callers per-path ---------------------------------------------
 
 /// Helper `H(var Rec)` does `Rec.Modify()` → terminal op temp_state = PD(0).
@@ -188,18 +198,29 @@ fn mixed_callers_resolve_per_path() {
     let helper = routine("H");
     let routines = [caller_a, caller_b, helper];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     // Path A (root→terminal): hop(A→H), terminal(H op0).
     let path_a = vec![hop("A", "A/cs0"), terminal("H", "H/op0")];
     let path_b = vec![hop("B", "B/cs0"), terminal("H", "H/op0")];
 
     assert_eq!(
-        resolve_temp_along_path(&path_a, TempStateKind::ParameterDependent(0), &map),
+        resolve_temp_along_path(
+            &path_a,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &edge_kinds
+        ),
         TempStateKind::Known(true),
         "caller A passes a temp local → PD(0) must resolve Known(true)"
     );
     assert_eq!(
-        resolve_temp_along_path(&path_b, TempStateKind::ParameterDependent(0), &map),
+        resolve_temp_along_path(
+            &path_b,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &edge_kinds
+        ),
         TempStateKind::Known(false),
         "caller B passes a physical local → PD(0) must resolve Known(false)"
     );
@@ -230,11 +251,17 @@ fn pd_chains_upward_two_frames() {
     let h = routine("H");
     let routines = [g, m, h];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     // Path: hop(G→M), hop(M→H), terminal(H op0). Terminal op PD(0).
     let path = vec![hop("G", "G/cs0"), hop("M", "M/cs0"), terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map),
+        resolve_temp_along_path(
+            &path,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &edge_kinds
+        ),
         TempStateKind::Known(true),
         "PD(0)→PD(1)→Known(true) must chain up two frames"
     );
@@ -251,10 +278,16 @@ fn root_pd_resolves_unknown() {
     let helper = routine("H");
     let routines = [helper];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     let path = vec![terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map),
+        resolve_temp_along_path(
+            &path,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &edge_kinds
+        ),
         TempStateKind::Unknown,
         "PD at the path root (entry param, no caller) → Unknown"
     );
@@ -278,10 +311,16 @@ fn pd_resymbolized_to_root_param_is_unknown() {
     let h = routine("H");
     let routines = [r, h];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     let path = vec![hop("R", "R/cs0"), terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map),
+        resolve_temp_along_path(
+            &path,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &edge_kinds
+        ),
         TempStateKind::Unknown,
         "PD(0)→PD(2) with no caller above the root → Unknown"
     );
@@ -296,6 +335,7 @@ fn direct_known_true_no_stepping() {
     let helper = routine("H");
     let routines = [helper];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     // Even with a caller hop present, a Known terminal short-circuits immediately.
     let mut caller = routine("A");
@@ -304,17 +344,23 @@ fn direct_known_true_no_stepping() {
         .push(call_site("A/cs0", 0, Some(ts_known(false))));
     let routines2 = [caller, routine("H")];
     let map2 = routine_map(&routines2);
+    let edge_kinds2 = direct_edge_kinds(&routines2);
 
     let path_no_hop = vec![terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path_no_hop, TempStateKind::Known(true), &map),
+        resolve_temp_along_path(&path_no_hop, TempStateKind::Known(true), &map, &edge_kinds),
         TempStateKind::Known(true),
         "a Known(true) terminal resolves Known(true) with no stepping"
     );
 
     let path_with_hop = vec![hop("A", "A/cs0"), terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path_with_hop, TempStateKind::Known(true), &map2),
+        resolve_temp_along_path(
+            &path_with_hop,
+            TempStateKind::Known(true),
+            &map2,
+            &edge_kinds2
+        ),
         TempStateKind::Known(true),
         "Known(true) short-circuits even when caller hops exist (binding ignored)"
     );
@@ -348,24 +394,96 @@ fn uncertainty_sources_resolve_unknown() {
 
     let routines = [caller_wrong, caller_unknown, caller_none, routine("H")];
     let map = routine_map(&routines);
+    let edge_kinds = direct_edge_kinds(&routines);
 
     for parent in ["A", "B", "C"] {
         let cs = format!("{parent}/cs0");
         let path = vec![hop(parent, &cs), terminal("H", "H/op0")];
         assert_eq!(
-            resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map),
+            resolve_temp_along_path(
+                &path,
+                TempStateKind::ParameterDependent(0),
+                &map,
+                &edge_kinds
+            ),
             TempStateKind::Unknown,
             "uncertain binding source from {parent} → Unknown"
         );
     }
 
-    // (iv) parent routine not in the map at all → Unknown.
+    // see edge-kind-guard test below for (c).
+
+    // (iv) parent routine not in the map at all → Unknown. The callsite IS in the
+    // edge-kind map as an allowlisted `direct` edge, so the guard passes and the
+    // Unknown comes from the missing parent routine (not the guard).
     let empty: Vec<L3Routine> = Vec::new();
     let empty_map = routine_map(&empty);
+    let mut missing_edge_kinds: HashMap<&str, &str> = HashMap::new();
+    missing_edge_kinds.insert("MISSING/cs0", "direct");
     let path = vec![hop("MISSING", "MISSING/cs0"), terminal("H", "H/op0")];
     assert_eq!(
-        resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &empty_map),
+        resolve_temp_along_path(
+            &path,
+            TempStateKind::ParameterDependent(0),
+            &empty_map,
+            &missing_edge_kinds
+        ),
         TempStateKind::Unknown,
         "missing parent routine → Unknown"
+    );
+}
+
+// --- (c) edge-kind allowlist guard ------------------------------------------
+
+/// SOUNDNESS (RV-6 / Task 10): a PD chased down a NON-allowlisted hop
+/// (`dynamic` / `interface` / a run-edge) must resolve `Unknown` — NOT `Known(true)`
+/// — EVEN when the hop's binding source is concretely `Known(true)`. Such edges
+/// carry no caller-frame binding semantics (L4's `substitute_pd_temp_state` only
+/// substitutes `direct | method | implicit-trigger`); resolving `Known(true)` here
+/// would let d1 SUPPRESS a real finding down a dynamic-dispatch hop.
+#[test]
+fn edge_kind_guard_dynamic_hop_resolves_unknown() {
+    // Caller A enters H via "A/cs0" passing a TEMP local (binding source Known(true))
+    // — the binding that WOULD resolve Known(true) over an allowlisted edge.
+    let mut caller_a = routine("A");
+    caller_a
+        .call_sites
+        .push(call_site("A/cs0", 0, Some(ts_known(true))));
+    let helper = routine("H");
+    let routines = [caller_a, helper];
+    let map = routine_map(&routines);
+
+    let path = vec![hop("A", "A/cs0"), terminal("H", "H/op0")];
+
+    // Sanity: over a `direct` edge the SAME binding resolves Known(true).
+    let direct = direct_edge_kinds(&routines);
+    assert_eq!(
+        resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map, &direct),
+        TempStateKind::Known(true),
+        "control: a Known(true) binding over a `direct` hop resolves Known(true)"
+    );
+
+    // Each non-allowlisted kind STOPS the chase → Unknown despite Known(true) source.
+    for kind in ["dynamic", "interface", "codeunit-run", "event-dispatch"] {
+        let mut edge_kinds: HashMap<&str, &str> = HashMap::new();
+        edge_kinds.insert("A/cs0", kind);
+        assert_eq!(
+            resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map, &edge_kinds),
+            TempStateKind::Unknown,
+            "PD chased down a `{kind}` hop must be Unknown (NOT suppressed), even with a Known(true) source"
+        );
+    }
+
+    // A callsite ABSENT from the edge-kind map (unknown kind) also stops the chase.
+    let empty_kinds: HashMap<&str, &str> = HashMap::new();
+    assert_eq!(
+        resolve_temp_along_path(
+            &path,
+            TempStateKind::ParameterDependent(0),
+            &map,
+            &empty_kinds
+        ),
+        TempStateKind::Unknown,
+        "PD chased down a hop with an unknown edge kind → Unknown"
     );
 }

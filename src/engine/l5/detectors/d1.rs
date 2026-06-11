@@ -30,6 +30,7 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l4::combined_graph::CombinedEdge;
+use crate::engine::l4::effect_lattice::TempStateKind;
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::capability_query::{touches_db_of, EffectPresence};
@@ -42,6 +43,7 @@ use crate::engine::l5::finding::{
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::merge_by_terminal;
+use crate::engine::l5::path_temp_resolve::resolve_temp_along_path;
 use crate::engine::l5::path_walker::{
     walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop,
 };
@@ -69,10 +71,59 @@ fn is_known_temp(op: &L3RecordOperation) -> bool {
     matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
 }
 
-/// `temp_state.kind !== "known"` (uncertain). A `None` temp_state maps to
-/// `{kind:"unknown"}`, which is NOT "known".
-fn is_temp_uncertain(op: &L3RecordOperation) -> bool {
-    !matches!(&op.temp_state, Some(ts) if ts.kind == "known")
+/// The terminal op's `temp_state` as a [`TempStateKind`] (the resolver's input).
+/// A `None` temp_state → `Unknown` (al-sem always sets `{kind:"unknown"}` for
+/// untracked ops, so the absence maps the same way).
+fn op_temp_state_kind(op: &L3RecordOperation) -> TempStateKind {
+    match &op.temp_state {
+        Some(ts) => TempStateKind::from_p_temp_state(ts),
+        None => TempStateKind::Unknown,
+    }
+}
+
+/// The PATH-RESOLVED temp verdict for a single finding (Component 3 / RV-6).
+/// Derived from `resolve_temp_along_path` over THIS finding's evidence path:
+///   - `Temporary`  ← resolved `Known(true)`  → severity forced to `info`;
+///   - `Physical`   ← resolved `Known(false)` → fires at normal severity, no temp note;
+///   - `Uncertain`  ← resolved `Unknown`      → fires at normal severity, "(temp state uncertain)".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TempVerdict {
+    Temporary,
+    Physical,
+    Uncertain,
+}
+
+impl TempVerdict {
+    fn from_resolved(state: &TempStateKind) -> Self {
+        match state {
+            TempStateKind::Known(true) => TempVerdict::Temporary,
+            TempStateKind::Known(false) => TempVerdict::Physical,
+            // PD should never survive resolution (the resolver always returns a
+            // concrete Known/Unknown), but a residual PD is treated as uncertain.
+            TempStateKind::Unknown | TempStateKind::ParameterDependent(_) => TempVerdict::Uncertain,
+        }
+    }
+
+    /// The dual-verdict note fragment for this verdict (`temporary` / `physical` /
+    /// `uncertain`), used to build the merge-tie note "temporary via <A>; physical
+    /// via <B>".
+    fn label(self) -> &'static str {
+        match self {
+            TempVerdict::Temporary => "temporary",
+            TempVerdict::Physical => "physical",
+            TempVerdict::Uncertain => "uncertain",
+        }
+    }
+}
+
+/// A pre-merge finding paired with the data the RV-6 merge-tie reconciliation needs:
+/// the PATH-RESOLVED temp verdict and the root caller's display name (the ancestor
+/// the path starts in). `loop_routine.name` is the caller label surfaced in the
+/// dual-verdict note when paths disagree.
+struct FindingRec {
+    finding: Finding,
+    verdict: TempVerdict,
+    caller_label: String,
 }
 
 /// `describeTable(op, routine, tableById)`. Builds the `DescribeOp` view from an
@@ -170,12 +221,19 @@ fn representative_loop_id(loop_stack: &[String]) -> Option<&str> {
 }
 
 /// `severityFor(op, effectiveLoopDepth, isSetupSingleton)`.
+///
+/// Component 3 / RV-6 (Task 10): the temp-derived `info` downgrade now keys off the
+/// PATH-RESOLVED verdict (`TempVerdict::Temporary`), not the raw `op.temp_state`. A
+/// terminal op that is already `Known(true)` resolves `Temporary` immediately (no
+/// stepping), so this is BEHAVIOUR-PRESERVING for non-PD ops; only PD-terminal
+/// (by-var param) ops gain per-path precision.
 fn severity_for(
     op: &L3RecordOperation,
+    verdict: TempVerdict,
     effective_loop_depth: i64,
     is_setup_singleton: bool,
 ) -> &'static str {
-    if is_known_temp(op) {
+    if verdict == TempVerdict::Temporary {
         return "info";
     }
     if is_setup_singleton {
@@ -246,17 +304,38 @@ fn build_finding(
     routine_by_id: &HashMap<&str, &L3Routine>,
     table_by_id: &HashMap<&str, &L3Table>,
     role_by_routine: &HashMap<&str, &str>,
-) -> Finding {
+    edge_kind_by_callsite: &HashMap<&str, &str>,
+) -> (Finding, TempVerdict) {
     let terminal_routine = routine_by_id.get(terminal_routine_id).copied();
     let setup_singleton = is_setup_singleton_get(terminal_op, terminal_routine, table_by_id);
-    let severity = severity_for(terminal_op, result.effective_loop_depth, setup_singleton);
 
-    let temp_note = if is_known_temp(terminal_op) {
-        " (temporary record — not a SQL round-trip)"
-    } else if is_temp_uncertain(terminal_op) {
-        " (temp state uncertain)"
-    } else {
-        ""
+    // Component 3 / RV-6 (Task 10): resolve the terminal op's temp_state EXACTLY
+    // along THIS finding's evidence path. A non-PD op resolves immediately (no
+    // stepping) so the verdict equals the raw state — behaviour-preserving. A
+    // PD-terminal (by-var param) op resolves per-path: temp on a temp-caller path,
+    // physical on a physical-caller path, uncertain at a path root. The edge-kind
+    // allowlist guard inside the resolver keeps dynamic/interface/run hops sound.
+    let resolved = resolve_temp_along_path(
+        &result.path,
+        op_temp_state_kind(terminal_op),
+        routine_by_id,
+        edge_kind_by_callsite,
+    );
+    let verdict = TempVerdict::from_resolved(&resolved);
+
+    let severity = severity_for(
+        terminal_op,
+        verdict,
+        result.effective_loop_depth,
+        setup_singleton,
+    );
+
+    let temp_note = match verdict {
+        TempVerdict::Temporary => NOTE_TEMPORARY,
+        TempVerdict::Uncertain => NOTE_UNCERTAIN,
+        // Physical: a concrete physical record reached along this path — honest
+        // omission (no temp note), matching the prior Known(false) `""` branch.
+        TempVerdict::Physical => "",
     };
     let setup_note = if setup_singleton {
         " (Setup singleton — BC caches Get() per session, so the round-trip happens at most once.)"
@@ -339,7 +418,7 @@ fn build_finding(
     if actionable.is_some() {
         finding.actionable_anchor = actionable;
     }
-    finding
+    (finding, verdict)
 }
 
 /// The D1 WalkPolicy — holds references to the eager indexes the closures read.
@@ -493,7 +572,26 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         .map(|r| (r.id.as_str(), "primary"))
         .collect();
 
-    let mut findings: Vec<Finding> = Vec::new();
+    // Component 3 / RV-6 (Task 10): callsite_id → resolved edge KIND, derived from
+    // the combined graph d1 already holds. `resolve_temp_along_path` consults this to
+    // enforce the edge-kind allowlist (only `direct | method | implicit-trigger` hops
+    // carry usable binding semantics; everything else stops the PD chase → Unknown).
+    // First edge per callsite wins (edges_by_from is edgeSortKey-sorted, matching the
+    // resolver's deterministic per-callsite view).
+    let mut edge_kind_by_callsite: HashMap<&str, &str> = HashMap::new();
+    for edges in ctx.graph.edges_by_from.values() {
+        for e in edges {
+            if let Some(cs) = e.callsite_id.as_deref() {
+                edge_kind_by_callsite.entry(cs).or_insert(e.kind.as_str());
+            }
+        }
+    }
+
+    // Each finding is tracked with its PATH-RESOLVED temp verdict + the root caller's
+    // display name, so the post-dedup merge-tie pass (RV-6) can reconcile paths that
+    // DISAGREE on the temp-derived severity into one finding (worst severity wins +
+    // dual-verdict note).
+    let mut findings: Vec<FindingRec> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_parse_incomplete = 0u64;
     let mut skipped_opaque_callee = 0u64;
@@ -590,7 +688,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 uncertainties: Vec::new(),
                 stop: WalkStop::Complete,
             };
-            findings.push(build_finding_internal(
+            let (finding, verdict) = build_finding_internal(
                 routine,
                 loop_info.id.as_str(),
                 &result,
@@ -599,7 +697,13 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 &ctx.routine_by_id,
                 &ctx.table_by_id,
                 &role_by_routine,
-            ));
+                &edge_kind_by_callsite,
+            );
+            findings.push(FindingRec {
+                finding,
+                verdict,
+                caller_label: routine.name.clone(),
+            });
         }
 
         // (b) In-loop calls to DB-touching callees — walk the call chain.
@@ -695,7 +799,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 let Some(terminal_op) = terminal_op else {
                     continue;
                 };
-                findings.push(build_finding_internal(
+                let (finding, verdict) = build_finding_internal(
                     routine,
                     loop_info.id.as_str(),
                     result,
@@ -704,23 +808,42 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     &ctx.routine_by_id,
                     &ctx.table_by_id,
                     &role_by_routine,
-                ));
+                    &edge_kind_by_callsite,
+                );
+                findings.push(FindingRec {
+                    finding,
+                    verdict,
+                    caller_label: routine.name.clone(),
+                });
             }
         }
     }
 
     // Two-stage collapse:
     //   1. Dedupe by id (loop+op pair), first-wins.
+    //   1b. RV-6 merge-tie reconciliation (see `reconcile_merge_tie`).
     //   2. merge_by_terminal — fold ancestor loops on the same terminal op.
     let mut seen: HashSet<String> = HashSet::new();
-    let mut deduped: Vec<Finding> = Vec::new();
+    let mut deduped: Vec<FindingRec> = Vec::new();
     for f in findings {
-        if seen.contains(&f.id) {
+        if seen.contains(&f.finding.id) {
             continue;
         }
-        seen.insert(f.id.clone());
+        seen.insert(f.finding.id.clone());
         deduped.push(f);
     }
+
+    // RV-6 merge-tie: `merge_by_terminal` collapses every path sharing a terminal
+    // (rootCauseKey) into ONE finding. Post path-resolution, paths in the SAME group
+    // can DISAGREE on the temp-derived severity (caller-A path → info/temp; caller-B
+    // path → normal/physical). Reconcile BEFORE merge: the WORST severity wins
+    // (deterministic, conservative — never let a temp path hide a physical path's
+    // finding) AND the temp note lists BOTH verdicts ("temporary via A; physical via
+    // B", sorted). Reconcile rewrites every group member to agree so the downstream
+    // `merge_by_terminal` (which picks the canonical and lifts its rootCause) emits
+    // the reconciled severity + dual-verdict note regardless of which member it picks.
+    let deduped = reconcile_merge_tie(deduped, &ctx.table_by_id);
+
     let mut merged = merge_by_terminal(deduped);
     // downgradedSetupSingleton: counted POST-merge by rootCause text — TS counts THAT
     // one post-merge too (d1.ts:439), so the text filter is correct here.
@@ -753,6 +876,135 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     }
 }
 
+/// The fixed temp-note fragments (leading space included) `build_finding` appends to
+/// a finding's rootCause. `reconcile_merge_tie` strips whichever one a member carries
+/// before inserting the dual-verdict note.
+const NOTE_TEMPORARY: &str = " (temporary record — not a SQL round-trip)";
+const NOTE_UNCERTAIN: &str = " (temp state uncertain)";
+
+/// RV-6 merge-tie reconciliation. `merge_by_terminal` groups by `rootCauseKey`; a
+/// group whose members DISAGREE on the temp-derived severity must collapse with the
+/// WORST severity (conservative) and a note that lists every distinct verdict +
+/// caller ("temporary via A; physical via B", sorted). This pass rewrites each tied
+/// member so they AGREE before the merge runs (the merge then lifts the canonical's
+/// already-reconciled severity + note). Groups whose members already agree on
+/// severity are left untouched (byte-preserving for the common single-verdict case).
+fn reconcile_merge_tie(
+    recs: Vec<FindingRec>,
+    _table_by_id: &HashMap<&str, &L3Table>,
+) -> Vec<Finding> {
+    // First-seen ordered grouping by rootCauseKey (preserve finding order overall).
+    let mut order: Vec<String> = Vec::new();
+    let mut group_idx: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, rec) in recs.iter().enumerate() {
+        let key = rec.finding.root_cause_key.clone();
+        match group_idx.get_mut(&key) {
+            Some(v) => v.push(i),
+            None => {
+                order.push(key.clone());
+                group_idx.insert(key, vec![i]);
+            }
+        }
+    }
+
+    let mut recs = recs;
+    for key in &order {
+        let idxs = &group_idx[key];
+        if idxs.len() < 2 {
+            continue;
+        }
+        // A tie exists iff the members do not all share one severity.
+        let first_sev = recs[idxs[0]].finding.severity.clone();
+        let severities_agree = idxs.iter().all(|&i| recs[i].finding.severity == first_sev);
+        if severities_agree {
+            continue;
+        }
+
+        // Worst severity wins (deterministic, conservative).
+        let worst = idxs
+            .iter()
+            .map(|&i| recs[i].finding.severity.as_str())
+            .max_by_key(|s| sev_rank(s))
+            .unwrap_or(first_sev.as_str())
+            .to_string();
+
+        // Distinct "<verdict> via <caller>" parts, deduped + sorted for determinism.
+        let mut parts: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for &i in idxs {
+            let rec = &recs[i];
+            parts.insert(format!("{} via {}", rec.verdict.label(), rec.caller_label));
+        }
+        let dual_note = format!(" (temp state varies by caller: {})", parts_join(&parts));
+
+        // Rewrite every member: worst severity + the dual-verdict temp note (replacing
+        // whichever single-verdict note — or none, for physical — the member carried).
+        for &i in idxs {
+            recs[i].finding.severity = worst.clone();
+            let rc = &recs[i].finding.root_cause;
+            let stripped = strip_temp_note(rc);
+            recs[i].finding.root_cause = insert_temp_note(&stripped, &dual_note);
+        }
+    }
+
+    recs.into_iter().map(|r| r.finding).collect()
+}
+
+/// `parts.join("; ")` over a sorted set.
+fn parts_join(parts: &std::collections::BTreeSet<String>) -> String {
+    parts.iter().cloned().collect::<Vec<_>>().join("; ")
+}
+
+/// `sevRank` mirror (critical > high > medium > low > info; unknown → 0) — the same
+/// ranking `path_merge::merge_by_terminal` uses to pick the canonical.
+fn sev_rank(sev: &str) -> i32 {
+    match sev {
+        "critical" => 5,
+        "high" => 4,
+        "medium" => 3,
+        "low" => 2,
+        "info" => 1,
+        _ => 0,
+    }
+}
+
+/// Remove the single-verdict temp note (`NOTE_TEMPORARY` / `NOTE_UNCERTAIN`) from a
+/// rootCause if present. Physical findings carry no temp note, so a no-op. The note
+/// always sits immediately before the trailing setup-note (if any) and the final
+/// `.`, so a substring removal is exact.
+fn strip_temp_note(root_cause: &str) -> String {
+    if let Some(pos) = root_cause.find(NOTE_TEMPORARY) {
+        let mut s = root_cause.to_string();
+        s.replace_range(pos..pos + NOTE_TEMPORARY.len(), "");
+        return s;
+    }
+    if let Some(pos) = root_cause.find(NOTE_UNCERTAIN) {
+        let mut s = root_cause.to_string();
+        s.replace_range(pos..pos + NOTE_UNCERTAIN.len(), "");
+        return s;
+    }
+    root_cause.to_string()
+}
+
+/// Insert `note` (which carries its own leading space) immediately AFTER the
+/// `table_note` segment — i.e. right before the trailing setup-note/`.`. The
+/// rootCause shape is `"A loop in X reaches <tableNote>[setupNote].`"; the temp note
+/// belongs between `<tableNote>` and `[setupNote].`. Since `strip_temp_note` already
+/// removed any temp note, we re-insert before the setup note if present, else before
+/// the final `.`.
+fn insert_temp_note(root_cause: &str, note: &str) -> String {
+    const SETUP_NOTE_PREFIX: &str = " (Setup singleton";
+    if let Some(pos) = root_cause.find(SETUP_NOTE_PREFIX) {
+        let mut s = root_cause.to_string();
+        s.insert_str(pos, note);
+        return s;
+    }
+    // Insert before the trailing period.
+    if let Some(stripped) = root_cause.strip_suffix('.') {
+        return format!("{stripped}{note}.");
+    }
+    format!("{root_cause}{note}")
+}
+
 /// Wrapper around `build_finding` that recovers the terminal op's owning-routine
 /// id + internal source anchor before delegating. `terminal_routine` is the
 /// op's owning routine (the DIRECT case passes `routine`; the call case passes
@@ -767,7 +1019,8 @@ fn build_finding_internal(
     routine_by_id: &HashMap<&str, &L3Routine>,
     table_by_id: &HashMap<&str, &L3Table>,
     role_by_routine: &HashMap<&str, &str>,
-) -> Finding {
+    edge_kind_by_callsite: &HashMap<&str, &str>,
+) -> (Finding, TempVerdict) {
     let terminal_op_anchor = anchor_of(&terminal_op.source_anchor, terminal_routine);
     build_finding(
         loop_routine,
@@ -779,5 +1032,6 @@ fn build_finding_internal(
         routine_by_id,
         table_by_id,
         role_by_routine,
+        edge_kind_by_callsite,
     )
 }
