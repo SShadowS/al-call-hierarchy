@@ -1761,3 +1761,33 @@ surviving finding goes from member-AMBIGUOUS to precisely position-attributed �
 emit the sibling field's same-pattern finding. al-perf P3.2 should expect precise attribution of the
 surviving finding, not one finding per colliding sibling. Strictly better than pre-freeze; nothing
 regresses.
+
+---
+
+## FLIPPED: the TS oracle is retired (2026-06-11)
+
+The `engine` branch was fast-forward-merged into `master` (`f0ebc23..f91ff12`) — the Rust engine is
+now part of the mainline al-call-hierarchy repo. The merge was purely additive to the LSP shipping
+code (`lib.rs` +2 `pub mod`, two new bins `alsem`/`aldump`, additive Cargo deps; everything else new
+files under `src/engine/` + `tests/`).
+
+**What "retired" means:**
+- al-sem (TypeScript, `U:\Git\al-sem`, github.com/SShadowS/al-sem) is ARCHIVED — frozen at `37d9b42`.
+  It no longer evolves and is no longer the semantic source of truth. The Rust engine here is.
+- The committed goldens the differential suites byte-compare against (read from
+  `U:\Git\al-sem\scripts\*-goldens\` by absolute path) are FROZEN and become this repo's
+  **regression baselines**. The al-sem checkout stays on disk read-only as the baseline archive.
+- `KNOWN_DIVERGENCES.json` changes meaning: "divergence from the TS oracle" no longer exists as a
+  concept. Post-flip, an intentional semantic change REBASELINES the affected goldens (with a
+  reviewed diff) instead of recording a divergence. The file stays `[]` permanently; the suites
+  remain as regression protection.
+- The `#[ignore]`/`AL_SEM_DIR` refresh paths (which re-ran the TS oracle to regenerate goldens) are
+  obsolete. Semantic-change epochs need a RUST-side regen path for affected suites (snapshot-testing
+  model: regenerate from this engine, review the diff, commit). The first consumer is the temp-state
+  epoch (`docs/superpowers/specs/2026-06-11-temp-state-tracking-design.md`).
+- npm package `al-sem@0.0.12` stays published as-is (no consumers; al-perf shells out to
+  `target/release/alsem.exe`).
+
+**First post-flip epoch:** temp-state tracking (member-var/TableType/SourceTableTemporary capture,
+ParameterDependent substitution, path-time resolution, the CalcFields/FlowField gate) — Rust-only,
+rebaselining goldens as designed. Spec ported from al-sem with Rust-primary implementation mapping.
