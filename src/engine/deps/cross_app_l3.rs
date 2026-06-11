@@ -50,10 +50,30 @@ use std::path::Path;
 
 use crate::engine::deps::merged_index::collect_app_paths;
 use crate::engine::deps::projection::{ProjectedObject, ProjectedRoutine, ProjectedTable};
+use crate::engine::l2::features::PTempState;
 use crate::engine::l3::l3_workspace::{
     assemble_l3_workspace_from_disk, resolve, L3Field, L3Object, L3Parameter, L3Resolved,
     L3Routine, L3Table, L3Workspace,
 };
+
+/// `{ kind: "known", value }` — the SAME `PTempState` construction the native param
+/// walk uses (`l2::scope::ts_known`). Task 6 (G7, RV-4).
+fn ts_known(value: bool) -> PTempState {
+    PTempState {
+        kind: "known".to_string(),
+        value: Some(value),
+        parameter_index: None,
+    }
+}
+
+/// `{ kind: "parameter-dependent", parameterIndex }` — mirrors `l2::scope::ts_param_dependent`.
+fn ts_param_dependent(index: u32) -> PTempState {
+    PTempState {
+        kind: "parameter-dependent".to_string(),
+        value: None,
+        parameter_index: Some(index),
+    }
+}
 
 /// The merged-input context: the assembled+resolved cross-app workspace plus the
 /// dep-app ledger the call-graph / coverage projections need (declared deps,
@@ -130,7 +150,10 @@ fn dep_table_to_l3(t: &ProjectedTable) -> L3Table {
         // Dep (.app symbol) tables carry no parsed keys (the ABI projection does
         // not expose them); the cli-b snapshot corpus is source-only anyway.
         keys: Vec::new(),
-        is_temporary: false,
+        // Task 6 (G7, RV-4): forward the ABI `TableType = Temporary` marker so the
+        // merged-whole `resolve()` table-level override (Task 4) upgrades a record var
+        // typed on this dep table to Known(true) — native+ABI shape parity.
+        is_temporary: t.is_temporary,
     }
 }
 
@@ -147,6 +170,47 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         .get(2)
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
+
+    // Task 6 (G7, RV-4): NET-NEW per-param record-var temp-state modeling for ABI
+    // routines. The native source path (`l2::scope::extract_record_variables`)
+    // synthesizes a `record_variables` entry for every RECORD-typed parameter, with a
+    // base `temp_state` per the native rule:
+    //   - param with the `temporary` marker (here `AbiParameter.is_temporary`) → Known(true)
+    //   - by-var record param WITHOUT marker → ParameterDependent(param_index)
+    //   - by-value record param → Known(false)
+    // The table-level override (a param typed on a `TableType = Temporary` table →
+    // Known(true), Task 4 precedence) is NOT applied here: we set `table_name` so the
+    // merged-whole `resolve()` (resolve_record_types) backfills `table_id` and runs the
+    // SAME final override pass that native uses — keeping ONE precedence rule everywhere.
+    // `table_name` is derived from the param's `type_text` (`record_table_name_of`);
+    // the ABI symbol format carries the subtype in the type text, so this is sufficient.
+    // If the type text yields no table name, `table_name` stays None (resolve leaves
+    // `table_id` None; the base temp_state still holds — engine never throws).
+    let record_variables: Vec<crate::engine::l3::l3_workspace::L3RecordVariable> = r
+        .parameters
+        .iter()
+        .filter(|p| p.is_record)
+        .map(|p| {
+            let pidx = p.index as u32;
+            let temp_state = if p.is_temporary {
+                ts_known(true)
+            } else if p.is_var {
+                ts_param_dependent(pidx)
+            } else {
+                ts_known(false)
+            };
+            crate::engine::l3::l3_workspace::L3RecordVariable {
+                id: format!("{}/rv/{}", r.id, p.name.to_lowercase()),
+                name: p.name.clone(),
+                table_name: crate::engine::l3::record_types::record_table_name_of(&p.type_text),
+                table_id: None,
+                is_parameter: true,
+                parameter_index: Some(pidx),
+                temp_state,
+                scope: Some("parameter".to_string()),
+            }
+        })
+        .collect();
 
     let parameters = r
         .parameters
@@ -181,7 +245,7 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         normalized_signature_hash: r.signature_fingerprint.clone(),
         body_available: r.body_available, // false for dep routines.
         parse_incomplete: false,
-        record_variables: Vec::new(),
+        record_variables,
         record_operations: Vec::new(),
         field_accesses: Vec::new(),
         variables: Vec::new(),
@@ -258,6 +322,29 @@ fn append_dep_entities(
             .unwrap_or("");
         workspace.routines.push(dep_routine_to_l3(r, object_type));
     }
+}
+
+/// Test-only (Task 6, G7/RV-4): project a [`ProjectedAbi`] into a STANDALONE L3
+/// workspace (no native source) and run the standard `resolve()` over it. Exercises
+/// the SAME `dep_*_to_l3` conversion + the merged-whole resolve path the production
+/// `build_cross_app_l3_impl` uses, so the synthesized per-param record-var temp
+/// shapes (incl. the table-level override) are validated end-to-end without a `.app`.
+pub fn project_dep_abi_to_l3_for_test(
+    projected: &crate::engine::deps::projection::ProjectedAbi,
+) -> L3Workspace {
+    let mut ws = L3Workspace {
+        objects: Vec::new(),
+        tables: Vec::new(),
+        routines: Vec::new(),
+    };
+    append_dep_entities(
+        &mut ws,
+        &projected.objects,
+        &projected.tables,
+        &projected.routines,
+    );
+    resolve(&mut ws);
+    ws
 }
 
 /// Build the cross-app L3 from a disk workspace (native `.al` source) + its dep

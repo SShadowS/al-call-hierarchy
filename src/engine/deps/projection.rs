@@ -39,6 +39,10 @@ pub struct ProjectedParameter {
     pub type_text: String,
     pub is_var: bool,
     pub is_record: bool,
+    /// Task 6 (G7, RV-4): the param carries a `temporary` marker
+    /// (`TypeDefinition.Temporary == true`). Drives the synthesized record-var
+    /// `Known(true)` temp shape in the ABI→L3 projection.
+    pub is_temporary: bool,
 }
 
 /// A projected dependency routine — the R2.5a comparison surface for routines.
@@ -99,6 +103,10 @@ pub struct ProjectedTable {
     pub name: String,
     pub fields: Vec<ProjectedField>,
     pub keys: Vec<ProjectedKey>,
+    /// Task 6 (G7, RV-4): the table declares `TableType = Temporary`. Forwarded to
+    /// `L3Table.is_temporary` so the merged-whole `resolve()` applies the SAME
+    /// table-level temp override (Task 4) to ABI record vars as to native ones.
+    pub is_temporary: bool,
 }
 
 /// A projected dependency object.
@@ -228,6 +236,7 @@ fn abi_routine_to_routine(
                 type_text: p.type_text.clone(),
                 is_var: p.is_var,
                 is_record: is_record_type(&p.type_text),
+                is_temporary: p.is_temporary,
             })
             .collect(),
         return_type: r.return_type_text.clone(),
@@ -309,6 +318,7 @@ pub fn project_abi_to_index(
                 name: t.name.clone(),
                 fields,
                 keys,
+                is_temporary: t.is_temporary,
             },
         );
     }

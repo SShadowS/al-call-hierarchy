@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- ABI (dependency) temp capture + net-new per-param record-var temp-state modeling
+  (Task 6 / ts6, G7, RV-4) — brings the cross-app `.app` symbol path to native+ABI
+  shape parity so a detector behaves identically whether a record flows through a
+  workspace routine or a dependency routine:
+  - `parse_symbol_reference` (`symbol_reference.rs`) now READS the temp markers it
+    previously ignored: `AbiParameter.is_temporary` from the param
+    `TypeDefinition.Temporary == true`, and `AbiTable.is_temporary` from the
+    table-level property `{"Name":"TableType","Value":"Temporary"}` (exact
+    case-insensitive value match via the new `raw_table_is_temporary` helper —
+    mirrors how `parse_field` reads `fieldclass`; NO string-sniffing). Verified
+    against a real Continia Core 29.0 SymbolReference.json. (A return-type
+    `Temporary` marker is intentionally not modeled — `AbiRoutine` has no return-temp
+    slot and no consumer; documented in-source.)
+  - The ABI projection (`projection.rs`) forwards the markers: `ProjectedParameter`
+    gains `is_temporary`, `ProjectedTable` gains `is_temporary`, both populated in
+    `project_abi_to_index`.
+  - The ABI→L3 projection (`cross_app_l3.rs`) now SYNTHESIZES `record_variables` for
+    record-typed parameters of dep routines (previously `record_variables: []`),
+    each with a base `temp_state` per the native rule (mirroring
+    `l2::scope::extract_record_variables`): `Temporary` marker → `Known(true)`;
+    by-var record param WITHOUT marker → `ParameterDependent(param_index)`;
+    by-value record param → `Known(false)`. Each var carries `is_parameter = true`,
+    `parameter_index`, `scope = Some("parameter")`, and a `table_name` derived from
+    the param `type_text` (`record_types::record_table_name_of`). `dep_table_to_l3`
+    now forwards `is_temporary`, so the merged-whole `resolve()` runs the SAME
+    table-level override (Task 4) — a param typed on a `TableType = Temporary` dep
+    table resolves to `Known(true)`. ONE precedence rule everywhere; falls to the
+    base temp_state (no override) when the type text yields no table name (engine
+    never throws). Suppression-safe: `Known(true)` only from exact markers, every
+    uncertain case stays `PD`/`Unknown`.
 - Page `SourceTableTemporary = true` capture + implicit `Rec`/`xRec` `Known(true)`
   override (Task 5 / ts5, G4, RV-8):
   - `project_file` (`l3_workspace.rs`) now reads the `SourceTableTemporary` property

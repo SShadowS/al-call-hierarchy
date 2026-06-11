@@ -249,6 +249,16 @@ fn raw_object_property(
     None
 }
 
+/// Task 6 (G7, RV-4): a table is declared temporary when it carries the property
+/// `{"Name":"TableType","Value":"Temporary"}` (case-insensitive value match). Mirror
+/// how `parse_field` reads the `fieldclass` property — structural read, NO
+/// string-sniffing. Verified against a real Continia Core 29.0 SymbolReference.json.
+fn raw_table_is_temporary(properties: &Option<Vec<RawProperty>>) -> bool {
+    raw_object_property(properties, "TableType")
+        .map(|v| v.eq_ignore_ascii_case("Temporary"))
+        .unwrap_or(false)
+}
+
 /// Strip surrounding double-quotes (AL quoted-identifier syntax).
 fn unquote_abi_name(raw: &str) -> String {
     let chars: Vec<char> = raw.chars().collect();
@@ -540,7 +550,11 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
                     .and_then(|t| t.name.clone())
                     .unwrap_or_default(),
                 is_var: p.is_var == Some(true),
-                is_temporary: false,
+                // Task 6 (G7, RV-4): a record param carries `TypeDefinition.Temporary`
+                // when declared `temporary` in source (verified against a real Continia
+                // Core 29.0 SymbolReference.json). Read it so the ABI→L3 projection can
+                // model the same Known(true) temp shape the native path produces.
+                is_temporary: p.type_definition.as_ref().and_then(|t| t.temporary) == Some(true),
             })
             .collect(),
         return_type_text: m
@@ -724,7 +738,9 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                         .iter()
                         .map(parse_key)
                         .collect(),
-                    is_temporary: false,
+                    // A TableExtension never declares TableType, but read it
+                    // structurally for uniformity (yields false absent the property).
+                    is_temporary: raw_table_is_temporary(&o.properties),
                 });
             }
         }
@@ -750,7 +766,8 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                 .iter()
                 .map(parse_key)
                 .collect(),
-            is_temporary: false,
+            // Task 6 (G7, RV-4): read the table-level `TableType = Temporary` marker.
+            is_temporary: raw_table_is_temporary(&t.properties),
         });
         objects.push(AbiObject {
             object_type: "Table".to_string(),
