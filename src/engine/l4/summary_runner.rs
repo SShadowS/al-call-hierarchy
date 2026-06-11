@@ -682,7 +682,11 @@ fn substitute_pd_temp_state(
         Some(id) => id,
         None => return TempState::Unknown,
     };
-    // (2) only binding-carrying edge kinds substitute.
+    // (2) only binding-carrying edge kinds substitute. This is intentionally a
+    // POSITIVE allowlist: only `direct | method | implicit-trigger` carry usable
+    // bindings; ANY other kind — including future edge kinds — falls to Unknown
+    // (sound = fires). event-dispatch is already excluded by the `callsite_id:
+    // None` guard above.
     if !matches!(edge.kind.as_str(), "direct" | "method" | "implicit-trigger") {
         return TempState::Unknown;
     }

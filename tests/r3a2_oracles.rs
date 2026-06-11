@@ -55,9 +55,15 @@ fn callee_key_sources_inherited(callee_key: &str, inherited_key: &str) -> bool {
     }
     // Split off the final `|tempfrag` segment; compare the invariant prefix and
     // require the callee tempfrag to be a parameter-dependent fragment (`p<i>`).
+    // Confirm the numeric index too — not merely a leading 'p' — so a non-PD frag
+    // that happens to start with 'p' can never mask a real regression here.
     match (callee_key.rsplit_once('|'), inherited_key.rsplit_once('|')) {
         (Some((callee_prefix, callee_frag)), Some((inh_prefix, _inh_frag))) => {
-            callee_prefix == inh_prefix && callee_frag.starts_with('p')
+            let is_pd_frag = callee_frag.starts_with('p')
+                && callee_frag
+                    .get(1..)
+                    .is_some_and(|s| s.parse::<u32>().is_ok());
+            callee_prefix == inh_prefix && is_pd_frag
         }
         _ => false,
     }
