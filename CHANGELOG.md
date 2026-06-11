@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- d1 (`db-op-in-loop`) RV-1 CalcFields/FlowField gate (Task 11 / ts11 — the headline
+  false-negative fix of the temp-state epoch). A `CalcFields`/`SetAutoCalcFields` on a
+  record d1 resolved to TEMPORARY now downgrades to `info` ONLY when EVERY named field
+  argument resolves (via the table model) to `field_class != "FlowField"` (a
+  Blob/Normal field load on a temp record is genuinely in-memory). If ANY field arg is
+  a FlowField — OR any field arg is UNRESOLVABLE (name not in the table, `table_id`
+  None, table not indexed, or no capturable field args) — d1 KEEPS FIRING at normal
+  severity with the honest note "(temporary record, but FlowField calculation queries
+  the flow targets)". Rationale: a TEMPORARY record's FlowField is still computed by
+  evaluating its CalcFormula against the (physical) flow-target tables — a real SQL
+  round-trip, host tempness irrelevant. Previously the blanket temp downgrade wrongly
+  suppressed temp FlowField CalcFields (a false negative). SOUNDNESS: the gate only
+  ever PREVENTS a downgrade (keeps firing) when uncertain — it never newly suppresses a
+  finding; the only behaviour change is temp FlowField CalcFields now fires (removes the
+  false-negative). The CDO motivating case `Files.CalcFields("File Blob", …)` (Blob →
+  in-memory) still downgrades correctly. Gate works for cross-app tables (`field_class`
+  is modeled on both native `L3Field` and ABI `AbiField`).
 - d1 (`db-op-in-loop`) now consumes the PATH-RESOLVED temp state instead of the
   terminal op's RAW `temp_state` (Task 10 / ts10, Component 3, RV-6 — the first real
   detector behaviour change of the temp-state epoch). For each finding, d1 calls

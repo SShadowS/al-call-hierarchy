@@ -36,7 +36,7 @@ use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::capability_query::{touches_db_of, EffectPresence};
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{anchor_of, unquoted_field_name};
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
@@ -60,6 +60,11 @@ const BOUNDS: WalkBounds = WalkBounds {
 
 const WRITE_OPS: [&str; 5] = ["Modify", "ModifyAll", "Insert", "Delete", "DeleteAll"];
 const HEAVY_READ_OPS: [&str; 2] = ["CalcFields", "CalcSums"];
+/// RV-1 (Task 11): ops whose temp-downgrade is GATED on the field arguments. A
+/// FlowField calculation queries the (physical) flow-target tables even on a
+/// temporary host record, so the temp ⇒ info downgrade only applies when EVERY
+/// named field argument is a non-FlowField (Blob/Normal → in-memory).
+const FLOWFIELD_GATED_OPS: [&str; 2] = ["CalcFields", "SetAutoCalcFields"];
 const RETRIEVAL_OPS: [&str; 6] = ["FindSet", "FindFirst", "FindLast", "Find", "Get", "Next"];
 /// Ops that open a recordset cursor BEFORE a `repeat..until` loop. An in-loop
 /// `Next` on the same record-var IS the cursor advance, not an N+1 antipattern.
@@ -79,6 +84,62 @@ fn op_temp_state_kind(op: &L3RecordOperation) -> TempStateKind {
         Some(ts) => TempStateKind::from_p_temp_state(ts),
         None => TempStateKind::Unknown,
     }
+}
+
+/// RV-1 (Task 11): the FlowField gate for a temp `CalcFields`/`SetAutoCalcFields`.
+///
+/// A temporary host record's FlowField is still computed by evaluating its
+/// CalcFormula against the (physical) flow-target tables — a real SQL query,
+/// host-tempness irrelevant. Blob/Normal field loads ARE in-memory. So the temp ⇒
+/// info downgrade may only apply when EVERY named field argument resolves (via the
+/// table model) to `field_class != "FlowField"`.
+///
+/// Returns `true` when the downgrade is BLOCKED (keep firing): ANY field arg is a
+/// FlowField, OR any field arg is UNRESOLVABLE (name not in the table, table_id is
+/// None, or the table is not in `table_by_id`), OR there are NO capturable field
+/// arguments (conservative). Returns `false` only when every field arg is a
+/// confirmed non-FlowField → safe to downgrade as in-memory.
+///
+/// SOUNDNESS: this only ever PREVENTS a downgrade (keeps firing) when uncertain; it
+/// never suppresses a finding that would otherwise fire.
+fn flowfield_gate_blocks_downgrade(
+    op: &L3RecordOperation,
+    table_by_id: &HashMap<&str, &L3Table>,
+) -> bool {
+    // Resolve the op's table; an unresolved table is conservative → block.
+    let Some(table_id) = op.table_id.as_deref() else {
+        return true;
+    };
+    let Some(table) = table_by_id.get(table_id).copied() else {
+        return true;
+    };
+
+    // The named field arguments. `field_argument_infos` carries the structured,
+    // unquoted-resolvable form (mirrors d22/d18); an empty/None list means we could
+    // not capture any field name → conservative → block.
+    let Some(infos) = &op.field_argument_infos else {
+        return true;
+    };
+    if infos.is_empty() {
+        return true;
+    }
+
+    for info in infos {
+        let arg_lc = unquoted_field_name(info).to_lowercase();
+        let field = table
+            .fields
+            .iter()
+            .find(|f| f.name.to_lowercase() == arg_lc);
+        match field {
+            // Unresolvable field name (not in the table) → conservative → block.
+            None => return true,
+            // ANY FlowField field arg → the calculation queries the flow targets.
+            Some(f) if f.field_class == "FlowField" => return true,
+            Some(_) => {}
+        }
+    }
+    // Every field arg is a confirmed non-FlowField → in-memory → allow the downgrade.
+    false
 }
 
 /// The PATH-RESOLVED temp verdict for a single finding (Component 3 / RV-6).
@@ -321,7 +382,23 @@ fn build_finding(
         routine_by_id,
         edge_kind_by_callsite,
     );
-    let verdict = TempVerdict::from_resolved(&resolved);
+    let resolved_verdict = TempVerdict::from_resolved(&resolved);
+
+    // RV-1 (Task 11): the FlowField gate. A temp `CalcFields`/`SetAutoCalcFields`
+    // only downgrades to info when EVERY named field arg is a confirmed
+    // non-FlowField (Blob/Normal → in-memory). A FlowField — or any unresolvable
+    // field arg — keeps the op FIRING because its CalcFormula queries the physical
+    // flow targets. When the gate blocks, the effective verdict drops from
+    // Temporary to Physical (no temp-downgrade; severity + merge-tie behave as for a
+    // physical op) and a dedicated FlowField note replaces the in-memory note.
+    let flowfield_gated = resolved_verdict == TempVerdict::Temporary
+        && FLOWFIELD_GATED_OPS.contains(&terminal_op.op.as_str())
+        && flowfield_gate_blocks_downgrade(terminal_op, table_by_id);
+    let verdict = if flowfield_gated {
+        TempVerdict::Physical
+    } else {
+        resolved_verdict
+    };
 
     let severity = severity_for(
         terminal_op,
@@ -330,12 +407,16 @@ fn build_finding(
         setup_singleton,
     );
 
-    let temp_note = match verdict {
-        TempVerdict::Temporary => NOTE_TEMPORARY,
-        TempVerdict::Uncertain => NOTE_UNCERTAIN,
-        // Physical: a concrete physical record reached along this path — honest
-        // omission (no temp note), matching the prior Known(false) `""` branch.
-        TempVerdict::Physical => "",
+    let temp_note = if flowfield_gated {
+        NOTE_TEMP_FLOWFIELD
+    } else {
+        match verdict {
+            TempVerdict::Temporary => NOTE_TEMPORARY,
+            TempVerdict::Uncertain => NOTE_UNCERTAIN,
+            // Physical: a concrete physical record reached along this path — honest
+            // omission (no temp note), matching the prior Known(false) `""` branch.
+            TempVerdict::Physical => "",
+        }
     };
     let setup_note = if setup_singleton {
         " (Setup singleton — BC caches Get() per session, so the round-trip happens at most once.)"
@@ -881,6 +962,12 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
 /// before inserting the dual-verdict note.
 const NOTE_TEMPORARY: &str = " (temporary record — not a SQL round-trip)";
 const NOTE_UNCERTAIN: &str = " (temp state uncertain)";
+/// RV-1 (Task 11): the temp-record CalcFields/SetAutoCalcFields finding that the
+/// FlowField gate KEEPS FIRING (a FlowField field arg, or an unresolvable one).
+/// The host record is in-memory, but the FlowField CalcFormula is evaluated against
+/// the physical flow targets — a real SQL round-trip.
+const NOTE_TEMP_FLOWFIELD: &str =
+    " (temporary record, but FlowField calculation queries the flow targets)";
 
 /// RV-6 merge-tie reconciliation. `merge_by_terminal` groups by `rootCauseKey`; a
 /// group whose members DISAGREE on the temp-derived severity must collapse with the
@@ -956,15 +1043,12 @@ fn parts_join(parts: &std::collections::BTreeSet<String>) -> String {
 /// always sits immediately before the trailing setup-note (if any) and the final
 /// `.`, so a substring removal is exact.
 fn strip_temp_note(root_cause: &str) -> String {
-    if let Some(pos) = root_cause.find(NOTE_TEMPORARY) {
-        let mut s = root_cause.to_string();
-        s.replace_range(pos..pos + NOTE_TEMPORARY.len(), "");
-        return s;
-    }
-    if let Some(pos) = root_cause.find(NOTE_UNCERTAIN) {
-        let mut s = root_cause.to_string();
-        s.replace_range(pos..pos + NOTE_UNCERTAIN.len(), "");
-        return s;
+    for note in [NOTE_TEMPORARY, NOTE_UNCERTAIN, NOTE_TEMP_FLOWFIELD] {
+        if let Some(pos) = root_cause.find(note) {
+            let mut s = root_cause.to_string();
+            s.replace_range(pos..pos + note.len(), "");
+            return s;
+        }
     }
     root_cause.to_string()
 }
