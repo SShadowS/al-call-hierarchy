@@ -178,6 +178,27 @@ pub(crate) fn record_loaded_by_call_before(
 /// (lowercased)? One hop only — the callee's own body is inspected directly,
 /// never its transitive callees. Every uncertainty returns `false`.
 fn callee_loads_by_var_arg(ctx: &DetectorContext, cs: &PCallSite, var_lc: &str) -> bool {
+    callee_applies_op_to_by_var_arg(ctx, cs, var_lc, |callee, param_lc| {
+        callee.record_operations.iter().any(|op| {
+            RECORD_LOAD_OPS.contains(&op.op.as_str())
+                && op.record_variable_name.to_lowercase() == param_lc
+        })
+    })
+}
+
+/// Shared G-10/G-3 one-hop callee-summary join: does the RESOLVED callee of
+/// `cs` receive caller variable `var_lc` (lowercased) as a by-`var` record
+/// parameter for which `param_check(callee, param_name_lc)` holds? One hop
+/// only — the callee's own body is inspected directly, never its transitive
+/// callees. Every uncertainty (unresolved callee, missing body, by-value
+/// binding, unresolved binding, unknown parameter) returns `false` — the
+/// detectors keep firing.
+fn callee_applies_op_to_by_var_arg(
+    ctx: &DetectorContext,
+    cs: &PCallSite,
+    var_lc: &str,
+    param_check: impl Fn(&L3Routine, &str) -> bool,
+) -> bool {
     let Some(edge) = ctx.resolved_call_edge_by_callsite.get(&cs.id) else {
         return false;
     };
@@ -202,7 +223,8 @@ fn callee_loads_by_var_arg(ctx: &DetectorContext, cs: &PCallSite, var_lc: &str) 
             continue;
         };
         // Only a RESOLVED by-`var` binding aliases the caller's record — a
-        // by-value callee loads its own copy, proving nothing for the caller.
+        // by-value callee operates on its own copy, proving nothing for the
+        // caller.
         if up.binding_resolution != "resolved" || !up.callee_parameter_is_var {
             continue;
         }
@@ -214,16 +236,82 @@ fn callee_loads_by_var_arg(ctx: &DetectorContext, cs: &PCallSite, var_lc: &str) 
         else {
             continue;
         };
-        // …must be the receiver of a recognized load op in the callee body.
-        let param_lc = param_rv.name.to_lowercase();
-        if callee.record_operations.iter().any(|op| {
-            RECORD_LOAD_OPS.contains(&op.op.as_str())
-                && op.record_variable_name.to_lowercase() == param_lc
-        }) {
+        // …must satisfy the caller-supplied op predicate in the callee body.
+        if param_check(callee, &param_rv.name.to_lowercase()) {
             return true;
         }
     }
     false
+}
+
+/// The narrowing-filter op names d33 recognizes intraprocedurally. Shared so
+/// the G-3 one-hop callee summary (`record_filtered_by_call_before`) provably
+/// uses the SAME set d33 applies in-routine.
+pub(crate) const RECORD_FILTER_OPS: &[&str] = &["SetRange", "SetFilter"];
+
+/// G-3 suppression signal: true iff a CALL SITE strictly before `op_anchor`
+/// in `routine` provably left a narrowing filter on the record variable
+/// `record_variable_name` (docs/engine-gaps.md G-3). Reuses the G-10 one-hop
+/// callee summary: the record variable must be passed as an argument whose
+/// binding RESOLVED to a by-`var` record parameter of a workspace callee, and
+/// that callee's NET effect on that parameter must be "filtered" — its last
+/// filter-relevant op (`SetRange`/`SetFilter`/`Reset`) on the parameter is a
+/// filter, not a `Reset`. A `Reset` on the receiver in the CALLER between the
+/// call and `op_anchor` wipes the callee-applied filters, so that call site
+/// proves nothing (mirrors d33's intraprocedural `was_filtered_before`).
+///
+/// Anything uncertain (unresolved callee, by-value binding, different
+/// variable, non-filtering callee, call after the op) returns `false` —
+/// d33 keeps firing.
+pub(crate) fn record_filtered_by_call_before(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    record_variable_name: &str,
+    op_anchor: &PAnchor,
+) -> bool {
+    let var_lc = record_variable_name.to_lowercase();
+    for cs in &routine.call_sites {
+        if !before_anchor(&cs.source_anchor, op_anchor) {
+            continue;
+        }
+        // A caller-side Reset between the helper call and the bulk op wipes
+        // whatever filters the callee applied.
+        let reset_after_call = routine.record_operations.iter().any(|op| {
+            op.op == "Reset"
+                && op.record_variable_name.to_lowercase() == var_lc
+                && before_anchor(&cs.source_anchor, &op.source_anchor)
+                && before_anchor(&op.source_anchor, op_anchor)
+        });
+        if reset_after_call {
+            continue;
+        }
+        if callee_applies_op_to_by_var_arg(ctx, cs, &var_lc, callee_net_filters_param) {
+            return true;
+        }
+    }
+    false
+}
+
+/// G-3: is the callee's NET effect on its parameter `param_lc` (lowercased)
+/// "filtered"? Scans the callee body's filter-relevant ops (`SetRange` /
+/// `SetFilter` / `Reset`) on that parameter and checks the LAST one (by
+/// source position) is a filter — a trailing `Reset` un-filters the record.
+/// No filter-relevant op at all returns `false`.
+fn callee_net_filters_param(callee: &L3Routine, param_lc: &str) -> bool {
+    let mut last: Option<&L3RecordOperation> = None;
+    for op in &callee.record_operations {
+        if op.record_variable_name.to_lowercase() != param_lc {
+            continue;
+        }
+        if !RECORD_FILTER_OPS.contains(&op.op.as_str()) && op.op != "Reset" {
+            continue;
+        }
+        match last {
+            Some(prev) if !before_anchor(&prev.source_anchor, &op.source_anchor) => {}
+            _ => last = Some(op),
+        }
+    }
+    last.is_some_and(|op| RECORD_FILTER_OPS.contains(&op.op.as_str()))
 }
 
 /// G-6: BC VIRTUAL/system tables with NO physical SQL backing (docs/engine-gaps.md

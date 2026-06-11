@@ -10,6 +10,9 @@
 //!  - temporary records (`tempState: { kind: "known", value: true }`).
 //!  - operations whose tableId did not resolve.
 //!  - parse-incomplete routines.
+//!  - G-3: receivers provably filtered by a one-hop by-`var` helper call
+//!    earlier in the routine (`record_filtered_by_call_before`, reusing the
+//!    G-10 callee-summary machinery).
 //!
 //! Severity:
 //!  - `DeleteAll` without filter → `critical`.
@@ -20,7 +23,9 @@
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{
+    anchor_of, before_anchor, record_filtered_by_call_before, RECORD_FILTER_OPS,
+};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -28,7 +33,6 @@ use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 const DETECTOR: &str = "d33-unfiltered-bulk-write";
 
 const BULK_OPS: &[&str] = &["DeleteAll", "ModifyAll"];
-const FILTER_OPS: &[&str] = &["SetRange", "SetFilter"];
 
 pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
     let ws = &resolved.workspace;
@@ -89,8 +93,17 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 }
             };
 
-            // Check whether a narrowing filter was applied before this op.
-            if was_filtered_before(&routine.record_operations, &var_key, op) {
+            // Check whether a narrowing filter was applied before this op —
+            // inline (SetRange/SetFilter record op), or G-3: by a one-hop
+            // helper call that takes the receiver by-`var` and filters it.
+            if was_filtered_before(&routine.record_operations, &var_key, op)
+                || record_filtered_by_call_before(
+                    routine,
+                    ctx,
+                    &op.record_variable_name,
+                    &op.source_anchor,
+                )
+            {
                 skipped_filtered += 1;
                 continue;
             }
@@ -206,7 +219,7 @@ fn was_filtered_before(
         if !before_anchor(&other.source_anchor, &bulk_op.source_anchor) {
             continue;
         }
-        if FILTER_OPS.contains(&other.op.as_str()) {
+        if RECORD_FILTER_OPS.contains(&other.op.as_str()) {
             filtered = true;
         } else if other.op == "Reset" {
             filtered = false;

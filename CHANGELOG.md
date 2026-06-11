@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-3 (docs/engine-gaps.md): `d33-unfiltered-bulk-write` no longer fires on a
+  `DeleteAll`/`ModifyAll` whose receiver was provably filtered by a helper procedure call
+  earlier in the routine (CDO triage batches 9, 10 — `SetTemplateFilter(Rec)`,
+  `SetMergeFieldFilter(Rec)`-style helpers, ~5 FPs). Implemented as
+  `record_filtered_by_call_before` (`src/engine/l5/detectors/mod.rs`), the filter analog of
+  G-10's load gate, consulted by d33 after its intraprocedural `was_filtered_before` scan.
+  It REUSES the G-10 one-hop callee-summary join — extracted into the shared
+  `callee_applies_op_to_by_var_arg` helper (resolve the callsite's callee via
+  `resolved_call_edge_by_callsite`, join `argument_bindings` with
+  `upgraded_bindings_by_callsite` requiring `binding_resolution == "resolved"` +
+  `callee_parameter_is_var`, then inspect the callee's `record_operations` on the by-var
+  parameter) — with a filter predicate: the callee's NET effect on the parameter must be
+  filtered, i.e. its last `SetRange`/`SetFilter`/`Reset` op (by source position) on that
+  parameter is a filter (`RECORD_FILTER_OPS` — the exact set d33 applies intraprocedurally,
+  now shared), not a `Reset`. A caller-side `Reset` between the helper call and the bulk op
+  also voids that call (mirrors `was_filtered_before`'s Reset semantics). One hop only;
+  suppression-direction safe: no filter call, a non-filtering callee, a by-value binding,
+  an unresolved callee, a filter call AFTER the bulk write, a callee that filters then
+  Resets, and a caller-side Reset after the helper all keep firing. Covered by
+  `tests/gap_g3_interproc_filter.rs` (helper-SetRange + helper-SetFilter suppressions; six
+  controls). No in-repo golden moved by this change (full `cargo test` divergence-checked);
+  the real-app (CDO) rebaseline remains with the consolidated gap-fix rebaseline task.
 - G-10 (docs/engine-gaps.md): `d11-modify-without-get` / `d21-read-without-load` no longer
   fire when the record WAS loaded by a call that isn't a literal `Get`/`Find` record op
   (CDO triage batches 1, 10, 11, 12 — `GetBySystemId` ×4, `FindTemplate`-style wrappers,

@@ -85,6 +85,24 @@ is the dominant *temp*-related FP source after the epoch.
 
 ## G-3 — d33 blind to filters set via helper procedures (interprocedural)
 
+**Status: FIXED (commit `fix(engine-g3): d33 recognizes filters set via one-hop helper
+procedures (G-3)`).**
+New gate `record_filtered_by_call_before` (`src/engine/l5/detectors/mod.rs`), consulted by
+d33 after its intraprocedural `was_filtered_before` scan — the filter analog of G-10's load
+gate, sharing the same one-hop callee-summary join (extracted into
+`callee_applies_op_to_by_var_arg`: resolved call edge + resolved by-`var` binding via
+`resolved_call_edge_by_callsite` / `upgraded_bindings_by_callsite`, then a predicate over
+the callee's `record_operations` on the bound parameter). The predicate requires the
+callee's NET effect on the parameter to be filtered: its last `SetRange`/`SetFilter`/`Reset`
+op (by source position) on that parameter is a filter (`RECORD_FILTER_OPS`, the exact set
+d33 uses intraprocedurally, now shared), not a `Reset`. A caller-side `Reset` between the
+helper call and the bulk op voids that call site. One hop only; suppression-direction safe:
+no filter call, non-filtering callee, by-value binding, unresolved callee, filter call
+after the bulk write, callee filter-then-Reset, and caller-side Reset all keep firing.
+Tests: `tests/gap_g3_interproc_filter.rs` (helper-SetRange/SetFilter suppressions + six
+controls). No in-repo golden moved; the CDO-run rebaseline remains with the consolidated
+rebaseline task.
+
 **Symptom:** `d33-unfiltered-bulk-write` fires on `DeleteAll`/`ModifyAll` when the filter was
 applied by a *helper procedure call* (`SetTemplateFilter(Rec)`, `GetAttachments(Rec)`,
 `SetMergeFieldFilter(Rec)`) immediately before, rather than an inline `SetRange`/`SetFilter`.
