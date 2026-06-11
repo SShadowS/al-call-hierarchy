@@ -285,3 +285,78 @@ codeunit 50206 "G6 Open Cond"
         "RecRef op after a conditional Open must stay Unknown (conservative)"
     );
 }
+
+/// `RecRef.Open(no, IsTemp)` where the 2nd arg is a VARIABLE (not the `true`/`false`
+/// literal) → Unknown (None). Guards the "only the exact `true` literal yields
+/// Known(true)" rule — a non-literal flag must NEVER be read as Known(true).
+#[test]
+fn open_non_literal_second_arg_stays_unknown() {
+    let src = r#"
+table 50207 "G6 Item8"
+{
+    fields { field(1; Id; Integer) { } }
+    keys { key(PK; Id) { } }
+}
+
+codeunit 50207 "G6 Open Var"
+{
+    procedure DoWork(IsTemp: Boolean)
+    var
+        RecRef: RecordRef;
+        i: Integer;
+    begin
+        RecRef.Open(Database::"G6 Item8", IsTemp);
+        for i := 1 to 5 do
+            RecRef.DeleteAll();
+    end;
+}
+"#;
+    let resolved = assemble_and_resolve_default(&[al("G6OpenVar", src)], APP_GUID);
+    let routine = resolved
+        .routine_by_name("DoWork")
+        .expect("DoWork must be resolved");
+
+    assert_eq!(
+        routine.first_record_op_temp_known("RecRef"),
+        None,
+        "RecRef.Open(no, IsTemp) with a VARIABLE second arg must stay Unknown — \
+         only the exact `true` literal may yield Known(true)"
+    );
+}
+
+/// `RecRef.GetTable(SomeRec.Field)` — a non-bare-identifier first arg → Unknown
+/// (None). Guards the identifier-only source resolution: a member/compound
+/// expression is not a record-var name and must not propagate a temp state.
+#[test]
+fn gettable_non_identifier_first_arg_stays_unknown() {
+    let src = r#"
+table 50208 "G6 Item9"
+{
+    fields { field(1; Id; Integer) { } field(2; "Sub Ref"; RecordId) { } }
+    keys { key(PK; Id) { } }
+}
+
+codeunit 50208 "G6 GetTable Member"
+{
+    procedure DoWork()
+    var
+        TempRec: Record "G6 Item9" temporary;
+        RecRef: RecordRef;
+    begin
+        RecRef.GetTable(TempRec."Sub Ref");
+        RecRef.DeleteAll();
+    end;
+}
+"#;
+    let resolved = assemble_and_resolve_default(&[al("G6GetTableMember", src)], APP_GUID);
+    let routine = resolved
+        .routine_by_name("DoWork")
+        .expect("DoWork must be resolved");
+
+    assert_eq!(
+        routine.first_record_op_temp_known("RecRef"),
+        None,
+        "RecRef.GetTable(TempRec.\"Sub Ref\") with a non-bare-identifier first arg \
+         must stay Unknown — only a bare record-var name resolves a temp state"
+    );
+}
