@@ -91,6 +91,7 @@ fn make_routine_for_pass2b(variables: Vec<L3Variable>) -> L3Routine {
         source_anchor: dummy_anchor(),
         loop_stack: Vec::new(),
         field_argument_infos: None,
+        in_until_condition: false,
     };
 
     L3Routine {

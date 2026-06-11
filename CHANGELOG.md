@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-1 (docs/engine-gaps.md): `d1-db-op-in-loop` no longer fires on the `Next()` that IS the
+  `until <var>.Next() = 0` terminator of the very loop being iterated — that `Next()` is the
+  loop's own per-iteration cursor advancement (removing it breaks the loop), never an
+  actionable db op (the single largest crit/high FP class in the CDO triage, ~15+ FPs). The
+  suppression is an exact structural proof: the L2 body walk now marks a record op whose node
+  sits inside the `condition` field of its NEAREST enclosing `repeat_statement`
+  (`PRecordOperation.in_until_condition`, serde-skipped so every feature-level golden stays
+  byte-identical; forwarded through `L3RecordOperation`), and d1 skips
+  `op == "Next" && in_until_condition` in BOTH its direct in-loop branch and `terminals_at`
+  (so a callee's own terminator no longer fires transitively from an ancestor loop either).
+  Suppression-direction safe: only a proven terminator `Next` is skipped — a real db op in
+  the loop body, a mid-body `Next()` advancing a DIFFERENT cursor, and the cursor-opening
+  `FindSet` inside an outer loop all keep firing (no non-Next op is ever suppressed). Covered
+  by `tests/gap_g1_next_terminator.rs` (terminator suppression — direct, nested-opener and
+  transitive — plus in-body Modify and second-cursor Next controls). No in-repo golden moved:
+  the direct terminator-Next was already absent from every fixture golden (the pre-existing
+  pre-loop cursor-opener heuristic covered the simple `FindSet → repeat → until Next` shape)
+  and no fixture exercises the transitive/nested-opener shapes; the real-app (CDO) rebaseline
+  remains with the consolidated gap-fix rebaseline task. The L2 baseline-vector comparison
+  (`tests/l2_vectors.rs`) compares the serialized contract surface only — `PRecordOperation`
+  gained a manual `PartialEq` that excludes the serde-skipped internal flag.
 - G-9 (docs/engine-gaps.md): `d11-modify-without-get`, `d21-read-without-load` and
   `d37-validate-without-persist` no longer fire on the implicit `Rec` inside page triggers
   (`OnValidate`, `OnAction`, `OnAfterGetRecord`, `OnDrillDown`, `OnAfterGetCurrRecord`) or

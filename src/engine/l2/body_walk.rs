@@ -294,6 +294,33 @@ fn make_temp_state_unknown() -> PTempState {
     }
 }
 
+/// G-1: is `node` (a record-op expression) inside the `until` CONDITION of its
+/// NEAREST enclosing loop statement — i.e. the loop's own terminator expression?
+///
+/// Walking up from an expression in a repeat's `until` condition, the FIRST
+/// loop-statement ancestor is that repeat itself (conditions are expressions and
+/// cannot contain statements, so no other loop can sit between), which makes
+/// "nearest repeat ancestor's `condition` field byte-range contains `node`" an
+/// EXACT structural proof of terminator position. Any other nearest loop kind
+/// (for/foreach/while) — or a node in the repeat BODY — returns `false`.
+fn is_in_until_condition(node: Node) -> bool {
+    let mut cur = node;
+    while let Some(parent) = cur.parent() {
+        match parent.kind() {
+            "repeat_statement" => {
+                return parent
+                    .child_by_field_name("condition")
+                    .map(|c| c.start_byte() <= node.start_byte() && node.end_byte() <= c.end_byte())
+                    .unwrap_or(false);
+            }
+            "for_statement" | "foreach_statement" | "while_statement" => return false,
+            _ => {}
+        }
+        cur = parent;
+    }
+    false
+}
+
 /// Push a record-op + paired operationSite (kind record-op or lock).
 fn push_record_op(
     ctx: &mut Ctx,
@@ -318,6 +345,7 @@ fn push_record_op(
         field_argument_infos,
         loop_stack: snapshot_loop_stack.clone(),
         source_anchor: anchor.clone(),
+        in_until_condition: is_in_until_condition(node),
     });
     ctx.operation_sites.push(POperationSite {
         id: op_id,

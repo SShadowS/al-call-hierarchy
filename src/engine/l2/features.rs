@@ -187,7 +187,7 @@ pub struct POperationSite {
     pub order: Option<OperationOrder>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PRecordOperation {
     pub id: String,
     pub op: String,
@@ -205,7 +205,39 @@ pub struct PRecordOperation {
     pub loop_stack: Vec<String>,
     #[serde(rename = "sourceAnchor")]
     pub source_anchor: PAnchor,
+    /// G-1: `true` when this op sits inside the `until` CONDITION of its nearest
+    /// enclosing `repeat` loop — i.e. it IS the loop's own terminator expression
+    /// (e.g. the `Next()` in `repeat … until Rec.Next() = 0`), evaluated once per
+    /// iteration as loop control, not a db op added to the body.
+    ///
+    /// INTERNAL-ONLY (`serde(skip)`): never serialized, so every feature-level
+    /// golden stays byte-identical; deserialized goldens default it to `false`.
+    /// Consumed by d1 to suppress the terminator `Next()` (suppression-direction
+    /// safe: an exact structural proof, anything else keeps firing).
+    #[serde(skip)]
+    pub in_until_condition: bool,
 }
+
+/// MANUAL PartialEq: compares exactly the SERIALIZED L2 contract surface.
+/// `in_until_condition` is EXCLUDED — it is derived, serde-skipped internal data
+/// (an L5 input, not part of the L2 shape), and baseline vectors deserialize it
+/// to the default `false`; including it would make every freshly-walked op in an
+/// `until` condition compare unequal to its vector counterpart.
+impl PartialEq for PRecordOperation {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.op == other.op
+            && self.record_variable_name == other.record_variable_name
+            && self.record_variable_id == other.record_variable_id
+            && self.temp_state == other.temp_state
+            && self.field_arguments == other.field_arguments
+            && self.field_argument_infos == other.field_argument_infos
+            && self.loop_stack == other.loop_stack
+            && self.source_anchor == other.source_anchor
+    }
+}
+
+impl Eq for PRecordOperation {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PLoop {

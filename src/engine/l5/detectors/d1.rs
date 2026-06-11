@@ -70,6 +70,17 @@ const RETRIEVAL_OPS: [&str; 6] = ["FindSet", "FindFirst", "FindLast", "Find", "G
 /// `Next` on the same record-var IS the cursor advance, not an N+1 antipattern.
 const CURSOR_OPENER_OPS: [&str; 4] = ["FindSet", "FindFirst", "FindLast", "Find"];
 
+/// G-1 (docs/engine-gaps.md): a `Next` op that IS the `until …` terminator of its
+/// enclosing `repeat` loop. `in_until_condition` is the L2 body walk's EXACT
+/// structural proof (the op node sits inside the `condition` field of its nearest
+/// enclosing `repeat_statement`), so this `Next` is the loop's own per-iteration
+/// cursor advancement — removing it breaks the loop, hence never actionable.
+/// Suppression-direction safe: only a structurally-proven terminator `Next` is
+/// skipped; a mid-body `Next` on another cursor (or ANY non-Next db op) keeps firing.
+fn is_terminator_next(op: &L3RecordOperation) -> bool {
+    op.op == "Next" && op.in_until_condition
+}
+
 /// `temp_state.kind === "known" && value === true`. A `None` temp_state (al-sem
 /// always sets `{kind:"unknown"}`) is NOT a known-temp.
 fn is_known_temp(op: &L3RecordOperation) -> bool {
@@ -531,6 +542,10 @@ impl<'a> WalkPolicy for D1Policy<'a> {
         r.record_operations
             .iter()
             .filter(|op| is_db_touching_class(classify_op(&op.op)))
+            // G-1: a callee's own `until <var>.Next() …` terminator is the callee
+            // loop's advancement, never an actionable db op for ANY ancestor loop —
+            // exclude it from the interprocedural terminals too.
+            .filter(|op| !is_terminator_next(op))
             .map(|op| Terminal {
                 routine_id: node.to_string(),
                 local_loop_depth: op.loop_stack.len() as i64,
@@ -743,6 +758,12 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             if op.op == "Next"
                 && cursor_opened_record_vars.contains(&op.record_variable_name.to_lowercase())
             {
+                continue;
+            }
+            // G-1: the `until <var>.Next() …` TERMINATOR of the enclosing repeat loop
+            // is the loop's own cursor advancement — it cannot be hoisted or removed
+            // without breaking the loop, so it is never an actionable finding.
+            if is_terminator_next(op) {
                 continue;
             }
             let Some(representative_loop) = representative_loop_id(&op.loop_stack) else {

@@ -13,6 +13,18 @@ This is a backlog for later work, not a committed plan.
 
 ## G-1 — d1 fires on the `Next()` loop terminator (highest volume, easiest)
 
+**Status: FIXED (commit `fix(engine-g1): suppress d1 on the loop's own Next() terminator (G-1)`).**
+Structural signal: the L2 body walk marks a record op that sits inside the `condition` field
+of its NEAREST enclosing `repeat_statement` (`PRecordOperation.in_until_condition`,
+serde-skipped → feature goldens byte-identical; forwarded through `L3RecordOperation`). d1
+skips `op == "Next" && in_until_condition` in BOTH the direct in-loop branch and
+`terminals_at` (the callee's own terminator no longer fires transitively from an ancestor
+loop). A mid-body `Next` on a different cursor, any non-Next db op, and the in-outer-loop
+cursor opener all keep firing. Tests: `tests/gap_g1_next_terminator.rs`. No in-repo golden
+moved (the pre-loop cursor-opener heuristic already kept the simple direct shape out of every
+fixture golden; no fixture exercises the transitive/nested-opener shapes); the CDO-run
+rebaseline remains with the consolidated rebaseline task.
+
 **Symptom:** `d1-db-op-in-loop` flags `Rec.Next()` when it is the `until Rec.Next() = 0`
 terminator of the very loop being iterated. That `Next()` *is* the loop's advancement, not
 an extra DB op added to the body — removing it breaks the loop.

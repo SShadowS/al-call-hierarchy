@@ -200,6 +200,11 @@ pub struct L3RecordOperation {
     /// the L3 record-type projection drops, forwarded here for L5 detectors (d4
     /// reads `op.fieldArgumentInfos[0]` for the literal-key test). Additive.
     pub field_argument_infos: Option<Vec<crate::engine::l2::features::PExpressionInfo>>,
+    /// G-1: `true` when this op sits inside the `until` condition of its nearest
+    /// enclosing `repeat` loop — the loop's OWN terminator expression (from L2 body
+    /// walk, an exact structural proof). Forwarded for d1 to suppress the terminator
+    /// `Next()`. Never serialized (the L3 projection is field-allowlisted).
+    pub in_until_condition: bool,
 }
 
 /// A lexical variable (params → locals → globals) carrying its declared type, for
@@ -948,6 +953,7 @@ fn project_file(
                     source_anchor: op.source_anchor.clone(),
                     loop_stack: op.loop_stack.clone(),
                     field_argument_infos: op.field_argument_infos.clone(),
+                    in_until_condition: op.in_until_condition,
                 })
                 .collect();
             let field_accesses = features.field_accesses.clone();
