@@ -147,11 +147,20 @@ fn flowfield_gate_blocks_downgrade(
 ///   - `Temporary`  ← resolved `Known(true)`  → severity forced to `info`;
 ///   - `Physical`   ← resolved `Known(false)` → fires at normal severity, no temp note;
 ///   - `Uncertain`  ← resolved `Unknown`      → fires at normal severity, "(temp state uncertain)".
+///   - `FlowFieldGated` ← RV-1 (Task 11): the path resolved `Temporary`, but the
+///     terminal op is a `CalcFields`/`SetAutoCalcFields` whose FlowField gate BLOCKS
+///     the info-downgrade (a FlowField — or unresolvable — field arg). It fires at
+///     NORMAL severity (like `Physical` — no info downgrade) but carries its OWN note
+///     (`NOTE_TEMP_FLOWFIELD`): the host record is in-memory yet the FlowField
+///     CalcFormula still queries the physical flow targets. A DEDICATED variant (not a
+///     faked `Physical`) so the merge-tie reconciliation preserves the FlowField fact
+///     in the dual-verdict note instead of silently dropping it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TempVerdict {
     Temporary,
     Physical,
     Uncertain,
+    FlowFieldGated,
 }
 
 impl TempVerdict {
@@ -166,13 +175,14 @@ impl TempVerdict {
     }
 
     /// The dual-verdict note fragment for this verdict (`temporary` / `physical` /
-    /// `uncertain`), used to build the merge-tie note "temporary via <A>; physical
-    /// via <B>".
+    /// `uncertain` / `flowfield-on-temp`), used to build the merge-tie note
+    /// "temporary via <A>; physical via <B>".
     fn label(self) -> &'static str {
         match self {
             TempVerdict::Temporary => "temporary",
             TempVerdict::Physical => "physical",
             TempVerdict::Uncertain => "uncertain",
+            TempVerdict::FlowFieldGated => "flowfield-on-temp",
         }
     }
 }
@@ -294,6 +304,8 @@ fn severity_for(
     effective_loop_depth: i64,
     is_setup_singleton: bool,
 ) -> &'static str {
+    // Only `Temporary` forces the info downgrade. `FlowFieldGated` (RV-1 / Task 11)
+    // deliberately does NOT — it fires at the op-based severity, like `Physical`.
     if verdict == TempVerdict::Temporary {
         return "info";
     }
@@ -388,14 +400,15 @@ fn build_finding(
     // only downgrades to info when EVERY named field arg is a confirmed
     // non-FlowField (Blob/Normal → in-memory). A FlowField — or any unresolvable
     // field arg — keeps the op FIRING because its CalcFormula queries the physical
-    // flow targets. When the gate blocks, the effective verdict drops from
-    // Temporary to Physical (no temp-downgrade; severity + merge-tie behave as for a
-    // physical op) and a dedicated FlowField note replaces the in-memory note.
-    let flowfield_gated = resolved_verdict == TempVerdict::Temporary
+    // flow targets. When the gate blocks, the verdict becomes the DEDICATED
+    // `FlowFieldGated` (fires at normal severity like `Physical`, but carries its own
+    // FlowField note) — NOT a faked `Physical`, so the merge-tie reconciliation can
+    // preserve the FlowField fact when this path merges with a genuinely-physical one.
+    let verdict = if resolved_verdict == TempVerdict::Temporary
         && FLOWFIELD_GATED_OPS.contains(&terminal_op.op.as_str())
-        && flowfield_gate_blocks_downgrade(terminal_op, table_by_id);
-    let verdict = if flowfield_gated {
-        TempVerdict::Physical
+        && flowfield_gate_blocks_downgrade(terminal_op, table_by_id)
+    {
+        TempVerdict::FlowFieldGated
     } else {
         resolved_verdict
     };
@@ -407,16 +420,13 @@ fn build_finding(
         setup_singleton,
     );
 
-    let temp_note = if flowfield_gated {
-        NOTE_TEMP_FLOWFIELD
-    } else {
-        match verdict {
-            TempVerdict::Temporary => NOTE_TEMPORARY,
-            TempVerdict::Uncertain => NOTE_UNCERTAIN,
-            // Physical: a concrete physical record reached along this path — honest
-            // omission (no temp note), matching the prior Known(false) `""` branch.
-            TempVerdict::Physical => "",
-        }
+    let temp_note = match verdict {
+        TempVerdict::Temporary => NOTE_TEMPORARY,
+        TempVerdict::Uncertain => NOTE_UNCERTAIN,
+        TempVerdict::FlowFieldGated => NOTE_TEMP_FLOWFIELD,
+        // Physical: a concrete physical record reached along this path — honest
+        // omission (no temp note), matching the prior Known(false) `""` branch.
+        TempVerdict::Physical => "",
     };
     let setup_note = if setup_singleton {
         " (Setup singleton — BC caches Get() per session, so the round-trip happens at most once.)"
@@ -743,7 +753,13 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             };
             // d1.ts:320-322 — known-temp direct op ⇒ severity forced to "info".
             // Count it here, PER OP, before the finding is built (NOT post-merge).
-            if is_known_temp(op) {
+            // RV-1 (Task 11): a known-temp `CalcFields`/`SetAutoCalcFields` whose
+            // FlowField gate BLOCKS the downgrade now FIRES (not info), so it must NOT
+            // increment `downgradedToInfo`. Exclude the gated ops here so the stat
+            // tracks the ops that genuinely downgrade.
+            let flowfield_gated_direct = FLOWFIELD_GATED_OPS.contains(&op.op.as_str())
+                && flowfield_gate_blocks_downgrade(op, &ctx.table_by_id);
+            if is_known_temp(op) && !flowfield_gated_direct {
                 downgraded_to_info += 1;
             }
 
@@ -997,10 +1013,22 @@ fn reconcile_merge_tie(recs: Vec<FindingRec>) -> Vec<Finding> {
         if idxs.len() < 2 {
             continue;
         }
-        // A tie exists iff the members do not all share one severity.
+        // A tie needs reconciling iff either (i) the members disagree on severity, OR
+        // (ii) RV-1 (Task 11): the members disagree on VERDICT and at least one is
+        // `FlowFieldGated`. Case (ii) matters even when severities AGREE: the canonical
+        // pick (worst, then position, then id) could otherwise lift a `Physical`
+        // member's NOTE-LESS rootCause and silently drop the FlowField fact. Forcing
+        // the dual-verdict note here surfaces "flowfield-on-temp via <caller>" so the
+        // FlowField fact survives the merge regardless of which member is canonical.
         let first_sev = recs[idxs[0]].finding.severity.clone();
         let severities_agree = idxs.iter().all(|&i| recs[i].finding.severity == first_sev);
-        if severities_agree {
+        let first_verdict = recs[idxs[0]].verdict;
+        let verdicts_agree = idxs.iter().all(|&i| recs[i].verdict == first_verdict);
+        let has_flowfield_gated = idxs
+            .iter()
+            .any(|&i| recs[i].verdict == TempVerdict::FlowFieldGated);
+        let needs_reconcile = !severities_agree || (!verdicts_agree && has_flowfield_gated);
+        if !needs_reconcile {
             continue;
         }
 

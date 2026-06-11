@@ -19,7 +19,7 @@
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
 use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_call_hierarchy::engine::l5::registry::{run_detectors, DetectorStats};
 
 const APP_GUID: &str = "11111111-0000-0000-0000-0000000d1abc";
 
@@ -32,6 +32,26 @@ fn run_d1(files: &[(String, String)]) -> Vec<Finding> {
         .collect();
     assert_eq!(d1.len(), 1, "d1 detector must be registered exactly once");
     run_detectors(&resolved, &d1).findings
+}
+
+/// Run d1 and return its `DetectorStats` (for the `downgradedToInfo` stat assertions).
+fn run_d1_stats(files: &[(String, String)]) -> DetectorStats {
+    let resolved = assemble_and_resolve_default(files, APP_GUID);
+    let d1: Vec<_> = registered_detectors()
+        .into_iter()
+        .filter(|d| d.name == "d1-db-op-in-loop")
+        .collect();
+    assert_eq!(d1.len(), 1, "d1 detector must be registered exactly once");
+    let out = run_detectors(&resolved, &d1);
+    out.detector_stats
+        .into_iter()
+        .find(|s| s.detector == "d1-db-op-in-loop")
+        .expect("d1 stats must be present")
+}
+
+/// The `downgradedToInfo` skip counter (absent ⇒ 0).
+fn downgraded_to_info(stats: &DetectorStats) -> u64 {
+    stats.skipped.get("downgradedToInfo").copied().unwrap_or(0)
 }
 
 fn al(name: &str, body: &str) -> (String, String) {
@@ -306,6 +326,167 @@ codeunit 50129 "NC D1 NonCalc"
     assert!(
         !f.root_cause.contains(FLOWFIELD_NOTE),
         "non-CalcFields temp op must NOT carry the FlowField note. rootCause: {}",
+        f.root_cause
+    );
+}
+
+// --- (f) downgradedToInfo stat excludes a gated FlowField CalcFields ----------
+
+/// The `downgradedToInfo` stat counts a direct in-loop known-temp op ONLY when it
+/// genuinely downgrades. A Blob CalcFields on a temp record downgrades → counted.
+/// A FlowField CalcFields on a temp record is GATED (fires, not info) → NOT counted.
+#[test]
+fn downgraded_to_info_stat_excludes_gated_flowfield_calcfields() {
+    // Blob CalcFields on a temp record → genuinely downgrades → stat counts it.
+    let blob_src = r#"
+table 50131 "ST Blob Files"
+{
+    fields
+    {
+        field(1; "No."; Code[20]) { }
+        field(2; "File Blob"; Blob) { }
+    }
+    keys { key(PK; "No.") { } }
+}
+
+codeunit 50131 "ST D1 Blob"
+{
+    procedure LoadFiles()
+    var TempFiles: Record "ST Blob Files" temporary; i: Integer;
+    begin
+        for i := 1 to 10 do
+            TempFiles.CalcFields("File Blob");
+    end;
+}
+"#;
+    let blob_stats = run_d1_stats(&[al("STD1Blob", blob_src)]);
+    assert_eq!(
+        downgraded_to_info(&blob_stats),
+        1,
+        "a Blob CalcFields on a temp record genuinely downgrades → counted. stats: {blob_stats:#?}"
+    );
+
+    // FlowField CalcFields on a temp record → GATED (fires) → NOT counted.
+    let flow_src = r#"
+table 50133 "ST Flow Files"
+{
+    fields
+    {
+        field(1; "No."; Code[20]) { }
+        field(3; "Amount"; Decimal) { FieldClass = FlowField; CalcFormula = sum("ST Flow Ledger".Amount where("File No." = field("No."))); }
+    }
+    keys { key(PK; "No.") { } }
+}
+
+table 50134 "ST Flow Ledger"
+{
+    fields { field(1; "File No."; Code[20]) { } field(2; Amount; Decimal) { } }
+    keys { key(PK; "File No.") { } }
+}
+
+codeunit 50133 "ST D1 Flow"
+{
+    procedure SumFiles()
+    var TempFiles: Record "ST Flow Files" temporary; i: Integer;
+    begin
+        for i := 1 to 10 do
+            TempFiles.CalcFields("Amount");
+    end;
+}
+"#;
+    let flow_stats = run_d1_stats(&[al("STD1Flow", flow_src)]);
+    assert_eq!(
+        downgraded_to_info(&flow_stats),
+        0,
+        "a GATED FlowField CalcFields fires (not info) → must NOT increment downgradedToInfo. \
+         stats: {flow_stats:#?}"
+    );
+}
+
+// --- (g) merge: FlowFieldGated path + physical path on the same op ------------
+
+/// A helper `H(var Files)` does `Files.CalcFields("Amount")` (PD temp_state, "Amount"
+/// is a FlowField). Caller A loops calling `H(TempFiles)` (a TEMPORARY local) → that
+/// path resolves Temporary, gate trips → `FlowFieldGated` (fires). Caller B loops
+/// calling `H(PhysFiles)` (a PHYSICAL local) → that path resolves `Physical` (fires).
+/// Both share the SAME terminal op so `merge_by_terminal` collapses them to ONE
+/// finding.
+///
+/// Both paths FIRE at the SAME op-based severity (CalcFields → high), so there is no
+/// merge-TIE — the canonical finding's FlowField note must SURVIVE the merge intact
+/// (NOT be stripped by the reconcile pass). This is the defect the dedicated
+/// `FlowFieldGated` variant fixes: faking `Physical` would have left a Physical
+/// canonical with NO note, losing the FlowField fact entirely.
+#[test]
+fn merge_flowfield_gated_with_physical_preserves_flowfield_note() {
+    let src = r#"
+table 50135 "MF Files"
+{
+    fields
+    {
+        field(1; "No."; Code[20]) { }
+        field(3; "Amount"; Decimal) { FieldClass = FlowField; CalcFormula = sum("MF Ledger".Amount where("File No." = field("No."))); }
+    }
+    keys { key(PK; "No.") { } }
+}
+
+table 50136 "MF Ledger"
+{
+    fields { field(1; "File No."; Code[20]) { } field(2; Amount; Decimal) { } }
+    keys { key(PK; "File No.") { } }
+}
+
+codeunit 50135 "MF D1 Merge"
+{
+    procedure CalcHelper(var Files: Record "MF Files")
+    begin
+        Files.CalcFields("Amount");
+    end;
+
+    procedure CallerTemp()
+    var TempFiles: Record "MF Files" temporary; i: Integer;
+    begin
+        for i := 1 to 10 do
+            CalcHelper(TempFiles);
+    end;
+
+    procedure CallerPhysical()
+    var PhysFiles: Record "MF Files"; i: Integer;
+    begin
+        for i := 1 to 10 do
+            CalcHelper(PhysFiles);
+    end;
+}
+"#;
+    let findings = run_d1(&[al("MFD1Merge", src)]);
+    assert_eq!(
+        findings.len(),
+        1,
+        "the two callers' paths must merge to one finding. findings: {findings:#?}"
+    );
+    let f = &findings[0];
+    // Both paths FIRE (FlowFieldGated + Physical), so the finding is NOT info.
+    assert_ne!(
+        f.severity, "info",
+        "a merged FlowFieldGated + physical finding must fire. rootCause: {}",
+        f.root_cause
+    );
+    // The dual-verdict note must surface BOTH verdicts, preserving the FlowField fact
+    // via the dedicated `flowfield-on-temp` label.
+    assert!(
+        f.root_cause.contains("temp state varies by caller"),
+        "the merged finding must carry the dual-verdict note. rootCause: {}",
+        f.root_cause
+    );
+    assert!(
+        f.root_cause.contains("flowfield-on-temp via CallerTemp"),
+        "the merge must PRESERVE the FlowField fact (flowfield-on-temp via CallerTemp). \
+         rootCause: {}",
+        f.root_cause
+    );
+    assert!(
+        f.root_cause.contains("physical via CallerPhysical"),
+        "the merge must credit the physical verdict to CallerPhysical. rootCause: {}",
         f.root_cause
     );
 }
