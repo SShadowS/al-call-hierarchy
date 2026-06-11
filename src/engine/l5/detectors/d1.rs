@@ -42,7 +42,7 @@ use crate::engine::l5::finding::{
 };
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
-use crate::engine::l5::path_merge::merge_by_terminal;
+use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
 use crate::engine::l5::path_temp_resolve::resolve_temp_along_path;
 use crate::engine::l5::path_walker::{
     walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop,
@@ -842,7 +842,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     // B", sorted). Reconcile rewrites every group member to agree so the downstream
     // `merge_by_terminal` (which picks the canonical and lifts its rootCause) emits
     // the reconciled severity + dual-verdict note regardless of which member it picks.
-    let deduped = reconcile_merge_tie(deduped, &ctx.table_by_id);
+    let deduped = reconcile_merge_tie(deduped);
 
     let mut merged = merge_by_terminal(deduped);
     // downgradedSetupSingleton: counted POST-merge by rootCause text — TS counts THAT
@@ -889,10 +889,7 @@ const NOTE_UNCERTAIN: &str = " (temp state uncertain)";
 /// member so they AGREE before the merge runs (the merge then lifts the canonical's
 /// already-reconciled severity + note). Groups whose members already agree on
 /// severity are left untouched (byte-preserving for the common single-verdict case).
-fn reconcile_merge_tie(
-    recs: Vec<FindingRec>,
-    _table_by_id: &HashMap<&str, &L3Table>,
-) -> Vec<Finding> {
+fn reconcile_merge_tie(recs: Vec<FindingRec>) -> Vec<Finding> {
     // First-seen ordered grouping by rootCauseKey (preserve finding order overall).
     let mut order: Vec<String> = Vec::new();
     let mut group_idx: HashMap<String, Vec<usize>> = HashMap::new();
@@ -952,19 +949,6 @@ fn reconcile_merge_tie(
 /// `parts.join("; ")` over a sorted set.
 fn parts_join(parts: &std::collections::BTreeSet<String>) -> String {
     parts.iter().cloned().collect::<Vec<_>>().join("; ")
-}
-
-/// `sevRank` mirror (critical > high > medium > low > info; unknown → 0) — the same
-/// ranking `path_merge::merge_by_terminal` uses to pick the canonical.
-fn sev_rank(sev: &str) -> i32 {
-    match sev {
-        "critical" => 5,
-        "high" => 4,
-        "medium" => 3,
-        "low" => 2,
-        "info" => 1,
-        _ => 0,
-    }
 }
 
 /// Remove the single-verdict temp note (`NOTE_TEMPORARY` / `NOTE_UNCERTAIN`) from a

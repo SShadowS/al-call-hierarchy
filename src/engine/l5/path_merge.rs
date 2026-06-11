@@ -34,8 +34,9 @@ fn compare_strings(a: &str, b: &str) -> std::cmp::Ordering {
 
 /// Severity rank: critical > high > medium > low > info. Unknown severities rank
 /// 0 (below info) — al-sem indexes a total `Record<Severity, …>`, so this only
-/// affects out-of-contract inputs.
-fn sev_rank(sev: &str) -> i32 {
+/// affects out-of-contract inputs. `pub(crate)` so d1's RV-6 merge-tie reuses the
+/// SAME ranking the canonical-pick uses (single source of truth for severity order).
+pub(crate) fn sev_rank(sev: &str) -> i32 {
     match sev {
         "critical" => 5,
         "high" => 4,

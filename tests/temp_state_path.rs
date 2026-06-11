@@ -464,7 +464,16 @@ fn edge_kind_guard_dynamic_hop_resolves_unknown() {
     );
 
     // Each non-allowlisted kind STOPS the chase → Unknown despite Known(true) source.
-    for kind in ["dynamic", "interface", "codeunit-run", "event-dispatch"] {
+    // Exhaustive registry of the non-allowlisted edge kinds (everything outside
+    // {direct, method, implicit-trigger}).
+    for kind in [
+        "dynamic",
+        "interface",
+        "codeunit-run",
+        "report-run",
+        "page-run",
+        "event-dispatch",
+    ] {
         let mut edge_kinds: HashMap<&str, &str> = HashMap::new();
         edge_kinds.insert("A/cs0", kind);
         assert_eq!(
