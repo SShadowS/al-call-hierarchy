@@ -207,7 +207,11 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
                 is_parameter: true,
                 parameter_index: Some(pidx),
                 temp_state,
-                scope: Some("parameter".to_string()),
+                // Shape parity with native: the native body-walk param record var
+                // hardcodes `scope: None` (l2/mod.rs:312 — only object-GLOBAL vars get
+                // Some("global")). Match it so detectors treat dep and workspace params
+                // identically. scope is unserialized / unread today (latent-parity).
+                scope: None,
             }
         })
         .collect();
