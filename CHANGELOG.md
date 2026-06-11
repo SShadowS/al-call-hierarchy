@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Metamorphic soundness oracle for the temp-state epoch (Task 14 / ts14 — RV-2, the
+  mechanical guard for the whole epoch's suppression direction; `tests/temp_state_oracle.rs`).
+  The oracle encodes the governing property: adding the `temporary` modifier to a record
+  declaration can only make that record MORE temporary, so the analyzer's findings may only
+  be REMOVED or DOWNGRADED under the edit — never ADDED, never UPGRADED — with ONE carve-out
+  (RV-1): FlowField `CalcFields`/`SetAutoCalcFields` findings are INVARIANT (a temp record's
+  FlowField still evaluates its CalcFormula against the physical flow targets, a real SQL
+  round-trip, so they must keep firing at the same severity). For each of five standalone
+  inline fixtures (DeleteAll buffer, Modify-in-loop, Blob CalcFields, FlowField CalcFields,
+  and a Get/Modify physical-op control) it runs the FULL default detector set in-process
+  (`assemble_and_resolve_default` + `run_detectors`) over the ORIGINAL source and over a
+  mechanically `temporary`-edited copy (the edit appends ` temporary` to the targeted
+  `Record "Name"` declaration, shifting no later anchor), then compares the two `Finding`
+  sets by a stable `(detector, file, line, col)` key: suppression fixtures must show edited
+  ⊆ original under "removed or downgraded" (and must actually soften); the FlowField fixture
+  must be byte-identical (key + severity). A corpus-wide guard asserts no addition / no
+  upgrade across every fixture. Purely additive (new test file, no `src` change, no golden
+  movement); a red here is a genuine product-soundness signal, not a golden to refresh.
 - RecordRef `GetTable` / `OpenTemporary` local-only `tempState` derivation (Task 12 / ts12,
   Component 4 / G6). The L3 record-type resolution pass now derives a `RecordRef` variable's
   `tempState` from two structurally deterministic call patterns — `RecRef.Open(no, true)`
