@@ -979,7 +979,45 @@ fn project_file(
                 })
                 .collect();
             let return_type = crate::engine::l2::get_return_type_text(routine, source);
-            let call_sites = features.call_sites.clone();
+            let mut call_sites = features.call_sites.clone();
+            // RV-8 (Task 8): scope-honest `sourceKind`. The L2 binding builder
+            // labels ANY non-parameter record-var arg `"local"` because scope is
+            // not yet known at L2 (object globals are only PROMOTED into
+            // `record_variables` here at L3). Now that promotion has run and the
+            // record vars carry their `scope`, relabel a binding whose source
+            // matches a PROMOTED GLOBAL (`scope == Some("global")`) from
+            // `"local"` to `"global"`. Diagnostic-only: it removes the mislabel
+            // without changing which args are persistable (a global is a real
+            // caller var, persistable exactly like a local). Only "local"
+            // bindings are eligible — "parameter" / "implicit-rec" / "expression"
+            // are left untouched.
+            {
+                let global_rv_names_lc: std::collections::HashSet<&str> = record_variables
+                    .iter()
+                    .filter(|rv| rv.scope.as_deref() == Some("global"))
+                    .map(|rv| rv.name.as_str())
+                    .collect();
+                if !global_rv_names_lc.is_empty() {
+                    for cs in &mut call_sites {
+                        for b in &mut cs.argument_bindings {
+                            if b.source_kind != "local" {
+                                continue;
+                            }
+                            if let Some(name_lc) = b.source_variable_name.as_deref() {
+                                // `source_variable_name` is already lowercased at L2;
+                                // promoted-global names are stored verbatim, so compare
+                                // case-insensitively.
+                                if global_rv_names_lc
+                                    .iter()
+                                    .any(|g| g.eq_ignore_ascii_case(name_lc))
+                                {
+                                    b.source_kind = "global".to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let operation_sites = features.operation_sites.clone();
             let statement_tree = features.statement_tree.clone();
             let loops = features.loops.clone();

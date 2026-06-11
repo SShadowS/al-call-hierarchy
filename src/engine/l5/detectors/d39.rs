@@ -88,9 +88,14 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 };
                 let _ = i;
 
-                // Only source kinds the caller can actually persist.
+                // Only source kinds the caller can actually persist. A promoted
+                // GLOBAL (RV-8: `sourceKind == "global"`) is a real caller var,
+                // persistable exactly like a "local"; include it so the RV-8
+                // relabel stays behavior-preserving here (the persist-after check
+                // below matches by name regardless of scope).
                 if binding.source_kind != "parameter"
                     && binding.source_kind != "local"
+                    && binding.source_kind != "global"
                     && binding.source_kind != "implicit-rec"
                 {
                     continue;

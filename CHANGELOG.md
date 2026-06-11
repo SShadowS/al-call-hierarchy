@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Param-source argument-binding resolution at the L4 PD substitution (Task 8 /
+  ts8, RV-7 binding gap). When a caller FORWARDS its OWN record parameter as the
+  argument (e.g. `procedure A(var Rec: Record X)` calls `Helper(Rec)`), the
+  inherited effect's tempness depends on the CALLER's param, not a concrete var.
+  A record-typed parameter is already present in the caller's L2
+  `enclosing_record_variables`, so the forwarded-param arg's binding already
+  carries `source_temp_state` = that caller param's own temp_state. The
+  `substitute_pd_temp_state` PD arm (`summary_runner.rs`) now RE-SYMBOLIZES:
+  `Some(ParameterDependent(j))` → `ParameterDependent(j)` (chaining the symbolic
+  dependency UPWARD to the caller's own param index) instead of collapsing to
+  `Unknown`. A forwarded `temporary`-keyword param still yields `Known(true)`,
+  a by-value param `Known(false)`, and a genuinely-unknown / nameless source
+  `Unknown`. Sound by construction: re-symbolizing PD→PD only PROPAGATES a
+  symbolic dependency — it never invents `Known(true)`; a PD chasing itself
+  around a recursive cycle stays PD (monotone) and the JACOBI fixed point
+  converges because the effect_key includes the PD index, keeping the state
+  space finite (verified: self-recursion + 2-cycle forwarding fixtures converge,
+  no `MAX_FIXED_POINT_ITERATIONS` regression).
 - Per-callsite substitution of `ParameterDependent` temp states at L4 effect
   inheritance (Task 7 / ts7, G5, RV-7) — when a caller folds in a callee
   `DbEffect` whose `temp_state` is `ParameterDependent(i)`, the CALLEE-frame index
@@ -35,6 +53,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the JACOBI fixed point stays bounded (no `MAX_FIXED_POINT_ITERATIONS` regression).
 
 ### Changed
+- Scope-honest argument-binding `sourceKind` (Task 8 / ts8, RV-8). The L2 binding
+  builder labels any non-parameter record-var arg `"local"` because object globals
+  are only PROMOTED into a routine's `record_variables` later, at L3. After
+  promotion runs (`l3_workspace.rs`), a binding whose source matches a PROMOTED
+  GLOBAL record var (`scope == Some("global")`) is now RELABELED from `"local"` to
+  `"global"`, removing the diagnostic mislabel. Only `"local"` bindings are
+  eligible — `"parameter"` / `"implicit-rec"` / `"expression"` are untouched.
+  Behavior-preserving: `d39`'s persistable-source allowlist now accepts `"global"`
+  alongside `"local"` (a promoted global is a real caller var, persistable exactly
+  like a local; the persist-after check matches by name regardless of scope), and
+  `static_arg`'s named-source allowlist already accepted `"global"`. No detector's
+  outcome changes for the global case.
 - R3a-2 structural oracle `every_inherited_effect_traces_to_a_callee_effect` and
   the via-precedence oracle `merged_via_is_the_max_over_contributing_sources`
   (`tests/r3a2_oracles.rs`) now match inherited effects to their callee source via

@@ -667,11 +667,15 @@ fn compose_routine(
 ///   4. apply the SUBSTITUTION TABLE on the binding's `source_temp_state`:
 ///        Some(Known(true))  → Known(true)
 ///        Some(Known(false)) → Known(false)
-///        Some(Unknown) | Some(PD(_)) → Unknown
-///        None (caller's-own-param-source — the RV-7 binding gap) → Unknown (TASK 8).
+///        Some(PD(j))        → PD(j)   (RE-SYMBOLIZE upward — TASK 8 / RV-7)
+///        Some(Unknown)      → Unknown
+///        None               → Unknown
 ///
-/// SOUNDNESS: only NARROWS symbolic → binding-derived; never yields `Known(true)`
-/// unless the binding source is itself `Known(true)`.
+/// SOUNDNESS: only NARROWS symbolic → binding-derived, or RE-SYMBOLIZES a
+/// forwarded caller param's PD to the caller's own param index (propagating the
+/// symbolic dependency, never inventing it); never yields `Known(true)` unless
+/// the binding source is itself `Known(true)`. A PD chasing itself around a
+/// recursive cycle stays PD (monotone) and the fixed point converges.
 fn substitute_pd_temp_state(
     edge: &super::combined_graph::CombinedEdge,
     callee_param_index: u32,
@@ -705,14 +709,39 @@ fn substitute_pd_temp_state(
         None => return TempState::Unknown,
     };
     // (4) substitution table over the binding's captured source temp state.
+    //
+    // A record-typed PARAMETER is present in the caller's
+    // `enclosing_record_variables` at L2, so a forwarded-param arg's binding
+    // ALREADY carries `source_temp_state` = that caller param's OWN temp_state
+    // (verified — see `extract_record_variables` / `extract_argument_bindings`):
+    //   keyword `temporary`  -> Known(true)
+    //   keyword-less by-var  -> ParameterDependent(caller_param_index)
+    //   by-value             -> Known(false)
+    //
+    // TASK 8 (RV-7 binding gap): RE-SYMBOLIZE the PD case. When the caller
+    // forwards its OWN keyword-less by-var record param onward, the inherited
+    // effect's tempness depends on the CALLER's param `j`, not a concrete var —
+    // so it becomes `ParameterDependent(j)`, chaining the symbolic dependency
+    // UPWARD instead of collapsing to Unknown. The substituted PD index is the
+    // CALLER-frame index carried in `source_temp_state` (the binding already
+    // re-anchored it from the callee frame to the caller frame at L2).
+    //
+    // SOUNDNESS: re-symbolizing PD->PD only PROPAGATES a symbolic dependency; it
+    // never invents Known(true). A forwarded keyword param yields Known(true)
+    // ONLY because its source param IS Known(true). Around a recursive cycle a
+    // PD chasing itself stays PD (monotone) and the fixed point converges — the
+    // effect_key includes the PD index, so the state space stays finite.
     match &binding.source_temp_state {
         Some(ts) => match TempState::from_p(ts) {
             TempState::Known(v) => TempState::Known(v),
-            // Symbolic / still-unknown source → Unknown (conservative = fires).
-            TempState::Unknown | TempState::ParameterDependent(_) => TempState::Unknown,
+            // Caller's-own-param source (forwarded keyword-less by-var param):
+            // re-symbolize to the caller's own param index (chains upward).
+            TempState::ParameterDependent(j) => TempState::ParameterDependent(j),
+            // Genuinely unknown source → Unknown (conservative = fires).
+            TempState::Unknown => TempState::Unknown,
         },
-        // TODO(ts8): resolve param-source bindings through caller recordVars
-        // (the caller's-own-param-source case; RV-7 binding gap). Unknown for now.
+        // No captured source temp state (arg is not a record var/param the
+        // caller declares — e.g. an implicit-rec or unresolved name): Unknown.
         None => TempState::Unknown,
     }
 }
