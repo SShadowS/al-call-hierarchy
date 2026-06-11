@@ -992,12 +992,15 @@ fn project_file(
             // bindings are eligible — "parameter" / "implicit-rec" / "expression"
             // are left untouched.
             {
-                let global_rv_names_lc: std::collections::HashSet<&str> = record_variables
+                // Promoted-global record-var names, stored VERBATIM (original
+                // casing) — NOT lowercased; the comparison below is
+                // case-insensitive via `eq_ignore_ascii_case`.
+                let global_rv_names: std::collections::HashSet<&str> = record_variables
                     .iter()
                     .filter(|rv| rv.scope.as_deref() == Some("global"))
                     .map(|rv| rv.name.as_str())
                     .collect();
-                if !global_rv_names_lc.is_empty() {
+                if !global_rv_names.is_empty() {
                     for cs in &mut call_sites {
                         for b in &mut cs.argument_bindings {
                             if b.source_kind != "local" {
@@ -1005,9 +1008,9 @@ fn project_file(
                             }
                             if let Some(name_lc) = b.source_variable_name.as_deref() {
                                 // `source_variable_name` is already lowercased at L2;
-                                // promoted-global names are stored verbatim, so compare
+                                // promoted-global names are verbatim, so compare
                                 // case-insensitively.
-                                if global_rv_names_lc
+                                if global_rv_names
                                     .iter()
                                     .any(|g| g.eq_ignore_ascii_case(name_lc))
                                 {

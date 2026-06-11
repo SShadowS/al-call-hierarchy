@@ -285,6 +285,11 @@ codeunit 50213 "TS8 Cyc"
             "two-cycle forwarding must never produce a spurious Known(true); got: {:?}",
             e.temp_state
         );
+        assert!(
+            is_pd(&e.temp_state, 0) || matches!(e.temp_state, PDbEffectTempState::Unknown),
+            "two-cycle forwarding inherited effect must be PD(0) or Unknown (never a spurious Known); got: {:?}",
+            e.temp_state
+        );
     }
 }
 
