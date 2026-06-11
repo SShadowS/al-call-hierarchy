@@ -225,6 +225,25 @@ pub fn resolve_routine_record_types(
             variable.temp_state = ts_known_true();
         }
     }
+
+    // --- page SourceTableTemporary override (Task 5 / G4, RV-8) ---------------
+    //
+    // A page declared `SourceTableTemporary = true` always loads its SourceTable
+    // as a temporary copy — the implicit `Rec` and `xRec` are ALWAYS temporary.
+    // When `object.source_table_temporary == Some(true)`, force `Known(true)` on
+    // every record op whose variable name (lowercased) is `rec` or `xrec`.
+    //
+    // Purely ADDITIVE toward Known(true) — never downgrades. Runs after the
+    // table-level override so both can apply independently; they compose without
+    // interference (both only upgrade → Known(true), never downgrade).
+    if object.map(|o| o.source_table_temporary == Some(true)) == Some(true) {
+        for op in routine.record_operations.iter_mut() {
+            let name = op.record_variable_name.to_lowercase();
+            if name == "rec" || name == "xrec" {
+                op.temp_state = Some(ts_known_true());
+            }
+        }
+    }
 }
 
 /// `ts_known(true)` — the SAME PTempState construction used elsewhere

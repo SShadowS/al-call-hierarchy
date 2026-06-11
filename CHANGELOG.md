@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Page `SourceTableTemporary = true` capture + implicit `Rec`/`xRec` `Known(true)`
+  override (Task 5 / ts5, G4, RV-8):
+  - `project_file` (`l3_workspace.rs`) now reads the `SourceTableTemporary` property
+    for Page and PageExtension objects via `read_object_property`, setting
+    `L3Object.source_table_temporary = Some(true)` on an exact case-insensitive match
+    against `"true"` (trim + lowercase); `Some(false)` when present but not `"true"`;
+    `None` when absent. Never `.contains()` / string-sniffing; engine never throws.
+    `L3Object` is not serialised into any gate surface, so this never moves a golden.
+  - Page-level override pass added to `resolve_routine_record_types` (`record_types.rs`),
+    running after the table-level override: when the current object's
+    `source_table_temporary == Some(true)`, every record op whose
+    `record_variable_name` (lowercased) is `rec` or `xrec` is force-upgraded to
+    `Known(true)`. Both `rec` AND `xrec` (RV-8: xRec alongside Rec). Purely ADDITIVE
+    toward `Known(true)` — never downgrades; `SourceTableTemporary = true` is a
+    structural page property that cannot be carried by physical-source pages, so the
+    upgrade is sound (suppression-safe direction).
 - Native `TableType = Temporary` capture + table-level override precedence
   (Task 4 / ts4, G3, RV-8):
   - `index_table` (`l3_workspace.rs`) now reads the object-level `TableType`

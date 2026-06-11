@@ -775,6 +775,19 @@ fn project_file(
         } else {
             None
         };
+        // Object `SourceTableTemporary` — Page / PageExtension only (Task 5 / G4).
+        // Structural boolean property: `SourceTableTemporary = true;` means the
+        // page's implicit `Rec` and `xRec` are always temporary. The value node is
+        // an `identifier` (`true` / `false`); exact case-insensitive match against
+        // "true" — anything else (missing / "false" / unrecognised) → `Some(false)`
+        // when the property is present but non-"true", or `None` when absent.
+        // EXACT match — no string-sniffing. Engine never throws; missing → None.
+        let source_table_temporary = if object_type == "Page" || object_type == "PageExtension" {
+            read_object_property(decl, "SourceTableTemporary", source)
+                .map(|v| v.trim().to_lowercase() == "true")
+        } else {
+            None
+        };
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -788,7 +801,7 @@ fn project_file(
             object_subtype,
             page_type,
             inherent_commit_behavior,
-            source_table_temporary: None,
+            source_table_temporary,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
