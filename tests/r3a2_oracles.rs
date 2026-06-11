@@ -37,6 +37,32 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// True if a callee effect with key `callee_key` is a valid SOURCE for an
+/// inherited effect with key `inherited_key`.
+///
+/// Pre-Task-7 the inherited copy shared the callee's key BYTE-FOR-BYTE (the fold
+/// was verbatim). Task 7 (G5 / RV-7) SUBSTITUTES a callee `ParameterDependent(i)`
+/// (tempfrag `p<i>`) per-callsite through the caller's argument binding, so the
+/// inherited key's tempfrag becomes the resolved `t`/`f`/`u` while the callee's
+/// stays `p<i>`. The `op|tableId|operationId` prefix is invariant under
+/// substitution (only the tempfrag changes), so a valid source is either:
+///   - the EXACT same key (non-PD effects fold unchanged), OR
+///   - a callee key with the SAME prefix whose tempfrag is `p<...>` (the PD
+///     effect that substituted into this inherited tempfrag).
+fn callee_key_sources_inherited(callee_key: &str, inherited_key: &str) -> bool {
+    if callee_key == inherited_key {
+        return true;
+    }
+    // Split off the final `|tempfrag` segment; compare the invariant prefix and
+    // require the callee tempfrag to be a parameter-dependent fragment (`p<i>`).
+    match (callee_key.rsplit_once('|'), inherited_key.rsplit_once('|')) {
+        (Some((callee_prefix, callee_frag)), Some((inh_prefix, _inh_frag))) => {
+            callee_prefix == inh_prefix && callee_frag.starts_with('p')
+        }
+        _ => false,
+    }
+}
+
 fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
@@ -144,9 +170,11 @@ fn every_inherited_effect_traces_to_a_callee_effect() {
                 if e.via == "direct" {
                     continue;
                 }
-                // Some combined-graph callee of `rid` must carry an effect with the
-                // SAME effectKey (effectKeyOf excludes via, so the inherited copy
-                // shares the callee's key).
+                // Some combined-graph callee of `rid` must carry an effect that is
+                // a valid SOURCE for this inherited effect — either the SAME
+                // effectKey (non-PD effects fold verbatim) or a `parameter-dependent`
+                // callee effect with the same op|table|op-id prefix that was
+                // SUBSTITUTED per-callsite into this inherited tempfrag (Task 7).
                 let found = input
                     .callees
                     .get(rid)
@@ -156,10 +184,9 @@ fn every_inherited_effect_traces_to_a_callee_effect() {
                                 .summaries
                                 .get(callee_id)
                                 .map(|cs_sum| {
-                                    cs_sum
-                                        .db_effects
-                                        .iter()
-                                        .any(|ce| ce.effect_key == e.effect_key)
+                                    cs_sum.db_effects.iter().any(|ce| {
+                                        callee_key_sources_inherited(&ce.effect_key, &e.effect_key)
+                                    })
                                 })
                                 .unwrap_or(false)
                         })
@@ -239,11 +266,12 @@ fn merged_via_is_the_max_over_contributing_sources() {
                 if let Some(cs) = input.callees.get(rid) {
                     for (callee_id, kind) in cs {
                         if let Some(cs_sum) = input.summaries.get(callee_id) {
-                            if cs_sum
-                                .db_effects
-                                .iter()
-                                .any(|ce| ce.effect_key == e.effect_key)
-                            {
+                            // Task 7: a PD callee effect is SUBSTITUTED into this
+                            // inherited tempfrag, so match on the substitution-aware
+                            // source relation, not byte-equality.
+                            if cs_sum.db_effects.iter().any(|ce| {
+                                callee_key_sources_inherited(&ce.effect_key, &e.effect_key)
+                            }) {
                                 callee_carries = true;
                                 let r = via_rank(via_for_edge_kind(kind));
                                 max_edge_rank = Some(max_edge_rank.map_or(r, |m| m.max(r)));

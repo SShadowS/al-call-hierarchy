@@ -390,26 +390,47 @@ fn compose_routine(
         let callee_summary = callee_summary.unwrap();
         let via = via_for_edge_kind(&edge.kind);
 
-        // Fold db_effects.
+        // Fold db_effects. A callee effect whose temp_state is
+        // ParameterDependent(i) is SUBSTITUTED per-callsite (G5 / RV-7): the
+        // callee-frame index `i` is meaningless in the caller's frame, so we
+        // resolve it through the caller's argument binding for callee param `i`
+        // and fold the effect under a RE-COMPUTED effect_key. Non-PD effects
+        // (Known/Unknown) fold unchanged. The re-keying naturally dedupes by
+        // (op, tableId, operationId, tempfrag): identical substitution results
+        // merge; divergent results (mixed callers) stay DISTINCT as two effects.
         for e in &callee_summary.db_effects {
-            let key = &e.effect_key;
-            match db_effects_by_key.get(key) {
+            let (key_owned, folded): (String, DbEffect) = match &e.temp_state {
+                TempState::ParameterDependent(i) => {
+                    let sub = substitute_pd_temp_state(edge, *i, routine);
+                    let new_key =
+                        effect_key_of(&e.op, &e.table_id, &e.operation_id, &sub.to_kind());
+                    let folded = DbEffect {
+                        effect_key: new_key.clone(),
+                        temp_state: sub,
+                        via: via.to_string(),
+                        ..e.clone()
+                    };
+                    (new_key, folded)
+                }
+                _ => (
+                    e.effect_key.clone(),
+                    DbEffect {
+                        via: via.to_string(),
+                        ..e.clone()
+                    },
+                ),
+            };
+            match db_effects_by_key.get(&key_owned) {
                 Some(existing) => {
-                    let merged_via = merge_via_owned(&existing.via, via);
+                    let merged_via = merge_via_owned(&existing.via, &folded.via);
                     let updated = DbEffect {
                         via: merged_via,
                         ..existing.clone()
                     };
-                    db_effects_by_key.insert(key.clone(), updated);
+                    db_effects_by_key.insert(key_owned, updated);
                 }
                 None => {
-                    db_effects_by_key.insert(
-                        key.clone(),
-                        DbEffect {
-                            via: via.to_string(),
-                            ..e.clone()
-                        },
-                    );
+                    db_effects_by_key.insert(key_owned, folded);
                 }
             }
         }
@@ -631,6 +652,64 @@ fn compose_routine(
         has_unresolved_calls,
         uncertainties,
         parameter_roles,
+    }
+}
+
+/// Substitute a callee effect's `ParameterDependent(callee_param_index)` temp
+/// state through the caller's per-callsite argument binding (G5 / RV-7).
+///
+/// Resolution (all uncertainty → `Unknown`, which FIRES — the sound direction):
+///   1. event-dispatch edge (no `callsite_id`) → `Unknown`.
+///   2. edge kinds with no binding semantics modeled
+///      (`interface | codeunit-run | report-run | page-run | dynamic`) → `Unknown`.
+///      Only `direct | method | implicit-trigger` carry usable bindings.
+///   3. no binding whose `parameter_index == callee_param_index` → `Unknown`.
+///   4. apply the SUBSTITUTION TABLE on the binding's `source_temp_state`:
+///        Some(Known(true))  → Known(true)
+///        Some(Known(false)) → Known(false)
+///        Some(Unknown) | Some(PD(_)) → Unknown
+///        None (caller's-own-param-source — the RV-7 binding gap) → Unknown (TASK 8).
+///
+/// SOUNDNESS: only NARROWS symbolic → binding-derived; never yields `Known(true)`
+/// unless the binding source is itself `Known(true)`.
+fn substitute_pd_temp_state(
+    edge: &super::combined_graph::CombinedEdge,
+    callee_param_index: u32,
+    routine: &L3Routine,
+) -> TempState {
+    // (1) event-dispatch / any to-less edge: no caller-frame binding.
+    let cs_id = match &edge.callsite_id {
+        Some(id) => id,
+        None => return TempState::Unknown,
+    };
+    // (2) only binding-carrying edge kinds substitute.
+    if !matches!(edge.kind.as_str(), "direct" | "method" | "implicit-trigger") {
+        return TempState::Unknown;
+    }
+    // Find THIS edge's callsite among the caller's call sites.
+    let cs = match routine.call_sites.iter().find(|cs| cs.id == *cs_id) {
+        Some(cs) => cs,
+        None => return TempState::Unknown,
+    };
+    // (3) the binding for the callee param the PD refers to.
+    let binding = match cs
+        .argument_bindings
+        .iter()
+        .find(|b| b.parameter_index == callee_param_index)
+    {
+        Some(b) => b,
+        None => return TempState::Unknown,
+    };
+    // (4) substitution table over the binding's captured source temp state.
+    match &binding.source_temp_state {
+        Some(ts) => match TempState::from_p(ts) {
+            TempState::Known(v) => TempState::Known(v),
+            // Symbolic / still-unknown source → Unknown (conservative = fires).
+            TempState::Unknown | TempState::ParameterDependent(_) => TempState::Unknown,
+        },
+        // TODO(ts8): resolve param-source bindings through caller recordVars
+        // (the caller's-own-param-source case; RV-7 binding gap). Unknown for now.
+        None => TempState::Unknown,
     }
 }
 

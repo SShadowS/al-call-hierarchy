@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Per-callsite substitution of `ParameterDependent` temp states at L4 effect
+  inheritance (Task 7 / ts7, G5, RV-7) — when a caller folds in a callee
+  `DbEffect` whose `temp_state` is `ParameterDependent(i)`, the CALLEE-frame index
+  `i` (meaningless in the caller's frame) is now RESOLVED per-callsite through the
+  caller's argument binding for callee param `i`, instead of being copied
+  verbatim. In `summary_runner::compose_routine` the db-effects fold now branches
+  on the callee effect's temp_state: a `ParameterDependent(i)` effect is rewritten
+  via the new `substitute_pd_temp_state` helper and re-keyed with `effect_key_of`
+  before insertion; non-PD (`Known`/`Unknown`) effects fold unchanged as before.
+  Substitution table over `binding.source_temp_state`: `Some(Known(true))` →
+  `Known(true)`, `Some(Known(false))` → `Known(false)`, `Some(Unknown)` /
+  `Some(PD(_))` → `Unknown`, and `None` (the caller's-own-param-source / RV-7
+  binding gap, resolved properly in Task 8) → `Unknown`. Event-dispatch edges (no
+  `callsite_id`) and edge kinds with no modeled binding semantics
+  (`interface | codeunit-run | report-run | page-run | dynamic`) → `Unknown`;
+  only `direct | method | implicit-trigger` carry usable bindings.
+  Sound by construction: substitution only NARROWS symbolic → binding-derived, all
+  uncertainty becomes `Unknown` (fires), and `Known(true)` is produced ONLY from a
+  binding source that is itself `Known(true)` — suppression stays gated on
+  `Known(true)`. Re-keying naturally dedupes by `(op, tableId, operationId,
+  tempfrag)`: identical substitution results merge while divergent "mixed caller"
+  results stay DISTINCT (e.g. one caller passing a temporary local and one passing
+  a physical local to the same callee op yield two distinct inherited effects,
+  `Known(true)` and `Known(false)`). The per-op resolved-state space is finite, so
+  the JACOBI fixed point stays bounded (no `MAX_FIXED_POINT_ITERATIONS` regression).
+
+### Changed
+- R3a-2 structural oracle `every_inherited_effect_traces_to_a_callee_effect` and
+  the via-precedence oracle `merged_via_is_the_max_over_contributing_sources`
+  (`tests/r3a2_oracles.rs`) now match inherited effects to their callee source via
+  the substitution-aware `callee_key_sources_inherited` relation: a callee
+  `parameter-dependent` effect (tempfrag `p<i>`) is a valid source for an inherited
+  effect whose tempfrag was SUBSTITUTED (the invariant `op|tableId|operationId`
+  prefix matches; only the tempfrag changed). Without this, Task 7's per-callsite
+  re-keying would trip the old byte-equality invariant for PD-touching SCCs.
+
 - ABI (dependency) temp capture + net-new per-param record-var temp-state modeling
   (Task 6 / ts6, G7, RV-4) — brings the cross-app `.app` symbol path to native+ABI
   shape parity so a detector behaves identically whether a record flows through a
