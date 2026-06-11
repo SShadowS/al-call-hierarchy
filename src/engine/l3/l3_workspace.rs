@@ -606,6 +606,15 @@ fn index_table(
         });
     }
 
+    // Part A (Task 4 / G3): native `TableType = Temporary` capture. The ONLY
+    // allowed temp signal at this layer — a structural property read. EXACT
+    // case-insensitive match (trim + lowercase + `== "temporary"`); never
+    // `.contains()` / string-sniffing. A missing / other value → false
+    // (conservative; the engine never throws).
+    let is_temporary = read_object_property(decl, "TableType", source)
+        .map(|v| v.trim().to_lowercase() == "temporary")
+        .unwrap_or(false);
+
     L3Table {
         id: table_id,
         app_guid: app_guid.to_string(),
@@ -613,7 +622,7 @@ fn index_table(
         name: table_name.to_string(),
         fields,
         keys,
-        is_temporary: false,
+        is_temporary,
     }
 }
 
@@ -1652,6 +1661,11 @@ pub struct TableView<'a> {
 impl TableView<'_> {
     pub fn stable_table_id(&self) -> String {
         to_stable_table_id(&self.table.id)
+    }
+
+    /// True when the table is declared `TableType = Temporary` (Task 4 Part A).
+    pub fn is_temporary(&self) -> bool {
+        self.table.is_temporary
     }
 
     /// Merged fields in stored order, declaringObjectId projected to StableObjectId.

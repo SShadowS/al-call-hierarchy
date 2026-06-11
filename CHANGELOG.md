@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native `TableType = Temporary` capture + table-level override precedence
+  (Task 4 / ts4, G3, RV-8):
+  - `index_table` (`l3_workspace.rs`) now reads the object-level `TableType`
+    property via `read_object_property` and sets `L3Table.is_temporary = true`
+    on an EXACT case-insensitive match (trim + lowercase + `== "temporary"`;
+    never `.contains()` / string-sniffing). A missing/other value → `false`
+    (conservative). This is the only allowed temp signal — a structural property
+    read. `L3Table` is not serialised into any gate surface, so this never moves
+    a golden.
+  - Final override pass in `resolve_routine_record_types` (`record_types.rs`),
+    running AFTER all `table_id` resolution (declared vars, ops, lexical fallback,
+    implicit Rec/xRec pass-3): for every record op whose resolved table is
+    `is_temporary`, force `temp_state = Known(true)`, and likewise for the matching
+    record VARIABLE. The "one precedence rule everywhere" — table-level temp WINS
+    over keyword / no-keyword / by-value / by-var / `ParameterDependent(i)`. So a
+    by-var PARAM of a temp table reports `Known(true)`, not the L2-stamped `PD(i)`
+    (RV-8). Purely ADDITIVE toward `Known(true)`: only upgrades, never downgrades a
+    `Known(true)` and never forces `Known(false)`. Table lookup uses the existing
+    `SymbolTable::table_by_id`.
+  - `TableView::is_temporary()` test-facing accessor.
 - `extract_object_global_record_vars` in `scope.rs` (Task 2 / ts2, G1): captures
   the `temporary_keyword` on object-level `var_section` record variable declarations,
   producing `PRecordVariable` with `temp_state = Known(true/false)` and

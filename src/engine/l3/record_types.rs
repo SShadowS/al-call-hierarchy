@@ -191,6 +191,50 @@ pub fn resolve_routine_record_types(
             op.table_id = Some(own_id.clone());
         }
     }
+
+    // --- FINAL override pass (Task 4 / G3, RV-8): table-level temp precedence --
+    //
+    // "One precedence rule everywhere: table-level temp (`TableType = Temporary`)
+    // ⇒ Known(true) REGARDLESS of var modifier or a stamped PD(i)."
+    //
+    // Runs AFTER ALL table_id resolution above (declared vars, ops, lexical
+    // fallback, AND implicit Rec/xRec pass-3), so `table_id` is FINAL — including
+    // implicit-Rec ops in a Table object's own triggers. For each record op whose
+    // resolved table is `is_temporary`, force `temp_state = Known(true)`; apply the
+    // same to the matching record VARIABLE (so a by-var PARAM of a temp table
+    // reports Known(true), not the PD(i) stamped at L2 — RV-8).
+    //
+    // PRECEDENCE: the table-level override WINS over everything (keyword,
+    // no-keyword, by-value, by-var, PD). It is purely ADDITIVE toward Known(true)
+    // — it only UPGRADES; it NEVER downgrades a Known(true) to false and NEVER
+    // forces Known(false). The only signal is the exact structural `TableType`
+    // property, so the upgrade is sound.
+    for op in routine.record_operations.iter_mut() {
+        let Some(tid) = &op.table_id else { continue };
+        let is_temp = symbols.table_by_id(tid).map(|t| t.is_temporary) == Some(true);
+        if is_temp {
+            op.temp_state = Some(ts_known_true());
+        }
+    }
+    for variable in routine.record_variables.iter_mut() {
+        let Some(tid) = &variable.table_id else {
+            continue;
+        };
+        let is_temp = symbols.table_by_id(tid).map(|t| t.is_temporary) == Some(true);
+        if is_temp {
+            variable.temp_state = ts_known_true();
+        }
+    }
+}
+
+/// `ts_known(true)` — the SAME PTempState construction used elsewhere
+/// (`scope.rs::ts_known`): `{ kind: "known", value: Some(true) }`.
+fn ts_known_true() -> crate::engine::l2::features::PTempState {
+    crate::engine::l2::features::PTempState {
+        kind: "known".to_string(),
+        value: Some(true),
+        parameter_index: None,
+    }
 }
 
 #[cfg(test)]
