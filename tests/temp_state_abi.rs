@@ -43,7 +43,7 @@ const SYMBOL_REFERENCE: &str = r#"{
         {
           "Name": "TempMarkedParam",
           "Parameters": [
-            { "Name": "Rec", "IsVar": true, "TypeDefinition": { "Name": "Record", "Subtype": { "Name": "Normal Table" }, "Temporary": true } }
+            { "Name": "Rec", "IsVar": true, "TypeDefinition": { "Name": "Record \"Normal Table\"", "Subtype": { "Name": "Normal Table" }, "Temporary": true } }
           ]
         },
         {
@@ -172,6 +172,25 @@ fn abi_temp_marked_param_projects_known_true() {
         value,
         Some(true),
         "Temporary:true record param → Known(true)"
+    );
+
+    // "Both markers active" path: Temporary:true AND a resolvable table_name (the
+    // type text `Record "Normal Table"` a real ABI param carries). The synthesized
+    // var must keep its table_name (so the table-level override could also apply),
+    // not drop it — covers the realistic shape, not the degenerate `Record`-only one.
+    let rv = ws
+        .routines
+        .iter()
+        .find(|r| r.name == "TempMarkedParam")
+        .unwrap()
+        .record_variables
+        .iter()
+        .find(|v| v.is_parameter)
+        .unwrap();
+    assert_eq!(
+        rv.table_name.as_deref(),
+        Some("Normal Table"),
+        "record_table_name_of resolves the param's table from the full type text"
     );
 }
 

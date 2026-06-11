@@ -33,7 +33,11 @@ pub struct RecordVariable {
     pub parameter_index: Option<u32>,
 }
 
-fn ts_known(value: bool) -> PTempState {
+/// `{ kind: "known", value }` — the single shared PTempState "known" constructor.
+/// `pub(crate)` so the L3 record-type override (`record_types.rs`) and the ABI→L3
+/// projection (`deps/cross_app_l3.rs`) reuse ONE definition (compiler-enforced on
+/// any future `PTempState` shape change), instead of duplicating the literal.
+pub(crate) fn ts_known(value: bool) -> PTempState {
     PTempState {
         kind: "known".to_string(),
         value: Some(value),
@@ -41,7 +45,9 @@ fn ts_known(value: bool) -> PTempState {
     }
 }
 
-fn ts_param_dependent(index: u32) -> PTempState {
+/// `{ kind: "parameter-dependent", parameterIndex }` — the single shared PD
+/// constructor. `pub(crate)` for the same reuse reason as [`ts_known`].
+pub(crate) fn ts_param_dependent(index: u32) -> PTempState {
     PTempState {
         kind: "parameter-dependent".to_string(),
         value: None,

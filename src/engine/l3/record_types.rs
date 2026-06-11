@@ -213,7 +213,7 @@ pub fn resolve_routine_record_types(
         let Some(tid) = &op.table_id else { continue };
         let is_temp = symbols.table_by_id(tid).map(|t| t.is_temporary) == Some(true);
         if is_temp {
-            op.temp_state = Some(ts_known_true());
+            op.temp_state = Some(crate::engine::l2::scope::ts_known(true));
         }
     }
     for variable in routine.record_variables.iter_mut() {
@@ -222,7 +222,7 @@ pub fn resolve_routine_record_types(
         };
         let is_temp = symbols.table_by_id(tid).map(|t| t.is_temporary) == Some(true);
         if is_temp {
-            variable.temp_state = ts_known_true();
+            variable.temp_state = crate::engine::l2::scope::ts_known(true);
         }
     }
 
@@ -240,19 +240,9 @@ pub fn resolve_routine_record_types(
         for op in routine.record_operations.iter_mut() {
             let name = op.record_variable_name.to_lowercase();
             if name == "rec" || name == "xrec" {
-                op.temp_state = Some(ts_known_true());
+                op.temp_state = Some(crate::engine::l2::scope::ts_known(true));
             }
         }
-    }
-}
-
-/// `ts_known(true)` — the SAME PTempState construction used elsewhere
-/// (`scope.rs::ts_known`): `{ kind: "known", value: Some(true) }`.
-fn ts_known_true() -> crate::engine::l2::features::PTempState {
-    crate::engine::l2::features::PTempState {
-        kind: "known".to_string(),
-        value: Some(true),
-        parameter_index: None,
     }
 }
 

@@ -50,30 +50,13 @@ use std::path::Path;
 
 use crate::engine::deps::merged_index::collect_app_paths;
 use crate::engine::deps::projection::{ProjectedObject, ProjectedRoutine, ProjectedTable};
-use crate::engine::l2::features::PTempState;
+// The temp-state constructors are shared `pub(crate)` from `l2::scope` (ONE definition,
+// compiler-enforced on any future `PTempState` shape change). Task 6 (G7, RV-4).
+use crate::engine::l2::scope::{ts_known, ts_param_dependent};
 use crate::engine::l3::l3_workspace::{
     assemble_l3_workspace_from_disk, resolve, L3Field, L3Object, L3Parameter, L3Resolved,
     L3Routine, L3Table, L3Workspace,
 };
-
-/// `{ kind: "known", value }` — the SAME `PTempState` construction the native param
-/// walk uses (`l2::scope::ts_known`). Task 6 (G7, RV-4).
-fn ts_known(value: bool) -> PTempState {
-    PTempState {
-        kind: "known".to_string(),
-        value: Some(value),
-        parameter_index: None,
-    }
-}
-
-/// `{ kind: "parameter-dependent", parameterIndex }` — mirrors `l2::scope::ts_param_dependent`.
-fn ts_param_dependent(index: u32) -> PTempState {
-    PTempState {
-        kind: "parameter-dependent".to_string(),
-        value: None,
-        parameter_index: Some(index),
-    }
-}
 
 /// The merged-input context: the assembled+resolved cross-app workspace plus the
 /// dep-app ledger the call-graph / coverage projections need (declared deps,
@@ -333,6 +316,7 @@ fn append_dep_entities(
 /// the SAME `dep_*_to_l3` conversion + the merged-whole resolve path the production
 /// `build_cross_app_l3_impl` uses, so the synthesized per-param record-var temp
 /// shapes (incl. the table-level override) are validated end-to-end without a `.app`.
+#[doc(hidden)]
 pub fn project_dep_abi_to_l3_for_test(
     projected: &crate::engine::deps::projection::ProjectedAbi,
 ) -> L3Workspace {
