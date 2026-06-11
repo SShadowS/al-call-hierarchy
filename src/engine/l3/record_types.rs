@@ -330,6 +330,33 @@ pub fn resolve_routine_record_types(
         }
     }
 
+    // --- routine ENTRY-guard override (G-2 Part 2) -----------------------------
+    //
+    // `if not <X>.IsTemporary[()] then Error(...)` as the routine's FIRST
+    // executable statement (detected structurally at L3 assembly —
+    // `entry_temp_guard_receiver_of` in l3_workspace.rs) PROVES `<X>` is
+    // temporary for the entire body: the routine errors at runtime otherwise,
+    // so every op it performs on `<X>` only ever runs on a temp record. Force
+    // `Known(true)` on `<X>`'s ops + matching record var (the runtime-guard
+    // analog of the structural `TableType = Temporary` override above).
+    //
+    // Purely ADDITIVE toward Known(true) — never downgrades, never forces
+    // Known(false). Only the EXACT entry-guard shape sets the receiver; any
+    // deviation left it `None` (conservative — detectors keep firing).
+    if let Some(guard_receiver) = routine.entry_temp_guard_receiver.clone() {
+        let guard_receiver = guard_receiver.as_str();
+        for op in routine.record_operations.iter_mut() {
+            if op.record_variable_name.eq_ignore_ascii_case(guard_receiver) {
+                op.temp_state = Some(crate::engine::l2::scope::ts_known(true));
+            }
+        }
+        for variable in routine.record_variables.iter_mut() {
+            if variable.name.eq_ignore_ascii_case(guard_receiver) {
+                variable.temp_state = crate::engine::l2::scope::ts_known(true);
+            }
+        }
+    }
+
     // --- page SourceTableTemporary override (Task 5 / G4, RV-8) ---------------
     //
     // A page declared `SourceTableTemporary = true` always loads its SourceTable

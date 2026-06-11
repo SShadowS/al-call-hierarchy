@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-2 (docs/engine-gaps.md): runtime-implied tempness is now inferred from the exact
+  `not IsTemporary → Error` structural guard, removing the dominant post-epoch temp-related
+  FP class (CDO triage batches 1, 9, 11 — ~15 FPs: `CDO File` ops, `EmbedFiles`,
+  `UpdateFromXml`, signature templates). Two sub-features, both AST shape matches (no
+  string-sniffing, no dataflow): (1) **self-guarding temp table** — a table whose
+  OnInsert/OnModify/OnDelete/OnRename trigger contains a TOP-LEVEL
+  `if not Rec.IsTemporary[()] then Error(...)` guard is temporary BY RUNTIME CONTRACT
+  (every instance errors otherwise), so `index_table` now sets `L3Table.is_temporary`
+  exactly like `TableType = Temporary` and the existing table-level override upgrades all
+  ops on it to `Known(true)`; (2) **entry-guard temp routine** — a routine whose FIRST
+  executable statement is `if not <X>.IsTemporary[()] then Error(...)` where `<X>` is a
+  record var/param (incl. promoted globals) or the implicit `Rec`/`xRec` proves `<X>`
+  temporary for the whole body (the guard dominates it), captured at L3 assembly as
+  `L3Routine.entry_temp_guard_receiver` and applied as a new override pass in
+  `record_types.rs` (after var/op temp derivation, alongside the table-level override).
+  The guard matcher (`is_temporary_error_guard` in `l3_workspace.rs`) accepts only the
+  exact shape: an `if` with NO else whose condition is `not <recv>.IsTemporary[()]` (or
+  `<recv>.IsTemporary[()] = false`) with a bare-identifier receiver and a zero-argument
+  IsTemporary, and whose then-branch is an `Error(...)` call (directly or a
+  `begin Error(...); end` block with exactly that one statement). Suppression-direction
+  safe — both signals PROVE tempness (the code errors at runtime otherwise), upgrades are
+  purely additive toward `Known(true)`; any deviation (guard not the first statement,
+  nested/non-top-level table guard, non-negated condition, `exit` instead of `Error`)
+  leaves the state untouched → detectors keep firing. Covered by
+  `tests/gap_g2_runtime_temp.rs` (table-contract resolution + d1 downgrade, paren-less +
+  OnDelete variants, entry-guard param resolution + d33 suppression on a guarded global;
+  controls: plain table, non-negated trigger, unguarded routine, guard-not-first,
+  exit-then-branch — all keep firing). No in-repo golden moved by this change (no fixture
+  contains an IsTemporary guard); the real-app (CDO) rebaseline remains with the
+  consolidated gap-fix rebaseline task.
 - G-12 (docs/engine-gaps.md): `d3-missing-setloadfields` no longer fires on four clean FP
   sub-classes from the CDO triage (batches 1, 8, 10/12). The "unloaded fields accessed"
   computation now (1) excludes the table's PRIMARY-KEY fields (first key — `L3Table.keys[0]`

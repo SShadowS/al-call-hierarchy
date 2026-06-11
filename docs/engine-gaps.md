@@ -42,6 +42,24 @@ iterator at the loop's `until`. Net: removes the biggest FP class with a structu
 
 ## G-2 — runtime-implied tempness not inferred (high volume, harder)
 
+**Status: FIXED (commit `fix(engine-g2): infer tempness from IsTemporary-Error guards (table contract + routine entry guard) (G-2)`).**
+Both sub-features land as exact structural matches of the
+`if not <recv>.IsTemporary[()] then Error(...)` guard (`is_temporary_error_guard` in
+`src/engine/l3/l3_workspace.rs`: if with NO else, condition `not <recv>.IsTemporary[()]`
+or `<recv>.IsTemporary[()] = false`, bare-identifier receiver, zero-arg IsTemporary,
+then-branch an `Error(...)` call or a `begin Error(...); end` block with exactly that
+statement). (1) Table contract: `index_table` marks `L3Table.is_temporary` when any
+OnInsert/OnModify/OnDelete/OnRename trigger contains the guard at TOP level (receiver
+`Rec`) — the existing table-level override then upgrades all ops to `Known(true)`.
+(2) Routine entry guard: when the guard is the routine's FIRST executable statement and
+the receiver is a record var/param (incl. promoted globals) or implicit `Rec`/`xRec`,
+`L3Routine.entry_temp_guard_receiver` is set at L3 assembly and a new override pass in
+`record_types.rs` upgrades that receiver's ops + record var to `Known(true)`. Any
+deviation (guard not first, nested table guard, non-negated condition, exit-not-Error)
+→ untouched → fires. Tests: `tests/gap_g2_runtime_temp.rs`. No in-repo golden moved by
+this change (no fixture contains an IsTemporary guard); the CDO-run rebaseline remains
+with the consolidated rebaseline task.
+
 **Symptom:** records that are temporary *by contract at runtime* but not by structural
 declaration stay `Unknown` → detectors fire. Two shapes:
 - a **table** with `OnInsert` (or other trigger) doing `if not Rec.IsTemporary then Error(...)`

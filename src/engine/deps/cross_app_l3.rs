@@ -277,6 +277,7 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         enclosing_member: None,
         originating_object: None,
         enclosing_member_range: None,
+        entry_temp_guard_receiver: None,
     }
 }
 

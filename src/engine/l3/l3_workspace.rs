@@ -358,6 +358,15 @@ pub struct L3Routine {
     /// against. `None` for non-member routines. Additive — never reaches an R0–R3
     /// golden. (RE-2)
     pub enclosing_member_range: Option<crate::engine::l2::features::PAnchor>,
+    /// G-2 Part 2 (runtime-implied tempness): the lowercased receiver name of a
+    /// routine ENTRY guard `if not <X>.IsTemporary[()] then Error(...)` — the
+    /// routine's FIRST executable statement, with `<X>` a record var/param
+    /// (incl. promoted globals) or the implicit `Rec`/`xRec`. The guard PROVES
+    /// `<X>` is temporary for the entire body (the routine errors at runtime
+    /// otherwise); `record_types.rs` upgrades `<X>`'s ops to `Known(true)`.
+    /// `None` for any other shape (conservative — detectors keep firing).
+    /// Additive — `L3Routine` is NOT Serialize-derived, never reaches a golden.
+    pub entry_temp_guard_receiver: Option<String>,
 }
 
 /// The assembled workspace L3 model (pre-resolve until `resolve` runs).
@@ -611,14 +620,21 @@ fn index_table(
         });
     }
 
-    // Part A (Task 4 / G3): native `TableType = Temporary` capture. The ONLY
-    // allowed temp signal at this layer — a structural property read. EXACT
-    // case-insensitive match (trim + lowercase + `== "temporary"`); never
-    // `.contains()` / string-sniffing. A missing / other value → false
-    // (conservative; the engine never throws).
+    // Part A (Task 4 / G3): native `TableType = Temporary` capture — a
+    // structural property read. EXACT case-insensitive match (trim + lowercase
+    // + `== "temporary"`); never `.contains()` / string-sniffing. A missing /
+    // other value → false (conservative; the engine never throws).
+    //
+    // G-2 Part 1 (runtime-implied tempness): a table whose OnInsert/OnModify/
+    // OnDelete/OnRename trigger contains a top-level
+    // `if not Rec.IsTemporary[()] then Error(...)` guard is temporary BY
+    // RUNTIME CONTRACT (the trigger errors otherwise — the `CDO File` shape).
+    // Also an exact structural signal (AST shape match, no string-sniffing),
+    // same suppression direction as `TableType = Temporary`.
     let is_temporary = read_object_property(decl, "TableType", source)
         .map(|v| v.trim().to_lowercase() == "temporary")
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || table_has_temp_contract_guard(decl, source);
 
     L3Table {
         id: table_id,
@@ -629,6 +645,211 @@ fn index_table(
         keys,
         is_temporary,
     }
+}
+
+// ---------------------------------------------------------------------------
+// G-2 (runtime-implied tempness): structural matching of the EXACT guard
+// `if not <recv>.IsTemporary[()] then Error(...)`.
+//
+// SOUNDNESS / suppression direction: matching this shape PROVES the receiver
+// is temporary (the code errors at runtime otherwise), so upgrading to
+// `Known(true)` is sound — the same direction as `TableType = Temporary`.
+// ANY deviation (else branch, non-negated condition, non-Error then-branch,
+// arguments on IsTemporary, non-identifier receiver) → no match → the record
+// stays Unknown and detectors keep firing.
+// ---------------------------------------------------------------------------
+
+/// Named `code_block` children that are NOT statements — the same trivia set
+/// the L2 unreachable-after-exit scan filters (G-11).
+fn is_statement_trivia(kind: &str) -> bool {
+    matches!(
+        kind,
+        "begin_keyword" | "end_keyword" | "comment" | "multiline_comment" | "pragma"
+    )
+}
+
+/// Unwrap nested `parenthesized_expression` wrappers (skipping comment trivia).
+fn unwrap_parens(node: Node) -> Node {
+    let mut current = node;
+    while current.kind() == "parenthesized_expression" {
+        let Some(inner) = named_children(current)
+            .into_iter()
+            .find(|c| !is_statement_trivia(c.kind()))
+        else {
+            return current;
+        };
+        current = inner;
+    }
+    current
+}
+
+/// Match `<recv>.IsTemporary` or `<recv>.IsTemporary()` where `<recv>` is a
+/// BARE identifier / quoted identifier. Returns the receiver name (unquoted,
+/// lowercased). Anything else — arguments on the call, a chained / complex
+/// receiver — → `None` (conservative).
+fn istemporary_receiver(node: Node, source: &str) -> Option<String> {
+    let node = unwrap_parens(node);
+    let member = match node.kind() {
+        "call_expression" => {
+            // EXACT: `IsTemporary` takes no arguments.
+            let args = node.child_by_field_name("arguments")?;
+            if named_children(args)
+                .iter()
+                .any(|c| !is_statement_trivia(c.kind()))
+            {
+                return None;
+            }
+            let func = node.child_by_field_name("function")?;
+            if func.kind() != "member_expression" {
+                return None;
+            }
+            func
+        }
+        "member_expression" => node,
+        _ => return None,
+    };
+    let member_name = member.child_by_field_name("member")?;
+    if strip_quotes(node_text(member_name, source)).to_lowercase() != "istemporary" {
+        return None;
+    }
+    let object = member.child_by_field_name("object")?;
+    if object.kind() != "identifier" && object.kind() != "quoted_identifier" {
+        return None;
+    }
+    Some(
+        strip_quotes(node_text(object, source))
+            .trim()
+            .to_lowercase(),
+    )
+}
+
+/// `Error(...)` — a call whose function is the bare `Error` identifier.
+fn is_error_call(node: Node, source: &str) -> bool {
+    if node.kind() != "call_expression" {
+        return false;
+    }
+    let Some(func) = node.child_by_field_name("function") else {
+        return false;
+    };
+    matches!(func.kind(), "identifier" | "keyword_identifier")
+        && node_text(func, source).to_lowercase() == "error"
+}
+
+/// Match the EXACT runtime-tempness guard STATEMENT
+///
+///   `if not <recv>.IsTemporary[()] then Error(...)`
+///
+/// (negation also as `<recv>.IsTemporary[()] = false` / `false = ...`), with NO
+/// else branch, whose then-branch is an `Error(...)` call — directly or as a
+/// `begin Error(...); end` block containing exactly that one statement.
+/// Returns the receiver name (lowercased). Any deviation → `None`.
+fn is_temporary_error_guard(node: Node, source: &str) -> Option<String> {
+    if node.kind() != "if_statement" {
+        return None;
+    }
+    if node.child_by_field_name("else_branch").is_some() {
+        return None;
+    }
+    let condition = unwrap_parens(node.child_by_field_name("condition")?);
+    let receiver = match condition.kind() {
+        "unary_expression" => {
+            let op = condition.child_by_field_name("operator")?;
+            if node_text(op, source).to_lowercase() != "not" {
+                return None;
+            }
+            istemporary_receiver(condition.child_by_field_name("operand")?, source)?
+        }
+        "comparison_expression" => {
+            let op = condition.child_by_field_name("operator")?;
+            if node_text(op, source).trim() != "=" {
+                return None;
+            }
+            let left = unwrap_parens(condition.child_by_field_name("left")?);
+            let right = unwrap_parens(condition.child_by_field_name("right")?);
+            let is_false_literal = |n: Node| {
+                n.kind() == "boolean" && node_text(n, source).trim().to_lowercase() == "false"
+            };
+            if is_false_literal(right) {
+                istemporary_receiver(left, source)?
+            } else if is_false_literal(left) {
+                istemporary_receiver(right, source)?
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    let then_branch = node.child_by_field_name("then_branch")?;
+    if is_error_call(then_branch, source) {
+        return Some(receiver);
+    }
+    if then_branch.kind() == "code_block" {
+        let statements: Vec<Node> = named_children(then_branch)
+            .into_iter()
+            .filter(|c| !is_statement_trivia(c.kind()))
+            .collect();
+        if statements.len() == 1 && is_error_call(statements[0], source) {
+            return Some(receiver);
+        }
+    }
+    None
+}
+
+/// G-2 Part 1: temp-by-contract table detection. True when ANY of the table's
+/// OnInsert/OnModify/OnDelete/OnRename triggers contains a TOP-LEVEL
+/// `if not Rec.IsTemporary[()] then Error(...)` guard (top-level only — a
+/// guard nested under another condition does not always execute and proves
+/// nothing; conservative).
+fn table_has_temp_contract_guard(decl: Node, source: &str) -> bool {
+    for (_parent, routine) in collect_routine_nodes(decl) {
+        if routine.kind() != "trigger_declaration" {
+            continue;
+        }
+        let Some(name_node) = routine.child_by_field_name("name") else {
+            continue;
+        };
+        let trigger_name = strip_quotes(node_text(name_node, source)).to_lowercase();
+        if !matches!(
+            trigger_name.as_str(),
+            "oninsert" | "onmodify" | "ondelete" | "onrename"
+        ) {
+            continue;
+        }
+        let Some(body) = crate::engine::l2::find_code_block(routine) else {
+            continue;
+        };
+        for statement in named_children(body) {
+            if is_statement_trivia(statement.kind()) {
+                continue;
+            }
+            if is_temporary_error_guard(statement, source).as_deref() == Some("rec") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// G-2 Part 2: routine ENTRY-guard detection. Returns the lowercased receiver
+/// of `if not <X>.IsTemporary[()] then Error(...)` when it is the routine's
+/// FIRST executable statement (so it dominates the whole body) AND `<X>` is a
+/// record var/param (incl. promoted globals) or the implicit `Rec`/`xRec`.
+fn entry_temp_guard_receiver_of(
+    routine: Node,
+    record_variables: &[L3RecordVariable],
+    source: &str,
+) -> Option<String> {
+    let body = crate::engine::l2::find_code_block(routine)?;
+    let first_statement = named_children(body)
+        .into_iter()
+        .find(|c| !is_statement_trivia(c.kind()))?;
+    let receiver = is_temporary_error_guard(first_statement, source)?;
+    let is_record = receiver == "rec"
+        || receiver == "xrec"
+        || record_variables
+            .iter()
+            .any(|rv| rv.name.eq_ignore_ascii_case(&receiver));
+    is_record.then_some(receiver)
 }
 
 /// Build a `PAnchor` from a node + the file's UTF-16 column index, mirroring the
@@ -939,6 +1160,14 @@ fn project_file(
                     });
                 }
             }
+            // G-2 Part 2: the routine's entry guard
+            // `if not <X>.IsTemporary[()] then Error(...)` (first executable
+            // statement, <X> a record var/param or implicit Rec/xRec) proves <X>
+            // temporary for the whole body; `record_types.rs` consumes this.
+            // Computed AFTER global promotion so a guarded object-global
+            // receiver also qualifies.
+            let entry_temp_guard_receiver =
+                entry_temp_guard_receiver_of(routine, &record_variables, source);
             let record_operations = features
                 .record_operations
                 .iter()
@@ -1121,6 +1350,7 @@ fn project_file(
                 enclosing_member,
                 originating_object,
                 enclosing_member_range,
+                entry_temp_guard_receiver,
             });
         }
     }

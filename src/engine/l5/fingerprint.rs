@@ -254,6 +254,7 @@ mod tests {
             enclosing_member: None,
             originating_object: None,
             enclosing_member_range: None,
+            entry_temp_guard_receiver: None,
         }
     }
 

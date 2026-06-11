@@ -127,6 +127,7 @@ fn make_routine_for_pass2b(variables: Vec<L3Variable>) -> L3Routine {
         enclosing_member: None,
         originating_object: None,
         enclosing_member_range: None,
+        entry_temp_guard_receiver: None,
     }
 }
 
