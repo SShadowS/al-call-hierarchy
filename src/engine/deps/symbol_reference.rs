@@ -44,6 +44,9 @@ pub struct AbiParameter {
     pub name: String,
     pub type_text: String,
     pub is_var: bool,
+    /// True when the parameter is declared `temporary` (e.g. `var Rec: Record T
+    /// temporary`). Additive — no consumers yet; populated by later tasks (Task 6).
+    pub is_temporary: bool,
 }
 
 /// A routine signature from `SymbolReference.json`. No body, no anchor, no per-run id.
@@ -106,6 +109,9 @@ pub struct AbiTable {
     pub name: String,
     pub fields: Vec<AbiField>,
     pub keys: Vec<AbiKey>,
+    /// True when the table is declared with `TableType = Temporary`. Additive —
+    /// no consumers yet; populated by later tasks (Task 6).
+    pub is_temporary: bool,
 }
 
 /// The neutral DTO `parse_symbol_reference` produces — no model entities/ids.
@@ -141,6 +147,11 @@ struct RawAttr {
 struct RawTypeDef {
     #[serde(rename = "Name")]
     name: Option<String>,
+    /// Present when the parameter / return type carries a `temporary` modifier in
+    /// the AL source (e.g. `var Rec: Record T temporary`). Additive — populated
+    /// by later tasks (Task 6).
+    #[serde(rename = "Temporary")]
+    temporary: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -529,6 +540,7 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
                     .and_then(|t| t.name.clone())
                     .unwrap_or_default(),
                 is_var: p.is_var == Some(true),
+                is_temporary: false,
             })
             .collect(),
         return_type_text: m
@@ -712,6 +724,7 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                         .iter()
                         .map(parse_key)
                         .collect(),
+                    is_temporary: false,
                 });
             }
         }
@@ -737,6 +750,7 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                 .iter()
                 .map(parse_key)
                 .collect(),
+            is_temporary: false,
         });
         objects.push(AbiObject {
             object_type: "Table".to_string(),

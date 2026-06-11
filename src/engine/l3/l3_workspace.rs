@@ -76,6 +76,12 @@ pub struct L3Object {
     /// lower-case form). Consumed by R4-F `return_summary` to merge the
     /// object-level commit behavior into each routine's `commitBehavior`.
     pub inherent_commit_behavior: Option<String>,
+    /// Page / PageExtension `SourceTable` temporary flag — `Some(true)` when the
+    /// SourceTable object is marked `TableType = Temporary`, `Some(false)` when
+    /// confirmed non-temporary, `None` when not yet resolved. Additive — L3Object
+    /// is NOT Serialize-derived into any gate surface, so this never touches a
+    /// golden. Populated by later tasks (Task 5).
+    pub source_table_temporary: Option<bool>,
 }
 
 /// A workspace field (the L3-relevant subset of al-sem's `Field`).
@@ -119,6 +125,10 @@ pub struct L3Table {
     pub fields: Vec<L3Field>,
     /// Table keys (cli-b snapshot `deriveSchema` reads these). Additive.
     pub keys: Vec<L3Key>,
+    /// True when the table is declared with `TableType = Temporary`. Additive —
+    /// L3Table is NOT Serialize-derived into any gate surface, so this never
+    /// touches a golden. Populated by later tasks (Task 4).
+    pub is_temporary: bool,
 }
 
 /// A record variable with its (post-resolve) resolved internal table id.
@@ -143,6 +153,11 @@ pub struct L3RecordVariable {
     /// record-type projection is field-allowlisted, so this never reaches an
     /// R0–R3 golden. Forwarded verbatim from `PRecordVariable.temp_state`.
     pub temp_state: crate::engine::l2::features::PTempState,
+    /// Variable scope: `"local"` | `"parameter"` | `"global"`. `None` when not
+    /// yet populated. Additive — forwarded from `PRecordVariable.scope`;
+    /// the L3 record-type projection is field-allowlisted, so this never reaches
+    /// a golden. Populated by later tasks.
+    pub scope: Option<String>,
 }
 
 impl L3RecordVariable {
@@ -598,6 +613,7 @@ fn index_table(
         name: table_name.to_string(),
         fields,
         keys,
+        is_temporary: false,
     }
 }
 
@@ -763,6 +779,7 @@ fn project_file(
             object_subtype,
             page_type,
             inherent_commit_behavior,
+            source_table_temporary: None,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
@@ -848,6 +865,7 @@ fn project_file(
                     is_parameter: rv.is_parameter,
                     parameter_index: rv.parameter_index,
                     temp_state: rv.temp_state.clone(),
+                    scope: rv.scope.clone(),
                 })
                 .collect();
             let record_operations = features

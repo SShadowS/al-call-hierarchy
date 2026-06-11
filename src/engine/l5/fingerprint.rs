@@ -270,6 +270,7 @@ mod tests {
             object_subtype: None,
             page_type: None,
             inherent_commit_behavior: None,
+            source_table_temporary: None,
         }
     }
 

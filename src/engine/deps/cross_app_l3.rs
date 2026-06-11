@@ -100,6 +100,7 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
         // + ABI agree on the L3Object shape. Consumed by return_summary to merge
         // object-level commit behavior into each dep routine's commitBehavior.
         inherent_commit_behavior: o.inherent_commit_behavior.clone(),
+        source_table_temporary: None,
     }
 }
 
@@ -129,6 +130,7 @@ fn dep_table_to_l3(t: &ProjectedTable) -> L3Table {
         // Dep (.app symbol) tables carry no parsed keys (the ABI projection does
         // not expose them); the cli-b snapshot corpus is source-only anyway.
         keys: Vec::new(),
+        is_temporary: false,
     }
 }
 

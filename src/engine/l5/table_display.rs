@@ -86,6 +86,7 @@ mod tests {
             name: name.to_string(),
             fields: vec![],
             keys: vec![],
+            is_temporary: false,
         }
     }
 
@@ -102,6 +103,7 @@ mod tests {
                 value: None,
                 parameter_index: None,
             },
+            scope: None,
         }
     }
 

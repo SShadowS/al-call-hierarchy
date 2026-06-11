@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Additive model fields for temp-state tracking epoch (Task 1 / ts1):
+  - `PRecordVariable.scope: Option<String>` (`"local"` | `"parameter"` |
+    `"global"`; `skip_serializing_if` keeps goldens stable; populated by later tasks).
+  - `L3RecordVariable.scope: Option<String>` — forwarded from L2; field-allowlisted
+    L3 projection never reaches goldens.
+  - `L3Table.is_temporary: bool` (default `false`) — additive; L3Table is not
+    serialised into any gate surface.
+  - `L3Object.source_table_temporary: Option<bool>` (default `None`) — additive;
+    L3Object is not serialised into any gate surface.
+  - `AbiTable.is_temporary: bool` (default `false`) — slot for ABI temp capture
+    (populated by Task 6).
+  - `AbiParameter.is_temporary: bool` (default `false`) — slot for parameter
+    `temporary` modifier (populated by Task 6).
+  - `RawTypeDef.temporary: Option<bool>` (`#[serde(rename = "Temporary")]`) —
+    deserialises the `Temporary` field from `SymbolReference.json`; consumed by
+    Task 6.
+
 ### Fixed
 - `record_types.rs` pass 2b `variable_decl_by_name` map changed from last-wins
   (unconditional `insert`) to first-wins (`entry().or_insert()`) so that a

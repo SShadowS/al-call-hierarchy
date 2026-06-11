@@ -390,6 +390,7 @@ mod tests {
                 name: "c".to_string(),
                 type_text: "Record Customer".to_string(),
                 is_var: false,
+                is_temporary: false,
             }],
             Some("Integer"),
         );

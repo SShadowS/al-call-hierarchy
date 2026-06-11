@@ -309,6 +309,7 @@ fn project_record_variables(record_variables: &[RecordVariable]) -> Vec<features
             temp_state: rv.temp_state.clone(),
             is_parameter: rv.is_parameter,
             parameter_index: rv.parameter_index,
+            scope: None,
         })
         .collect()
 }

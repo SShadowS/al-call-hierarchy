@@ -480,6 +480,7 @@ mod tests {
             object_subtype: None,
             page_type: None,
             inherent_commit_behavior: icb.map(|s| s.to_string()),
+            source_table_temporary: None,
         }
     }
 

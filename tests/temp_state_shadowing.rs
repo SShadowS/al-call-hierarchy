@@ -71,6 +71,7 @@ fn make_table(name: &str, number: i64) -> L3Table {
         name: name.to_string(),
         fields: Vec::new(),
         keys: Vec::new(),
+        is_temporary: false,
     }
 }
 

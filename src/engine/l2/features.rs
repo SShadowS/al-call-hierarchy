@@ -228,6 +228,11 @@ pub struct PRecordVariable {
     pub is_parameter: bool,
     #[serde(rename = "parameterIndex", skip_serializing_if = "Option::is_none")]
     pub parameter_index: Option<u32>,
+    /// Variable scope: `"local"` | `"parameter"` | `"global"`. `None` when not
+    /// yet populated (additive — skip_serializing_if keeps goldens stable).
+    /// Populated by later tasks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 /// Variable initializer — a one-hop `ValueSource` projection. Kept as raw JSON

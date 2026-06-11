@@ -43,6 +43,7 @@ fn routine_from_sig_row(row: &Value) -> AbiRoutine {
                 name: format!("p{i}"),
                 type_text,
                 is_var,
+                is_temporary: false,
             }
         })
         .collect();
