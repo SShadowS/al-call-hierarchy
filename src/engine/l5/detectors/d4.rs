@@ -14,7 +14,7 @@ use crate::engine::l2::features::PExpressionInfo;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{anchor_of, op_targets_virtual_system_table};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -27,7 +27,7 @@ fn is_string_like_literal(info: &PExpressionInfo) -> bool {
     info.kind == "string_literal" || info.kind == "quoted_identifier"
 }
 
-pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
     const LOOKUP_OPS: [&str; 3] = ["Get", "FindFirst", "FindLast"];
 
     let ws = &resolved.workspace;
@@ -59,6 +59,12 @@ pub fn detect_d4(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
                     continue;
                 }
                 if !op.loop_stack.iter().any(|l| l == &loop_info.id) {
+                    continue;
+                }
+                // G-6: a lookup on a BC virtual/system table is an in-memory
+                // metadata read — no SQL round-trip to hoist (docs/engine-gaps.md
+                // G-6, same gate as d1).
+                if op_targets_virtual_system_table(op, routine, &ctx.table_by_id) {
                     continue;
                 }
                 let key_info = op.field_argument_infos.as_ref().and_then(|v| v.first());

@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-6 (docs/engine-gaps.md): SQL-cost detectors no longer fire on ops targeting BC
+  VIRTUAL/system tables (`AllObj`, `AllObjWithCaption`, `Field`, `Key`, `Object`,
+  `Object Metadata`, `Table Metadata`, `Page Metadata`, `Codeunit Metadata`,
+  `Report Metadata`, `Database Locks`, `Session`, `Active Session`, `Integer`, `Date`) —
+  these have NO physical SQL backing (they read the platform's in-memory metadata store),
+  so an in-loop read of one is never a SQL round-trip (CDO triage batch 5, 6 FPs:
+  `AllObjWithCaption`/`Field` reads in loops flagged "type not loaded"). The suppression is
+  a shared exact-name gate (`VIRTUAL_SYSTEM_TABLES` allowlist + `is_virtual_system_table` +
+  `op_targets_virtual_system_table` in `src/engine/l5/detectors/mod.rs`, same pattern as
+  G-9's `is_platform_loaded_trigger_rec`): the op's type did NOT resolve to a workspace
+  table (a user table with a colliding name is physical → keeps firing) AND the record
+  variable's DECLARED type name matches the allowlist exactly (case-insensitive). Consulted
+  by `d1-db-op-in-loop` (direct in-loop branch — new `virtualTable` skip stat, present only
+  when non-zero — AND `terminals_at`, so virtual ops no longer fire transitively from an
+  ancestor loop) and `d4-repeated-lookup-in-loop` (candidate filter). `d3`/`d33` need no
+  gate: they already bail on unresolved-table ops, and a virtual table never resolves in the
+  source-only workspace. Suppression-direction safe: only the exact-name allowlist is
+  skipped; a loaded physical table and a NOT-loaded table with any other name keep firing.
+  Covered by `tests/gap_g6_virtual_tables.rs` (d1 direct + transitive suppression, d4
+  suppression, loaded-physical / unloaded-non-virtual / repeated-normal-lookup controls).
+  No in-repo golden moved — full `cargo test` is green (no fixture performs record ops on a
+  virtual table); the real-app (CDO) rebaseline remains with the consolidated gap-fix
+  rebaseline task.
 - G-11 (docs/engine-gaps.md): `d20-unreachable-after-exit` no longer fires when the only
   thing after an unconditional `exit(...)`/`Error(...)`/`CurrReport.Quit` is comment or
   pragma trivia — `exit(0); // note` (trailing inline comment), an own-line comment after

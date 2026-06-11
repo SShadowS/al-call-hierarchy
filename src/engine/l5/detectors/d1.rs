@@ -36,7 +36,9 @@ use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::capability_query::{touches_db_of, EffectPresence};
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, unquoted_field_name};
+use crate::engine::l5::detectors::{
+    anchor_of, op_targets_virtual_system_table, unquoted_field_name,
+};
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
@@ -546,6 +548,10 @@ impl<'a> WalkPolicy for D1Policy<'a> {
             // loop's advancement, never an actionable db op for ANY ancestor loop —
             // exclude it from the interprocedural terminals too.
             .filter(|op| !is_terminator_next(op))
+            // G-6: ops on a BC virtual/system table (AllObjWithCaption, Field, …)
+            // read the platform's in-memory metadata store — no SQL round-trip, so
+            // they are never d1 terminals for ANY ancestor loop either.
+            .filter(|op| !op_targets_virtual_system_table(op, r, self.table_by_id))
             .map(|op| Terminal {
                 routine_id: node.to_string(),
                 local_loop_depth: op.loop_stack.len() as i64,
@@ -702,6 +708,9 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let mut skipped_parse_incomplete = 0u64;
     let mut skipped_opaque_callee = 0u64;
     let mut skipped_dynamic_dispatch = 0u64;
+    // G-6: direct in-loop ops skipped because they target a BC virtual/system
+    // table (no SQL backing). Counted PER DIRECT OP, like the other direct skips.
+    let mut skipped_virtual_table = 0u64;
     // downgradedToInfo: counted PER DIRECT IN-LOOP OP, PRE-merge, in the direct-op
     // branch only (mirrors d1.ts:320-322). NOT reconstructed post-merge by rootCause
     // text — that would under-count when ≥2 temp ops merge into one finding and
@@ -764,6 +773,13 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             // is the loop's own cursor advancement — it cannot be hoisted or removed
             // without breaking the loop, so it is never an actionable finding.
             if is_terminator_next(op) {
+                continue;
+            }
+            // G-6: an op on a BC virtual/system table reads the platform's in-memory
+            // metadata store — no physical SQL backing, never a SQL round-trip, so
+            // an in-loop read of one is never a d1 finding (docs/engine-gaps.md G-6).
+            if op_targets_virtual_system_table(op, routine, &ctx.table_by_id) {
+                skipped_virtual_table += 1;
                 continue;
             }
             let Some(representative_loop) = representative_loop_id(&op.loop_stack) else {
@@ -985,6 +1001,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     stats.add_skip("opaqueCallee", skipped_opaque_callee);
     stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("virtualTable", skipped_virtual_table);
     stats.add_skip("downgradedToInfo", downgraded_to_info);
     stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
     DetectorOutput {

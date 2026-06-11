@@ -113,6 +113,22 @@ record vars / sub-loops; likely a "first var wins" or stale-binding bug in the p
 
 ## G-6 — BC system/virtual tables flagged as DB ops
 
+**Status: FIXED (commit `fix(engine-g6): skip SQL-cost detectors on BC virtual/system tables (G-6)`).**
+Shared exact-name gate in `src/engine/l5/detectors/mod.rs` (same pattern as G-9):
+`VIRTUAL_SYSTEM_TABLES` allowlist (`AllObj`, `AllObjWithCaption`, `Field`, `Key`, `Object`,
+`Object Metadata`, `Table Metadata`, `Page Metadata`, `Codeunit Metadata`, `Report Metadata`,
+`Database Locks`, `Session`, `Active Session`, `Integer`, `Date`) +
+`op_targets_virtual_system_table`: the op's type did NOT resolve to a workspace table (a
+user table with a colliding name stays physical → keeps firing) AND the record variable's
+DECLARED type name matches the allowlist exactly (case-insensitive). Consulted by d1 (direct
+in-loop branch, `virtualTable` skip stat, AND `terminals_at` so virtual ops never fire
+transitively) and d4 (candidate filter). d3/d33 need no gate — they already bail on
+unresolved-table ops, and a virtual table never resolves in the source-only workspace.
+Anything off the allowlist keeps firing. Tests: `tests/gap_g6_virtual_tables.rs`
+(suppression direct/transitive/d4 + loaded-physical and unloaded-non-virtual controls). No
+in-repo golden moved (no fixture performs record ops on a virtual table); the CDO-run
+rebaseline remains with the consolidated rebaseline task.
+
 **Symptom:** `d1` fires on reads of BC system virtual tables (`AllObjWithCaption`, `Field`)
 which have no physical SQL backing (they read BC's internal metadata store). Engine marks them
 "type not loaded" and fires conservatively.

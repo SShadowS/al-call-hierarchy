@@ -45,8 +45,10 @@ pub mod d7;
 pub mod d8;
 pub mod d9;
 
+use std::collections::HashMap;
+
 use crate::engine::l2::features::{PAnchor, PExpressionInfo};
-use crate::engine::l3::l3_workspace::L3Routine;
+use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 use crate::engine::l5::finding::SourceAnchor;
 use crate::engine::l5::registry::Detector;
 
@@ -97,6 +99,71 @@ pub(crate) fn is_platform_loaded_trigger_rec(
         "Table" | "TableExtension" => routine.name.eq_ignore_ascii_case("OnValidate"),
         _ => false,
     }
+}
+
+/// G-6: BC VIRTUAL/system tables with NO physical SQL backing (docs/engine-gaps.md
+/// G-6). Reads of these resolve against the platform's in-memory metadata store
+/// (object/field/session metadata, the `Integer`/`Date` number generators), never
+/// a SQL round-trip — so SQL-cost detectors (d1/d4) must not fire on ops targeting
+/// them. (d3/d33 already skip unresolved-table ops structurally, and a virtual
+/// table never resolves in the source-only workspace, so they need no gate.)
+///
+/// EXACT BC table names, matched case-insensitively. Deliberately CONSERVATIVE:
+/// only tables confidently known to be virtual are listed; any unlisted table
+/// keeps firing (the safe direction). Extend by appending the exact table name.
+const VIRTUAL_SYSTEM_TABLES: &[&str] = &[
+    "AllObj",
+    "AllObjWithCaption",
+    "Field",
+    "Key",
+    "Object",
+    "Object Metadata",
+    "Table Metadata",
+    "Page Metadata",
+    "Codeunit Metadata",
+    "Report Metadata",
+    "Database Locks",
+    "Session",
+    "Active Session",
+    "Integer",
+    "Date",
+];
+
+/// True iff `name` EXACTLY matches (case-insensitive) a known BC virtual/system
+/// table from the G-6 allowlist.
+pub(crate) fn is_virtual_system_table(name: &str) -> bool {
+    VIRTUAL_SYSTEM_TABLES
+        .iter()
+        .any(|t| t.eq_ignore_ascii_case(name))
+}
+
+/// G-6 suppression signal (exact, structural): true iff this record op targets a
+/// known BC virtual/system table — i.e. its type did NOT resolve to a workspace
+/// table (a workspace table with a colliding name is a USER-defined physical
+/// table → keep firing) AND the receiving record variable's DECLARED type name is
+/// on the `VIRTUAL_SYSTEM_TABLES` allowlist. The variable lookup mirrors
+/// `describe_table`'s tier-2 (case-insensitive name match on the routine's record
+/// variables). When unsure (resolved table, unknown variable, no declared type,
+/// unlisted name) returns `false` — the detectors keep firing.
+pub(crate) fn op_targets_virtual_system_table(
+    op: &L3RecordOperation,
+    routine: &L3Routine,
+    table_by_id: &HashMap<&str, &L3Table>,
+) -> bool {
+    // A type that resolved to a workspace table is a user-defined physical table
+    // (the source-only pipeline never loads platform tables) — never virtual.
+    if let Some(tid) = op.table_id.as_deref() {
+        if table_by_id.contains_key(tid) {
+            return false;
+        }
+    }
+    let lc = op.record_variable_name.to_lowercase();
+    routine
+        .record_variables
+        .iter()
+        .find(|v| v.name.to_lowercase() == lc)
+        .and_then(|v| v.table_name.as_deref())
+        .is_some_and(is_virtual_system_table)
 }
 
 /// `unquotedFieldName` from `model/expression.ts`:
