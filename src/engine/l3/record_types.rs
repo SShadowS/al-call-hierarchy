@@ -192,6 +192,110 @@ pub fn resolve_routine_record_types(
         }
     }
 
+    // --- pass: RecordRef GetTable / OpenTemporary local-only tempState (Task 12 / G6) ----
+    //
+    // A RecordRef variable (declaredType == "RecordRef") has NO associated table, so passes
+    // 1–3 above never touch its record ops (they leave temp_state = Unknown). Two forms CAN
+    // set it deterministically, but ONLY when the call is unconditional (no branching in the
+    // routine at all AND the call site is not inside a loop):
+    //
+    //   RecRef.Open(no, true)  → Known(true)   (OpenTemporary form)
+    //   RecRef.Open(no)        → Known(false)  (no second arg ⇒ non-temporary)
+    //   RecRef.Open(no, false) → Known(false)  (explicit false)
+    //   RecRef.GetTable(SomeRec) → SomeRec's tempState (from record_variables by name)
+    //
+    // SOUNDNESS: only set Known(true) from exactly `Open(_, true)` or GetTable of a
+    // Known(true) source.  Anything uncertain (conditional, in-loop, unknown second arg,
+    // unknown source var) → leave Unknown (conservative; never wrongly Known(true)).
+    //
+    // The derivation only fires when has_branching == false so we don't need to inspect
+    // individual call-site control contexts (which are not yet populated at this stage).
+    if !routine.has_branching {
+        // Build set of RecordRef var names (lc) from the routine's variable list.
+        let recordref_var_names: std::collections::HashSet<String> = routine
+            .variables
+            .iter()
+            .filter(|v| v.declared_type.to_lowercase() == "recordref")
+            .map(|v| v.name.to_lowercase())
+            .collect();
+
+        if !recordref_var_names.is_empty() {
+            // Build the record-var temp map (lc name → known temp value) for GetTable.
+            let record_var_temp: HashMap<String, Option<bool>> = routine
+                .record_variables
+                .iter()
+                .map(|rv| (rv.name.to_lowercase(), rv.temp_state_known_value()))
+                .collect();
+
+            // Scan call sites for GetTable / Open on RecordRef vars (unconditional only).
+            let mut recref_temp: HashMap<String, crate::engine::l2::features::PTempState> =
+                HashMap::new();
+            for cs in &routine.call_sites {
+                // Must not be inside a loop.
+                if !cs.loop_stack.is_empty() {
+                    continue;
+                }
+                let crate::engine::l2::features::PCallee::Member { receiver, method } = &cs.callee
+                else {
+                    continue;
+                };
+                let receiver_lc = receiver.to_lowercase();
+                if !recordref_var_names.contains(&receiver_lc) {
+                    continue;
+                }
+                let method_lc = method.to_lowercase();
+                match method_lc.as_str() {
+                    "open" => {
+                        // RecRef.Open(no)        → Known(false)
+                        // RecRef.Open(no, false) → Known(false)
+                        // RecRef.Open(no, true)  → Known(true)
+                        // RecRef.Open(no, <other>) → skip (Unknown, conservative)
+                        let second_arg = cs.argument_texts.get(1).map(|t| t.trim().to_lowercase());
+                        let ts = match second_arg.as_deref() {
+                            None => Some(crate::engine::l2::scope::ts_known(false)),
+                            Some("false") => Some(crate::engine::l2::scope::ts_known(false)),
+                            Some("true") => Some(crate::engine::l2::scope::ts_known(true)),
+                            Some(_) => None, // non-literal second arg → conservative Unknown
+                        };
+                        if let Some(ts) = ts {
+                            recref_temp.insert(receiver_lc, ts);
+                        }
+                    }
+                    "gettable" => {
+                        // RecRef.GetTable(SomeRec) → inherit SomeRec's tempState.
+                        // First arg must be a bare identifier naming a known record var.
+                        let Some(source_name) = cs.argument_texts.first() else {
+                            continue;
+                        };
+                        let source_lc = source_name.trim().to_lowercase();
+                        // Only bare identifiers (no dots, no parens, no spaces after trim).
+                        if source_lc.contains('.')
+                            || source_lc.contains('(')
+                            || source_lc.contains(' ')
+                        {
+                            continue;
+                        }
+                        let Some(known_val) = record_var_temp.get(&source_lc).copied().flatten()
+                        else {
+                            continue; // source var absent or not Known → Unknown
+                        };
+                        recref_temp
+                            .insert(receiver_lc, crate::engine::l2::scope::ts_known(known_val));
+                    }
+                    _ => {}
+                }
+            }
+
+            // Apply derived temp states to matching record ops.
+            for op in routine.record_operations.iter_mut() {
+                let var_lc = op.record_variable_name.to_lowercase();
+                if let Some(ts) = recref_temp.get(&var_lc) {
+                    op.temp_state = Some(ts.clone());
+                }
+            }
+        }
+    }
+
     // --- FINAL override pass (Task 4 / G3, RV-8): table-level temp precedence --
     //
     // "One precedence rule everywhere: table-level temp (`TableType = Temporary`)

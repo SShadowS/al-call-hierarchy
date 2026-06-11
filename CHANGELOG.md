@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- RecordRef `GetTable` / `OpenTemporary` local-only `tempState` derivation (Task 12 / ts12,
+  Component 4 / G6). The L3 record-type resolution pass now derives a `RecordRef` variable's
+  `tempState` from two structurally deterministic call patterns — `RecRef.Open(no, true)`
+  (OpenTemporary form → `Known(true)`), `RecRef.Open(no)` / `RecRef.Open(no, false)` (plain
+  Open → `Known(false)`), and `RecRef.GetTable(SomeRec)` (inherits `SomeRec`'s resolved
+  `tempState` from the routine's `record_variables`). CONSERVATIVE: derivation only fires
+  when the routine has NO branching (`has_branching == false`) AND the call site is outside
+  any loop (`loop_stack.is_empty()`). Anything uncertain (conditional, in-loop, unknown
+  second arg for `Open`, unresolved source for `GetTable`) → `Unknown` (engine still fires;
+  never wrongly `Known(true)`). OUT OF SCOPE by design: `Copy(..., ShareTable)` aliasing
+  (cross-routine, speculative — documented non-goal). The pass is purely additive — it only
+  sets temp on ops that were previously `Unknown`; the table-level and page-level overrides
+  that run after it can still upgrade to `Known(true)` independently.
+
 ### Changed
 - d1 (`db-op-in-loop`) RV-1 CalcFields/FlowField gate (Task 11 / ts11 — the headline
   false-negative fix of the temp-state epoch). A `CalcFields`/`SetAutoCalcFields` on a
