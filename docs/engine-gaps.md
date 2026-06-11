@@ -143,15 +143,102 @@ Confirm before treating as a bug.
 
 ---
 
+# Additional gaps from the medium/low triage
+
+Triaging the 524 medium+low primary findings (→ 329 real, ~195 FP, ~37%) surfaced these,
+dominated by detectors that reason about *load state* (d3/d11/d21/d37) rather than loops.
+
+## G-9 — page/table trigger `Rec` is platform-loaded (NEW, the biggest medium/low FP class)
+
+**Symptom:** `d11-modify-without-get`, `d21-read-without-load`, and `d37-validate-without-persist`
+fire on `Rec` inside **page triggers** (`OnValidate`, `OnAction`, `OnAfterGetRecord`,
+`OnDrillDown`, `OnAfterGetCurrRecord`) and **table field `OnValidate`** triggers. In all of
+these the AL platform has already loaded `Rec` before the trigger runs, and a field
+`OnValidate` calling `Validate(...)` on a sibling field is normal field-chain validation whose
+persistence is the caller's responsibility — not a missing Get / lost Validate.
+
+**Evidence:** the single largest medium/low FP source — ~40+ FPs across batches 2, 5, 6, 9, 10,
+11, 12 (e.g. CDO E-Mail Template Card page triggers, CDO Setup/CDO Vendor OnValidate, every
+SMTP Setup OnAction).
+
+**Approach:** when the enclosing routine is a page trigger OR a table field/record trigger and
+the subject record is `Rec` (the trigger's implicit current record), suppress d11/d21/d37 — the
+platform guarantees `Rec` is loaded, and field-chain `Validate` is not a persist obligation of
+the trigger. Structural (trigger kind + receiver == `Rec`), suppression-direction safe.
+
+## G-10 — record-loading wrappers not recognized as loads (NEW)
+
+**Symptom:** `d11`/`d21` fire even though the record was loaded by a method that isn't the
+literal `Get`/`Find`: `GetBySystemId`, custom `FindTemplate`/`FindXxx` wrappers,
+`InsertIfNotExists`, and `var`-out facade loaders like
+`GetApplicationAreaSetupRecFromCompany(var Rec, …): Boolean`.
+
+**Evidence:** batches 1 (GetBySystemId ×4), 10 (FindTemplate ×4, SetDataRecord/GetDataRecord),
+11 (facade loaders, InsertIfNotExists), 12.
+
+**Approach:** treat platform loaders `GetBySystemId`/`GetBySystemId` and any callee that takes
+the record `var` and performs a `Get`/`Find` on it (one-hop summary, same machinery as G-3) as
+satisfying the "record is loaded" precondition. Custom `FindXxx` wrappers need the one-hop
+callee summary; the built-ins (`GetBySystemId`) are a cheap allowlist.
+
+## G-11 — d20 misfires on trailing comments / single-line & conditional exits (NEW, parser bug)
+
+**Symptom:** `d20-unreachable-after-exit` flags as "unreachable" (a) a trailing inline comment
+on an `exit(...)` line (`exit(0); // note` → the comment column is treated as a statement), (b)
+a single-line function body that is just `exit(expr)`, and (c) the fall-through `exit(0)` after
+a *conditional* `if … then exit(x)`.
+
+**Evidence:** batches 4 (ReadSendEDocsOrdinal conditional exit), 7 (conditional exit-in-loop),
+11 (CDO Functions single-line exits ×2), 12 (trailing-comment exits ×2). ~6 FPs, all clearly
+wrong.
+
+**Approach:** fix d20's position/reachability logic: an `exit` only makes following code dead if
+it is UNCONDITIONAL and there is an actual subsequent statement (not a comment, not end-of-body).
+The current logic appears to use the column past the `;` (catching comment text) and to ignore
+the `if`-guard. Pure d20 correctness fix; suppression-direction safe (removes false fires).
+
+## G-12 — d3 over-fires on PK-only / FlowField / existence-check Gets (NEW refinements)
+
+**Symptom:** `d3-missing-setloadfields` fires when (a) the only field read after a `Get` is the
+primary key (always loaded regardless of SetLoadFields), (b) the accessed field is a **FlowField**
+(needs `CalcFields`, not `SetLoadFields`), or (c) the `Get` is an existence check followed by an
+unconditional `exit` with no field read. Also: d3 misses a `SetLoadFields` that was set *before*
+the `Get` or via an assignment the engine's data-flow didn't track.
+
+**Evidence:** batches 1, 8 (SetLoadFields set before Get missed; Get-as-existence-check), 10/12
+(PK-only Gets, FlowField fields).
+
+**Approach:** in d3, (1) exclude PK fields from the "unloaded fields accessed" set (always
+available), (2) exclude FlowField fields (orthogonal — that's d22's domain), (3) suppress when
+the post-Get path reads no field, and (4) tighten the SetLoadFields data-flow to catch a
+SetLoadFields anywhere before the Get in the routine. Each removes a clean FP sub-class.
+
+---
+
 ## Suggested order
 
-1. **G-1** (Next-terminator) — biggest FP class, pure structural check, low risk.
-2. **G-6** (virtual tables) — cheap allowlist, clean class.
-3. **G-2** (runtime-implied tempness) — high volume, two structural sub-features, suppression-safe.
-4. **G-3** (interprocedural filter) — needs a one-hop summary; medium effort.
-5. **G-5** (wrong table name) — correctness/trust; audit the binding.
-6. **G-4 / G-7 / G-8** — lower volume / need investigation first.
+1. **G-9** (trigger `Rec` loaded) — biggest medium/low FP class, structural, suppression-safe.
+2. **G-1** (Next-terminator) — biggest crit/high FP class, pure structural check.
+3. **G-11** (d20 comment/exit position) — clear correctness bug, ~6 obvious FPs, cheap.
+4. **G-6** (virtual tables) — cheap allowlist.
+5. **G-12** (d3 PK/FlowField/existence) — several clean sub-classes, modest effort.
+6. **G-2** (runtime-implied tempness) — high volume, two structural sub-features.
+7. **G-10 / G-3** (load-wrappers / interprocedural filter) — share a one-hop callee summary.
+8. **G-5** (wrong table name) — correctness/trust; audit the binding.
+9. **G-4 / G-7 / G-8** — lower volume / need investigation first.
 
-All of G-1..G-3,G-6 follow the epoch's suppression-direction discipline: only add `Known(true)`
-/ skip from an exact structural signal (terminator position, virtual-table allowlist, IsTemporary
-guard), everything else stays firing.
+All of these follow the epoch's suppression-direction discipline: only add `Known(true)` / skip
+from an exact structural signal (terminator position, trigger-Rec, virtual-table allowlist,
+IsTemporary guard, PK/FlowField field class), everything else stays firing.
+
+---
+
+## FP-rate summary (this CDO run, post-temp-state binary)
+
+| Severity band reviewed | Findings | Confirmed real | False positive | FP rate |
+|---|---|---|---|---|
+| critical + high (primary) | 441 | 348 | 93 | ~21% |
+| medium + low (primary) | 524 | 329 | ~195 | ~37% |
+
+The medium/low band's higher FP rate is concentrated in G-9 (trigger-`Rec`) and the load-state
+detectors — addressing G-9 alone would remove the largest single chunk.
