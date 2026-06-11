@@ -725,10 +725,22 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
     }
 
     // Unreachable-after-exit scan when entering a code_block.
+    //
+    // G-11: only ACTUAL statements count — comment / pragma trivia are named
+    // children of `code_block` in the V2 grammar, and counting them as the
+    // "next statement" made `exit(0); // note` (and comment-trailed single-line
+    // or conditional-fall-through exits) fire falsely. Conditional exits are
+    // already excluded structurally: an `if … then exit(x)` sibling is an
+    // `if_statement` node, which `unconditional_exit_kind` never classifies.
     if node_type == "code_block" {
         let stmts: Vec<Node> = named_children(node)
             .into_iter()
-            .filter(|c| c.kind() != "begin_keyword" && c.kind() != "end_keyword")
+            .filter(|c| {
+                !matches!(
+                    c.kind(),
+                    "begin_keyword" | "end_keyword" | "comment" | "multiline_comment" | "pragma"
+                )
+            })
             .collect();
         for i in 0..stmts.len().saturating_sub(1) {
             let s = stmts[i];

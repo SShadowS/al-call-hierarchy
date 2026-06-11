@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-11 (docs/engine-gaps.md): `d20-unreachable-after-exit` no longer fires when the only
+  thing after an unconditional `exit(...)`/`Error(...)`/`CurrReport.Quit` is comment or
+  pragma trivia — `exit(0); // note` (trailing inline comment), an own-line comment after
+  the exit, and the comment-trailed single-line / conditional-fall-through exit shapes from
+  the CDO triage (~6 FPs, batches 4/7/11/12) all stop firing. Root cause: the L2
+  unreachable-after-exit scan (`src/engine/l2/body_walk.rs`, code_block entry) collected
+  `named_children` as "statements", and in the V2 grammar `comment` / `multiline_comment` /
+  `pragma` nodes are named children of `code_block` — so a comment was flagged as the "next
+  statement" after the exit. The scan now filters that trivia out, so d20 fires ONLY when
+  the terminator is unconditional AND an actual executable statement follows it in the same
+  block. The other two triaged shapes were already structurally correct in the Rust engine
+  (a bare single-line `exit(expr)` body has no following sibling; a conditional
+  `if … then exit(x)` sibling is an `if_statement`, which `unconditional_exit_kind` never
+  classifies) — locked in by tests. Suppression-direction safe: a REAL statement after an
+  unconditional exit still fires, including when a comment sits between the exit and the
+  dead statement. Covered by `tests/gap_g11_d20_position.rs` (trailing/own-line comment,
+  single-line body, conditional fall-through suppressions + unconditional-exit,
+  unconditional-Error and comment-between controls that must keep firing). No in-repo
+  golden moved — full `cargo test` is green (no fixture exercises a comment-after-exit
+  shape); the real-app (CDO) rebaseline remains with the consolidated gap-fix rebaseline
+  task.
 - G-1 (docs/engine-gaps.md): `d1-db-op-in-loop` no longer fires on the `Next()` that IS the
   `until <var>.Next() = 0` terminator of the very loop being iterated — that `Next()` is the
   loop's own per-iteration cursor advancement (removing it breaks the loop), never an

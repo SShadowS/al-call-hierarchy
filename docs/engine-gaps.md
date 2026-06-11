@@ -205,6 +205,20 @@ callee summary; the built-ins (`GetBySystemId`) are a cheap allowlist.
 
 ## G-11 — d20 misfires on trailing comments / single-line & conditional exits (NEW, parser bug)
 
+**Status: FIXED (commit `fix(engine-g11): d20 only fires on unconditional exit with a real following statement (G-11)`).**
+Root cause was a single bug: the L2 unreachable-after-exit scan (`src/engine/l2/body_walk.rs`,
+code_block entry) treated every `named_children` of a `code_block` as a statement, and in the
+V2 grammar `comment` / `multiline_comment` / `pragma` nodes ARE named children — so a trailing
+or own-line comment after an `exit` was flagged as the "next statement". The scan now filters
+that trivia out. The single-line-body and conditional-exit shapes were already structurally
+correct in the Rust engine (a lone `exit(expr)` has no following sibling; an
+`if … then exit(x)` sibling is an `if_statement`, never classified unconditional) — the
+triaged FPs there were the comment-trailed variants of those shapes; both are locked in by
+tests. Suppression-direction safe: a real statement after an unconditional exit still fires,
+even with a comment between. Tests: `tests/gap_g11_d20_position.rs`. No in-repo golden moved
+(full `cargo test` green); the CDO-run rebaseline remains with the consolidated rebaseline
+task.
+
 **Symptom:** `d20-unreachable-after-exit` flags as "unreachable" (a) a trailing inline comment
 on an `exit(...)` line (`exit(0); // note` → the comment column is treated as a statement), (b)
 a single-line function body that is just `exit(expr)`, and (c) the fall-through `exit(0)` after
