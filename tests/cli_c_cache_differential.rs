@@ -351,7 +351,7 @@ fn current_versions_json(extra_key: Option<(&str, &str)>) -> String {
     map.insert("grammar".into(), "tree-sitter-al-v2.5.2-native".into());
     map.insert("resourcePolicy".into(), "1".into());
     map.insert("summarySchema".into(), "33".into());
-    map.insert("symbolReader".into(), "17".into());
+    map.insert("symbolReader".into(), "18".into());
     if let Some((k, v)) = extra_key {
         map.insert(k.into(), v.into());
     }
@@ -499,7 +499,7 @@ fn oracle_shape_invalid_beats_version_mismatch() {
     // Stale version (symbolReader "1") AND an invalid summaryMode. Shape guard
     // (summaryMode) fires before the version check → removed-unreadable.
     let mut stale = current_versions_json(None);
-    stale = stale.replace("\"symbolReader\":\"17\"", "\"symbolReader\":\"1\"");
+    stale = stale.replace("\"symbolReader\":\"18\"", "\"symbolReader\":\"1\"");
     let body = canonical_artifact_with_versions(key, &stale)
         .replace(
             "<HASH>",
@@ -529,7 +529,7 @@ fn oracle_stale_version_only_is_version_mismatch() {
     let key = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     let mut stale = current_versions_json(None);
-    stale = stale.replace("\"symbolReader\":\"17\"", "\"symbolReader\":\"1\"");
+    stale = stale.replace("\"symbolReader\":\"18\"", "\"symbolReader\":\"1\"");
     // Valid shape (correct summaryMode), but the content hash need not match —
     // the version check (step 5) runs BEFORE the content-hash recompute (step 6),
     // so a stale version short-circuits to version-mismatch regardless of hash.

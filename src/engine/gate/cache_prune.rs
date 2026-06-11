@@ -43,7 +43,11 @@ use crate::engine::ids::sha256_hex;
 pub const CACHE_VERSION_GRAMMAR: &str = "tree-sitter-al-v2.5.2-native";
 
 /// Symbol-reader schema version (al-sem `cache-versions.ts` `symbolReader`).
-pub const CACHE_VERSION_SYMBOL_READER: &str = "17";
+/// Bumped 17→18 for the temp-state-tracking epoch (Task 16): the symbol-reader
+/// surface now carries promoted object-global record vars + ABI per-param record
+/// vars (with bound tableIds), so cached symbol-reader tuples from the prior epoch
+/// must be invalidated.
+pub const CACHE_VERSION_SYMBOL_READER: &str = "18";
 
 /// Summary schema version (al-sem `cache-versions.ts` `summarySchema`).
 pub const CACHE_VERSION_SUMMARY_SCHEMA: &str = "33";

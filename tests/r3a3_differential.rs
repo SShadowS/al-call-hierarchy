@@ -45,6 +45,76 @@ use serde_json::Value;
 
 const R3A3_TEST_NAME: &str = "differential_r3a3_cone_coverage_match_goldens";
 
+/// Re-inline string-only array blocks to match the EXACT on-disk r3a3 golden form
+/// (retired al-sem dumper): a `"key": [` block whose body is only quoted-string
+/// elements collapses to `"key": ["a", "b"]` IFF the resulting line fits within
+/// `INLINE_WIDTH` columns (one column per leading tab); otherwise it stays
+/// expanded. Operates on tab-indented `PrettyFormatter` output. Validated
+/// byte-identical against all 160 committed r3a3 goldens (only short `reasons`
+/// arrays inline; long-id `unknownTargets` arrays stay expanded). REGEN-only.
+const INLINE_WIDTH: usize = 80;
+
+fn inline_short_string_arrays(expanded: &str) -> String {
+    let lines: Vec<&str> = expanded.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        // Match a key-array opener: `<tabs>"key": [`
+        let trimmed = line.trim_start_matches('\t');
+        if trimmed.ends_with(": [") && trimmed.starts_with('"') {
+            // Collect the body until the matching `<tabs>](,?)`.
+            let mut elems: Vec<&str> = Vec::new();
+            let mut j = i + 1;
+            let mut all_strings = true;
+            let mut close_idx = None;
+            while j < lines.len() {
+                let l = lines[j].trim_start_matches('\t');
+                if l == "]" || l == "]," {
+                    close_idx = Some(j);
+                    break;
+                }
+                let elem = l.trim_end_matches(',');
+                // A string element is a quoted token with no nested structure.
+                if elem.starts_with('"') && elem.ends_with('"') && elem.len() >= 2 {
+                    elems.push(elem);
+                } else {
+                    all_strings = false;
+                    break;
+                }
+                j += 1;
+            }
+            if all_strings && !elems.is_empty() {
+                if let Some(ci) = close_idx {
+                    let tab_count = line.len() - line.trim_start_matches('\t').len();
+                    let trailing_comma = lines[ci].trim_start_matches('\t') == "],";
+                    let inline = format!("[{}]", elems.join(", "));
+                    // width = tabs + `"key": ` prefix + inline body
+                    let prefix_len = trimmed.len() - 1; // `"key": [` minus the `[`
+                    if tab_count + prefix_len + inline.len() <= INLINE_WIDTH {
+                        let mut rebuilt = String::new();
+                        for _ in 0..tab_count {
+                            rebuilt.push('\t');
+                        }
+                        // `"key": ` then inline
+                        rebuilt.push_str(&trimmed[..prefix_len]);
+                        rebuilt.push_str(&inline);
+                        if trailing_comma {
+                            rebuilt.push(',');
+                        }
+                        out.push(rebuilt);
+                        i = ci + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(line.to_string());
+        i += 1;
+    }
+    out.join("\n")
+}
+
 /// Keys that must NEVER appear on either side of the R3a-3 comparison — the R3a-2
 /// CORE fields + later-gate (R3a-4) dep-hook surfaces. Mirrors the al-sem manifest's
 /// `forbiddenKeys`.
@@ -393,6 +463,49 @@ fn differential_r3a3_cone_coverage_match_goldens() {
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust R3a-3 projection for {fixture}: {e}"));
 
+        // REGEN path (temp-state epoch rebaseline, Task 16). When
+        // `REGEN_TEMP_GOLDENS` is set, write the ENGINE projection to the golden
+        // file (matching the on-disk pretty form) instead of comparing — the
+        // goldens are Rust-owned baselines (TS oracle retired). The r3a3 goldens
+        // were dumped by al-sem with TAB indentation (`JSON.stringify(x, null,
+        // "\t")`), so we serialize with a tab `PrettyFormatter` to keep the diff
+        // minimal (the comparison is structural via serde_json::Value, so indent
+        // is irrelevant to PASS — but matters for a reviewable diff).
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            // ORDER-PRESERVING regen: the (retired) al-sem golden orders the `extra`
+            // object's keys differently from the Rust struct's field order, so a
+            // naive re-serialize would churn ~all goldens with pure key-order noise
+            // that is NOT a designed temp-state change. To keep the rebaseline diff
+            // FAITHFUL to the ledger (only tempState flips + recordVariableId
+            // bindings), we only REWRITE a golden when its CONTENT actually changed
+            // (structural `serde_json::Value` inequality vs the on-disk golden).
+            // Structurally-identical goldens (key-order-only deltas) are left
+            // byte-for-byte untouched.
+            if rust_json == golden_json {
+                continue;
+            }
+            // Serialize the STRUCT (preserves field-declaration order — Value would
+            // re-sort keys alphabetically) with a tab `PrettyFormatter`, then a
+            // text post-pass re-inlines the short string-only arrays (`reasons`) to
+            // match the al-sem golden form (validated byte-identical against the
+            // committed corpus).
+            let mut buf = Vec::new();
+            let formatter = serde_json::ser::PrettyFormatter::with_indent(b"\t");
+            let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
+            serde::Serialize::serialize(&projection, &mut ser)
+                .unwrap_or_else(|e| panic!("regen serialize R3a-3 {fixture}: {e}"));
+            let expanded = String::from_utf8(buf).expect("utf8");
+            let mut s = inline_short_string_arrays(&expanded);
+            s.push('\n');
+            std::fs::write(golden_path, s)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!(
+                "REGEN r3a3 golden (CONTENT CHANGED): {}",
+                golden_path.display()
+            );
+            continue;
+        }
+
         scan_forbidden(
             &golden_json,
             &format!("{fixture}:golden"),
@@ -411,6 +524,12 @@ fn differential_r3a3_cone_coverage_match_goldens() {
         }
 
         diff_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        eprintln!("REGEN r3a3: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     all_divergences

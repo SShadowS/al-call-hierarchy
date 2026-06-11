@@ -6,12 +6,13 @@
       "isDepRoutine": false,
       "dbEffects": [
         {
-          "effectKey": "Insert|unknown|cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0|u",
+          "effectKey": "Insert|unknown|cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0|f",
           "op": "Insert",
           "tableId": "unknown",
           "operationId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0",
           "tempState": {
-            "kind": "unknown"
+            "kind": "known",
+            "value": false
           },
           "via": "inherited"
         }
@@ -33,8 +34,10 @@
           "extra": {
             "kind": "table",
             "opSubtype": "Insert",
+            "recordVariableId": "r0/de458a5c88192a51e94c54547add18e8f00b2d038632f084db6b2440d653894b/rv/r",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             }
           }
         }
@@ -117,8 +120,10 @@
           "extra": {
             "kind": "table",
             "opSubtype": "Insert",
+            "recordVariableId": "r0/de458a5c88192a51e94c54547add18e8f00b2d038632f084db6b2440d653894b/rv/r",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             }
           }
         }
@@ -136,12 +141,13 @@
       "isDepRoutine": true,
       "dbEffects": [
         {
-          "effectKey": "Insert|unknown|cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0|u",
+          "effectKey": "Insert|unknown|cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0|f",
           "op": "Insert",
           "tableId": "unknown",
           "operationId": "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0/op0",
           "tempState": {
-            "kind": "unknown"
+            "kind": "known",
+            "value": false
           },
           "via": "direct"
         }
@@ -161,8 +167,10 @@
           "extra": {
             "kind": "table",
             "opSubtype": "Insert",
+            "recordVariableId": "r0/de458a5c88192a51e94c54547add18e8f00b2d038632f084db6b2440d653894b/rv/r",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             }
           }
         }

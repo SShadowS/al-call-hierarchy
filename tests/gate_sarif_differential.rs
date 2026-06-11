@@ -174,6 +174,20 @@ fn run_gate(workspace: &str, preset: Option<&str>, detector: Option<&str>) -> St
     run_analyze(&args, "engine-default").expect("run_analyze")
 }
 
+/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
+/// is set, write the ENGINE-produced SARIF string to the golden file instead of
+/// comparing — the goldens are Rust-owned baselines (the TS oracle is retired).
+/// Returns `true` when a regen write happened (the caller then skips the assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    let path = goldens_dir().join(name);
+    std::fs::write(&path, rust).unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+    eprintln!("REGEN gate-sarif golden: {}", path.display());
+    true
+}
+
 fn read_golden(name: &str) -> String {
     let path = goldens_dir().join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
@@ -219,6 +233,12 @@ fn gate_sarif_goldens_byte_match() {
             TxnSelection::Detector(d) => (None, Some(d)),
         };
         let txn_rust = run_gate(gf.fixture, preset, detector);
+        if maybe_regen(&format!("{}.txn.sarif.json", gf.fixture), &txn_rust) {
+            // also regen the default slot, then skip the asserts for this fixture
+            let default_rust = run_gate(gf.fixture, None, None);
+            maybe_regen(&format!("{}.default.sarif.json", gf.fixture), &default_rust);
+            continue;
+        }
         let txn_golden = read_golden(&format!("{}.txn.sarif.json", gf.fixture));
         if txn_rust != txn_golden {
             mismatches.push(format!("{}.txn", gf.fixture));

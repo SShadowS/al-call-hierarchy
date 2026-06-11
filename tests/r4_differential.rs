@@ -1150,6 +1150,10 @@ fn run_cross_app_entry(
     let source_dir = smoke.corpus_dir.unwrap_or(smoke.fixture);
     let rust = run_rust_cross_app(smoke.fixture, source_dir, smoke.detectors);
 
+    if maybe_regen_r4(&golden_path, &rust) {
+        return Some((true, rust.finding_count));
+    }
+
     let rust_text = pretty_with_newline(&rust);
     let byte_matched = rust_text == golden_text;
     let count = rust.finding_count;
@@ -1177,6 +1181,20 @@ fn pretty_with_newline(proj: &R4FindingsProjection) -> String {
     let mut s = serde_json::to_string_pretty(proj).expect("serialize R4 projection");
     s.push('\n');
     s
+}
+
+/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
+/// is set, write the ENGINE-produced projection (in the exact on-disk golden
+/// form) to the golden file instead of comparing — the goldens are Rust-owned
+/// baselines (TS oracle retired). Returns `true` when a regen write happened.
+fn maybe_regen_r4(golden_path: &std::path::Path, rust: &R4FindingsProjection) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    std::fs::write(golden_path, pretty_with_newline(rust))
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    eprintln!("REGEN r4 golden: {}", golden_path.display());
+    true
 }
 
 /// The subset of a golden `Value`'s findings whose `detector` is in `names`.
@@ -1222,6 +1240,9 @@ fn run_smoke_entry(
     let rust = run_rust(smoke.fixture, source_dir, smoke.detectors);
 
     if smoke.ported {
+        if maybe_regen_r4(&golden_path, &rust) {
+            return Some((true, rust.finding_count));
+        }
         let rust_text = pretty_with_newline(&rust);
         let byte_matched = rust_text == golden_text;
         if !byte_matched {

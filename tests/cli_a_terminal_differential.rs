@@ -121,6 +121,22 @@ fn detector_arg(names: &[&str]) -> String {
     names.join(",")
 }
 
+/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
+/// is set, write the ENGINE-produced output to the golden file instead of
+/// comparing — the goldens are Rust-owned baselines (TS oracle retired). Returns
+/// `true` when a regen write happened (caller then skips the assert). NOTE: these
+/// goldens live in the external al-sem archive (where the harness reads them); the
+/// regen writes there, the diff is reviewed in al-sem.
+fn maybe_regen(golden_path: &std::path::Path, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    std::fs::write(golden_path, rust)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    eprintln!("REGEN cli-a-terminal golden: {}", golden_path.display());
+    true
+}
+
 /// Run the Rust terminal pipeline for one fixture.
 /// `group_by` is `None` for plain/nodep, `Some("object")` etc. for group-by.
 fn run_terminal(fixture: &str, detector_csv: &str, group_by: Option<&str>) -> String {
@@ -200,6 +216,10 @@ fn cli_a_terminal_byte_match() {
     // --- plain goldens (21 fixtures) ---
     for &fixture in PLAIN_FIXTURES {
         let golden_path = terminal_dir.join(format!("{fixture}.plain.txt"));
+        let rust_out = run_terminal(fixture, &default_csv, None);
+        if maybe_regen(&golden_path, &rust_out) {
+            continue;
+        }
         if !golden_path.exists() {
             divergences.push(format!(
                 "[{fixture}/plain] golden file missing: {}",
@@ -209,7 +229,6 @@ fn cli_a_terminal_byte_match() {
         }
         let golden = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|e| panic!("{TEST_NAME}: read error {}: {e}", golden_path.display()));
-        let rust_out = run_terminal(fixture, &default_csv, None);
         if rust_out != golden {
             divergences.push(text_diff(fixture, "plain", &golden, &rust_out));
         }
@@ -219,19 +238,21 @@ fn cli_a_terminal_byte_match() {
     {
         let fixture = "ws-rollup-multi-detector";
         let golden_path = terminal_dir.join(format!("{fixture}.nodep.txt"));
-        if !golden_path.exists() {
-            divergences.push(format!(
-                "[{fixture}/nodep] golden file missing: {}",
-                golden_path.display()
-            ));
-        } else {
-            let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
-                panic!("{TEST_NAME}: read error {}: {e}", golden_path.display())
-            });
-            // nodep = same default detectors, no special flag (no external deps in fixture)
-            let rust_out = run_terminal(fixture, &default_csv, None);
-            if rust_out != golden {
-                divergences.push(text_diff(fixture, "nodep", &golden, &rust_out));
+        // nodep = same default detectors, no special flag (no external deps in fixture)
+        let rust_out = run_terminal(fixture, &default_csv, None);
+        if !maybe_regen(&golden_path, &rust_out) {
+            if !golden_path.exists() {
+                divergences.push(format!(
+                    "[{fixture}/nodep] golden file missing: {}",
+                    golden_path.display()
+                ));
+            } else {
+                let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
+                    panic!("{TEST_NAME}: read error {}: {e}", golden_path.display())
+                });
+                if rust_out != golden {
+                    divergences.push(text_diff(fixture, "nodep", &golden, &rust_out));
+                }
             }
         }
     }
@@ -239,6 +260,10 @@ fn cli_a_terminal_byte_match() {
     // --- group-by goldens (5 × ws-d1-multi-caller) ---
     for &by in GROUP_BY_KEYS {
         let golden_path = terminal_dir.join(format!("{GROUP_BY_FIXTURE}.groupby-{by}.txt"));
+        let rust_out = run_terminal(GROUP_BY_FIXTURE, &default_csv, Some(by));
+        if maybe_regen(&golden_path, &rust_out) {
+            continue;
+        }
         if !golden_path.exists() {
             divergences.push(format!(
                 "[{GROUP_BY_FIXTURE}/groupby-{by}] golden file missing: {}",
@@ -248,7 +273,6 @@ fn cli_a_terminal_byte_match() {
         }
         let golden = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|e| panic!("{TEST_NAME}: read error {}: {e}", golden_path.display()));
-        let rust_out = run_terminal(GROUP_BY_FIXTURE, &default_csv, Some(by));
         if rust_out != golden {
             divergences.push(text_diff(
                 GROUP_BY_FIXTURE,

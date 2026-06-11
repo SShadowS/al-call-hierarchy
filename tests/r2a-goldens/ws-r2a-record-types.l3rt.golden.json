@@ -127,7 +127,12 @@
       "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#02305e3c6fe826baede8c365e9290e47e29fd5c76542b5581cde894972f5b58f",
       "name": "GlobalScopeOp",
       "objectType": "Codeunit",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "globalcust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r0/cf366210bade77d3b3f37f179ead08fe44076c32bc5e4f4db38c6f83232615de/op0",
@@ -144,6 +149,10 @@
       "recordVariables": [
         {
           "name": "cust",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        },
+        {
+          "name": "globalcust",
           "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
         },
         {

@@ -65,7 +65,12 @@
       "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#0ee6887b7588b60e569e5a6c679fb8766b5f347483371aa05d47b20126091e7e",
       "name": "InsertViaGlobalRecord",
       "objectType": "Codeunit",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "globalrec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r0/ae22cf6a5acc2c9ec05e81a60d5784adebe23e8ac6af3537b8dcbddb11a7295e/op0",
@@ -85,7 +90,12 @@
       "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50104#351217b0668cdf1652d23b4416c3be54899eaaac2017209b4b39d43e3a57ae16",
       "name": "CallViaGlobalCodeunit",
       "objectType": "Codeunit",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "globalrec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ],
       "recordOperations": []
     },
     {

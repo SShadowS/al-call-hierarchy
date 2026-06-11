@@ -41,6 +41,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that run after it can still upgrade to `Known(true)` independently.
 
 ### Changed
+- Golden REBASELINE for the temp-state-tracking epoch + symbolReader cache bump 17→18
+  (Task 16 / ts16). The temp-state epoch (Tasks 0–14) changed finding/projection CONTENT by
+  design; the goldens are now Rust-OWNED baselines (the TS oracle is retired) and were
+  REGENERATED from the current engine via a new env-gated (`REGEN_TEMP_GOLDENS`) regen path
+  added to each differential harness (byte-parity suites write the engine output string;
+  structural-JSON suites re-serialize the engine projection in the existing on-disk form).
+  `KNOWN_DIVERGENCES.json` stays `[]` (divergences are NOT allowlisted — the diff was reviewed
+  finding-by-finding). Suites moved: `r2a` L3 record-types (3 goldens — promoted object-global
+  record vars now bind a tableId, `resolvedRecordVarTableIds` 228→232); `r2.5b-rt` cross-app
+  (1 — `depBoundRecordVars` 2→6 from ABI/native dep-source promoted record vars); `r3a2`
+  summary-core (11 — PD substitution flips inherited `tempState` parameter-dependent→known/
+  unknown + `effectKey` tempfrag `p<i>`→`t`/`f`/`u`); `r3a3` cone-coverage (2 — `tempState`
+  flips + `recordVariableId` now bound on previously-unbound ops); `r3a5` cross-app summary
+  (1 — same flips + dep-routine `recordVariableId` bindings); `r3b` wrapped-parity (consumes the
+  r3a5 golden); `r4` findings, `gate-sarif`, and `cli-a` html/json/terminal (the
+  `ws-d1-multi-caller` d1 rootCause dropped "(temp state uncertain)" — now resolves physical via
+  all callers; severity unchanged). The `cli-a-*` byte goldens + the `cli-c` cache fixtures live
+  in the external al-sem archive (where the harnesses read them) and were regenerated/bumped in
+  place. Relaxed the `r3a5_projection_is_byte_stable` `!contains("r0/")` sub-assertion (a
+  too-strict heuristic the designed cross-app promotion legitimately invalidates — a promoted
+  dep record var binds `recordVariableId: "r0/<hash>/rv/<name>"`, an internal id that
+  canonically carries the `r0/` model-instance prefix); the determinism (a == b) and stable
+  routine-id checks remain. The `symbolReader` cache version (`cache_prune.rs`) is bumped 17→18
+  (the symbol-reader surface now carries promoted/ABI record vars with bound tableIds, so prior
+  caches must invalidate); `cli_c_cache_differential` + its fixture cache updated to "18".
 - d1 (`db-op-in-loop`) RV-1 CalcFields/FlowField gate (Task 11 / ts11 — the headline
   false-negative fix of the temp-state epoch). A `CalcFields`/`SetAutoCalcFields` on a
   record d1 resolved to TEMPORARY now downgrades to `info` ONLY when EVERY named field

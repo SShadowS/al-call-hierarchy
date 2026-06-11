@@ -135,6 +135,22 @@ fn all_detector_csv() -> String {
         .join(",")
 }
 
+/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
+/// is set, write the ENGINE-produced output to the golden file instead of
+/// comparing — the goldens are Rust-owned baselines (TS oracle retired). Returns
+/// `true` when a regen write happened (caller then skips the assert). NOTE: these
+/// goldens live in the external al-sem archive (where the harness reads them); the
+/// regen writes there, the diff is reviewed in al-sem.
+fn maybe_regen(golden_path: &std::path::Path, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    std::fs::write(golden_path, rust)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    eprintln!("REGEN cli-a-html golden: {}", golden_path.display());
+    true
+}
+
 /// Run the Rust HTML pipeline for one fixture with the given detector list.
 /// The env var `AL_SEM_VERSION_OVERRIDE` MUST be set by the caller before
 /// this function is called (it reads the env at call time via `alsem_version()`).
@@ -237,19 +253,21 @@ fn cli_a_html_byte_match() {
         // Always run default slot.
         {
             let golden_path = html_dir.join(format!("{fixture}.default.html"));
-            if !golden_path.exists() {
-                divergences.push(format!(
-                    "[{fixture}/default] golden file missing: {}",
-                    golden_path.display()
-                ));
-            } else {
-                let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
-                    panic!("{TEST_NAME}: failed to read {}: {e}", golden_path.display())
-                });
-                let rust_out = run_html(fixture, &default_csv);
-                if rust_out != golden {
-                    let diff = html_diff(fixture, "default", &golden, &rust_out);
-                    divergences.push(diff);
+            let rust_out = run_html(fixture, &default_csv);
+            if !maybe_regen(&golden_path, &rust_out) {
+                if !golden_path.exists() {
+                    divergences.push(format!(
+                        "[{fixture}/default] golden file missing: {}",
+                        golden_path.display()
+                    ));
+                } else {
+                    let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
+                        panic!("{TEST_NAME}: failed to read {}: {e}", golden_path.display())
+                    });
+                    if rust_out != golden {
+                        let diff = html_diff(fixture, "default", &golden, &rust_out);
+                        divergences.push(diff);
+                    }
                 }
             }
         }
@@ -257,19 +275,21 @@ fn cli_a_html_byte_match() {
         // Run all slot only for fixtures that have it.
         if all_slot_set.contains(fixture) {
             let golden_path = html_dir.join(format!("{fixture}.all.html"));
-            if !golden_path.exists() {
-                divergences.push(format!(
-                    "[{fixture}/all] golden file missing: {}",
-                    golden_path.display()
-                ));
-            } else {
-                let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
-                    panic!("{TEST_NAME}: failed to read {}: {e}", golden_path.display())
-                });
-                let rust_out = run_html(fixture, &all_csv);
-                if rust_out != golden {
-                    let diff = html_diff(fixture, "all", &golden, &rust_out);
-                    divergences.push(diff);
+            let rust_out = run_html(fixture, &all_csv);
+            if !maybe_regen(&golden_path, &rust_out) {
+                if !golden_path.exists() {
+                    divergences.push(format!(
+                        "[{fixture}/all] golden file missing: {}",
+                        golden_path.display()
+                    ));
+                } else {
+                    let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
+                        panic!("{TEST_NAME}: failed to read {}: {e}", golden_path.display())
+                    });
+                    if rust_out != golden {
+                        let diff = html_diff(fixture, "all", &golden, &rust_out);
+                        divergences.push(diff);
+                    }
                 }
             }
         }
