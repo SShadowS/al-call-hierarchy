@@ -251,6 +251,18 @@ the `if`-guard. Pure d20 correctness fix; suppression-direction safe (removes fa
 
 ## G-12 — d3 over-fires on PK-only / FlowField / existence-check Gets (NEW refinements)
 
+**Status: FIXED (commit `fix(engine-g12): d3 excludes PK/FlowField/existence + pre-Get SetLoadFields (G-12)`).**
+In d3, the "unloaded fields accessed" set now excludes the table's first-key (PK) field names
+and `field_class == "FlowField"` fields (exact structural signals; an unresolved field name
+stays in the set — keep firing); an existence-check Get whose post-Get accesses are all
+PK/FlowField (or nothing) leaves the set empty → no witness, no emit. The pre-Get
+`SetLoadFields` data-flow gap was QUOTED arguments: `deriveLoadStates` already walks all ops
+in source order, but the L2 body walk keeps the raw `"Unit Price"` argument text while field
+accesses are recorded unquoted — the load set is now quote-normalized so a quoted pre-Get
+`SetLoadFields` covers the later access. Controls locked in: PK+normal and FlowField+normal
+mixed reads still fire (missing list names the normal field only), an uncovered normal read
+and an incomplete pre-Get SetLoadFields still fire. `tests/gap_g12_d3_refinements.rs`.
+
 **Symptom:** `d3-missing-setloadfields` fires when (a) the only field read after a `Get` is the
 primary key (always loaded regardless of SetLoadFields), (b) the accessed field is a **FlowField**
 (needs `CalcFields`, not `SetLoadFields`), or (c) the `Get` is an existence check followed by an

@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-12 (docs/engine-gaps.md): `d3-missing-setloadfields` no longer fires on four clean FP
+  sub-classes from the CDO triage (batches 1, 8, 10/12). The "unloaded fields accessed"
+  computation now (1) excludes the table's PRIMARY-KEY fields (first key — `L3Table.keys[0]`
+  member names; the PK is always loaded regardless of SetLoadFields), (2) excludes
+  **FlowField** fields (`field_class == "FlowField"` — an uncovered FlowField read needs
+  `CalcFields`, d22's domain, not `SetLoadFields`), and (3) consequently suppresses the
+  existence-check shapes (`exit(Rec.Get(...))`, `if Rec.Get(...) then exit;` + Init/PK-write/
+  Insert) where no normal field is read after the Get — the accessed set is empty, so there is
+  no witness. (4) The missed pre-Get `SetLoadFields` was a quote-normalization gap, not an
+  ordering gap: `derive_load_states` already walks ops in source order, but the L2 body walk
+  records `SetLoadFields("Unit Price")` arguments with their quotes while field accesses are
+  stored unquoted, so a quoted load argument never covered the later access — load-set
+  arguments are now trimmed + outer-quote-stripped + lowercased (`normalize_load_field_arg`)
+  for `SetLoadFields`/`AddLoadFields`. Suppression-direction safe: only PK / FlowField names
+  resolved against the table model are excluded (unresolved names stay in the accessed set),
+  a Get reading BOTH a PK and an uncovered normal field still fires (missing list names the
+  normal field only), and quote normalization only ever ENLARGES coverage matching (fewer
+  false "incomplete"s, never a new finding). Covered by `tests/gap_g12_d3_refinements.rs`
+  (PK-only, FlowField-only, two existence-check shapes, quoted+plain pre-Get SetLoadFields
+  suppressions + uncovered-read, PK+normal, FlowField+normal, incomplete-pre-Get controls
+  that must keep firing). In-repo gate/r4 goldens with d3 findings may move only where a
+  finding's premise no longer holds — the real-app (CDO) rebaseline remains with the
+  consolidated gap-fix rebaseline task.
 - G-6 (docs/engine-gaps.md): SQL-cost detectors no longer fire on ops targeting BC
   VIRTUAL/system tables (`AllObj`, `AllObjWithCaption`, `Field`, `Key`, `Object`,
   `Object Metadata`, `Table Metadata`, `Page Metadata`, `Codeunit Metadata`,

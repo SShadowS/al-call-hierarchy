@@ -60,6 +60,21 @@ struct LoadStateAtRetrieval<'a> {
     load_state: LoadState,
 }
 
+/// Normalize a `SetLoadFields` / `AddLoadFields` field argument for matching
+/// against field-access names: trim, strip ONE pair of surrounding quotes (the
+/// L2 body walk keeps the raw `"Unit Price"` argument text, while field accesses
+/// are recorded unquoted), lowercase. (G-12 refinement 4 — a quoted pre-Get
+/// SetLoadFields argument must cover the later unquoted access.)
+fn normalize_load_field_arg(raw: &str) -> String {
+    let t = raw.trim();
+    let t = if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        &t[1..t.len() - 1]
+    } else {
+        t
+    };
+    t.to_lowercase()
+}
+
 /// Source order: line then column. Mirrors d3-load-state.ts `inSourceOrder`.
 fn in_source_order(a: &L3RecordOperation, b: &L3RecordOperation) -> std::cmp::Ordering {
     let ra = &a.source_anchor;
@@ -90,7 +105,7 @@ fn derive_load_states(routine: &L3Routine) -> Vec<LoadStateAtRetrieval<'_>> {
             let fields: HashSet<String> = op
                 .field_arguments
                 .as_ref()
-                .map(|fa| fa.iter().map(|f| f.to_lowercase()).collect())
+                .map(|fa| fa.iter().map(|f| normalize_load_field_arg(f)).collect())
                 .unwrap_or_default();
             state_by_var.insert(var_key, LoadState::Loaded(fields));
             continue;
@@ -102,7 +117,7 @@ fn derive_load_states(routine: &L3Routine) -> Vec<LoadStateAtRetrieval<'_>> {
             };
             if let Some(fa) = &op.field_arguments {
                 for f in fa {
-                    next.insert(f.to_lowercase());
+                    next.insert(normalize_load_field_arg(f));
                 }
             }
             state_by_var.insert(var_key, LoadState::Loaded(next));
@@ -184,6 +199,35 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 .map(|f| (f.id.as_str(), f.name.to_lowercase()))
                 .collect();
 
+            // G-12 refinement 1: the table's PRIMARY KEY (first key) fields are
+            // always loaded regardless of SetLoadFields — accessing them after a
+            // retrieval wastes nothing. Lowercased names; an empty/missing key
+            // set excludes nothing (keep firing).
+            let pk_fields: HashSet<&String> = table
+                .keys
+                .first()
+                .map(|k| {
+                    k.fields
+                        .iter()
+                        .filter_map(|fid| field_name_by_id.get(fid.as_str()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            // G-12 refinement 2: FlowFields need CalcFields, not SetLoadFields —
+            // an uncovered FlowField read is d22's domain, not d3's. EXACT
+            // structural signal (`field_class == "FlowField"`); anything else
+            // (Normal / FlowFilter / unknown name) stays in the accessed set.
+            let flowfield_names: HashSet<String> = table
+                .fields
+                .iter()
+                .filter(|f| f.field_class == "FlowField")
+                .map(|f| f.name.to_lowercase())
+                .collect();
+            // A field whose load is never d3's concern. Unresolved field names
+            // are NOT excluded (suppression-direction: when unsure, keep firing).
+            let excluded_field =
+                |name_lc: &String| pk_fields.contains(name_lc) || flowfield_names.contains(name_lc);
+
             let retrieval_anchor = &state.retrieval_op.source_anchor;
 
             // The window closes at the first invalidating op on this record var
@@ -224,7 +268,14 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 if !in_window(&fa.source_anchor) {
                     continue;
                 }
-                accessed_fields.insert(fa.field_name.to_lowercase());
+                let name_lc = fa.field_name.to_lowercase();
+                // G-12: PK / FlowField accesses never need a SetLoadFields —
+                // they don't count toward the "unloaded fields accessed" witness
+                // (the access step is still recorded as context for findings
+                // carried by OTHER, normal-field accesses).
+                if !excluded_field(&name_lc) {
+                    accessed_fields.insert(name_lc);
+                }
                 access_steps.push(EvidenceStep {
                     routine_id: routine.id.clone(),
                     operation_id: None,
@@ -320,7 +371,11 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 };
                 for fid in &reads {
                     if let Some(name) = field_name_by_id.get(fid.as_str()) {
-                        accessed_fields.insert(name.clone());
+                        // G-12: PK / FlowField reads in the callee are equally
+                        // exempt from SetLoadFields coverage.
+                        if !excluded_field(name) {
+                            accessed_fields.insert(name.clone());
+                        }
                     }
                 }
                 if !reads.is_empty() {
@@ -347,7 +402,11 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             }
 
             if accessed_fields.is_empty() {
-                continue; // no concrete access — no witness, no emit
+                // No concrete access — no witness, no emit. Also G-12
+                // refinement 3: an existence-check Get (no normal field read
+                // after it, only PK / FlowField touches or nothing at all)
+                // loads no wasted field — suppress.
+                continue;
             }
 
             // --- determination ---
