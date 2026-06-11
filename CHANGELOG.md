@@ -68,9 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (1 — same flips + dep-routine `recordVariableId` bindings); `r3b` wrapped-parity (consumes the
   r3a5 golden); `r4` findings, `gate-sarif`, and `cli-a` html/json/terminal (the
   `ws-d1-multi-caller` d1 rootCause dropped "(temp state uncertain)" — now resolves physical via
-  all callers; severity unchanged). The `cli-a-*` byte goldens + the `cli-c` cache fixtures live
-  in the external al-sem archive (where the harnesses read them) and were regenerated/bumped in
-  place. Relaxed the `r3a5_projection_is_byte_stable` `!contains("r0/")` sub-assertion (a
+  all callers; severity unchanged). The `cli-a-*` byte goldens + the `cli-c` cache fixtures were
+  rebaselined and VENDORED in-repo (see the follow-up entry above) so the frozen al-sem archive
+  stays unmodified. Relaxed the `r3a5_projection_is_byte_stable` `!contains("r0/")` sub-assertion (a
   too-strict heuristic the designed cross-app promotion legitimately invalidates — a promoted
   dep record var binds `recordVariableId: "r0/<hash>/rv/<name>"`, an internal id that
   canonically carries the `r0/` model-instance prefix); the determinism (a == b) and stable
