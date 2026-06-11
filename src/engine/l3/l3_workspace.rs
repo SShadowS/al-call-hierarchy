@@ -795,6 +795,12 @@ fn project_file(
 
         // Object globals + per-routine features (reuse the L2 body walk verbatim).
         let object_globals = scope::extract_object_globals(decl, source_unit_id, source);
+        // Task 3 (temp-state): object-global RECORD vars carry the temp signal the
+        // L2 body walk never saw (it only knew params + locals). Capture them once
+        // per object and promote (below) into each routine's `record_variables`,
+        // honoring AL shadowing — a routine's OWN param/local of the same name wins.
+        let object_global_record_vars =
+            scope::extract_object_global_record_vars(decl, &object_id, source);
         let routine_nodes = collect_routine_nodes(decl);
         let mut object_procedure_names = std::collections::HashSet::new();
         for (_parent, n) in &routine_nodes {
@@ -854,7 +860,9 @@ fn project_file(
                 );
             }
 
-            let record_variables = features
+            // The routine's OWN record vars (params + locals), built first so they
+            // take precedence over any same-named promoted global.
+            let mut record_variables: Vec<L3RecordVariable> = features
                 .record_variables
                 .iter()
                 .map(|rv| L3RecordVariable {
@@ -868,6 +876,38 @@ fn project_file(
                     scope: rv.scope.clone(),
                 })
                 .collect();
+            // Task 3 (temp-state) PROMOTION + SHADOWING: append object-global record
+            // vars, re-keyed to a per-routine id, but ONLY those whose (lowercased)
+            // name is NOT already declared by the routine's own params/locals — the
+            // routine's own var shadows the global (innermost wins). Skipping
+            // shadowed globals keeps `record_variables` NAME-UNIQUE, which preserves
+            // the documented pass-1 `var_index_by_name` last-wins invariant in
+            // `record_types.rs` (a name-duplicated list would otherwise let the
+            // global clobber the local in pass 1 — the WRONG result). Each promoted
+            // global keeps `scope: Some("global")`, its `table_name`, and its
+            // `temp_state` (the Known(true/false) the L2 walk could not derive).
+            {
+                let own_names: std::collections::HashSet<String> = record_variables
+                    .iter()
+                    .map(|rv| rv.name.to_lowercase())
+                    .collect();
+                for g in &object_global_record_vars {
+                    let lc = g.name.to_lowercase();
+                    if own_names.contains(&lc) {
+                        continue; // shadowed by the routine's own param/local
+                    }
+                    record_variables.push(L3RecordVariable {
+                        id: format!("{}/rv/{}", routine_id, lc),
+                        name: g.name.clone(),
+                        table_name: g.table_name.clone(),
+                        table_id: None,
+                        is_parameter: g.is_parameter,
+                        parameter_index: g.parameter_index,
+                        temp_state: g.temp_state.clone(),
+                        scope: g.scope.clone(),
+                    });
+                }
+            }
             let record_operations = features
                 .record_operations
                 .iter()
@@ -1545,6 +1585,42 @@ impl RoutineView<'_> {
 
     pub fn record_var_count(&self) -> usize {
         self.routine.record_variables.len()
+    }
+
+    /// The `scope` (`"local"` | `"parameter"` | `"global"`) of the named record
+    /// variable, or None if absent / unset. Test-facing accessor for the Task 3
+    /// global-promotion path.
+    pub fn record_var_scope(&self, name: &str) -> Option<String> {
+        let want = name.to_lowercase();
+        self.routine
+            .record_variables
+            .iter()
+            .find(|v| v.name.to_lowercase() == want)
+            .and_then(|v| v.scope.clone())
+    }
+
+    /// The resolved `temp_state` Known value of the named record variable, or None
+    /// if the var is absent or its temp_state is not `known`.
+    pub fn record_var_temp_known(&self, name: &str) -> Option<bool> {
+        let want = name.to_lowercase();
+        self.routine
+            .record_variables
+            .iter()
+            .find(|v| v.name.to_lowercase() == want)
+            .and_then(|v| v.temp_state_known_value())
+    }
+
+    /// The resolved `temp_state` Known value of the FIRST record OP on the named
+    /// record variable, or None if absent / not `known`. Test-facing accessor for
+    /// the Task 3 member-var op temp_state backfill.
+    pub fn record_op_temp_known(&self, var_name: &str) -> Option<bool> {
+        let want = var_name.to_lowercase();
+        self.routine
+            .record_operations
+            .iter()
+            .find(|op| op.record_variable_name.to_lowercase() == want)
+            .and_then(|op| op.temp_state.as_ref())
+            .and_then(|ts| if ts.kind == "known" { ts.value } else { None })
     }
 
     /// All record ops in walk order as `(op, recordVariableName, Option<StableTableId>)`.

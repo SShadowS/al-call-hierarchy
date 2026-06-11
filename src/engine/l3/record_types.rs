@@ -97,6 +97,16 @@ pub fn resolve_routine_record_types(
     }
 
     // --- pass 2a: resolve record ops against their declaring record var ------
+    // Task 3 (temp-state): besides tableId, (re)derive `op.temp_state` from the
+    // matched record var. After global promotion, `record_variables` carries the
+    // object-global record vars (their Known(true/false) temp signal the L2 body
+    // walk never saw — it only knew params/locals), so a member-var op like
+    // `Files.DeleteAll()` now resolves to the global's Known(true) instead of the
+    // L2-forwarded Unknown (the CDO false-critical root cause). `record_variables`
+    // is NAME-UNIQUE here (promotion skips shadowed globals), so the last-wins
+    // `var_index_by_name` map above resolves each name to its single (innermost,
+    // because shadowed globals were never added) record var — honoring AL
+    // shadowing without needing first-wins.
     for op in routine.record_operations.iter_mut() {
         if let Some(&vi) = var_index_by_name.get(&op.record_variable_name.to_lowercase()) {
             let variable = &routine.record_variables[vi];
@@ -104,6 +114,7 @@ pub fn resolve_routine_record_types(
             if let Some(tid) = &variable.table_id {
                 op.table_id = Some(tid.clone());
             }
+            op.temp_state = Some(variable.temp_state.clone());
         }
     }
 

@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Task 6.
 
 ### Fixed
+- Object-global record vars are now promoted into EACH routine's
+  `record_variables` during L3 assembly (Task 3 / ts3, G2), and member-var record
+  operations re-derive their `temp_state` from the promoted set — the root-cause
+  fix for the CDO false-critical class (a codeunit member
+  `Files: Record "CDO File" temporary;` was never seen by the L2 body walk, so
+  `Files.DeleteAll()` carried `tempState = Unknown`, fired a false critical, and
+  d1 stamped "(temp state uncertain)"). Promotion honors AL shadowing: a routine's
+  own param/local of the same name shadows the global (innermost wins). Shadowed
+  globals are NOT promoted, keeping `record_variables` NAME-UNIQUE — which
+  preserves the documented pass-1 `var_index_by_name` last-wins invariant in
+  `record_types.rs` (a name-duplicated list would let the global clobber the
+  local). The op `temp_state` backfill lives in `record_types.rs` pass-2a: when an
+  op matches its declaring record var, `op.temp_state` is copied from that var
+  (alongside the existing `table_id` / `record_variable_id` derivation).
 - `record_types.rs` pass 2b `variable_decl_by_name` map changed from last-wins
   (unconditional `insert`) to first-wins (`entry().or_insert()`) so that a
   procedure-local declaration always shadows an object-global with the same name
