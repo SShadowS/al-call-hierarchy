@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `record_types.rs` pass 2b `variable_decl_by_name` map changed from last-wins
+  (unconditional `insert`) to first-wins (`entry().or_insert()`) so that a
+  procedure-local declaration always shadows an object-global with the same name
+  — the correct AL innermost-scope rule and a prerequisite for the tempState
+  backfill epoch (RV-5).
+
 ## [0.7.0] - 2026-05-06
 
 ### Added

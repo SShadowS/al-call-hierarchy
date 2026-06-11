@@ -5,8 +5,9 @@
 //! resolution via the object's "effective own table":
 //!   1. declared record vars → resolve `tableName` against the symbol table.
 //!   2. record ops → derive `tableId` from the matching record var; then the
-//!      lexical-scope fallback over `features.variables` (LAST-wins on a name
-//!      collision, same array order as al-sem) for still-unset ops.
+//!      lexical-scope fallback over `features.variables` (FIRST-wins / innermost
+//!      declaration wins on a name collision; params → locals → globals order
+//!      means locals always shadow globals) for still-unset ops.
 //!   3. implicit `Rec`/`xRec` ops (still unset) → the effective-own-table for
 //!      Table / Page / TableExtension / PageExtension, NEVER overriding an
 //!      explicit local `Rec` that pass (1)/(2) already resolved.
@@ -106,12 +107,19 @@ pub fn resolve_routine_record_types(
     }
 
     // --- pass 2b: lexical-scope fallback over features.variables --------------
-    // `variablesByName` is LAST-wins on a name collision (same array order as TS:
-    // params → locals → globals). The unset guard is essential — never override a
-    // tableId pass (1)/(2a) already set.
+    // FIRST-wins on a name collision (innermost declaration wins). `routine.variables`
+    // is ordered params → locals → globals, so the first entry for a name is the
+    // innermost (param/local) scope. Using `.entry().or_insert()` means a later
+    // global with the same name is silently ignored rather than clobbering the
+    // local — the correct AL lexical-scope rule, and a prerequisite for the
+    // tempState backfill (Task 3) that promotes globals into the list.
+    // The unset guard below is essential — never override a tableId pass (1)/(2a)
+    // already set.
     let mut variable_decl_by_name: HashMap<String, String> = HashMap::new();
     for v in &routine.variables {
-        variable_decl_by_name.insert(v.name.to_lowercase(), v.declared_type.clone());
+        variable_decl_by_name
+            .entry(v.name.to_lowercase())
+            .or_insert_with(|| v.declared_type.clone());
     }
     for op in routine.record_operations.iter_mut() {
         if op.table_id.is_some() {
