@@ -4,7 +4,10 @@
 //! Flags `Modify` / `Validate` on a record variable that was never loaded
 //! earlier in the same routine (no prior Get/FindFirst/FindLast/FindSet/Find/
 //! Next/Init/Insert/Copy before the mutating op). Skips by-var parameter records
-//! (the caller is responsible for loading them).
+//! (the caller is responsible for loading them). G-10: a prior call that loads
+//! the record also counts — the platform built-in `GetBySystemId` and any
+//! resolved callee that loads the by-var argument (one-hop callee summary,
+//! `detectors::record_loaded_by_call_before`).
 //!
 //! `ModifyAll` is intentionally excluded — it operates on the filtered set,
 //! not the current record, and the standard pattern is `SetRange(…);
@@ -15,28 +18,23 @@
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor, is_platform_loaded_trigger_rec};
+use crate::engine::l5::detectors::{
+    anchor_of, before_anchor, is_platform_loaded_trigger_rec, record_loaded_by_call_before,
+    RECORD_LOAD_OPS,
+};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d11-modify-without-get";
 
-const LOAD_OPS: &[&str] = &[
-    "Get",
-    "FindFirst",
-    "FindLast",
-    "FindSet",
-    "Find",
-    "Next",
-    "Init",
-    "Insert",
-    "Copy",
-];
+/// The recognized load ops — shared with the G-10 one-hop callee summary
+/// (`detectors::RECORD_LOAD_OPS`), so both stay in lockstep.
+const LOAD_OPS: &[&str] = RECORD_LOAD_OPS;
 
 const MUTATING_OPS: &[&str] = &["Modify", "Validate"];
 
-pub fn detect_d11(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d11(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -88,6 +86,17 @@ pub fn detect_d11(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                     && before_anchor(&other.source_anchor, &op.source_anchor)
             });
             if loaded_before {
+                continue;
+            }
+            // G-10: the record was loaded by a CALL strictly before this op —
+            // a platform built-in (`GetBySystemId`) or a resolved callee that
+            // loads the by-var argument (one-hop callee summary).
+            if record_loaded_by_call_before(
+                routine,
+                ctx,
+                &op.record_variable_name,
+                &op.source_anchor,
+            ) {
                 continue;
             }
 

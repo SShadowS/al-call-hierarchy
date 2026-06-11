@@ -224,6 +224,25 @@ the trigger. Structural (trigger kind + receiver == `Rec`), suppression-directio
 
 ## G-10 — record-loading wrappers not recognized as loads (NEW)
 
+**Status: FIXED (commit `fix(engine-g10): recognize GetBySystemId + one-hop load-wrappers
+as record loads (G-10)`).**
+Shared gate `record_loaded_by_call_before` (`src/engine/l5/detectors/mod.rs`), consulted
+by d11/d21 after their intraprocedural `loaded_before` scan. Tier 1 (platform built-ins):
+a member CALL SITE `<var>.GetBySystemId(...)` strictly before the op counts as a load —
+exact-name allowlist `PLATFORM_LOADER_METHODS`, receiver must equal the record variable
+(case-insensitive). Tier 2 (one-hop callee summary): the record was passed as an argument
+whose binding RESOLVED to a by-`var` record parameter of a workspace callee
+(`resolved_call_edge_by_callsite` + `upgraded_bindings_by_callsite`, the d37/d39/d40 join)
+and the callee's own body performs a recognized load op on that parameter —
+`RECORD_LOAD_OPS` is the exact set d11/d21 use intraprocedurally, now shared so the two
+stay in lockstep. Covers custom `FindXxx`/`GetXxx` wrappers, `InsertIfNotExists` (Insert
+is a recognized load) and var-out facade loaders in one mechanism; this is the load analog
+of G-3's filter summary (one hop, callee body only — G-3 can reuse the pattern). Anything
+uncertain (unresolved callee, by-value binding, non-loading callee, call after the op,
+different variable, cross-app context without the resolved-edge index) keeps firing.
+Tests: `tests/gap_g10_load_wrappers.rs` (both suppressions + six controls). No in-repo
+golden moved; the CDO-run rebaseline remains with the consolidated rebaseline task.
+
 **Symptom:** `d11`/`d21` fire even though the record was loaded by a method that isn't the
 literal `Get`/`Find`: `GetBySystemId`, custom `FindTemplate`/`FindXxx` wrappers,
 `InsertIfNotExists`, and `var`-out facade loaders like

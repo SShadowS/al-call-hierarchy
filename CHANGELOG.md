@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-10 (docs/engine-gaps.md): `d11-modify-without-get` / `d21-read-without-load` no longer
+  fire when the record WAS loaded by a call that isn't a literal `Get`/`Find` record op
+  (CDO triage batches 1, 10, 11, 12 — `GetBySystemId` ×4, `FindTemplate`-style wrappers,
+  `InsertIfNotExists`, var-out facade loaders). Two structural tiers, both implemented in
+  the shared `record_loaded_by_call_before` gate (`src/engine/l5/detectors/mod.rs`),
+  consulted by d11/d21 after their intraprocedural `loaded_before` scan: (1) **platform
+  built-in loaders** — a member call `<var>.GetBySystemId(...)` strictly before the
+  mutating/reading op counts as a load (exact-name allowlist `PLATFORM_LOADER_METHODS`,
+  case-insensitive, receiver must match the record variable exactly; `GetBySystemId` is
+  not in the L2 record-op map so it surfaces as a call site, invisible to the old scan);
+  (2) **one-hop callee load summary** — when the record was passed as an argument whose
+  binding RESOLVED to a by-`var` record parameter of a workspace callee
+  (`resolved_call_edge_by_callsite` + `upgraded_bindings_by_callsite`, the same join
+  d37/d39/d40 use), and that callee's own body performs a recognized load op
+  (`RECORD_LOAD_OPS` — the exact set d11/d21 apply intraprocedurally, now shared) on that
+  parameter, the record is loaded after the call. This covers custom `FindXxx`/`GetXxx`
+  wrappers, `InsertIfNotExists` (Insert is a recognized load), and var-out facade loaders
+  in one mechanism, and is the load analog of G-3's planned filter summary (one hop, callee
+  body only, reusable pattern). Suppression-direction safe: an unresolved callee, a
+  by-value binding (the callee loads its own copy), a different variable, a non-loading
+  callee, or a call AFTER the op all keep firing. Covered by
+  `tests/gap_g10_load_wrappers.rs` (GetBySystemId + by-var helper-load suppressions for
+  both detectors; controls: no load, load after the op, load on a different record,
+  filter-only callee, by-value callee load, unresolved callee — all still fire). No
+  in-repo golden moved by this change (full `cargo test` divergence-checked); the
+  real-app (CDO) rebaseline remains with the consolidated gap-fix rebaseline task.
 - G-2 (docs/engine-gaps.md): runtime-implied tempness is now inferred from the exact
   `not IsTemporary → Error` structural guard, removing the dominant post-epoch temp-related
   FP class (CDO triage batches 1, 9, 11 — ~15 FPs: `CDO File` ops, `EmbedFiles`,

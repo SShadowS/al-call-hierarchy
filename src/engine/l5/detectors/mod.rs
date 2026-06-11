@@ -47,8 +47,9 @@ pub mod d9;
 
 use std::collections::HashMap;
 
-use crate::engine::l2::features::{PAnchor, PExpressionInfo};
+use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, PExpressionInfo};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
+use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::SourceAnchor;
 use crate::engine::l5::registry::Detector;
 
@@ -99,6 +100,130 @@ pub(crate) fn is_platform_loaded_trigger_rec(
         "Table" | "TableExtension" => routine.name.eq_ignore_ascii_case("OnValidate"),
         _ => false,
     }
+}
+
+/// The record-op names d11/d21 recognize as satisfying the "record is loaded"
+/// precondition (Get/Find* load from the DB; Init initialises; Insert/Copy put
+/// the record in a well-defined state; Next advances a loaded cursor). Shared so
+/// the G-10 one-hop callee summary (`record_loaded_by_call_before`) provably
+/// uses the SAME set the detectors apply intraprocedurally.
+pub(crate) const RECORD_LOAD_OPS: &[&str] = &[
+    "Get",
+    "FindFirst",
+    "FindLast",
+    "FindSet",
+    "Find",
+    "Next",
+    "Init",
+    "Insert",
+    "Copy",
+];
+
+/// G-10 tier 1: platform BUILT-IN record loaders that are NOT in the L2
+/// record-op map (`record_op.rs`) — they surface as member CALL SITES, not
+/// record operations — but perform a complete row fetch, equivalent to `Get`
+/// for the "record is loaded" precondition. EXACT method names, matched
+/// case-insensitively. Deliberately conservative: only platform built-ins that
+/// load the full current record are listed; custom `FindXxx`/`GetXxx` wrappers
+/// are covered by the tier-2 one-hop callee summary instead.
+const PLATFORM_LOADER_METHODS: &[&str] = &["GetBySystemId"];
+
+/// G-10 suppression signal: true iff a CALL SITE strictly before `op_anchor`
+/// in `routine` provably loaded the record variable `record_variable_name`
+/// (docs/engine-gaps.md G-10). Two exact, structural tiers:
+///
+/// - Tier 1 (platform built-in): a member call `<var>.GetBySystemId(...)` —
+///   receiver text matches the record variable exactly (case-insensitive).
+/// - Tier 2 (one-hop callee summary): the record variable is passed as an
+///   argument whose binding RESOLVED to a by-`var` record parameter of a
+///   workspace callee, and that callee performs a recognized load op
+///   (`RECORD_LOAD_OPS`) on that parameter. The check mirrors the detectors'
+///   own intraprocedural semantics (any load op in the callee body counts,
+///   regardless of branching — same as the in-routine `loaded_before` scan).
+///
+/// Anything uncertain (unresolved callee, by-value binding, different
+/// variable, non-loading callee, cross-app context with no resolved-edge
+/// index) returns `false` — the detectors keep firing.
+pub(crate) fn record_loaded_by_call_before(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    record_variable_name: &str,
+    op_anchor: &PAnchor,
+) -> bool {
+    let var_lc = record_variable_name.to_lowercase();
+    for cs in &routine.call_sites {
+        if !before_anchor(&cs.source_anchor, op_anchor) {
+            continue;
+        }
+        // Tier 1: platform built-in loader called ON the record itself.
+        if let PCallee::Member { receiver, method } = &cs.callee {
+            if receiver.to_lowercase() == var_lc
+                && PLATFORM_LOADER_METHODS
+                    .iter()
+                    .any(|m| m.eq_ignore_ascii_case(method))
+            {
+                return true;
+            }
+        }
+        // Tier 2: by-var argument into a resolved callee that loads it.
+        if callee_loads_by_var_arg(ctx, cs, &var_lc) {
+            return true;
+        }
+    }
+    false
+}
+
+/// G-10 tier 2: does the RESOLVED callee of `cs` perform a recognized load op
+/// on the by-`var` record parameter bound to caller variable `var_lc`
+/// (lowercased)? One hop only — the callee's own body is inspected directly,
+/// never its transitive callees. Every uncertainty returns `false`.
+fn callee_loads_by_var_arg(ctx: &DetectorContext, cs: &PCallSite, var_lc: &str) -> bool {
+    let Some(edge) = ctx.resolved_call_edge_by_callsite.get(&cs.id) else {
+        return false;
+    };
+    let Some(to) = edge.to.as_deref() else {
+        return false;
+    };
+    let Some(callee) = ctx.routine_by_id.get(to) else {
+        return false;
+    };
+    if !callee.body_available || callee.parse_incomplete {
+        return false;
+    }
+    let upgraded = ctx.upgraded_bindings_by_callsite.get(&cs.id);
+    for (i, binding) in cs.argument_bindings.iter().enumerate() {
+        // The L3 binding's sourceVariableName is stored lowercased.
+        if binding.source_variable_name.as_deref() != Some(var_lc) {
+            continue;
+        }
+        // The post-upgrade resolution lives in the resolver's side table,
+        // index-aligned with `argument_bindings` (same join as d37/d39/d40).
+        let Some(up) = upgraded.and_then(|u| u.get(i)) else {
+            continue;
+        };
+        // Only a RESOLVED by-`var` binding aliases the caller's record — a
+        // by-value callee loads its own copy, proving nothing for the caller.
+        if up.binding_resolution != "resolved" || !up.callee_parameter_is_var {
+            continue;
+        }
+        // The callee's record parameter at this position…
+        let Some(param_rv) = callee
+            .record_variables
+            .iter()
+            .find(|rv| rv.is_parameter && rv.parameter_index == Some(binding.parameter_index))
+        else {
+            continue;
+        };
+        // …must be the receiver of a recognized load op in the callee body.
+        let param_lc = param_rv.name.to_lowercase();
+        if callee.record_operations.iter().any(|op| {
+            RECORD_LOAD_OPS.contains(&op.op.as_str())
+                && op.record_variable_name.to_lowercase() == param_lc
+        }) {
+            return true;
+        }
+    }
+    false
 }
 
 /// G-6: BC VIRTUAL/system tables with NO physical SQL backing (docs/engine-gaps.md
