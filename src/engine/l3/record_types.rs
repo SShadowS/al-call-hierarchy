@@ -87,6 +87,7 @@ pub fn resolve_routine_record_types(
     use std::collections::HashMap;
     let mut var_index_by_name: HashMap<String, usize> = HashMap::new();
     for (i, variable) in routine.record_variables.iter_mut().enumerate() {
+        // intentionally last-wins — record_variables has no name duplicates at this layer (Task 3 global-promotion must preserve this invariant)
         var_index_by_name.insert(variable.name.to_lowercase(), i);
         if let Some(table_name) = &variable.table_name {
             if let Some(table) = symbols.table_by_name(table_name) {
@@ -119,7 +120,7 @@ pub fn resolve_routine_record_types(
     for v in &routine.variables {
         variable_decl_by_name
             .entry(v.name.to_lowercase())
-            .or_insert_with(|| v.declared_type.clone());
+            .or_insert(v.declared_type.clone());
     }
     for op in routine.record_operations.iter_mut() {
         if op.table_id.is_some() {
