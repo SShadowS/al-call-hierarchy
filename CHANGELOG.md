@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that run after it can still upgrade to `Known(true)` independently.
 
 ### Changed
+- Vendored the rebaselined cli-a/cli-c goldens in-repo + restored the FROZEN al-sem
+  archive (Task 16 / ts16 follow-up — the never-modify-al-sem rule). The cli-a html/json/
+  terminal byte goldens and the cli-c cache fixtures had been regenerated in place inside the
+  external (frozen) al-sem checkout; that violates the hard rule that al-sem is never modified.
+  The 7 rebaselined files now live in-repo under `tests/cli-a-goldens/{html,json,terminal}/`
+  and `tests/cli-c-goldens/cache/` (a self-contained 5-file fixture-cache + classification.json
+  + dry-run.txt). The four harnesses (`cli_a_{json,terminal,html}_differential`,
+  `cli_c_cache_differential`) gained a `resolve_golden`/local-dir resolver that prefers the
+  in-repo override and falls back to the frozen al-sem path when no local override exists — so
+  only the rebaselined fixtures read local; all ~unchanged cli-a goldens still read al-sem
+  untouched. al-sem restored clean (0 modified files).
 - Golden REBASELINE for the temp-state-tracking epoch + symbolReader cache bump 17→18
   (Task 16 / ts16). The temp-state epoch (Tasks 0–14) changed finding/projection CONTENT by
   design; the goldens are now Rust-OWNED baselines (the TS oracle is retired) and were

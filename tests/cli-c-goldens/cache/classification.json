@@ -1,0 +1,27 @@
+[
+  {
+    "file": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef.json",
+    "bytes": 867,
+    "status": "removed-content-hash-mismatch"
+  },
+  {
+    "file": "babebabebabebabebabebabebabebabebabebabebabebabebabebabebabebabe.json",
+    "bytes": 870,
+    "status": "removed-version-mismatch"
+  },
+  {
+    "file": "cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe.json",
+    "bytes": 859,
+    "status": "kept"
+  },
+  {
+    "file": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.json",
+    "bytes": 35,
+    "status": "removed-unreadable"
+  },
+  {
+    "file": "nothex.json",
+    "bytes": 48,
+    "status": "removed-bad-name"
+  }
+]

@@ -111,17 +111,37 @@ fn al_sem_json_dir() -> PathBuf {
         .join("json")
 }
 
+/// In-repo VENDORED override dir for rebaselined cli-a json goldens (temp-state
+/// epoch, Task 16). al-sem is FROZEN — never modified — so the goldens that the
+/// temp-state epoch changed live HERE; all unchanged goldens still read from the
+/// frozen al-sem archive.
+fn local_json_dir() -> PathBuf {
+    repo_root().join("tests").join("cli-a-goldens").join("json")
+}
+
+/// Resolve a golden by name: prefer the in-repo vendored override; fall back to
+/// the frozen al-sem archive when no local override exists. Used so only the 7
+/// rebaselined fixtures read local and the rest keep reading al-sem unchanged.
+fn resolve_golden(name: &str) -> PathBuf {
+    let local = local_json_dir().join(name);
+    if local.exists() {
+        local
+    } else {
+        al_sem_json_dir().join(name)
+    }
+}
+
 /// Build detector string for `--detector` flag from a names slice.
 fn detector_arg(names: &[&str]) -> String {
     names.join(",")
 }
 
 /// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
-/// is set, write the ENGINE-produced output to the golden file instead of
-/// comparing — the goldens are Rust-owned baselines (TS oracle retired). Returns
-/// `true` when a regen write happened (caller then skips the assert). NOTE: these
-/// goldens live in the external al-sem archive (where the harness reads them); the
-/// regen writes there, the diff is reviewed in al-sem.
+/// is set, write the ENGINE-produced output to the (already-resolved) golden path
+/// instead of comparing — the goldens are Rust-owned baselines (TS oracle retired).
+/// Returns `true` when a regen write happened (caller then skips the assert). The
+/// path is resolved via `resolve_golden`, so rebaselined fixtures write to the
+/// in-repo vendored override (al-sem stays FROZEN, never written).
 fn maybe_regen(golden_path: &std::path::Path, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -309,7 +329,7 @@ fn cli_a_json_byte_match() {
 
     for &fixture in FIXTURES {
         for (slot, csv) in &[("default", default_csv.as_str()), ("all", all_csv.as_str())] {
-            let golden_path = json_dir.join(format!("{fixture}.{slot}.json"));
+            let golden_path = resolve_golden(&format!("{fixture}.{slot}.json"));
             let rust_out = run_json(fixture, csv);
             if maybe_regen(&golden_path, &rust_out) {
                 continue;

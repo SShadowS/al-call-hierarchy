@@ -35,11 +35,40 @@ fn al_sem_dir() -> PathBuf {
     PathBuf::from(std::env::var("AL_SEM_DIR").unwrap_or_else(|_| r"U:\Git\al-sem".to_string()))
 }
 
-fn cache_goldens_dir() -> PathBuf {
+/// This crate's manifest dir (the alch-engine worktree root).
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn al_sem_cache_goldens_dir() -> PathBuf {
     al_sem_dir()
         .join("scripts")
         .join("cli-c-goldens")
         .join("cache")
+}
+
+/// In-repo VENDORED override for the cli-c cache golden corpus (temp-state epoch,
+/// Task 16). al-sem is FROZEN — never modified. The symbolReader cache bump 17→18
+/// invalidated the prior cache fixtures, so the rebaselined corpus (the kept/
+/// content-hash-mismatch fixtures bumped to "18" with the kept fixture's
+/// artifactContentHash recomputed) lives HERE as a self-contained 5-file
+/// fixture-cache + classification.json + dry-run.txt. Prefer it when present; fall
+/// back to the frozen al-sem archive otherwise (so a checkout without the local
+/// override still works against al-sem).
+fn local_cache_goldens_dir() -> PathBuf {
+    repo_root()
+        .join("tests")
+        .join("cli-c-goldens")
+        .join("cache")
+}
+
+fn cache_goldens_dir() -> PathBuf {
+    let local = local_cache_goldens_dir();
+    if local.is_dir() {
+        local
+    } else {
+        al_sem_cache_goldens_dir()
+    }
 }
 
 fn fixture_cache_dir() -> PathBuf {

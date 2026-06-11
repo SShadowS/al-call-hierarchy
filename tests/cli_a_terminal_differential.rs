@@ -117,6 +117,27 @@ fn al_sem_terminal_dir() -> PathBuf {
         .join("terminal")
 }
 
+/// In-repo VENDORED override dir for rebaselined cli-a terminal goldens (temp-state
+/// epoch, Task 16). al-sem is FROZEN — never modified — so only the changed goldens
+/// live here; all unchanged goldens still read from the frozen al-sem archive.
+fn local_terminal_dir() -> PathBuf {
+    repo_root()
+        .join("tests")
+        .join("cli-a-goldens")
+        .join("terminal")
+}
+
+/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
+/// frozen al-sem archive when no local override exists.
+fn resolve_golden(name: &str) -> PathBuf {
+    let local = local_terminal_dir().join(name);
+    if local.exists() {
+        local
+    } else {
+        al_sem_terminal_dir().join(name)
+    }
+}
+
 fn detector_arg(names: &[&str]) -> String {
     names.join(",")
 }
@@ -215,7 +236,7 @@ fn cli_a_terminal_byte_match() {
 
     // --- plain goldens (21 fixtures) ---
     for &fixture in PLAIN_FIXTURES {
-        let golden_path = terminal_dir.join(format!("{fixture}.plain.txt"));
+        let golden_path = resolve_golden(&format!("{fixture}.plain.txt"));
         let rust_out = run_terminal(fixture, &default_csv, None);
         if maybe_regen(&golden_path, &rust_out) {
             continue;
@@ -237,7 +258,7 @@ fn cli_a_terminal_byte_match() {
     // --- nodep golden (ws-rollup-multi-detector) ---
     {
         let fixture = "ws-rollup-multi-detector";
-        let golden_path = terminal_dir.join(format!("{fixture}.nodep.txt"));
+        let golden_path = resolve_golden(&format!("{fixture}.nodep.txt"));
         // nodep = same default detectors, no special flag (no external deps in fixture)
         let rust_out = run_terminal(fixture, &default_csv, None);
         if !maybe_regen(&golden_path, &rust_out) {
@@ -259,7 +280,7 @@ fn cli_a_terminal_byte_match() {
 
     // --- group-by goldens (5 × ws-d1-multi-caller) ---
     for &by in GROUP_BY_KEYS {
-        let golden_path = terminal_dir.join(format!("{GROUP_BY_FIXTURE}.groupby-{by}.txt"));
+        let golden_path = resolve_golden(&format!("{GROUP_BY_FIXTURE}.groupby-{by}.txt"));
         let rust_out = run_terminal(GROUP_BY_FIXTURE, &default_csv, Some(by));
         if maybe_regen(&golden_path, &rust_out) {
             continue;

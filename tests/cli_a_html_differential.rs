@@ -120,6 +120,24 @@ fn al_sem_html_dir() -> PathBuf {
         .join("html")
 }
 
+/// In-repo VENDORED override dir for rebaselined cli-a html goldens (temp-state
+/// epoch, Task 16). al-sem is FROZEN — never modified — so only the changed goldens
+/// live here; all unchanged goldens still read from the frozen al-sem archive.
+fn local_html_dir() -> PathBuf {
+    repo_root().join("tests").join("cli-a-goldens").join("html")
+}
+
+/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
+/// frozen al-sem archive when no local override exists.
+fn resolve_golden(name: &str) -> PathBuf {
+    let local = local_html_dir().join(name);
+    if local.exists() {
+        local
+    } else {
+        al_sem_html_dir().join(name)
+    }
+}
+
 /// Build detector string for `--detector` flag from a names slice.
 fn detector_arg(names: &[&str]) -> String {
     names.join(",")
@@ -252,7 +270,7 @@ fn cli_a_html_byte_match() {
     for &fixture in FIXTURES {
         // Always run default slot.
         {
-            let golden_path = html_dir.join(format!("{fixture}.default.html"));
+            let golden_path = resolve_golden(&format!("{fixture}.default.html"));
             let rust_out = run_html(fixture, &default_csv);
             if !maybe_regen(&golden_path, &rust_out) {
                 if !golden_path.exists() {
@@ -274,7 +292,7 @@ fn cli_a_html_byte_match() {
 
         // Run all slot only for fixtures that have it.
         if all_slot_set.contains(fixture) {
-            let golden_path = html_dir.join(format!("{fixture}.all.html"));
+            let golden_path = resolve_golden(&format!("{fixture}.all.html"));
             let rust_out = run_html(fixture, &all_csv);
             if !maybe_regen(&golden_path, &rust_out) {
                 if !golden_path.exists() {
