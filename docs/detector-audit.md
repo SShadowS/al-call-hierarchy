@@ -14,7 +14,7 @@ The temp epoch gated d1/d3/d10/d33/d36/d37/d39/d40, but these still fire on `tem
 - **d43/d44/d45** (event capability cone): `capability_query::writes_tables_of` / `find_capabilities` carry NO `is_temp` annotation → temp writes produce spurious conflict/exposure findings.
 ROOT: capability cone + these detectors lack the `op.temp_state Known(true)` / temp-table check. FIX: add the temp gate (and a temp annotation to the capability cone facts for d43-45).
 
-## Shared-root class B — trigger-Rec suppression incomplete for TABLE-LEVEL triggers (FP)
+## Shared-root class B — trigger-Rec suppression incomplete for TABLE-LEVEL triggers (FP) — **FIXED (commit `fix(engine-audit-b)`, engine branch)**
 `is_platform_loaded_trigger_rec` (mod.rs ~:143) suppresses page triggers + table FIELD `OnValidate`,
 but NOT table-level `OnInsert`/`OnModify`/`OnDelete`/`OnRename` — where the platform ALSO loads `Rec`
 and AUTO-PERSISTS it after the trigger. Affects:
@@ -22,6 +22,10 @@ and AUTO-PERSISTS it after the trigger. Affects:
 - **d37** (validate-without-persist): `Rec.Validate` in OnInsert/OnModify → platform persists → FP.
 - **d39** (record-left-dirty): no auto-persist-trigger gate → FP on normal trigger patterns.
 FIX: add OnInsert/OnModify/OnDelete/OnRename (table-level, receiver Rec) to the platform-loaded/auto-persist gate; d37/d39 treat those triggers as persisting.
+FIXED: `TABLE_TRIGGERS_REC_AUTO_PERSIST` added to the `is_platform_loaded_trigger_rec` table arm
+(covers d11/d21/d37, which consume the gate directly); new `is_auto_persist_trigger_rec` gates d39's
+caller-side persist check (`autoPersistTriggerRec` skip stat). Tests: `tests/gap_audit_b_table_triggers.rs`
+(suppression + non-trigger / non-Rec controls); g9/g14 suites unchanged-green.
 
 ## Shared-root class C — loop-detector guards (Next-terminator + virtual table) missing in d2/d18 (FP)
 - **d2**: `D2Policy.terminals_at` has NO `is_terminator_next` filter (d1 has it at d1.rs:616) AND no `op_targets_virtual_system_table` filter → `repeat..until Rec.Next()` + virtual-table reads in a subscriber fire falsely.
@@ -59,7 +63,7 @@ FIX: net-effect (last SetRange/SetFilter/Reset by source position) for d41 + d33
 - **d47/d48/d51 FN**: IsolatedStorage.Set / TaskScheduler.CreateTask not modeled as IO (is_io_type narrows to HTTP|FILE, ordering_facts.rs:37).
 
 ## Priority fix order (clearest, highest-value first; group by shared root)
-1. **B** — table-level trigger-Rec gate (d21/d37/d39) — extend the existing mod.rs gate, high-volume, easy.
+1. ~~**B** — table-level trigger-Rec gate (d21/d37/d39) — extend the existing mod.rs gate, high-volume, easy.~~ DONE.
 2. **A** — temp-gate d2/d4/d8/d29/d43/d44/d45 — extend temp check / cone temp annotation, high-volume.
 3. **C** — d2 + d18 loop guards (terminator-Next, virtual table) — mirror d1, easy.
 4. **E** — d41 net-effect filter + d42 AddLoadFields-full-load + FlowField — clear FP bugs.

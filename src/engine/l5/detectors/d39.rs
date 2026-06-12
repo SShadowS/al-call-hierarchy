@@ -21,7 +21,7 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l4::effect_lattice::EffectPresence;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{anchor_of, before_anchor, is_auto_persist_trigger_rec};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -37,6 +37,7 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut candidates_considered = 0usize;
     let mut skipped_caller_persists = 0u64;
     let mut skipped_temp_record = 0u64;
+    let mut skipped_auto_persist_trigger = 0u64;
 
     for callee in &ws.routines {
         if !callee.body_available {
@@ -130,6 +131,16 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
                 candidates_considered += 1;
 
+                // Class B (docs/detector-audit.md): the caller is a table-level
+                // OnInsert/OnModify/OnDelete/OnRename trigger forwarding its
+                // implicit `Rec` — the platform persists `Rec` after the
+                // trigger returns (OnDelete deletes it), so the dirty state is
+                // not discarded.
+                if is_auto_persist_trigger_rec(caller, &source_name_lc) {
+                    skipped_auto_persist_trigger += 1;
+                    continue;
+                }
+
                 // Did caller persist the source variable after the callsite?
                 let persisted_after = caller.record_operations.iter().any(|op| {
                     PERSIST_OPS.contains(&op.op.as_str())
@@ -222,5 +233,6 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("callerPersists", skipped_caller_persists);
     stats.add_skip("tempRecord", skipped_temp_record);
+    stats.add_skip("autoPersistTriggerRec", skipped_auto_persist_trigger);
     DetectorOutput::no_diag(findings, stats)
 }

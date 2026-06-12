@@ -49,6 +49,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- Detector-audit class B (docs/detector-audit.md): d21/d37/d39 no longer false-fire
+  on the implicit `Rec` inside table-LEVEL `OnInsert`/`OnModify`/`OnDelete`/`OnRename`
+  triggers, where the AL platform loads `Rec` before the trigger body runs AND
+  auto-persists it afterwards (`OnInsert`/`OnModify`/`OnRename` write `Rec` to the
+  table; `OnDelete` deletes it, making "validate without persist" moot). The
+  `is_platform_loaded_trigger_rec` gate's `Table`/`TableExtension` arm (previously
+  field-level `OnValidate` only) now also recognizes those four table-level trigger
+  names — covering d21 (read-without-load), d37 (validate-without-persist), and
+  d11 which share the gate — and a new `is_auto_persist_trigger_rec` signal makes
+  d39 (record-left-dirty-across-chain) skip a table-level trigger caller that
+  forwards `Rec` by-var to a dirty helper (new `autoPersistTriggerRec` skip stat).
+  Suppression-direction exact: trigger kind + Table/TableExtension object +
+  receiver `Rec` only — the same ops in a non-trigger procedure or on a non-`Rec`
+  record inside the trigger still fire (controls in
+  `tests/gap_audit_b_table_triggers.rs`; G-9/G-14 page/field-trigger behavior
+  unchanged).
 - G-19 (docs/engine-gaps.md): d1/d3/d10 no longer fire on a keyword-less by-`var`
   `Record` parameter of a **`local`** procedure when its temporariness is
   CLOSED-WORLD PROVEN: the routine is `local` (AL language rule — callable only

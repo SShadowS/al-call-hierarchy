@@ -116,14 +116,25 @@ const PAGE_TRIGGERS_REC_LOADED: &[&str] = &[
     "OnAssistEdit",
 ];
 
+/// Detector-audit class B: the table-LEVEL triggers. The AL platform loads the
+/// implicit `Rec` before each of these runs AND auto-persists it afterwards:
+/// `OnInsert`/`OnModify`/`OnRename` end in the platform writing `Rec` to the
+/// table; `OnDelete` ends in the platform deleting it (so "validate without
+/// persist" is moot there). EXACT names, matched case-insensitively, only
+/// meaningful for `Table`/`TableExtension` objects.
+const TABLE_TRIGGERS_REC_AUTO_PERSIST: &[&str] = &["OnInsert", "OnModify", "OnDelete", "OnRename"];
+
 /// G-9 suppression signal (exact, structural): true iff `routine` is a page
 /// trigger (`OnValidate` / `OnAction` / `OnAfterGetRecord` / `OnDrillDown` /
-/// `OnAfterGetCurrRecord`) or a table field `OnValidate` trigger, AND the op's
-/// receiver is the trigger's implicit current record `Rec`. In all of these the
-/// AL platform loaded `Rec` before the trigger ran, so "never loaded" /
-/// "never persisted" detectors (d11/d21/d37) must not fire on it. When unsure
-/// (any other kind / object type / trigger name / receiver) returns `false` —
-/// the detectors keep firing.
+/// `OnAfterGetCurrRecord`) or a table field `OnValidate` trigger or a
+/// table-LEVEL `OnInsert`/`OnModify`/`OnDelete`/`OnRename` trigger
+/// (detector-audit class B), AND the op's receiver is the trigger's implicit
+/// current record `Rec`. In all of these the AL platform loaded `Rec` before
+/// the trigger ran, so "never loaded" / "never persisted" detectors
+/// (d11/d21/d37) must not fire on it (for d37 the table-level triggers also
+/// auto-persist — see `is_auto_persist_trigger_rec`). When unsure (any other
+/// kind / object type / trigger name / receiver) returns `false` — the
+/// detectors keep firing.
 pub(crate) fn is_platform_loaded_trigger_rec(
     routine: &L3Routine,
     record_variable_name: &str,
@@ -138,11 +149,38 @@ pub(crate) fn is_platform_loaded_trigger_rec(
         "Page" | "PageExtension" => PAGE_TRIGGERS_REC_LOADED
             .iter()
             .any(|t| routine.name.eq_ignore_ascii_case(t)),
-        // A `trigger OnValidate` in a table object is always a FIELD trigger
-        // (table-level triggers are OnInsert/OnModify/OnDelete/OnRename).
-        "Table" | "TableExtension" => routine.name.eq_ignore_ascii_case("OnValidate"),
+        // A `trigger OnValidate` in a table object is always a FIELD trigger;
+        // the table-LEVEL triggers (OnInsert/OnModify/OnDelete/OnRename) run
+        // with `Rec` platform-loaded too (class B).
+        "Table" | "TableExtension" => {
+            routine.name.eq_ignore_ascii_case("OnValidate")
+                || TABLE_TRIGGERS_REC_AUTO_PERSIST
+                    .iter()
+                    .any(|t| routine.name.eq_ignore_ascii_case(t))
+        }
         _ => false,
     }
+}
+
+/// Class-B auto-persist signal (exact, structural): true iff `routine` is a
+/// table-LEVEL `OnInsert`/`OnModify`/`OnDelete`/`OnRename` trigger of a
+/// `Table`/`TableExtension` object AND `record_variable_name` is the trigger's
+/// implicit current record `Rec`. The platform persists `Rec` after these
+/// triggers return (`OnDelete` deletes it), so a Validate-dirty `Rec` at
+/// trigger exit is NOT discarded — d39 (record-left-dirty) must not flag the
+/// trigger for "never persists after the call". When unsure returns `false` —
+/// the detector keeps firing.
+pub(crate) fn is_auto_persist_trigger_rec(routine: &L3Routine, record_variable_name: &str) -> bool {
+    if !record_variable_name.eq_ignore_ascii_case("rec") {
+        return false;
+    }
+    if routine.kind != "trigger" {
+        return false;
+    }
+    matches!(routine.object_type.as_str(), "Table" | "TableExtension")
+        && TABLE_TRIGGERS_REC_AUTO_PERSIST
+            .iter()
+            .any(|t| routine.name.eq_ignore_ascii_case(t))
 }
 
 /// The record-op names d11/d21 recognize as satisfying the "record is loaded"
