@@ -159,78 +159,7 @@
           ]
         }
       },
-      "results": [
-        {
-          "ruleId": "d3-missing-setloadfields",
-          "level": "warning",
-          "message": {
-            "text": "Missing SetLoadFields before a record retrieval — DoUpgrade runs Get on Setup and then accesses field(s) [description] — no SetLoadFields was set."
-          },
-          "fingerprints": {
-            "al-sem/v1": "62e64f6036c712b8"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "ws:src/UpgradeCU.al"
-                },
-                "region": {
-                  "startLine": 14,
-                  "startColumn": 12
-                }
-              },
-              "logicalLocations": [
-                {
-                  "name": "Upgrade Handler :: DoUpgrade"
-                }
-              ]
-            }
-          ],
-          "codeFlows": [
-            {
-              "threadFlows": [
-                {
-                  "locations": [
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/UpgradeCU.al"
-                          },
-                          "region": {
-                            "startLine": 14,
-                            "startColumn": 12
-                          }
-                        },
-                        "message": {
-                          "text": "Get on Setup with no SetLoadFields"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/UpgradeCU.al"
-                          },
-                          "region": {
-                            "startLine": 15,
-                            "startColumn": 13
-                          }
-                        },
-                        "message": {
-                          "text": "accesses Setup.Description"
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
+      "results": []
     }
   ]
 }

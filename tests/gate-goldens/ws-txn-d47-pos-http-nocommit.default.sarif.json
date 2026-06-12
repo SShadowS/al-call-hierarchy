@@ -159,78 +159,7 @@
           ]
         }
       },
-      "results": [
-        {
-          "ruleId": "d3-missing-setloadfields",
-          "level": "warning",
-          "message": {
-            "text": "Missing SetLoadFields before a record retrieval — SendAfterModify runs Get on Rec and then accesses field(s) [name] — no SetLoadFields was set."
-          },
-          "fingerprints": {
-            "al-sem/v1": "492e680bb1e7cd18"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "ws:src/Sender.Codeunit.al"
-                },
-                "region": {
-                  "startLine": 14,
-                  "startColumn": 9
-                }
-              },
-              "logicalLocations": [
-                {
-                  "name": "D47 Sender :: SendAfterModify"
-                }
-              ]
-            }
-          ],
-          "codeFlows": [
-            {
-              "threadFlows": [
-                {
-                  "locations": [
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/Sender.Codeunit.al"
-                          },
-                          "region": {
-                            "startLine": 14,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "Get on Rec with no SetLoadFields"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/Sender.Codeunit.al"
-                          },
-                          "region": {
-                            "startLine": 15,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "accesses Rec.Name"
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
+      "results": []
     }
   ]
 }

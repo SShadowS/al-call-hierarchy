@@ -153,19 +153,32 @@ fn all_detector_csv() -> String {
         .join(",")
 }
 
-/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
-/// is set, write the ENGINE-produced output to the golden file instead of
-/// comparing — the goldens are Rust-owned baselines (TS oracle retired). Returns
-/// `true` when a regen write happened (caller then skips the assert). NOTE: these
-/// goldens live in the external al-sem archive (where the harness reads them); the
-/// regen writes there, the diff is reviewed in al-sem.
-fn maybe_regen(golden_path: &std::path::Path, rust: &str) -> bool {
+/// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
+/// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
+/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
+/// the write target is ALWAYS the in-repo VENDORED dir (`local_html_dir()/<name>`),
+/// never al-sem. To keep the vendored set MINIMAL (only moved fixtures shadow
+/// al-sem), we write the local override ONLY when the engine output differs from
+/// the resolved baseline; if it already matches (al-sem or an existing local), we
+/// leave it untouched. Returns `true` when in regen mode (caller skips the assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
     }
-    std::fs::write(golden_path, rust)
+    let resolved = resolve_golden(name);
+    let baseline = std::fs::read_to_string(&resolved).ok();
+    if baseline.as_deref() == Some(rust) {
+        return true; // already byte-matches the resolved baseline — no vendoring needed
+    }
+    let dir = local_html_dir();
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("regen mkdir {}: {e}", dir.display()));
+    let golden_path = dir.join(name);
+    std::fs::write(&golden_path, rust)
         .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
-    eprintln!("REGEN cli-a-html golden: {}", golden_path.display());
+    eprintln!(
+        "REGEN cli-a-html vendored golden: {}",
+        golden_path.display()
+    );
     true
 }
 
@@ -270,9 +283,10 @@ fn cli_a_html_byte_match() {
     for &fixture in FIXTURES {
         // Always run default slot.
         {
-            let golden_path = resolve_golden(&format!("{fixture}.default.html"));
+            let name = format!("{fixture}.default.html");
+            let golden_path = resolve_golden(&name);
             let rust_out = run_html(fixture, &default_csv);
-            if !maybe_regen(&golden_path, &rust_out) {
+            if !maybe_regen(&name, &rust_out) {
                 if !golden_path.exists() {
                     divergences.push(format!(
                         "[{fixture}/default] golden file missing: {}",
@@ -292,9 +306,10 @@ fn cli_a_html_byte_match() {
 
         // Run all slot only for fixtures that have it.
         if all_slot_set.contains(fixture) {
-            let golden_path = resolve_golden(&format!("{fixture}.all.html"));
+            let name = format!("{fixture}.all.html");
+            let golden_path = resolve_golden(&name);
             let rust_out = run_html(fixture, &all_csv);
-            if !maybe_regen(&golden_path, &rust_out) {
+            if !maybe_regen(&name, &rust_out) {
                 if !golden_path.exists() {
                     divergences.push(format!(
                         "[{fixture}/all] golden file missing: {}",

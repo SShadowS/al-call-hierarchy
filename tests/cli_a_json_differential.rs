@@ -136,19 +136,32 @@ fn detector_arg(names: &[&str]) -> String {
     names.join(",")
 }
 
-/// REGEN path (temp-state epoch rebaseline, Task 16). When `REGEN_TEMP_GOLDENS`
-/// is set, write the ENGINE-produced output to the (already-resolved) golden path
-/// instead of comparing — the goldens are Rust-owned baselines (TS oracle retired).
-/// Returns `true` when a regen write happened (caller then skips the assert). The
-/// path is resolved via `resolve_golden`, so rebaselined fixtures write to the
-/// in-repo vendored override (al-sem stays FROZEN, never written).
-fn maybe_regen(golden_path: &std::path::Path, rust: &str) -> bool {
+/// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
+/// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
+/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
+/// the write target is ALWAYS the in-repo VENDORED dir (`local_json_dir()/<name>`),
+/// never al-sem. To keep the vendored set MINIMAL (only moved fixtures shadow
+/// al-sem), we write the local override ONLY when the engine output differs from
+/// the resolved baseline; if it already matches (al-sem or an existing local), we
+/// leave it untouched. Returns `true` when in regen mode (caller skips the assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
     }
-    std::fs::write(golden_path, rust)
+    let resolved = resolve_golden(name);
+    let baseline = std::fs::read_to_string(&resolved).ok();
+    if baseline.as_deref() == Some(rust) {
+        return true; // already byte-matches the resolved baseline — no vendoring needed
+    }
+    let dir = local_json_dir();
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("regen mkdir {}: {e}", dir.display()));
+    let golden_path = dir.join(name);
+    std::fs::write(&golden_path, rust)
         .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
-    eprintln!("REGEN cli-a-json golden: {}", golden_path.display());
+    eprintln!(
+        "REGEN cli-a-json vendored golden: {}",
+        golden_path.display()
+    );
     true
 }
 
@@ -329,9 +342,10 @@ fn cli_a_json_byte_match() {
 
     for &fixture in FIXTURES {
         for (slot, csv) in &[("default", default_csv.as_str()), ("all", all_csv.as_str())] {
-            let golden_path = resolve_golden(&format!("{fixture}.{slot}.json"));
+            let name = format!("{fixture}.{slot}.json");
+            let golden_path = resolve_golden(&name);
             let rust_out = run_json(fixture, csv);
-            if maybe_regen(&golden_path, &rust_out) {
+            if maybe_regen(&name, &rust_out) {
                 continue;
             }
             if !golden_path.exists() {

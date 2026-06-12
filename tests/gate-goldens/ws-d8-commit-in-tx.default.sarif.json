@@ -164,7 +164,7 @@
           "ruleId": "d3-missing-setloadfields",
           "level": "warning",
           "message": {
-            "text": "Missing SetLoadFields before a record retrieval — PostSalesDoc runs Get on Header and then accesses field(s) [last posting date, no., status posted] — no SetLoadFields was set."
+            "text": "Missing SetLoadFields before a record retrieval — PostSalesDoc runs Get on Header and then accesses field(s) [no.] — no SetLoadFields was set."
           },
           "fingerprints": {
             "al-sem/v1": "aa64609e94d3aecf"

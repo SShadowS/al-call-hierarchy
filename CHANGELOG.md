@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Rebaselined goldens after the iter-2 detector-gap fixes (G-13..G-19). Only **G-15**
+  (d3 ignores field-writes/post-Init reads after a `Get`; d42 excludes PK-only fields)
+  moved finding content; G-13/G-14/G-16/G-17/G-18/G-19 moved no in-repo goldens. The
+  moves are all d3 suppressions/shrinks: (a) `ws-d8-commit-in-tx` — the d3 `rootCause`
+  / `fixHint` field-set shrinks from `[last posting date, no., status posted]` to
+  `[no.]` (the two written fields are excluded; the PK read `no.` survives), finding
+  count unchanged; (b) `ws-txn-d46-pos` (if-not-`Get`-then-`Init`/`Insert` and
+  `if Get then write` construct/upgrade patterns), `ws-txn-d47-pos-*` and
+  `ws-txn-d49-pos-*` (write-after-`Get`: field `:= …; Modify()`), and
+  `ws-rollup-multi-detector` (write-after-`FindSet`) — the d3 finding is now fully
+  SUPPRESSED, dropping it from cli-a json/html/terminal/stats, gate SARIF/PR-summary,
+  and the gate exit-code matrix (`--fail-on` info/low/medium for those default-slot
+  fixtures now exits 0, not 1). The gate-suppress anti-degenerate witness
+  (`ws-inline-suppress` `UnsuppressedD3`, which reads the Normal field `Name`) was
+  CONFIRMED to survive G-15; its companion `SuppressedIo`/`WrongDirectiveIo` d3
+  findings were write-after-`Get` and are now correctly suppressed, lowering the
+  inline-suppress SARIF totals 7→5 (unsuppressed) and 6→4 (suppressed) while the d47
+  suppression invariant (2→1) is unchanged. Extended the `REGEN_TEMP_GOLDENS` regen
+  path to the cli-a stats and gate PR-summary/exit-code harnesses, and hardened the
+  cli-a json/html/terminal/stats regen to ALWAYS write the in-repo vendored override
+  (never al-sem) and only when the engine output differs from the resolved baseline,
+  keeping the vendored set minimal. al-sem stays FROZEN; no L2/L3 ripple this iteration
+  (the L2/L3rt differential is byte-identical); no symbol-reader/cache surface moved
+  (`cli_c_cache` green) → no cache-version bump; `KNOWN_DIVERGENCES.json` stays `[]`.
 - Rebaselined the in-repo differential goldens after the G-1..G-12 detector-gap fixes.
   Two content classes moved: (a) **G-4** d1 transitive-loop `rootCause` text now names
   the terminal routine ("… reaches <op> in Z, which has no loop of its own — the

@@ -143,6 +143,21 @@ fn read_golden(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
+/// REGEN path (iter-2 gap rebaseline). When `REGEN_TEMP_GOLDENS` is set, write the
+/// ENGINE-produced string to the in-repo golden (`gate-goldens/<name>`) instead of
+/// comparing — the goldens are Rust-owned baselines (TS oracle retired). The gate
+/// goldens live in-repo (NOT al-sem), so the write target is the resolved golden
+/// path directly. Returns `true` when a regen write happened (caller skips assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    let path = goldens_dir().join(name);
+    std::fs::write(&path, rust).unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+    eprintln!("REGEN gate-prsummary golden: {}", path.display());
+    true
+}
+
 fn make_args(
     fixture: &str,
     preset: Option<&str>,
@@ -260,6 +275,43 @@ fn run_exit_require_deps(fixture: &str, preset: Option<&str>, detector: Option<&
         .1
 }
 
+/// If `trimmed` is a `"key": {` object-opening line, return the unquoted key.
+fn object_key_opening(trimmed: &str) -> Option<String> {
+    let t = trimmed.trim_end();
+    if !t.ends_with('{') {
+        return None;
+    }
+    let rest = trimmed.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    // Must be `"key": {` (a colon follows the closing quote).
+    let after = &rest[end + 1..];
+    if after.trim_start().starts_with(':') {
+        Some(rest[..end].to_string())
+    } else {
+        None
+    }
+}
+
+/// If `trimmed` is a `"key": <number>[,]` leaf line, return `(key, has_trailing_comma)`.
+fn leaf_num_key(trimmed: &str) -> Option<(String, bool)> {
+    let rest = trimmed.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let key = &rest[..end];
+    let after = rest[end + 1..].trim_start();
+    let after = after.strip_prefix(':')?.trim_start();
+    let after = after.trim_end();
+    let (num_part, has_comma) = match after.strip_suffix(',') {
+        Some(p) => (p.trim_end(), true),
+        None => (after, false),
+    };
+    // The value must be a bare integer (exit codes are 0..=4).
+    if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
+        Some((key.to_string(), has_comma))
+    } else {
+        None
+    }
+}
+
 /// On a mismatch, print the first differing line (1-based) for fast triage.
 fn report_first_diff(label: &str, golden: &str, rust: &str) {
     let g: Vec<&str> = golden.lines().collect();
@@ -292,22 +344,28 @@ fn gate_prsummary_goldens_byte_match() {
 
         // --- (a) txn slot ---
         let txn_rust = run_prsummary(gf.fixture, preset, detector);
-        let txn_golden = read_golden(&format!("{}.txn.prsummary.md", gf.fixture));
-        if txn_rust != txn_golden {
-            mismatches.push(format!("{}.txn", gf.fixture));
-            report_first_diff(&format!("{}.txn", gf.fixture), &txn_golden, &txn_rust);
+        let txn_name = format!("{}.txn.prsummary.md", gf.fixture);
+        if !maybe_regen(&txn_name, &txn_rust) {
+            let txn_golden = read_golden(&txn_name);
+            if txn_rust != txn_golden {
+                mismatches.push(format!("{}.txn", gf.fixture));
+                report_first_diff(&format!("{}.txn", gf.fixture), &txn_golden, &txn_rust);
+            }
         }
 
         // --- (b) default slot ---
         let default_rust = run_prsummary(gf.fixture, None, None);
-        let default_golden = read_golden(&format!("{}.default.prsummary.md", gf.fixture));
-        if default_rust != default_golden {
-            mismatches.push(format!("{}.default", gf.fixture));
-            report_first_diff(
-                &format!("{}.default", gf.fixture),
-                &default_golden,
-                &default_rust,
-            );
+        let default_name = format!("{}.default.prsummary.md", gf.fixture);
+        if !maybe_regen(&default_name, &default_rust) {
+            let default_golden = read_golden(&default_name);
+            if default_rust != default_golden {
+                mismatches.push(format!("{}.default", gf.fixture));
+                report_first_diff(
+                    &format!("{}.default", gf.fixture),
+                    &default_golden,
+                    &default_rust,
+                );
+            }
         }
     }
 
@@ -321,6 +379,75 @@ fn gate_prsummary_goldens_byte_match() {
 
 #[test]
 fn gate_exit_code_matrix_matches() {
+    // REGEN path (iter-2 gap rebaseline): rebuild exit-codes.json from the engine.
+    // serde_json (no `preserve_order` feature) re-sorts object keys on a
+    // serialize round-trip, which would spuriously reorder the WHOLE file. To keep
+    // the diff MINIMAL (only the cells the engine actually moved), we patch the
+    // committed text in place line-by-line, preserving the committed key + fixture
+    // order: track the current top-level fixture and slot, and rewrite ONLY the
+    // numeric leaf value on each `"<key>": <n>` line. The goldens stay Rust-owned.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let golden_text = read_golden("exit-codes.json");
+        // (preset, detector) per fixture, by name.
+        let mut sel: std::collections::HashMap<&str, (Option<&str>, Option<&str>)> =
+            std::collections::HashMap::new();
+        for gf in CORPUS {
+            sel.insert(gf.fixture, txn_selection(gf));
+        }
+        let fixture_names: std::collections::HashSet<&str> =
+            CORPUS.iter().map(|gf| gf.fixture).collect();
+
+        let mut cur_fixture: Option<String> = None;
+        let mut cur_slot: Option<String> = None;
+        let mut out = String::with_capacity(golden_text.len());
+
+        for line in golden_text.split_inclusive('\n') {
+            let trimmed = line.trim_start();
+            // A 2-space-indented `"name": {` opens a top-level fixture object.
+            let indent = line.len() - trimmed.len();
+            if let Some(key) = object_key_opening(trimmed) {
+                if indent == 2 && fixture_names.contains(key.as_str()) {
+                    cur_fixture = Some(key);
+                    cur_slot = None;
+                    out.push_str(line);
+                    continue;
+                }
+                if indent == 4 && (key == "txn" || key == "default") {
+                    cur_slot = Some(key);
+                    out.push_str(line);
+                    continue;
+                }
+            }
+            // A leaf `"<key>": <num>[,]` line inside a known fixture+slot.
+            if let (Some(fx), Some(slot)) = (cur_fixture.as_deref(), cur_slot.as_deref()) {
+                if let Some((leaf, has_comma)) = leaf_num_key(trimmed) {
+                    let (preset, detector) = sel[fx];
+                    let (slot_preset, slot_detector) = if slot == "txn" {
+                        (preset, detector)
+                    } else {
+                        (None, None)
+                    };
+                    let val = if leaf == "require-dependencies" {
+                        run_exit_require_deps(fx, slot_preset, slot_detector)
+                    } else {
+                        run_exit_fail_on(fx, slot_preset, slot_detector, &leaf)
+                    };
+                    let comma = if has_comma { "," } else { "" };
+                    out.push_str(&" ".repeat(indent));
+                    out.push_str(&format!("\"{leaf}\": {val}{comma}\n"));
+                    continue;
+                }
+            }
+            out.push_str(line);
+        }
+
+        let path = goldens_dir().join("exit-codes.json");
+        std::fs::write(&path, out)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+        eprintln!("REGEN gate-prsummary golden: {}", path.display());
+        return;
+    }
+
     let golden_text = read_golden("exit-codes.json");
     let golden: Value = serde_json::from_str(&golden_text).expect("exit-codes.json is valid JSON");
 

@@ -153,11 +153,12 @@ fn inline_suppression_suppressed_sarif_byte_matches() {
         first_diff("ws-inline-suppress.suppressed.sarif", &golden, &rust);
     }
     assert_eq!(rust, golden, "suppressed SARIF did not byte-match");
-    // Anti-degenerate: suppression leaves exactly 6 results.
+    // Anti-degenerate: suppression leaves exactly 4 results (was 6 pre-iter-2;
+    // G-15 now suppresses the two write-after-Get d3 findings on Rec/Rec2).
     assert_eq!(
         sarif_result_count(&rust),
-        6,
-        "expected 6 suppressed results"
+        4,
+        "expected 4 suppressed results"
     );
 }
 
@@ -173,11 +174,13 @@ fn inline_suppression_unsuppressed_sarif_byte_matches() {
         first_diff("ws-inline-suppress.unsuppressed.sarif", &golden, &rust);
     }
     assert_eq!(rust, golden, "unsuppressed SARIF did not byte-match");
-    // Anti-degenerate: WITHOUT suppression there are 7 results (the +1 d47 on the pragma'd line).
+    // Anti-degenerate: WITHOUT suppression there are 5 results (the +1 d47 on the
+    // pragma'd line is present). Was 7 pre-iter-2; G-15 now suppresses the two
+    // write-after-Get d3 findings on Rec/Rec2 (the witness d3 on Rec3 survives).
     assert_eq!(
         sarif_result_count(&rust),
-        7,
-        "expected 7 unsuppressed results"
+        5,
+        "expected 5 unsuppressed results"
     );
 }
 
@@ -198,15 +201,22 @@ fn inline_suppression_prsummary_byte_matches() {
 }
 
 /// Anti-degenerate: suppression removes EXACTLY the d47 finding the directive+1 pragma
-/// covers (7 → 6), and the wrong-detector pragma (d1-db-op-in-loop above a d47 IO call)
+/// covers (5 → 4), and the wrong-detector pragma (d1-db-op-in-loop above a d47 IO call)
 /// does NOT suppress its finding. We confirm this via the result counts AND by checking
 /// the suppressed SARIF still carries the second (un-suppressed) d47 result.
+///
+/// Counts dropped from 7→5 / 6→4 after the iter-2 G-15 gap fix: the d3 findings on
+/// `SuppressedIo` (Rec) and `WrongDirectiveIo` (Rec2) were write-after-Get
+/// (`Name := …; Modify()`) and are now correctly SUPPRESSED. The anti-degenerate
+/// WITNESS d3 on `UnsuppressedD3` (Rec3 reads the NORMAL field `Name`) SURVIVES
+/// (2 findings: one per FindSet/Get retrieval), and the d47 invariant (2 → 1) is
+/// unchanged — both core properties remain intact.
 #[test]
 fn anti_degenerate_suppression_removes_one_d47_keeps_wrong_detector() {
     let suppressed = run_analyze(&inline_suppress_args(false), "engine-default").unwrap();
     let unsuppressed = run_analyze(&inline_suppress_args(true), "engine-default").unwrap();
-    assert_eq!(sarif_result_count(&unsuppressed), 7);
-    assert_eq!(sarif_result_count(&suppressed), 6);
+    assert_eq!(sarif_result_count(&unsuppressed), 5);
+    assert_eq!(sarif_result_count(&suppressed), 4);
 
     // The wrong-detector pragma must leave its d47 finding intact: count d47 ruleIds.
     let count_d47 = |sarif: &str| -> usize {

@@ -105,6 +105,56 @@ fn al_sem_stats_dir() -> PathBuf {
         .join("stats")
 }
 
+/// In-repo VENDORED override dir for rebaselined cli-a stats goldens. al-sem is
+/// FROZEN — never modified — so only the changed goldens live here; all unchanged
+/// goldens still read from the frozen al-sem archive (mirrors json/html/terminal).
+fn local_stats_dir() -> PathBuf {
+    repo_root()
+        .join("tests")
+        .join("cli-a-goldens")
+        .join("stats")
+}
+
+/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
+/// frozen al-sem archive when no local override exists.
+fn resolve_golden(name: &str) -> PathBuf {
+    let local = local_stats_dir().join(name);
+    if local.exists() {
+        local
+    } else {
+        al_sem_stats_dir().join(name)
+    }
+}
+
+/// REGEN path (iter-2 gap rebaseline). When `REGEN_TEMP_GOLDENS` is set, reconcile
+/// the golden against the ENGINE output — the goldens are Rust-owned baselines (TS
+/// oracle retired). al-sem stays FROZEN: the write target is ALWAYS the in-repo
+/// VENDORED dir (`local_stats_dir()/<name>`), never al-sem. To keep the vendored
+/// set MINIMAL (only moved fixtures shadow al-sem), we write the local override
+/// ONLY when the engine output differs from the resolved baseline; if it already
+/// matches (al-sem or an existing local), we leave it untouched. Returns `true`
+/// when in regen mode (caller skips the assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    let resolved = resolve_golden(name);
+    let baseline = std::fs::read_to_string(&resolved).ok();
+    if baseline.as_deref() == Some(rust) {
+        return true; // already byte-matches the resolved baseline — no vendoring needed
+    }
+    let dir = local_stats_dir();
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("regen mkdir {}: {e}", dir.display()));
+    let golden_path = dir.join(name);
+    std::fs::write(&golden_path, rust)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    eprintln!(
+        "REGEN cli-a-stats vendored golden: {}",
+        golden_path.display()
+    );
+    true
+}
+
 /// Run the Rust stats pipeline for one fixture, filtered to the given detector names
 /// (preserving registry order).
 fn run_stats(fixture: &str, names: &[&str]) -> String {
@@ -150,12 +200,15 @@ struct Divergence {
 
 #[test]
 fn cli_a_stats_byte_match() {
-    let stats_dir = al_sem_stats_dir();
-    if !stats_dir.is_dir() {
-        // al-sem repo not present (e.g. CI without sibling checkout) — skip.
+    // Skip only when NEITHER the frozen al-sem archive NOR an in-repo vendored
+    // override is present (e.g. CI without sibling checkout). REGEN mode never
+    // skips — it writes the vendored override regardless.
+    let regen = std::env::var("REGEN_TEMP_GOLDENS").is_ok();
+    if !regen && !al_sem_stats_dir().is_dir() && !local_stats_dir().is_dir() {
         eprintln!(
-            "{TEST_NAME}: al-sem stats directory not found at {}, SKIPPING",
-            stats_dir.display()
+            "{TEST_NAME}: neither al-sem ({}) nor local ({}) stats dir found, SKIPPING",
+            al_sem_stats_dir().display(),
+            local_stats_dir().display()
         );
         return;
     }
@@ -177,7 +230,12 @@ fn cli_a_stats_byte_match() {
             ("default", DEFAULT_DETECTOR_NAMES as &[&str]),
             ("all", all_names.as_slice()),
         ] {
-            let golden_path = stats_dir.join(format!("{fixture}.{slot}.json"));
+            let name = format!("{fixture}.{slot}.json");
+            let rust_out = run_stats(fixture, names);
+            if maybe_regen(&name, &rust_out) {
+                continue;
+            }
+            let golden_path = resolve_golden(&name);
             if !golden_path.exists() {
                 divergences.push(Divergence {
                     fixture: fixture.to_string(),
@@ -189,7 +247,6 @@ fn cli_a_stats_byte_match() {
             let golden = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
                 panic!("{TEST_NAME}: failed to read {}: {e}", golden_path.display())
             });
-            let rust_out = run_stats(fixture, names);
 
             if rust_out != golden {
                 // Report field-level diff for easier debugging.

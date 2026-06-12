@@ -71,9 +71,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 0
@@ -91,9 +91,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 4
@@ -111,9 +111,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 4
@@ -131,9 +131,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 4
@@ -171,9 +171,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 4
@@ -191,9 +191,9 @@
     },
     "default": {
       "none": 0,
-      "info": 1,
-      "low": 1,
-      "medium": 1,
+      "info": 0,
+      "low": 0,
+      "medium": 0,
       "high": 0,
       "critical": 0,
       "require-dependencies": 4

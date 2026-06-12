@@ -1,0 +1,12 @@
+Analysed 1 routines (1 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s); 1 location(s) flagged by multiple detectors (rolled up below).
+
+HIGH (1):
+  ws:src/RollupDemo.al:32:17 in Rollup Demo :: BulkMarkActive — 3 detectors agree:
+    [d1-db-op-in-loop] Database operation inside a loop (high)
+    [d10-self-modifying-loop] Self-modifying loop (high)
+    [d5-set-based-opportunity] Loop-and-Modify could be ModifyAll (info)
+    confidence: likely
+    fix options (safest first):
+      • (medium) Move the database operation outside the loop, or batch it into a set-based operation.  [d1-db-op-in-loop]
+      • (medium) Collect the keys first, then iterate a fresh recordset to perform the modifications; or use ModifyAll with a filter.  [d10-self-modifying-loop]
+      • (medium) Replace the FindSet+repeat+Modify pattern with ModifyAll on the same filter.  [d5-set-based-opportunity]
