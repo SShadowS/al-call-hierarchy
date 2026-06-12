@@ -29,7 +29,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::l2::features::{PAnchor, PCFNNode, PConditionReference};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
-use crate::engine::l5::capability_query::writes_tables_of;
+use crate::engine::l5::capability_query::writes_physical_tables_of;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::event_flow::{
     build_cross_extension_subscribers, event_kind_of, is_handled_re,
@@ -185,7 +185,7 @@ fn enumerate_dispatch_sites(
         let mut guarded_tables_written: Vec<String> = Vec::new();
         if !post_call_guards.is_empty() {
             if let Some(summary) = ctx.summaries.get(&caller.id) {
-                guarded_tables_written = writes_tables_of(summary);
+                guarded_tables_written = writes_physical_tables_of(summary);
             }
         }
 
@@ -424,7 +424,7 @@ pub fn detect_d43(
             let Some(summary) = ctx.summaries.get(&r.id) else {
                 continue;
             };
-            if writes_tables_of(summary)
+            if writes_physical_tables_of(summary)
                 .iter()
                 .any(|t| guarded_set.contains(t.as_str()))
             {
@@ -440,7 +440,8 @@ pub fn detect_d43(
             let Some(summary) = ctx.summaries.get(&r.id) else {
                 continue;
             };
-            let setter_writes: HashSet<String> = writes_tables_of(summary).into_iter().collect();
+            let setter_writes: HashSet<String> =
+                writes_physical_tables_of(summary).into_iter().collect();
             let missing: Vec<&String> = site
                 .guarded_tables_written
                 .iter()

@@ -14,8 +14,24 @@
 
 use std::collections::BTreeSet;
 
-use crate::engine::l4::capability_cone::CapabilityFact;
+use crate::engine::l4::capability_cone::{CapabilityExtra, CapabilityFact};
 use crate::engine::l5::full_summary::FullRoutineSummary;
+
+/// True when a capability fact is a write/read on a PROVABLY temporary record
+/// (`extra == Table { temp_state: known/true }`). Such ops are in-memory — they
+/// never touch the physical database, so they cannot create cross-routine /
+/// cross-extension table conflicts or exposure. Mirrors the detector-side
+/// `is_known_temp` gate, lifted to the cone-fact level (the `temp_state` is
+/// preserved across inheritance via `retag`). Suppression-direction safe: only
+/// the exact `known/true` signal qualifies; `Unknown` / parameter-dependent /
+/// absent temp_state keep counting.
+pub fn fact_is_known_temp(f: &CapabilityFact) -> bool {
+    matches!(
+        &f.extra,
+        Some(CapabilityExtra::Table { temp_state: Some(ts), .. })
+            if ts.kind == "known" && ts.value == Some(true)
+    )
+}
 
 /// Tri-state effect presence (al-sem `EffectPresence = "yes" | "no" | "unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +76,31 @@ pub fn writes_tables_of(s: &FullRoutineSummary) -> Vec<String> {
             continue;
         }
         if !is_table_write_op(&f.op) {
+            continue;
+        }
+        let Some(rid) = &f.resource_id else {
+            continue;
+        };
+        ids.insert(rid.clone());
+    }
+    ids.into_iter().collect()
+}
+
+/// Like `writes_tables_of` but DROPS writes to provably-temporary records
+/// (`fact_is_known_temp`). A temp-table write is in-memory and does no physical
+/// DB work, so it must not inflate the transaction-manager table-count gate (d8)
+/// nor produce cross-extension conflict/exposure findings (d43/d45). Physical /
+/// Unknown / parameter-dependent writes are retained (suppression-direction safe).
+pub fn writes_physical_tables_of(s: &FullRoutineSummary) -> Vec<String> {
+    let mut ids: BTreeSet<String> = BTreeSet::new();
+    for f in s.reachable() {
+        if f.resource_kind != "table" {
+            continue;
+        }
+        if !is_table_write_op(&f.op) {
+            continue;
+        }
+        if fact_is_known_temp(f) {
             continue;
         }
         let Some(rid) = &f.resource_id else {
@@ -156,6 +197,66 @@ mod tests {
             None,
         );
         assert_eq!(writes_tables_of(&s), vec!["t/A", "t/B"]);
+    }
+
+    /// Build a `table` write fact carrying a `CapabilityExtra::Table` with the
+    /// given temp_state kind/value — for the physical-vs-temp gate tests.
+    fn temp_table_write_fact(resource_id: &str, kind: &str, value: Option<bool>) -> CapabilityFact {
+        let mut f = fact("insert", "table", Some(resource_id));
+        f.extra = Some(CapabilityExtra::Table {
+            record_variable_id: None,
+            temp_state: Some(crate::engine::l2::features::PTempState {
+                kind: kind.to_string(),
+                value,
+                parameter_index: None,
+            }),
+            op_subtype: Some("Insert".to_string()),
+        });
+        f
+    }
+
+    #[test]
+    fn writes_physical_drops_known_temp_but_keeps_physical_and_unknown() {
+        let s = summary(
+            "r",
+            vec![
+                temp_table_write_fact("t/Temp", "known", Some(true)), // in-memory → dropped
+                temp_table_write_fact("t/Phys", "known", Some(false)), // not temp → kept
+                temp_table_write_fact("t/Unk", "unknown", None),      // unknown → kept
+                fact("insert", "table", Some("t/Plain")),             // no extra → kept
+            ],
+            vec![],
+            None,
+        );
+        // The faithful port still counts every write (parity unchanged).
+        assert_eq!(
+            writes_tables_of(&s),
+            vec!["t/Phys", "t/Plain", "t/Temp", "t/Unk"]
+        );
+        // The temp-aware variant drops only the provably-temp write.
+        assert_eq!(
+            writes_physical_tables_of(&s),
+            vec!["t/Phys", "t/Plain", "t/Unk"]
+        );
+    }
+
+    #[test]
+    fn fact_is_known_temp_is_exact() {
+        assert!(fact_is_known_temp(&temp_table_write_fact(
+            "t/A",
+            "known",
+            Some(true)
+        )));
+        assert!(!fact_is_known_temp(&temp_table_write_fact(
+            "t/A",
+            "known",
+            Some(false)
+        )));
+        assert!(!fact_is_known_temp(&temp_table_write_fact(
+            "t/A", "unknown", None
+        )));
+        // No extra at all → not known-temp.
+        assert!(!fact_is_known_temp(&fact("insert", "table", Some("t/A"))));
     }
 
     #[test]

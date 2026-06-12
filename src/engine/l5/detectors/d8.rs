@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::writes_tables_of;
+use crate::engine::l5::capability_query::writes_physical_tables_of;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -35,7 +35,7 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
     let Some(summary) = ctx.summaries.get(routine_id) else {
         return false;
     };
-    writes_tables_of(summary).len() >= TRANSACTION_THRESHOLD_TABLES
+    writes_physical_tables_of(summary).len() >= TRANSACTION_THRESHOLD_TABLES
 }
 
 /// Hand-rolled `^(Post|Apply|Release)[A-Z]` check: the name must start with
@@ -122,7 +122,7 @@ pub fn detect_d8(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         let write_count = ctx
             .summaries
             .get(manager_id)
-            .map(|s| writes_tables_of(s).len())
+            .map(|s| writes_physical_tables_of(s).len())
             .unwrap_or(0);
 
         // affectedObjects: [commitRoutine.objectId, manager.objectId].sort()

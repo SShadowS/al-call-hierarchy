@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::{reachable_coverage, writes_tables_of};
+use crate::engine::l5::capability_query::{reachable_coverage, writes_physical_tables_of};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::event_flow::{
     build_cross_extension_subscribers, collect_relay_subscribers, event_kind_of, RelayWalkOptions,
@@ -60,7 +60,8 @@ pub fn detect_d45(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
         if !ix.primary_routines.contains(publisher) {
             continue;
         }
-        let pub_writes: BTreeSet<String> = writes_tables_of(pub_summary).into_iter().collect();
+        let pub_writes: BTreeSet<String> =
+            writes_physical_tables_of(pub_summary).into_iter().collect();
         let pub_cov = reachable_coverage(pub_summary, None).to_string();
 
         // Walk the full subscriber chain (N hops via event + call graph).
@@ -93,7 +94,7 @@ pub fn detect_d45(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             } else if status == "partial" && sub_cov_worst != "unknown" {
                 sub_cov_worst = "partial";
             }
-            for t in writes_tables_of(summary) {
+            for t in writes_physical_tables_of(summary) {
                 writer_subs_by_table
                     .entry(t)
                     .or_default()

@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::find_capabilities;
+use crate::engine::l5::capability_query::{fact_is_known_temp, find_capabilities};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::event_flow::{build_cross_extension_subscribers, event_kind_of};
 use crate::engine::l5::finding::{
@@ -76,7 +76,10 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 continue;
             };
             let writes = find_capabilities(summary, |f| {
-                f.resource_kind == "table" && is_write_op(&f.op) && f.resource_id.is_some()
+                f.resource_kind == "table"
+                    && is_write_op(&f.op)
+                    && f.resource_id.is_some()
+                    && !fact_is_known_temp(f)
             });
             for w in writes {
                 let key = format!("{event_id}|{}", w.resource_id.as_deref().unwrap());
@@ -173,7 +176,10 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 continue;
             };
             let write_facts = find_capabilities(summary, |f| {
-                f.resource_kind == "table" && is_write_op(&f.op) && f.resource_id.is_some()
+                f.resource_kind == "table"
+                    && is_write_op(&f.op)
+                    && f.resource_id.is_some()
+                    && !fact_is_known_temp(f)
             });
             for w in write_facts {
                 let k = format!("{event_id}|{}", w.resource_id.as_deref().unwrap());
@@ -183,7 +189,10 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     .insert(sub.clone());
             }
             let read_facts = find_capabilities(summary, |f| {
-                f.resource_kind == "table" && f.op == "read" && f.resource_id.is_some()
+                f.resource_kind == "table"
+                    && f.op == "read"
+                    && f.resource_id.is_some()
+                    && !fact_is_known_temp(f)
             });
             for rd in read_facts {
                 let k = format!("{event_id}|{}", rd.resource_id.as_deref().unwrap());
