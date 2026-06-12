@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- G-4 (docs/engine-gaps.md): `d1-db-op-in-loop` PURE-TRANSITIVE findings — the terminal
+  op's own routine has NO loop around the op; the loop lives purely in an ancestor — now
+  say so explicitly. The rootCause names the terminal routine and attributes the loop to
+  the ancestor: `"A loop in X reaches <Op> on <Table> in Z, which has no loop of its own —
+  the operation runs once per iteration of that loop."` (previously the terminal routine
+  was never named, so the text read as if the op's own routine looped — CDO triage
+  batches 7, 10). WORDING ONLY, deliberately NOT suppression: these findings are
+  genuinely real (the op runs once per ancestor iteration — real SQL cost), so presence,
+  severity, confidence, ids, rootCauseKeys, and fingerprints are all unchanged; a direct
+  in-loop op and a transitive terminal op sitting inside the CALLEE's own loop keep the
+  original wording byte-identical. The optional confidence-notch lowering was skipped
+  (wording-only, per the gap's conservative scope). Covered by
+  `tests/gap_g4_transitive_wording.rs` (new wording + firing/severity preservation +
+  both unchanged-wording controls). Moves the d1 rootCause TEXT in r4/cli-a/gate-sarif
+  goldens for transitive fixtures (`ws-d1`, `ws-d1-multi-caller`); rebaseline deferred to
+  the consolidated gap-fix rebaseline task (field-level diff confirms only `rootCause`
+  diverges).
+
 ### Fixed
 - G-5 (docs/engine-gaps.md): findings no longer render the WRONG table name in their
   rootCause when a `tableextension`'s OWN object number collides with a real table's

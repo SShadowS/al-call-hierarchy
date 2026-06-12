@@ -118,6 +118,26 @@ summary (the call-graph + record-op model already exist). Scope to one hop to st
 
 ## G-4 — transitive loop over-attribution (d1)
 
+**Status: FIXED (wording) (commit `fix(engine-g4): clarify transitive db-op-in-loop rootCause wording (G-4)`).**
+NOT suppression — investigation confirmed these findings are mostly REAL: the terminal
+op runs once per ANCESTOR iteration, which is exactly a db-op-in-a-loop's SQL cost. The
+problem was attribution clarity: the rootCause (`"A loop in X reaches <Op> on <Table>."`)
+never named the terminal routine Z, while the finding's primaryLocation points INTO Z —
+so the text read as if Z itself looped. Fix (in `build_finding`, d1.rs): when the
+terminal routine differs from the loop routine AND the terminal op's own `loop_stack` is
+empty (the EXACT structural signal that the loop is purely ancestral), the rootCause
+becomes `"A loop in X reaches <Op> on <Table> in Z, which has no loop of its own — the
+operation runs once per iteration of that loop."` (mirrors d48's terminal-naming
+precedent). Direct in-loop ops and transitive terminals inside the CALLEE's own loop
+keep the original wording byte-identical. Presence/severity/confidence/ids/
+rootCauseKeys/fingerprints all unchanged (fingerprint hashes rootCauseKey, not text);
+the merge-tie temp-note strip/insert still lands on the `[tempNote][setupNote].` tail in
+both shapes. The optional confidence lowering (likely→possible) was SKIPPED — wording
+alone resolves the triage confusion without touching the confidence model. Tests:
+`tests/gap_g4_transitive_wording.rs`. Moves d1 rootCause TEXT in `ws-d1` /
+`ws-d1-multi-caller` r4/cli-a/gate-sarif goldens (field-level diff: only `rootCause`);
+rebaseline deferred to the consolidated gap-fix rebaseline task.
+
 **Symptom:** the "a loop in X reaches <op> in Z" framing fires on an `Insert`/op in a routine
 Z that has **no loop of its own**, because an ancestor X loops. The op runs once per ancestor
 iteration, but the finding reads as if Z loops — and some of these are genuinely not the

@@ -453,13 +453,36 @@ fn build_finding(
     );
     let root_cause_key = format!("d1/{}/{}", terminal_routine_id, terminal_op.id);
 
-    let root_cause = format!(
-        "A loop in {} reaches {}{}{}.",
-        loop_routine.name,
-        table_note(terminal_op, terminal_routine, table_by_id),
-        temp_note,
-        setup_note
-    );
+    // G-4 (docs/engine-gaps.md): PURE-TRANSITIVE wording. When the terminal op's
+    // OWN routine is not the loop routine AND the op sits in no loop of its own
+    // (empty loop_stack), the original "A loop in X reaches <op on table>." reads
+    // as if the terminal routine loops. The finding is GENUINELY REAL (the op runs
+    // once per ancestor iteration — real SQL cost), so the fix is WORDING ONLY:
+    // name the terminal routine and attribute the loop to the ancestor explicitly.
+    // Severity / confidence / id / rootCauseKey / fingerprint are all unchanged.
+    let pure_transitive = terminal_routine_id != loop_routine.id
+        && terminal_op.loop_stack.is_empty()
+        && terminal_routine.is_some();
+    let root_cause = if pure_transitive {
+        let tr = terminal_routine.expect("guarded by pure_transitive");
+        format!(
+            "A loop in {} reaches {} in {}, which has no loop of its own \u{2014} the \
+             operation runs once per iteration of that loop{}{}.",
+            loop_routine.name,
+            table_note(terminal_op, terminal_routine, table_by_id),
+            tr.name,
+            temp_note,
+            setup_note
+        )
+    } else {
+        format!(
+            "A loop in {} reaches {}{}{}.",
+            loop_routine.name,
+            table_note(terminal_op, terminal_routine, table_by_id),
+            temp_note,
+            setup_note
+        )
+    };
 
     // affectedObjects = sorted-dedup [loopRoutine.objectId, terminalRoutine?.objectId].
     let mut affected_set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -1119,12 +1142,12 @@ fn strip_temp_note(root_cause: &str) -> String {
     root_cause.to_string()
 }
 
-/// Insert `note` (which carries its own leading space) immediately AFTER the
-/// `table_note` segment — i.e. right before the trailing setup-note/`.`. The
-/// rootCause shape is `"A loop in X reaches <tableNote>[setupNote].`"; the temp note
-/// belongs between `<tableNote>` and `[setupNote].`. Since `strip_temp_note` already
-/// removed any temp note, we re-insert before the setup note if present, else before
-/// the final `.`.
+/// Insert `note` (which carries its own leading space) right before the trailing
+/// setup-note/`.`. Both rootCause shapes — `"A loop in X reaches <tableNote>[tempNote]
+/// [setupNote]."` and the G-4 pure-transitive `"… in Z, which has no loop of its own
+/// — … of that loop[tempNote][setupNote]."` — keep `[tempNote][setupNote].` as the
+/// tail, so re-inserting before the setup note if present (else before the final `.`)
+/// lands the dual-verdict note exactly where the single-verdict note sat.
 fn insert_temp_note(root_cause: &str, note: &str) -> String {
     const SETUP_NOTE_PREFIX: &str = " (Setup singleton";
     if let Some(pos) = root_cause.find(SETUP_NOTE_PREFIX) {
