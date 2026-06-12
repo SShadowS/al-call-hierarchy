@@ -45,7 +45,7 @@ pub mod d7;
 pub mod d8;
 pub mod d9;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, PExpressionInfo};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
@@ -61,6 +61,44 @@ pub(crate) fn before_anchor(a: &PAnchor, b: &PAnchor) -> bool {
         return a.start_line < b.start_line;
     }
     a.start_column < b.start_column
+}
+
+/// G-12/G-15: the table's PRIMARY KEY (first key) field NAMES, lowercased.
+/// The PK is always loaded regardless of `SetLoadFields`, so PK accesses never
+/// need load coverage (d3) and PK entry-requirements never force a wider
+/// narrow (d42). An empty/missing first key excludes nothing — when the PK
+/// cannot be determined the detectors keep firing.
+pub(crate) fn primary_key_field_names_lc(table: &L3Table) -> HashSet<String> {
+    let field_name_by_id: HashMap<&str, &str> = table
+        .fields
+        .iter()
+        .map(|f| (f.id.as_str(), f.name.as_str()))
+        .collect();
+    table
+        .keys
+        .first()
+        .map(|k| {
+            k.fields
+                .iter()
+                .filter_map(|fid| field_name_by_id.get(fid.as_str()).map(|n| n.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Normalize a `SetLoadFields` / `AddLoadFields` field argument (or any raw
+/// field-name token) for matching against field-access names: trim, strip ONE
+/// pair of surrounding quotes (the L2 body walk keeps the raw `"Unit Price"`
+/// argument text, while field accesses are recorded unquoted), lowercase.
+/// (G-12 refinement 4; shared with d42's G-15 PK exclusion.)
+pub(crate) fn normalize_load_field_arg(raw: &str) -> String {
+    let t = raw.trim();
+    let t = if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        &t[1..t.len() - 1]
+    } else {
+        t
+    };
+    t.to_lowercase()
 }
 
 /// G-9: page triggers in which the platform has already loaded the implicit

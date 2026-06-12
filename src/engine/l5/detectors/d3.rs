@@ -16,11 +16,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::engine::l2::features::PAnchor;
+use crate::engine::l2::features::{PAnchor, PCallSite, PCallee};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{
+    anchor_of, normalize_load_field_arg, primary_key_field_names_lc,
+};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -32,6 +34,22 @@ const RETRIEVAL_OPS: &[&str] = &["FindSet", "FindFirst", "FindLast", "Get"];
 
 /// Ops that close the access window (and bail in deriveLoadStates).
 const INVALIDATING_OPS: &[&str] = &["Reset", "Copy", "TransferFields"];
+
+/// G-15(b): ops that close the post-retrieval ACCESS window. Besides the
+/// invalidating ops, `Init` re-initialises the buffer — accesses after it
+/// operate on the constructed row, not the loaded one, so the prior load is
+/// irrelevant to them. (`Init` does NOT clear the SetLoadFields selection,
+/// so `deriveLoadStates` keeps using `INVALIDATING_OPS` unchanged.)
+const WINDOW_CLOSING_OPS: &[&str] = &["Reset", "Copy", "TransferFields", "Init"];
+
+/// G-15(b): `Clear(<var>)` — a bare platform call that resets the record
+/// variable entirely. Same buffer-reset semantics as `Init`: it closes the
+/// post-retrieval access window for that variable.
+fn is_clear_call_on(cs: &PCallSite, var_key: &str) -> bool {
+    matches!(&cs.callee, PCallee::Bare { name } if name.eq_ignore_ascii_case("Clear"))
+        && cs.argument_texts.len() == 1
+        && cs.argument_texts[0].trim().to_lowercase() == var_key
+}
 
 /// `before(a, b)` — strictly before in source order (line then column). Mirrors
 /// al-sem d3's local `before` (== `before_anchor`).
@@ -58,21 +76,6 @@ struct LoadStateAtRetrieval<'a> {
     retrieval_op: &'a L3RecordOperation,
     record_variable_name: String,
     load_state: LoadState,
-}
-
-/// Normalize a `SetLoadFields` / `AddLoadFields` field argument for matching
-/// against field-access names: trim, strip ONE pair of surrounding quotes (the
-/// L2 body walk keeps the raw `"Unit Price"` argument text, while field accesses
-/// are recorded unquoted), lowercase. (G-12 refinement 4 — a quoted pre-Get
-/// SetLoadFields argument must cover the later unquoted access.)
-fn normalize_load_field_arg(raw: &str) -> String {
-    let t = raw.trim();
-    let t = if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
-        &t[1..t.len() - 1]
-    } else {
-        t
-    };
-    t.to_lowercase()
 }
 
 /// Source order: line then column. Mirrors d3-load-state.ts `inSourceOrder`.
@@ -164,6 +167,25 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         }
         candidates_considered += 1;
 
+        // G-15(a): assignment WRITE targets. `Rec.Field := ...` records BOTH a
+        // PVarAssignment (anchored at the statement start, which IS the LHS
+        // member expression's start) and a PFieldAccess at that same anchor. A
+        // field access whose (position, member name) matches an assignment LHS
+        // is the WRITE target — a write needs no SetLoadFields. The lhs_name is
+        // stored lowercased but may keep quotes; normalize both sides. RHS
+        // reads sit at different positions and are never excluded.
+        let write_targets: HashSet<(u32, u32, String)> = routine
+            .var_assignments
+            .iter()
+            .map(|va| {
+                (
+                    va.source_anchor.start_line,
+                    va.source_anchor.start_column,
+                    normalize_load_field_arg(&va.lhs_name),
+                )
+            })
+            .collect();
+
         for state in derive_load_states(routine) {
             // Bailout — cannot prove.
             if matches!(state.load_state, LoadState::Invalidated) {
@@ -202,17 +224,8 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             // G-12 refinement 1: the table's PRIMARY KEY (first key) fields are
             // always loaded regardless of SetLoadFields — accessing them after a
             // retrieval wastes nothing. Lowercased names; an empty/missing key
-            // set excludes nothing (keep firing).
-            let pk_fields: HashSet<&String> = table
-                .keys
-                .first()
-                .map(|k| {
-                    k.fields
-                        .iter()
-                        .filter_map(|fid| field_name_by_id.get(fid.as_str()))
-                        .collect()
-                })
-                .unwrap_or_default();
+            // set excludes nothing (keep firing). Shared with d42 (G-15(c)).
+            let pk_fields: HashSet<String> = primary_key_field_names_lc(table);
             // G-12 refinement 2: FlowFields need CalcFields, not SetLoadFields —
             // an uncovered FlowField read is d22's domain, not d3's. EXACT
             // structural signal (`field_class == "FlowField"`); anything else
@@ -230,27 +243,27 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
 
             let retrieval_anchor = &state.retrieval_op.source_anchor;
 
-            // The window closes at the first invalidating op on this record var
-            // after the retrieval.
-            let mut invalidating: Vec<&L3RecordOperation> = routine
-                .record_operations
-                .iter()
-                .filter(|op| {
-                    op.record_variable_name.to_lowercase() == var_key
-                        && INVALIDATING_OPS.contains(&op.op.as_str())
-                        && before(retrieval_anchor, &op.source_anchor)
-                })
-                .collect();
-            invalidating.sort_by(|a, b| {
-                if before(&a.source_anchor, &b.source_anchor) {
-                    std::cmp::Ordering::Less
-                } else if before(&b.source_anchor, &a.source_anchor) {
-                    std::cmp::Ordering::Greater
-                } else {
-                    std::cmp::Ordering::Equal
+            // The window closes at the first window-closing op on this record
+            // var after the retrieval (Reset/Copy/TransferFields, plus G-15(b)
+            // `Init`) — or at a `Clear(<var>)` bare call, whichever comes first.
+            let mut window_end: Option<&PAnchor> = None;
+            for op in &routine.record_operations {
+                if op.record_variable_name.to_lowercase() == var_key
+                    && WINDOW_CLOSING_OPS.contains(&op.op.as_str())
+                    && before(retrieval_anchor, &op.source_anchor)
+                    && window_end.is_none_or(|we| before(&op.source_anchor, we))
+                {
+                    window_end = Some(&op.source_anchor);
                 }
-            });
-            let window_end: Option<&PAnchor> = invalidating.first().map(|op| &op.source_anchor);
+            }
+            for cs in &routine.call_sites {
+                if is_clear_call_on(cs, &var_key)
+                    && before(retrieval_anchor, &cs.source_anchor)
+                    && window_end.is_none_or(|we| before(&cs.source_anchor, we))
+                {
+                    window_end = Some(&cs.source_anchor);
+                }
+            }
             let in_window = |anchor: &PAnchor| -> bool {
                 before(retrieval_anchor, anchor) && window_end.is_none_or(|we| before(anchor, we))
             };
@@ -269,11 +282,20 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     continue;
                 }
                 let name_lc = fa.field_name.to_lowercase();
+                // G-15(a): an access that is the TARGET of an assignment is a
+                // WRITE — it never needs the field loaded. Exact structural
+                // match: same start position AND same member name as a recorded
+                // assignment LHS. RHS reads (different position) keep counting.
+                let is_write_target = write_targets.contains(&(
+                    fa.source_anchor.start_line,
+                    fa.source_anchor.start_column,
+                    name_lc.clone(),
+                ));
                 // G-12: PK / FlowField accesses never need a SetLoadFields —
                 // they don't count toward the "unloaded fields accessed" witness
                 // (the access step is still recorded as context for findings
                 // carried by OTHER, normal-field accesses).
-                if !excluded_field(&name_lc) {
+                if !excluded_field(&name_lc) && !is_write_target {
                     accessed_fields.insert(name_lc);
                 }
                 access_steps.push(EvidenceStep {

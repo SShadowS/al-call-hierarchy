@@ -23,7 +23,9 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved};
 use crate::engine::l4::summary::FieldList;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{
+    anchor_of, before_anchor, normalize_load_field_arg, primary_key_field_names_lc,
+};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -106,6 +108,7 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut skipped_caller_full = 0u64;
     let mut skipped_callee_requires_none = 0u64;
     let mut skipped_callee_unknown = 0u64;
+    let mut skipped_pk_only = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only ⇒ all primary.
@@ -169,6 +172,25 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                         continue;
                     }
                 };
+                // G-15(c): PRIMARY-KEY fields are always loaded regardless of
+                // SetLoadFields — same exclusion G-12 applied to d3. Drop the
+                // PK (first key) fields of the callee parameter's table from
+                // the required set; when nothing else is required, the
+                // forwarded narrow causes no extra round-trip. An unresolved
+                // table / missing key excludes nothing (keep firing).
+                let pk_fields = ctx
+                    .table_by_id
+                    .get(callee_role.table_id.as_str())
+                    .map(|t| primary_key_field_names_lc(t))
+                    .unwrap_or_default();
+                let rf: Vec<String> = rf
+                    .into_iter()
+                    .filter(|f| !pk_fields.contains(&normalize_load_field_arg(f)))
+                    .collect();
+                if rf.is_empty() {
+                    skipped_pk_only += 1;
+                    continue;
+                }
 
                 // Caller-side LF — two-tier resolution.
                 let mut lf: Option<Narrow> = None;
@@ -299,5 +321,6 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("callerFull", skipped_caller_full);
     stats.add_skip("calleeRequiresNone", skipped_callee_requires_none);
     stats.add_skip("calleeUnknown", skipped_callee_unknown);
+    stats.add_skip("pkOnly", skipped_pk_only);
     DetectorOutput::no_diag(findings, stats)
 }

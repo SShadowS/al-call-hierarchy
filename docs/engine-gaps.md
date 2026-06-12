@@ -507,6 +507,18 @@ must-be-loaded set (PK is always loaded — same as the G-12 fix, not applied to
 treat an `Init`/`Clear` between the Get and the access as resetting load relevance; also suppress
 when the Get returns into a `if not Get then` construct-and-Insert. d42 — exclude PK fields
 (reuse G-12's PK-exclusion helper).
+**Status: FIXED (commit `fix(engine-g15): d3 ignores field-writes/post-Init; d42 excludes PK fields (G-15)`).**
+d3 (a): the model records assignment LHS positions (`PVarAssignment` anchors at the statement
+start == the LHS member expression) — a field access matching an assignment LHS by (position,
+member name) is a WRITE target and no longer counts toward the witness; RHS reads keep firing.
+This also covers the `if not Get then begin Init; ...; Insert end` construct shape without a
+separate heuristic. d3 (b): `Init` record ops and `Clear(<var>)` bare calls close the
+post-retrieval access window (`WINDOW_CLOSING_OPS`; `deriveLoadStates` unchanged — `Init`
+keeps the SetLoadFields selection). d42 (c): the callee parameter table's PK (first key)
+fields are dropped from `requiredLoadedFieldsAtEntry` via the shared
+`primary_key_field_names_lc` helper (G-12's d3 exclusion, factored into detectors/mod.rs);
+new `pkOnly` skip counter. Controls in `tests/gap_g15_d3_d42_writes.rs` prove genuine non-PK
+normal-field reads (same-routine, RHS-of-assignment, pre-Init, and cross-call) still fire.
 
 ## G-16 — record loaded via deeper wrappers / record-assignment not recognized (medium)
 **Symptom:** d11/d21 fire "never loaded" when the record was loaded via (a) a multi-hop or

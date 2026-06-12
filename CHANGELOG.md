@@ -25,6 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-15 (docs/engine-gaps.md): `d3-missing-setloadfields` no longer fires when the fields
+  touched after a retrieval are only WRITTEN, and `d42-cross-call-wrong-setloadfields`
+  no longer counts PRIMARY-KEY fields as must-be-loaded. Three exact sub-class
+  suppressions, everything else keeps firing: (a) a field access whose source position
+  AND member name match a recorded assignment LHS (`PVarAssignment` is anchored at the
+  statement start, which IS the LHS member expression's start) is a WRITE target —
+  writes need no SetLoadFields, so they no longer count toward d3's
+  "accessed-without-load" witness (RHS reads sit at different positions and keep
+  counting); (b) an intervening `Init()` record op or `Clear(<var>)` bare call between
+  the retrieval and the access closes d3's access window (new `WINDOW_CLOSING_OPS` —
+  the access reads the re-initialised buffer, not the loaded row; `deriveLoadStates`'s
+  `INVALIDATING_OPS` is unchanged since `Init` does not clear the SetLoadFields
+  selection); (c) d42 now drops the callee parameter table's PK (first key) fields from
+  `requiredLoadedFieldsAtEntry` — the PK is always loaded regardless of SetLoadFields —
+  reusing G-12's d3 exclusion via the new shared `primary_key_field_names_lc` +
+  `normalize_load_field_arg` helpers in `src/engine/l5/detectors/mod.rs` (new `pkOnly`
+  skip counter). Genuine reads of non-PK normal fields still fire (controls in
+  `tests/gap_g15_d3_d42_writes.rs`; `tests/gap_g12_d3_refinements.rs` stays green).
 - G-14 (docs/engine-gaps.md): `d11-modify-without-get`, `d21-read-without-load`, and
   `d37-validate-without-persist` no longer fire on the implicit `Rec` inside page field
   `OnLookup` / `OnAssistEdit` triggers — the G-9 trigger set
