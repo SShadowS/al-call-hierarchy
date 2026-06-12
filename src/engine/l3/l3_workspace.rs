@@ -129,6 +129,35 @@ pub struct L3Table {
     /// L3Table is NOT Serialize-derived into any gate surface, so this never
     /// touches a golden. Populated by later tasks (Task 4).
     pub is_temporary: bool,
+    /// G-5 (docs/engine-gaps.md): true when this entry was indexed from a
+    /// `tableextension` declaration (a pseudo-table stub kept so
+    /// `merge_extension_fields` can find the extension's own fields). Its `id`
+    /// is `${appGuid}/table/${EXTENSION object number}`, which COLLIDES with a
+    /// real table sharing that number in the same app — every id/name lookup
+    /// must prefer a REAL table over a stub (`table_by_id_preferring_real`,
+    /// `SymbolTable`), otherwise ops on the real table render the EXTENSION's
+    /// name in rootCause text. Additive — L3Table is not golden-serialized.
+    pub is_extension_stub: bool,
+}
+
+/// G-5: build an id → table map over `tables` where a REAL table always wins an
+/// id collision with a `tableextension` stub (see `L3Table::is_extension_stub`).
+/// Within the same kind (real/real or stub/stub) LAST-wins is preserved —
+/// matching the al-sem `tableById` semantics every consumer had before.
+pub fn table_by_id_preferring_real(
+    tables: &[L3Table],
+) -> std::collections::HashMap<&str, &L3Table> {
+    let mut map: std::collections::HashMap<&str, &L3Table> = std::collections::HashMap::new();
+    for t in tables {
+        if let Some(prev) = map.get(t.id.as_str()) {
+            // Never let a stub clobber a real table.
+            if !prev.is_extension_stub && t.is_extension_stub {
+                continue;
+            }
+        }
+        map.insert(t.id.as_str(), t);
+    }
+    map
 }
 
 /// A record variable with its (post-resolve) resolved internal table id.
@@ -522,6 +551,7 @@ fn index_table(
     table_number: i64,
     table_name: &str,
     source: &str,
+    is_extension_stub: bool,
 ) -> L3Table {
     let table_id = format!("{app_guid}/table/{table_number}");
     let mut fields = Vec::new();
@@ -644,6 +674,7 @@ fn index_table(
         fields,
         keys,
         is_temporary,
+        is_extension_stub,
     }
 }
 
@@ -1031,6 +1062,9 @@ fn project_file(
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
+            // G-5: a TableExtension's indexed table is a STUB whose id reuses the
+            // EXTENSION's own object number — it must never win an id collision
+            // against a real table sharing that number (see `is_extension_stub`).
             workspace.tables.push(index_table(
                 decl,
                 &object_id,
@@ -1038,6 +1072,7 @@ fn project_file(
                 object_number,
                 &name,
                 source,
+                object_type == "TableExtension",
             ));
         }
 

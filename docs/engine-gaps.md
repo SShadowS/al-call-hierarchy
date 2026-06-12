@@ -133,6 +133,26 @@ At minimum, lower confidence / sharpen the rootCause wording when Z itself has n
 
 ## G-5 — wrong table name in rootCause (call-graph symbol resolution)
 
+**Status: FIXED (commit `fix(engine-g5): correct op→record-var→table name binding in multi-subloop routines (G-5)`).**
+NOT a sub-loop binding bug — the op→record-var→table-name binding (L2 receiver capture,
+`record_types.rs` name-keyed passes, `describe_table` tiers) was correct all along (locked
+by regression guards). The actual root cause is a TABLE-ID COLLISION: a `tableextension`
+declaration is indexed as an `L3Table` stub whose internal id reuses the EXTENSION's own
+object number (`${appGuid}/table/${extNumber}`, kept so `merge_extension_fields` can find
+the extension's fields). When a real table in the same app shares that number, the stub
+clobbered it in every LAST-wins `table_by_id` lookup, so `describe_table` tier 1 rendered
+the EXTENSION's name (`CDOReturnShipmentHeader` / `CDOPurchaseReceiptHeader` / `CDOJobExt`
+are tableextension names whose numbers collide with the real tables the ops target). The
+sequential-sub-loop correlation in the evidence was coincidental. Fix: new
+`L3Table::is_extension_stub` marker + REAL-over-stub collision preference in every table
+lookup map (`SymbolTable` by-name/by-id, `table_by_id_preferring_real` →
+`DetectorContext`, HTML formatter, policy engine); LAST-wins preserved within the same
+kind; `merge_extension_fields` untouched (lockstep with the projected twin). Name-only:
+finding presence/severity/ids/fingerprints unchanged. Tests:
+`tests/gap_g5_wrong_table_name.rs` (collision repro in both assembly orders + sequential /
+unloaded-type / transitive multi-subloop guards). No in-repo golden moved; the CDO-run
+rebaseline remains with the consolidated rebaseline task.
+
 **Symptom:** rootCause text names the wrong table/record for some findings — e.g. reports
 `CDOReturnShipmentHeader` / `CDOPurchaseReceiptHeader` / `CDOJobExt` where the source op is on
 `MergeTableTopBottom` / `HtmlTableStyle` / `HtmlTableStyleLine` local vars. The finding is

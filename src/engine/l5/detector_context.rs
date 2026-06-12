@@ -228,8 +228,11 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
     let objects_by_id: HashMap<&str, &L3Object> =
         ws.objects.iter().map(|o| (o.id.as_str(), o)).collect();
+    // G-5: REAL table wins an id collision with a tableextension stub (the stub's
+    // id reuses the extension's own object number) — otherwise rootCause text
+    // renders the EXTENSION's name for ops on the real table.
     let table_by_id: HashMap<&str, &L3Table> =
-        ws.tables.iter().map(|t| (t.id.as_str(), t)).collect();
+        crate::engine::l3::l3_workspace::table_by_id_preferring_real(&ws.tables);
 
     let reverse_call_graph = build_reverse_call_graph(&graph);
 
@@ -487,8 +490,9 @@ pub(crate) fn build_detector_context_cross_app(
         ws_routines.iter().map(|r| (r.id.as_str(), r)).collect();
     let objects_by_id: HashMap<&str, &L3Object> =
         base.objects.iter().map(|o| (o.id.as_str(), o)).collect();
+    // G-5: REAL table wins an id collision with a tableextension stub.
     let table_by_id: HashMap<&str, &L3Table> =
-        base.tables.iter().map(|t| (t.id.as_str(), t)).collect();
+        crate::engine::l3::l3_workspace::table_by_id_preferring_real(&base.tables);
 
     let reverse_call_graph = build_reverse_call_graph(&graph);
 

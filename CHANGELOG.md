@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- G-5 (docs/engine-gaps.md): findings no longer render the WRONG table name in their
+  rootCause when a `tableextension`'s OWN object number collides with a real table's
+  number in the same app (CDO triage batches 2, 3 — ops on `MergeTableTopBottom` /
+  `HtmlTableStyle` / `HtmlTableStyleLine` reported as `CDOReturnShipmentHeader` /
+  `CDOPurchaseReceiptHeader` / `CDOJobExt`, which are tableextension NAMES). Root cause:
+  a `tableextension` declaration is indexed as an `L3Table` stub whose internal id reuses
+  the EXTENSION's object number (`${appGuid}/table/${extNumber}` — kept so
+  `merge_extension_fields` can find the extension's fields), so it COLLIDES with a real
+  table sharing that number and clobbered it in every LAST-wins id lookup
+  (`describe_table` tier 1 then rendered the extension's name). Fix: new
+  `L3Table::is_extension_stub` marker + REAL-over-stub collision preference in every
+  table lookup map — `SymbolTable` (`tables_by_name`/`tables_by_id`), the shared
+  `table_by_id_preferring_real` helper consumed by `DetectorContext::table_by_id` (both
+  source-only and cross-app builds), the HTML formatter's table-label map, and the policy
+  engine's `tables_by_id`. Within the same kind (real/real, stub/stub) LAST-wins is
+  preserved (al-sem parity); the `merge_extension_fields` algorithm itself is untouched
+  (stays in lockstep with its projected twin). Name-correctness only: finding presence,
+  severity, ids, and fingerprints are unchanged (the op's `table_id` STRING is identical —
+  only the rendered name was wrong). Covered by `tests/gap_g5_wrong_table_name.rs`
+  (collision repro in both assembly orders + sequential/transitive multi-subloop
+  regression guards). No in-repo golden moved; the real-app (CDO) rebaseline remains with
+  the consolidated gap-fix rebaseline task.
 - G-3 (docs/engine-gaps.md): `d33-unfiltered-bulk-write` no longer fires on a
   `DeleteAll`/`ModifyAll` whose receiver was provably filtered by a helper procedure call
   earlier in the routine (CDO triage batches 9, 10 — `SetTemplateFilter(Rec)`,

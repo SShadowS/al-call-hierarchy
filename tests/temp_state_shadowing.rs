@@ -72,6 +72,7 @@ fn make_table(name: &str, number: i64) -> L3Table {
         fields: Vec::new(),
         keys: Vec::new(),
         is_temporary: false,
+        is_extension_stub: false,
     }
 }
 

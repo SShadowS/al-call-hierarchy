@@ -154,7 +154,8 @@ impl<'a> Maps<'a> {
         Maps {
             routines: routines.iter().map(|r| (r.id.as_str(), r)).collect(),
             objects: objects.iter().map(|o| (o.id.as_str(), o)).collect(),
-            tables: tables.iter().map(|t| (t.id.as_str(), t)).collect(),
+            // G-5: REAL table wins an id collision with a tableextension stub.
+            tables: crate::engine::l3::l3_workspace::table_by_id_preferring_real(tables),
         }
     }
 }

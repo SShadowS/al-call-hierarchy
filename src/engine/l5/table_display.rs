@@ -87,6 +87,7 @@ mod tests {
             fields: vec![],
             keys: vec![],
             is_temporary: false,
+            is_extension_stub: false,
         }
     }
 

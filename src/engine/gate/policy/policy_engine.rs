@@ -139,8 +139,9 @@ impl<'a> PolicyModel<'a> {
             .iter()
             .map(|rc| (rc.routine_id.as_str(), rc.kinds.as_slice()))
             .collect();
+        // G-5: REAL table wins an id collision with a tableextension stub.
         let tables_by_id: HashMap<&str, &L3Table> =
-            tables.iter().map(|t| (t.id.as_str(), t)).collect();
+            crate::engine::l3::l3_workspace::table_by_id_preferring_real(tables);
         let events_by_id: HashMap<&str, &str> = events
             .iter()
             .map(|e| (e.id.as_str(), e.event_name.as_str()))

@@ -88,12 +88,27 @@ impl SymbolTable {
             );
         }
 
-        // --- table indexes (LAST-wins) --------------------------------------
-        let mut tables_by_name = HashMap::new();
-        let mut tables_by_id = HashMap::new();
+        // --- table indexes (LAST-wins, REAL over stub) ----------------------
+        // G-5: a `tableextension` stub's id reuses the EXTENSION's own object
+        // number (`${appGuid}/table/${extNumber}`), which collides with a real
+        // table sharing that number. A real table always wins the collision
+        // (by id AND by name); within the same kind LAST-wins is preserved.
+        let mut tables_by_name: HashMap<String, usize> = HashMap::new();
+        let mut tables_by_id: HashMap<String, usize> = HashMap::new();
         for (i, t) in tables.iter().enumerate() {
-            tables_by_name.insert(t.name.to_lowercase(), i);
-            tables_by_id.insert(t.id.clone(), i);
+            let name_key = t.name.to_lowercase();
+            let keep_prev_name = tables_by_name
+                .get(&name_key)
+                .is_some_and(|&p| !tables[p].is_extension_stub && t.is_extension_stub);
+            if !keep_prev_name {
+                tables_by_name.insert(name_key, i);
+            }
+            let keep_prev_id = tables_by_id
+                .get(&t.id)
+                .is_some_and(|&p| !tables[p].is_extension_stub && t.is_extension_stub);
+            if !keep_prev_id {
+                tables_by_id.insert(t.id.clone(), i);
+            }
         }
 
         // --- routine indexes ------------------------------------------------

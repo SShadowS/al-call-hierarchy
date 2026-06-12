@@ -137,6 +137,9 @@ fn dep_table_to_l3(t: &ProjectedTable) -> L3Table {
         // merged-whole `resolve()` table-level override (Task 4) upgrades a record var
         // typed on this dep table to Known(true) — native+ABI shape parity.
         is_temporary: t.is_temporary,
+        // G-5: the ABI projection carries no extension-stub marker; dep tables are
+        // treated as real (preserves the pre-G-5 LAST-wins semantics for dep sets).
+        is_extension_stub: false,
     }
 }
 
