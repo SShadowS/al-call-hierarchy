@@ -3,9 +3,16 @@
 //! `src/detectors/d37-validate-without-persist.ts`.
 //!
 //! Detection (intra-routine, source-ordered): for each `Validate` op V on record-var
-//! R, walk subsequent ops on R; if a Modify/ModifyAll/Insert appears before any
+//! R, walk subsequent ops on R; if a Modify/Insert appears before any
 //! state-overwriting op (Init/Reset/Get/Find*/Next/Copy/TransferFields) it is
 //! persisted — skip; otherwise the Validate is unpersisted — flag.
+//!
+//! Detector-audit d37 FN-1: `ModifyAll` is NOT a persist of R's CURRENT record.
+//! `R.ModifyAll(Field, Value)` issues a set-based UPDATE across R's filtered set
+//! with a literal value — it never writes R's in-memory `Validate`'d fields, so a
+//! `Validate` followed only by `ModifyAll` silently discards the change. It is
+//! therefore excluded from the persist set (only a genuine `Modify`/`Insert` on R
+//! persists the Validate).
 //!
 //! Suppressions: temporary records, by-var parameter records, and calls forwarding R
 //! to a helper whose summary MAY persist (persistsCurrentRecord = "yes") or is
@@ -28,7 +35,9 @@ use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d37-validate-without-persist";
 
-const PERSIST_OPS: &[&str] = &["Modify", "ModifyAll", "Insert"];
+// ModifyAll is intentionally EXCLUDED — it does not persist R's current record
+// (see the module doc, d37 FN-1). Only Modify / Insert write R's Validate'd state.
+const PERSIST_OPS: &[&str] = &["Modify", "Insert"];
 const RESET_LIKE_OPS: &[&str] = &[
     "Init",
     "Reset",
@@ -286,7 +295,7 @@ fn emit(
         detector: DETECTOR.to_string(),
         title: "Validate changes are not persisted".to_string(),
         root_cause: format!(
-            "{} calls Validate on {} but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+            "{} calls Validate on {} but never persists the change with Modify / Insert before the record is reloaded or the routine returns — the field write is discarded.",
             routine.name, op.record_variable_name
         ),
         severity: "medium".to_string(),

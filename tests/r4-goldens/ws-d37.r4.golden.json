@@ -10,7 +10,7 @@
       "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/op1",
       "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/11111111-0000-0000-0000-00000000d370:Codeunit:51400#be5aad922650150c552b962076a8f5b110c14032597b816880339d066e12a9c8/op1",
       "title": "Validate changes are not persisted",
-      "rootCause": "ValidateThenReload calls Validate on Customer but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "rootCause": "ValidateThenReload calls Validate on Customer but never persists the change with Modify / Insert before the record is reloaded or the routine returns — the field write is discarded.",
       "severity": "medium",
       "confidence": {
         "level": "possible",
@@ -69,7 +69,7 @@
       "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/op1",
       "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/11111111-0000-0000-0000-00000000d370:Codeunit:51400#812026d14544891357bf611cd0e333424d7f66c83026b670a6144d3d06db227a/op1",
       "title": "Validate changes are not persisted",
-      "rootCause": "ValidateThenNonPersistingHelper calls Validate on Cust but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "rootCause": "ValidateThenNonPersistingHelper calls Validate on Cust but never persists the change with Modify / Insert before the record is reloaded or the routine returns — the field write is discarded.",
       "severity": "medium",
       "confidence": {
         "level": "possible",
@@ -128,7 +128,7 @@
       "id": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/op1",
       "rootCauseKey": "d37/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/11111111-0000-0000-0000-00000000d370:Codeunit:51400#58051ed48a27516d80b0762409b628a009c50364dca1f5542ae26ad502c53555/op1",
       "title": "Validate changes are not persisted",
-      "rootCause": "ValidateWithoutModify calls Validate on Customer but never persists the change with Modify / ModifyAll / Insert before the record is reloaded or the routine returns — the field write is discarded.",
+      "rootCause": "ValidateWithoutModify calls Validate on Customer but never persists the change with Modify / Insert before the record is reloaded or the routine returns — the field write is discarded.",
       "severity": "medium",
       "confidence": {
         "level": "possible",
