@@ -1261,31 +1261,85 @@ fn project_file(
             // caller var, persistable exactly like a local). Only "local"
             // bindings are eligible — "parameter" / "implicit-rec" / "expression"
             // are left untouched.
+            //
+            // G-8 BACKFILL (residual temp gap): the L2 builder only matched the
+            // routine's OWN params/locals, so an arg naming an OBJECT-GLOBAL
+            // record var came out `sourceKind == "unknown"` with NO
+            // `source_temp_state` — both the L4 PD substitution
+            // (`substitute_pd_temp_state`) and the L5 per-path resolver
+            // (`resolve_temp_along_path`) collapse a missing source to
+            // `Unknown`, so a codeunit-global `temporary` record FORWARDED
+            // by-var into a helper stayed "temp state uncertain" (the CDO
+            // eDocuments-Dispatcher shape). Now that promotion has run, rebind
+            // such an "unknown" binding to the promoted global: the arg text
+            // must be a BARE identifier (the same identifier-only discipline
+            // the L2 builder applies — anything quoted/dotted/called stays
+            // untouched), must match a promoted-global record var, and the
+            // name's INNERMOST declaration must BE the global (a same-named
+            // scalar param/local shadows it → skip, conservative). The
+            // backfilled `source_temp_state` is the global's own state — the
+            // exact structural `temporary`-keyword signal Task 3 captured —
+            // so Known(true) is only ever introduced from that signal.
             {
-                // Promoted-global record-var names, stored VERBATIM (original
-                // casing) — NOT lowercased; the comparison below is
-                // case-insensitive via `eq_ignore_ascii_case`.
-                let global_rv_names: std::collections::HashSet<&str> = record_variables
-                    .iter()
-                    .filter(|rv| rv.scope.as_deref() == Some("global"))
-                    .map(|rv| rv.name.as_str())
-                    .collect();
-                if !global_rv_names.is_empty() {
+                // Promoted-global record vars, keyed by lowercased name.
+                let global_rv_by_lc: std::collections::HashMap<String, &L3RecordVariable> =
+                    record_variables
+                        .iter()
+                        .filter(|rv| rv.scope.as_deref() == Some("global"))
+                        .map(|rv| (rv.name.to_lowercase(), rv))
+                        .collect();
+                // Names whose INNERMOST declaration (params → locals → globals,
+                // first-wins in `features.variables`) is NOT the global —
+                // shadowed by a (possibly scalar) param/local → never backfill.
+                let mut innermost_scope_by_lc: std::collections::HashMap<&str, &str> =
+                    std::collections::HashMap::new();
+                for v in &features.variables {
+                    innermost_scope_by_lc
+                        .entry(v.name.as_str())
+                        .or_insert(v.scope.as_str());
+                }
+                if !global_rv_by_lc.is_empty() {
                     for cs in &mut call_sites {
                         for b in &mut cs.argument_bindings {
-                            if b.source_kind != "local" {
-                                continue;
-                            }
-                            if let Some(name_lc) = b.source_variable_name.as_deref() {
-                                // `source_variable_name` is already lowercased at L2;
-                                // promoted-global names are verbatim, so compare
-                                // case-insensitively.
-                                if global_rv_names
-                                    .iter()
-                                    .any(|g| g.eq_ignore_ascii_case(name_lc))
-                                {
-                                    b.source_kind = "global".to_string();
+                            match b.source_kind.as_str() {
+                                "local" => {
+                                    if let Some(name_lc) = b.source_variable_name.as_deref() {
+                                        // `source_variable_name` is already lowercased
+                                        // at L2.
+                                        if global_rv_by_lc.contains_key(name_lc) {
+                                            b.source_kind = "global".to_string();
+                                        }
+                                    }
                                 }
+                                "unknown" => {
+                                    // G-8 backfill (see block comment above).
+                                    let Some(text) =
+                                        cs.argument_texts.get(b.parameter_index as usize)
+                                    else {
+                                        continue;
+                                    };
+                                    let lc = text.trim().to_lowercase();
+                                    // Bare identifiers only — mirrors the L2 builder's
+                                    // `arg_node.kind() == "identifier"` gate.
+                                    if lc.is_empty()
+                                        || !lc.chars().all(|c| c.is_alphanumeric() || c == '_')
+                                    {
+                                        continue;
+                                    }
+                                    let Some(g) = global_rv_by_lc.get(&lc) else {
+                                        continue;
+                                    };
+                                    if innermost_scope_by_lc.get(lc.as_str()).copied()
+                                        != Some("global")
+                                    {
+                                        continue; // shadowed by a scalar param/local
+                                    }
+                                    b.source_kind = "global".to_string();
+                                    b.source_variable_name = Some(lc.clone());
+                                    b.source_record_variable_id = Some(g.id.clone());
+                                    b.source_temp_state = Some(g.temp_state.clone());
+                                }
+                                _ => {}
                             }
                         }
                     }

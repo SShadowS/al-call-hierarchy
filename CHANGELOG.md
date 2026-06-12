@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- G-8 (docs/engine-gaps.md): a codeunit-global `temporary` record FORWARDED by-var into a
+  helper (e.g. `TempErrors: Record "Error Message" temporary;` passed to a local
+  `LogError(var Errors: Record ...)` that does the db op) no longer resolves "temp state
+  uncertain". Root cause: the L2 argument-binding builder only matches the routine's OWN
+  params/locals, so an arg naming an object-global record var was emitted
+  `sourceKind: "unknown"` with NO `sourceTempState` — both the L4 PD substitution
+  (`substitute_pd_temp_state`) and the L5 per-path resolver (`resolve_temp_along_path`)
+  collapse a missing binding source to `Unknown`, so the helper's PD op stayed
+  "uncertain" even though the global carries the exact structural `temporary` keyword.
+  Fix (`src/engine/l3/l3_workspace.rs`, inside the existing RV-8 relabel block, AFTER the
+  Task-3 global promotion): backfill an `"unknown"` binding whose arg text is a BARE
+  identifier matching a promoted-global record var — and whose innermost declaration IS
+  that global (a same-named scalar param/local shadows it → skipped, conservative) — with
+  `sourceKind: "global"`, the promoted per-routine record-var id, and the global's own
+  `tempState` (Known(true) only ever from the `temporary`-keyword signal Task 3 captured;
+  a NON-temp global backfills Known(false) and keeps firing). Direct ops on globals
+  (Task-3 promotion), keyword-temp by-var params (Task 8 / RV-3 contract-trust), and the
+  keyword-less by-var PD-at-path-root → Unknown behaviour were verified CORRECT and are
+  regression-guarded. Tests: `tests/gap_g8_residual_temp.rs` (forwarded temp global →
+  info, forwarded non-temp global keeps firing, plus the Case A/B ground-truth guards).
+  No in-repo golden moved (no golden fixture forwards an object-global record var).
+
 ### Changed
 - G-7 (docs/engine-gaps.md): `d1-db-op-in-loop` findings whose EVERY path root routine is
   provably dead are now DOWN-CONFIDENCED — confidence drops one notch (likely → possible)

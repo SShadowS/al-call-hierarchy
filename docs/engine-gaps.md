@@ -243,6 +243,33 @@ suppressed or down-confidenced. Low volume; lowest priority.
 
 ## G-8 — residual global / by-var-param temp resolution gaps
 
+**Status: FIXED (commit `fix(engine-g8): backfill promoted-global temp state into call-arg
+bindings — forwarded codeunit-global temp records resolved "uncertain"`).**
+Investigation ground truth (all regression-guarded in `tests/gap_g8_residual_temp.rs`):
+
+- **Direct ops on a codeunit-global `temporary` record** (`TempErrors.Insert()` /
+  `FindSet()` / `Next()` in the global's own object, table NOT in the workspace): already
+  `Known(true)` via Task-3 promotion + pass-2a rebind — NOT a bug.
+- **Keyword-temp by-var param** (`GetUpgradeData(var Temp: Record X temporary)`):
+  already `Known(true)` by contract-trust (Task 8 / RV-3), caller irrelevant — NOT a bug
+  (the batch-7 case is covered IF the params carry the keyword; without it, see next).
+- **Keyword-LESS by-var param, d1 DIRECT finding** (loop + op in the same routine): PD at
+  the path root → `Unknown` → "uncertain" is CORRECT per-path conservatism (a caller-side
+  temp local only binds the TRANSITIVE finding rooted at that caller) — out-of-model by
+  design, documented in the regression guard.
+- **THE REAL RESIDUAL BUG — temp global FORWARDED by-var into a helper** (the
+  eDocuments-Dispatcher shape: `LogError(TempErrors)` in a loop, op inside the helper's
+  keyword-less by-var param): the L2 binding builder only matches the routine's OWN
+  params/locals, so the global arg's binding was `sourceKind:"unknown"` with NO
+  `sourceTempState`; L4 `substitute_pd_temp_state` and L5 `resolve_temp_along_path` both
+  collapse a missing source to `Unknown` → "uncertain". Fixed in
+  `src/engine/l3/l3_workspace.rs` (the RV-8 relabel block, post-promotion): backfill the
+  binding from the promoted-global record var — bare-identifier arg text only, an
+  innermost-declaration-must-be-the-global shadowing guard, temp state copied from the
+  global's exact `temporary`-keyword signal (suppression-direction discipline). Non-temp
+  globals backfill Known(false) and keep firing. No in-repo golden moved (no golden
+  fixture forwards an object-global record var by-var).
+
 **Symptom:** a few module-level `temporary` globals and by-var temp params still resolve
 "uncertain" after the epoch. The epoch promotes object-global record vars and substitutes PD,
 so these should mostly be covered — worth confirming whether the remaining cases are a real
