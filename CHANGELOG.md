@@ -49,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- Detector-audit class A + Singleton BUG-5 (docs/detector-audit.md):
+  `d4-repeated-lookup-in-loop` fixed on two fronts. (1) **Temp gate** — a repeated
+  identical lookup on a provably `temporary` record (`temp_state` Known(true)) is
+  an in-memory read with no SQL round-trip to hoist and no longer fires (same
+  `is_known_temp` gate as d1/d2/d33; new `tempRecord` skip stat).
+  Suppression-direction exact: the same shape on a physical record still fires
+  (control in `tests/gap_audit_d4.rs`). (2) **BUG-5 duplicate finding id** — the
+  id `d4/{routine}/{loop}/{varLower}` omitted the literal lookup key, so two
+  distinct keys each repeated 2+ times on the same (routine, loop, variable)
+  produced colliding ids. The literal key is now appended to the id ONLY when a
+  variable has multiple qualifying key groups, so single-key findings keep their
+  pre-fix ids byte-identical (existing d4 goldens verified unmoved, r4
+  differential green).
 - Detector-audit classes A + C (docs/detector-audit.md): `d2-event-fanout-in-loop`
   no longer false-fires when an event subscriber's in-loop db ops are all
   structurally non-actionable. Three guards now mirror d1's terminal/op selection:

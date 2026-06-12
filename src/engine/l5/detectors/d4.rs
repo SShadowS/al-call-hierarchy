@@ -8,13 +8,19 @@
 //! hoistable). The dedup key uses the unquoted `.value` (falling back to `.text`)
 //! so `'X'` and `"X"` group together.
 //!
+//! Lookups on a provably `temporary` record (`temp_state` Known(true)) are
+//! skipped — in-memory, no SQL round-trip to hoist (same gate as d1/d3/d33).
+//! When the same (routine, loop, variable) has MULTIPLE distinct repeated
+//! literal keys, each finding id gets the key appended (BUG-5); single-key
+//! groups keep the plain `d4/{routine}/{loop}/{varLower}` id.
+//!
 //! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
 
 use crate::engine::l2::features::PExpressionInfo;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, op_targets_virtual_system_table};
+use crate::engine::l5::detectors::{anchor_of, is_known_temp, op_targets_virtual_system_table};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -37,6 +43,7 @@ pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_other = 0u64;
+    let mut skipped_temp_record = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -67,6 +74,14 @@ pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 if op_targets_virtual_system_table(op, routine, &ctx.table_by_id) {
                     continue;
                 }
+                // Temp gate (detector-audit class A): a lookup on a provably
+                // `temporary` record (temp_state Known(true)) is in-memory —
+                // no SQL round-trip to hoist (same gate as d1/d3/d33).
+                // Physical/Unknown keep firing (suppression-direction safe).
+                if is_known_temp(op) {
+                    skipped_temp_record += 1;
+                    continue;
+                }
                 let key_info = op.field_argument_infos.as_ref().and_then(|v| v.first());
                 let Some(key_info) = key_info else {
                     continue;
@@ -86,29 +101,60 @@ pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             }
 
             // Group by (recordVariableName.toLowerCase, key), preserving first-seen
-            // group order (al-sem `Map` insertion order).
+            // group order (al-sem `Map` insertion order). The group VALUE keeps the
+            // literal key so the id can disambiguate multi-key collisions (BUG-5).
             let mut group_order: Vec<String> = Vec::new();
-            let mut groups: std::collections::HashMap<String, Vec<usize>> =
+            let mut groups: std::collections::HashMap<String, (String, Vec<usize>)> =
                 std::collections::HashMap::new();
             for (op_idx, key) in &candidates {
                 let op = &routine.record_operations[*op_idx];
                 let group_key = format!("{}|{}", op.record_variable_name.to_lowercase(), key);
                 let entry = groups.entry(group_key.clone()).or_insert_with(|| {
                     group_order.push(group_key.clone());
-                    Vec::new()
+                    (key.clone(), Vec::new())
                 });
-                entry.push(*op_idx);
+                entry.1.push(*op_idx);
+            }
+
+            // BUG-5 (docs/detector-audit.md): the id `d4/{routine}/{loop}/{varLower}`
+            // omits the literal key, so TWO distinct keys each repeated 2+ times on
+            // the same variable collide. Count the QUALIFYING (2+ ops) key groups
+            // per variable; only when a variable has multiple does the id get the
+            // key appended — single-key groups keep the pre-fix id (goldens stable).
+            let mut qualifying_keys_per_var: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            for group_key in &group_order {
+                let (_, op_idxs) = &groups[group_key];
+                if op_idxs.len() < 2 {
+                    continue;
+                }
+                let var = routine.record_operations[op_idxs[0]]
+                    .record_variable_name
+                    .to_lowercase();
+                *qualifying_keys_per_var.entry(var).or_insert(0) += 1;
             }
 
             for group_key in &group_order {
-                let op_idxs = &groups[group_key];
+                let (literal_key, op_idxs) = &groups[group_key];
                 if op_idxs.len() < 2 {
                     continue;
                 }
                 let first = &routine.record_operations[op_idxs[0]];
                 let first_rec_var_lower = first.record_variable_name.to_lowercase();
 
-                let id = format!("d4/{}/{}/{}", routine.id, loop_info.id, first_rec_var_lower);
+                let multi_key = qualifying_keys_per_var
+                    .get(&first_rec_var_lower)
+                    .copied()
+                    .unwrap_or(0)
+                    > 1;
+                let id = if multi_key {
+                    format!(
+                        "d4/{}/{}/{}/{}",
+                        routine.id, loop_info.id, first_rec_var_lower, literal_key
+                    )
+                } else {
+                    format!("d4/{}/{}/{}", routine.id, loop_info.id, first_rec_var_lower)
+                };
                 let root_cause_key = id.clone();
 
                 // Evidence path: the loop step, then one step per op.
@@ -195,6 +241,7 @@ pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
+    stats.add_skip("tempRecord", skipped_temp_record);
     DetectorOutput {
         findings,
         stats,

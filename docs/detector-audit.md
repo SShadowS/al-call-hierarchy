@@ -8,7 +8,7 @@ many detectors), then singletons, then priority.
 ## Shared-root class A — temp records not gated (FP) [HIGH volume]
 The temp epoch gated d1/d3/d10/d33/d36/d37/d39/d40, but these still fire on `temporary` records:
 - ~~**d2** (event-fanout-in-loop): no temp guard; subscriber touching only a temp table → `any_db_subscriber=true` → fires.~~ **FIXED** (commit `fix(engine-audit-d2)`, engine branch): `is_known_temp` filter added to `D2Policy::terminals_at`; `any_db_subscriber` now keys off a Complete walk to a surviving op. Test: `tests/gap_audit_d2_guards.rs::subscriber_temp_record_ops_are_suppressed`.
-- **d4** (repeated-lookup-in-loop): `d4.rs:57-82` no temp_state check → repeated lookups on temp vars fire.
+- ~~**d4** (repeated-lookup-in-loop): `d4.rs:57-82` no temp_state check → repeated lookups on temp vars fire.~~ **FIXED** (commit `fix(engine-audit-d4)`, engine branch): `is_known_temp` gate added to the candidate loop (`tempRecord` skip stat); physical control still fires. Test: `tests/gap_audit_d4.rs::temp_record_repeated_lookup_is_suppressed` (+ control).
 - **d8** (commit-in-transaction): `writes_tables_of` counts TEMP-table writes toward the 3-table manager gate (FP inflation).
 - **d29** (modify-in-subscriber): by-value/temp records flagged.
 - **d43/d44/d45** (event capability cone): `capability_query::writes_tables_of` / `find_capabilities` carry NO `is_temp` annotation → temp writes produce spurious conflict/exposure findings.
@@ -53,7 +53,7 @@ FIX: net-effect (last SetRange/SetFilter/Reset by source position) for d41 + d33
 - **d34 FN / d35 FN [MED, by-design]**: `Unknown` effect skipped (avoid-FP G6 choice) → transitive commit-in-loop / in-subscriber missed in partial-coverage. Contentious (open-world conservative) — likely DEFER.
 
 ## Singleton bugs (correctness)
-- **d4 BUG-5**: finding id `d4/{routine}/{loop}/{varLc}` omits the literal key → two distinct keys in the same (routine,loop,var) → DUPLICATE ids (no merge_by_terminal).
+- ~~**d4 BUG-5**: finding id `d4/{routine}/{loop}/{varLc}` omits the literal key → two distinct keys in the same (routine,loop,var) → DUPLICATE ids (no merge_by_terminal).~~ **FIXED** (commit `fix(engine-audit-d4)`, engine branch): the literal key is appended to the id ONLY when a variable has 2+ qualifying key groups — single-key ids stay byte-identical (r4 golden verified unmoved). Test: `tests/gap_audit_d4.rs::two_distinct_keys_in_same_loop_get_distinct_ids`.
 - **d7 BUG-1**: rootCause doubles the anchor routine name (`chain.join` already includes it, appended again, d7.rs:218-223).
 - **d7 FN-1**: SCC anchor = first SORTED member; if that is external/dep → `else continue` drops the whole cycle (should pick first WORKSPACE member).
 - **d12 BUG-1**: missing `dep_routine_ids` primary gate (d12.rs:56-57 commented, not coded) → cross-app dep integration events fire d12.
@@ -64,10 +64,10 @@ FIX: net-effect (last SetRange/SetFilter/Reset by source position) for d41 + d33
 
 ## Priority fix order (clearest, highest-value first; group by shared root)
 1. ~~**B** — table-level trigger-Rec gate (d21/d37/d39) — extend the existing mod.rs gate, high-volume, easy.~~ DONE.
-2. **A** — temp-gate d2/d4/d8/d29/d43/d44/d45 — extend temp check / cone temp annotation, high-volume.
+2. **A** — temp-gate d2/d4/d8/d29/d43/d44/d45 — extend temp check / cone temp annotation, high-volume. (d2, d4 DONE.)
 3. **C** — d2 + d18 loop guards (terminator-Next, virtual table) — mirror d1, easy.
 4. **E** — d41 net-effect filter + d42 AddLoadFields-full-load + FlowField — clear FP bugs.
 5. **d29 Modify(false)** exemption — clear, canonical pattern.
-6. **bugs**: d4 id, d7 rootCause+anchor, d12 dep gate, d50 Suppress, d51 io_direction — small correctness fixes.
+6. **bugs**: ~~d4 id~~ (DONE), d7 rootCause+anchor, d12 dep gate, d50 Suppress, d51 io_direction — small correctness fixes.
 7. **FN**: d20 break, d22 implicit-Rec FlowField, d37 ModifyAll-not-persist — premise-narrowing fixes.
 8. **D** (RecordRef-as-op) — larger (L2 capture); **d34/d35 Unknown-skip**, **d14 internalsVisibleTo**, **d47/d48/d51 IsolatedStorage/TaskScheduler** — investigate/defer (open-world or schema).
