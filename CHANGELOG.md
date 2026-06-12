@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- G-7 (docs/engine-gaps.md): `d1-db-op-in-loop` findings whose EVERY path root routine is
+  provably dead are now DOWN-CONFIDENCED — confidence drops one notch (likely → possible)
+  and the rootCause gains "(looping routine appears unreachable from any entry point; see
+  d14-dead-routine)" (CDO triage batch 4 — `UpgradeOutputProfileOnDocsWorker`, whose only
+  caller is commented out). Deliberately NOT suppression: d14's dead-determination has its
+  own open-world false positives (the engine is source-only — reflection-style invocation,
+  unmodeled dispatch), so the finding KEEPS FIRING at the same severity, id, rootCauseKey,
+  and fingerprint (the fingerprint hashes the rootCauseKey, not the rootCause text or
+  confidence — suppression baselines are unaffected). The dead signal is d14's EXACT
+  emission criteria, factored into the shared `provably_dead_routine_ids` /
+  `classify_routine` (`src/engine/l5/detectors/d14.rs` — forward-BFS unreachable from the
+  entry-point closure + `local`/app-scoped-`internal` access + not a Test object + not a
+  property-expression host + not itself a root); d14's own output and stats are
+  byte-unchanged by the refactor. The check runs POST-merge across ALL merged paths
+  (canonical + additionalPaths): any live — or merely unprovable (public, Test object,
+  page-hosted) — path root keeps full confidence. New d1 stats bucket
+  `downConfidencedDeadRoutine`. d1 only for now (the gap's evidence is d1-only; other
+  detectors can adopt the shared helper if triage shows volume). Covered by
+  `tests/gap_g7_dead_routine.rs` (down-confidence + firing/severity preservation + live /
+  public / mixed-live-and-dead controls). Moves d1 confidence/rootCause text and the d1
+  stats shape in r4/cli-a/gate goldens only for dead-rooted fixtures; rebaseline deferred
+  to the consolidated gap-fix rebaseline task.
 - G-4 (docs/engine-gaps.md): `d1-db-op-in-loop` PURE-TRANSITIVE findings — the terminal
   op's own routine has NO loop around the op; the loop lives purely in an ancestor — now
   say so explicitly. The rootCause names the terminal routine and attributes the loop to

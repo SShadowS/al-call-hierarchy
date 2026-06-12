@@ -217,6 +217,19 @@ Cheap, eliminates a clean FP class.
 
 ## G-7 — dead code via commented-out call site not detected
 
+**Status: FIXED (down-confidence) (commit `fix(engine-g7): down-confidence perf findings in provably-dead routines (G-7)`).**
+d14's dead-determination is factored into the reusable `provably_dead_routine_ids`
+(`src/engine/l5/detectors/d14.rs` — the SAME `classify_routine` criteria d14 emits from:
+forward-BFS unreachable from the entry-point closure + `local`/app-scoped-`internal` access +
+not a Test object + not a property-expression host + not itself a root). d1 consults it
+post-merge: when EVERY path root routine (canonical + additionalPaths) is provably dead, the
+finding KEEPS FIRING at the same severity but its confidence drops one notch
+(likely → possible) and the rootCause gains "(looping routine appears unreachable from any
+entry point; see d14-dead-routine)". Deliberately NOT suppression (d14 itself has open-world
+FPs — compounding them would hide real findings); any live or merely-unprovable path root
+keeps full confidence. d1 only for now (the gap's evidence is d1-only; other detectors can
+adopt the same helper if triage shows volume). Covered by `tests/gap_g7_dead_routine.rs`.
+
 **Symptom:** `d1`/`d14` fire on a routine whose only caller is commented out — the routine is
 dead, the finding moot.
 

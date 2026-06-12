@@ -1010,6 +1010,47 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             downgraded_setup_singleton += 1;
         }
     }
+
+    // G-7 (docs/engine-gaps.md): DOWN-CONFIDENCE (never suppress) a finding whose
+    // EVERY path root routine — the canonical evidence path's first step plus every
+    // additionalPaths first step — is provably dead per d14's EXACT criteria
+    // (`provably_dead_routine_ids`: unreachable from the entry-point closure +
+    // `local`/app-scoped-`internal` + not a Test object + not a property-expression
+    // host + not itself a root). d14's dead-determination has its own open-world FPs
+    // (e.g. reflection-style invocation the resolver cannot see), so the finding
+    // KEEPS FIRING at the SAME severity — only the confidence drops one notch and
+    // the rootCause gains an explanatory note. Any live (or merely unprovable) path
+    // root keeps full confidence. Runs POST-merge so a terminal reachable from BOTH
+    // a dead and a live loop is judged across ALL its merged paths.
+    let mut down_confidenced_dead_routine = 0u64;
+    if !merged.is_empty() {
+        let dead = crate::engine::l5::detectors::d14::provably_dead_routine_ids(resolved, ctx);
+        if !dead.is_empty() {
+            for f in &mut merged {
+                let mut roots: Vec<&str> = Vec::new();
+                if let Some(first) = f.evidence_path.first() {
+                    roots.push(first.routine_id.as_str());
+                }
+                for path in f.additional_paths.iter().flatten() {
+                    if let Some(first) = path.first() {
+                        roots.push(first.routine_id.as_str());
+                    }
+                }
+                if roots.is_empty() || !roots.iter().all(|r| dead.contains(*r)) {
+                    continue;
+                }
+                down_confidenced_dead_routine += 1;
+                // One notch down; `possible` is already the floor (al-sem's capped
+                // level), so it stays put.
+                f.confidence.level = match f.confidence.level.as_str() {
+                    "confirmed" => "likely".to_string(),
+                    "likely" => "possible".to_string(),
+                    other => other.to_string(),
+                };
+                f.root_cause = insert_temp_note(&f.root_cause, NOTE_DEAD_ROUTINE);
+            }
+        }
+    }
     // Fingerprint AFTER merge — affectedObjects/affectedTables are unioned.
     for f in &mut merged {
         f.fingerprint = Some(fp_index.fingerprint_of(f));
@@ -1027,6 +1068,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     stats.add_skip("virtualTable", skipped_virtual_table);
     stats.add_skip("downgradedToInfo", downgraded_to_info);
     stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
+    stats.add_skip("downConfidencedDeadRoutine", down_confidenced_dead_routine);
     DetectorOutput {
         findings: merged,
         stats,
@@ -1045,6 +1087,12 @@ const NOTE_UNCERTAIN: &str = " (temp state uncertain)";
 /// the physical flow targets — a real SQL round-trip.
 const NOTE_TEMP_FLOWFIELD: &str =
     " (temporary record, but FlowField calculation queries the flow targets)";
+/// G-7 (docs/engine-gaps.md): appended (with the one-notch confidence drop) when
+/// EVERY path root routine of the finding is provably dead per d14's exact
+/// criteria. The finding still fires — the loop cost is real IF the routine is
+/// ever wired up — but a dead host makes it less actionable today.
+const NOTE_DEAD_ROUTINE: &str =
+    " (looping routine appears unreachable from any entry point; see d14-dead-routine)";
 
 /// RV-6 merge-tie reconciliation. `merge_by_terminal` groups by `rootCauseKey`; a
 /// group whose members DISAGREE on the temp-derived severity must collapse with the

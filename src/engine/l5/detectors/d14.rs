@@ -51,11 +51,9 @@ fn ends_with_test_ci(name: &str) -> bool {
     false
 }
 
-pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
-    let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
-
-    // Forward BFS from the reachable roots over graph.edges_by_from (follow edge.to).
+/// The forward-reachable set: BFS from `ctx.reachable_roots` over
+/// `graph.edges_by_from` (following `edge.to`).
+fn compute_reachable_set(ctx: &DetectorContext) -> HashSet<String> {
     let roots = &ctx.reachable_roots;
     let mut reachable: HashSet<String> = roots.iter().cloned().collect();
     let mut queue: VecDeque<String> = roots.iter().cloned().collect();
@@ -69,6 +67,98 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             }
         }
     }
+    reachable
+}
+
+/// Per-routine d14 classification — the SINGLE place the dead criteria live.
+/// `detect_d14` maps each variant to its stats bucket / finding; the G-7
+/// cross-detector helper (`provably_dead_routine_ids`) collects only `Dead`, so
+/// both consumers apply EXACTLY the same criteria by construction. Variants are
+/// checked in the original detector order (reachable → access → Test object →
+/// property-expression host → root) to keep the stats buckets byte-identical.
+enum D14Class {
+    /// `!body_available` — never a candidate (not counted).
+    NotCandidate,
+    /// In the forward-reachable closure → skip "other".
+    Reachable,
+    /// Not `local` / app-scoped `internal` → skip "nonLocal".
+    NonFlaggableAccess,
+    /// Owning object name matches `/Tests?$/i` → skip "other".
+    TestObject,
+    /// Owning object's call graph is not fully modeled → skip
+    /// "propertyExpressionHost".
+    PropertyExpressionHost,
+    /// Itself a reachable root → skip "other".
+    Root,
+    /// Provably dead per every d14 criterion — d14 emits a finding.
+    Dead,
+}
+
+fn classify_routine(
+    r: &crate::engine::l3::l3_workspace::L3Routine,
+    reachable: &HashSet<String>,
+    ctx: &DetectorContext,
+) -> D14Class {
+    // roleOf(r) === "primary": source-only ⇒ always true.
+    if !r.body_available {
+        return D14Class::NotCandidate;
+    }
+    if reachable.contains(&r.id) {
+        return D14Class::Reachable;
+    }
+    // `local` is always flaggable; `internal` only when no app is granted
+    // internal access (source-only default: internal_reachable_externally=false).
+    // "protected" / default (public) → None entry in access_modifier ⇒ never
+    // flaggable. Read the modifier off the routine directly (mirrors al-sem's
+    // `r.accessModifier`).
+    let access = r.access_modifier.as_deref();
+    let access_flaggable = access == Some("local")
+        || (access == Some("internal") && !ctx.internal_reachable_externally);
+    if !access_flaggable {
+        return D14Class::NonFlaggableAccess;
+    }
+    if let Some(obj) = ctx.objects_by_id.get(r.object_id.as_str()).copied() {
+        if ends_with_test_ci(&obj.name) {
+            return D14Class::TestObject;
+        }
+        if OBJECT_TYPES_WITHOUT_FULL_CALL_GRAPH.contains(&obj.object_type.as_str()) {
+            return D14Class::PropertyExpressionHost;
+        }
+    }
+    if ctx.reachable_roots.contains(&r.id) {
+        return D14Class::Root;
+    }
+    D14Class::Dead
+}
+
+/// G-7 (docs/engine-gaps.md): the set of routine ids d14 would flag DEAD —
+/// EXACTLY its emission criteria, via the shared `classify_routine`. Other
+/// detectors consult this to DOWN-CONFIDENCE (never suppress) findings rooted
+/// only in provably-dead routines. The signal is deliberately strong: a routine
+/// is in this set only when it is unreachable from the entry-point closure
+/// (triggers, event subscribers, every non-`local` procedure — the open-world
+/// surface), is `local`/app-scoped-`internal`, and sits on an object whose call
+/// graph the resolver fully models.
+pub(crate) fn provably_dead_routine_ids(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> HashSet<String> {
+    let reachable = compute_reachable_set(ctx);
+    resolved
+        .workspace
+        .routines
+        .iter()
+        .filter(|r| matches!(classify_routine(r, &reachable, ctx), D14Class::Dead))
+        .map(|r| r.id.clone())
+        .collect()
+}
+
+pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+    let ws = &resolved.workspace;
+    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+
+    // Forward BFS from the reachable roots over graph.edges_by_from (follow edge.to).
+    let reachable = compute_reachable_set(ctx);
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
@@ -77,43 +167,30 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut skipped_property_expression_host = 0u64;
 
     for r in &ws.routines {
-        // roleOf(r) === "primary": source-only ⇒ always true.
-        if !r.body_available {
-            continue;
-        }
-        candidates_considered += 1;
-        if reachable.contains(&r.id) {
-            skipped_other += 1;
-            continue;
-        }
-        // `local` is always flaggable; `internal` only when no app is granted
-        // internal access (source-only default: internal_reachable_externally=false).
-        // "protected" / default (public) → None entry in access_modifier ⇒ never
-        // flaggable. Read the modifier off the routine directly (mirrors al-sem's
-        // `r.accessModifier`).
-        let access = r.access_modifier.as_deref();
-        let access_flaggable = access == Some("local")
-            || (access == Some("internal") && !ctx.internal_reachable_externally);
-        if !access_flaggable {
-            skipped_non_local += 1;
-            continue;
-        }
-        let obj = ctx.objects_by_id.get(r.object_id.as_str()).copied();
-        if let Some(obj) = obj {
-            if ends_with_test_ci(&obj.name) {
+        match classify_routine(r, &reachable, ctx) {
+            D14Class::NotCandidate => continue,
+            D14Class::Reachable | D14Class::TestObject | D14Class::Root => {
+                candidates_considered += 1;
                 skipped_other += 1;
                 continue;
             }
-            if OBJECT_TYPES_WITHOUT_FULL_CALL_GRAPH.contains(&obj.object_type.as_str()) {
+            D14Class::NonFlaggableAccess => {
+                candidates_considered += 1;
+                skipped_non_local += 1;
+                continue;
+            }
+            D14Class::PropertyExpressionHost => {
+                candidates_considered += 1;
                 skipped_property_expression_host += 1;
                 continue;
             }
-        }
-        if roots.contains(&r.id) {
-            skipped_other += 1;
-            continue;
+            D14Class::Dead => {
+                candidates_considered += 1;
+            }
         }
 
+        let access = r.access_modifier.as_deref();
+        let obj = ctx.objects_by_id.get(r.object_id.as_str()).copied();
         let access_note = if access == Some("internal") {
             " The workspace's app.json has no `internalsVisibleTo` entries, so no other app can call it."
         } else {
