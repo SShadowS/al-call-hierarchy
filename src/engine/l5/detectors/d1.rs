@@ -548,6 +548,45 @@ fn build_finding(
     (finding, verdict)
 }
 
+/// G-18 (docs/engine-gaps.md): does this resolved edge's TARGET routine actually
+/// carry the call site's own callee name?
+///
+/// Why this is needed: the internal routine id has NO member discriminator, so
+/// two same-name same-signature triggers in one object (two page actions'
+/// `OnAction`, two fields' `OnValidate`, …) collide on the id — and with them
+/// every derived id (`{rid}/cs{n}`). The combined graph then files BOTH bodies'
+/// edges under the one shared `from` key, and a lookup by callsite id alone can
+/// return the SIBLING body's edge — splicing an in-loop call site onto a call
+/// chain the loop is not on (the G-18 false positive).
+///
+/// Why it can never reject a genuinely-own edge: the call resolver is NAME-keyed
+/// — a `direct`/`method` edge's target routine always carries the call site's
+/// callee name (case-insensitive, quotes stripped). Un-nameable callees
+/// (object-run / unknown) and out-of-source targets (no routine entry) are
+/// ACCEPTED — the pre-G-18 behavior — so the guard only ever filters cross-body
+/// edges under a colliding id; it cannot suppress a genuine transitive finding.
+/// (Implicit-trigger edges never reach this guard: their `callsite_id` is the
+/// record-op id `{rid}/op{n}`, which can never equal a call site's `{rid}/cs{n}`.)
+fn edge_target_matches_callsite_callee(
+    edge: &CombinedEdge,
+    cs: &crate::engine::l2::features::PCallSite,
+    routine_by_id: &HashMap<&str, &L3Routine>,
+) -> bool {
+    use crate::engine::l2::features::PCallee;
+    let callee_name = match &cs.callee {
+        PCallee::Bare { name } => name,
+        PCallee::Member { method, .. } => method,
+        // No comparable method name — accept (cannot disambiguate; conservative
+        // in the keep-firing direction).
+        PCallee::ObjectRun { .. } | PCallee::Unknown => return true,
+    };
+    let Some(target) = routine_by_id.get(edge.to.as_str()) else {
+        return true; // out-of-source target — accept (pre-G-18 behavior)
+    };
+    crate::engine::l2::node_util::strip_quotes(callee_name).to_lowercase()
+        == target.name.to_lowercase()
+}
+
 /// The D1 WalkPolicy — holds references to the eager indexes the closures read.
 struct D1Policy<'a> {
     routine_by_id: &'a HashMap<&'a str, &'a L3Routine>,
@@ -876,10 +915,24 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             };
 
             // Resolve the edge from graph.edgesByFrom by callsiteId.
+            //
+            // G-18 (docs/engine-gaps.md): the callsite-id match alone is NOT
+            // sufficient. Two same-name same-signature triggers in one object
+            // (e.g. two page actions, each `trigger OnAction()`) COLLIDE on the
+            // internal routine id (`compute_routine_id` carries no member
+            // discriminator), so their call-site ids (`{rid}/cs{n}`) collide too
+            // and `edges_by_from[{rid}]` mixes BOTH bodies' edges under one key.
+            // Picking the sibling body's edge for THIS body's in-loop call site
+            // attributed the loop to a call chain it is not on (the CDO batch-7
+            // `eDocumentsConfigExists` false positive). The edge's TARGET must
+            // also match this call site's own callee name — see
+            // `edge_target_matches_callsite_callee` for why this can never
+            // reject a genuinely-own edge.
             let edge = ctx.graph.edges_by_from.get(&routine.id).and_then(|edges| {
-                edges
-                    .iter()
-                    .find(|e| e.callsite_id.as_deref() == Some(cs.id.as_str()))
+                edges.iter().find(|e| {
+                    e.callsite_id.as_deref() == Some(cs.id.as_str())
+                        && edge_target_matches_callsite_callee(e, cs, &ctx.routine_by_id)
+                })
             });
             let Some(edge) = edge else {
                 // No resolved edge — opaque callee.

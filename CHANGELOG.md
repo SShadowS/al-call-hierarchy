@@ -25,6 +25,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-18 (docs/engine-gaps.md): `d1-db-op-in-loop` no longer attributes a loop to an
+  op when the loop is on a SIBLING call path, not on the actual path to the op.
+  Root cause: the internal routine id (`compute_routine_id`) carries no member
+  discriminator, so two same-name same-signature triggers in one object (e.g. two
+  page actions, each `trigger OnAction()`) collide on the id — and with it every
+  derived call-site id (`{rid}/cs{n}`). The combined graph files BOTH bodies'
+  edges under the one shared `from` key, and d1's root-edge lookup (by callsite id
+  alone) could pick the SIBLING action's edge for the LOOPING action's in-loop
+  call site — walking a straight-line chain the loop is not on (the CDO batch-7
+  `eDocumentsConfigExists` IsEmpty ×2 false positives, loop mis-attributed from a
+  separate `RunReport`-style looping action). d1's root-edge match now also
+  requires the edge's TARGET routine to carry the call site's own callee name
+  (`edge_target_matches_callsite_callee`): the resolver is name-keyed, so a
+  genuinely-own `direct`/`method` edge always matches — the guard only ever
+  filters cross-body edges under a colliding id and can never suppress a genuine
+  transitive finding (un-nameable object-run/unknown callees and out-of-source
+  targets are accepted unchanged; implicit-trigger edges never reach the guard —
+  their callsite ref is an op id). A real in-loop chain THROUGH a colliding
+  trigger and the vanilla transitive shape both keep firing at unchanged severity
+  (`tests/gap_g18_transitive_loop.rs`); `gap_g1`/`gap_g4` stay green. The
+  underlying routine-id collision itself (which also conflates `routine_by_id` /
+  `call_site_by_id` views for colliding triggers) is documented in
+  docs/engine-gaps.md G-18 as residual follow-up.
 - G-17 (docs/engine-gaps.md): `d33-unfiltered-bulk-write` no longer fires when the
   filter was provably applied by (a) an in-source helper defined ON the receiver's
   own TABLE — the real-world G-3 miss: `LineReport.SetEMailTemplateLineFilter(Rec);

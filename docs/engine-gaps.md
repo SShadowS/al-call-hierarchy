@@ -594,6 +594,37 @@ resolution? the helper sets SetRange on the by-var arg — should match); add `S
 as a filter-applying builtin; dep-table helpers need the ABI side (lower priority).
 
 ## G-18 — d1 transitive loop FALSE attribution (correctness, low volume)
+
+**Status: FIXED (commit `fix(engine-g18): d1 loop must be on the actual path to the op (G-18)`).**
+Reproduced exactly as triaged: the ROOT CAUSE is an internal routine-id COLLISION, not the
+path walker (which is per-branch sound). `compute_routine_id` keys app/object-type/number/
+kind/name/signature with NO member discriminator, so two same-name same-signature triggers
+in one object — two page actions' `trigger OnAction()` (the CDO shape), two fields'
+`OnValidate`, … — get the SAME internal id, and every derived id collides with them
+(`{rid}/cs{n}`, `{rid}/op{n}`, `{rid}/loop{n}`). The combined graph then files BOTH bodies'
+edges under the one shared `from` key, and d1's root-edge lookup (`callsite_id == cs.id`
+alone) could return the SIBLING body's edge for the LOOPING body's in-loop call site —
+splicing the loop onto a straight-line chain it is not on. Repro fixture: a page with a
+looping `RunBatch.OnAction` (in-loop call unresolved) + a straight-line `Finish.OnAction →
+HandleSetup → CreateSetup` (IsEmpty/Insert) — pre-fix both ops fired as "A loop in OnAction
+reaches … in CreateSetup", byte-matching the batch-7 FP. Fix in d1
+(`edge_target_matches_callsite_callee`, `src/engine/l5/detectors/d1.rs`): the root edge must
+ALSO have a target routine carrying the call site's own callee name (quotes stripped,
+case-insensitive). The resolver is name-keyed, so a genuinely-own `direct`/`method` edge
+always matches — the guard only filters cross-body edges under a colliding id and cannot
+suppress a real transitive finding (object-run/unknown callees and out-of-source targets are
+accepted unchanged; implicit-trigger edges never reach the guard — their callsite ref is an
+op id `{rid}/op{n}`). Controls: a REAL in-loop chain through a colliding trigger still fires
+(and is now picked deterministically by name instead of by edge-sort luck), the vanilla
+transitive shape still fires at `high`. Tests: `tests/gap_g18_transitive_loop.rs`;
+`gap_g1`/`gap_g4` green. No in-repo golden moved (no fixture has colliding triggers with
+cross-name edges). RESIDUAL (follow-up, not d1-specific): the id collision itself remains —
+`routine_by_id`/`call_site_by_id` keep one arbitrary body per colliding id, so any OTHER
+consumer matching root edges by callsite id alone (e.g. d2-style walks) or walking THROUGH a
+colliding node could still conflate sibling bodies; the durable fix is a member discriminator
+in the internal routine id (RE-11 territory — id-schema change, golden-moving, deliberately
+out of G-18's scope).
+
 **Symptom:** d1 reports an op as in-a-loop when, on the real call path, it is NOT inside any loop —
 the engine attributes a loop from a SIBLING call path of a shared callee. (Distinct from G-4, which
 was wording for genuinely-per-iteration ops; here the op truly runs once.)
