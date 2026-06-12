@@ -24,10 +24,21 @@ fn kind_label(exit_kind: &str) -> &'static str {
         "exit" => "Exit",
         "error" => "Error",
         "currreport-quit" => "CurrReport.Quit",
-        // al-sem indexes only these three kinds; an unrecognised kind cannot occur,
-        // but never panic in the engine — fall back to the raw kind via a stable
-        // empty label would diverge, so this arm is unreachable in practice.
+        // Detector-audit d20 FN: `break` terminates the enclosing loop (not the
+        // routine) — worded distinctly in `leaves_phrase`.
+        "break" => "break",
+        // Any other kind cannot occur; never panic in the engine.
         _ => "Exit",
+    }
+}
+
+/// What control leaves when it hits the exit: `break` leaves the enclosing LOOP;
+/// every other kind (exit/Error/CurrReport.Quit) leaves the whole routine.
+fn leaves_phrase(exit_kind: &str) -> &'static str {
+    if exit_kind == "break" {
+        "the enclosing loop"
+    } else {
+        "the routine"
     }
 }
 
@@ -50,6 +61,7 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
 
         for u in &routine.unreachable_statements {
             let label = kind_label(&u.exit_kind);
+            let leaves = leaves_phrase(&u.exit_kind);
 
             let path = vec![
                 EvidenceStep {
@@ -58,7 +70,7 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                     callsite_id: None,
                     loop_id: None,
                     source_anchor: anchor_of(&u.exit_anchor, routine),
-                    note: format!("{label} statement — control leaves the routine here"),
+                    note: format!("{label} statement — control leaves {leaves} here"),
                 },
                 EvidenceStep {
                     routine_id: routine.id.clone(),
@@ -77,9 +89,9 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             let confidence: FindingConfidence = to_confidence(&[], "likely");
 
             let root_cause = format!(
-                "{}: the statement after `{}` is unreachable — control leaves the routine \
+                "{}: the statement after `{}` is unreachable — control leaves {} \
                  before it can run.",
-                routine.name, label
+                routine.name, label, leaves
             );
 
             let mut finding = Finding {

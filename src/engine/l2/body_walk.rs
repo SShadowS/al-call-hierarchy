@@ -204,6 +204,14 @@ fn unconditional_exit_kind(node: Node, source: &str) -> Option<&'static str> {
     if node.kind() == "exit_statement" {
         return Some("exit");
     }
+    // Detector-audit d20 FN (TS-parity): `break` terminates the enclosing loop, so
+    // a statement that DIRECTLY follows it in the SAME code_block never executes.
+    // The unreachable scan is block-scoped (next-sibling-only), so this cannot
+    // over-mark past the loop body — a conditional `if c then break` is an
+    // if_statement node, never classified here.
+    if node.kind() == "break_statement" {
+        return Some("break");
+    }
     if node.kind() != "call_expression" {
         return None;
     }
