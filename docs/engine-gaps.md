@@ -454,3 +454,96 @@ IsTemporary guard, PK/FlowField field class), everything else stays firing.
 
 The medium/low band's higher FP rate is concentrated in G-9 (trigger-`Rec`) and the load-state
 detectors — addressing G-9 alone would remove the largest single chunk.
+
+
+---
+
+# Iteration-2 gaps (G-13..G-19) — residual FPs found re-triaging the post-G1..G12 binary
+
+Re-triaged all 768 post-fix primary findings against source (19 Sonnet batches) → ~110 residual
+false positives (~14%, down from ~29%). Several are INCOMPLETE prior fixes; a few are genuinely
+missed detectors. Ordered by volume x ease.
+
+## G-13 — d10 (self-modifying-loop) and d39 never temp-gated (HIGH volume, easy)
+**Symptom:** `d10-self-modifying-loop` fires on `Delete`/`Modify` of the iterating record even when
+it is a `temporary` record — an in-memory cursor self-modify is safe (cursor corruption only
+applies to physical SQL cursors). The temp-state epoch gated d1/d3/d33/d36/d37/d40 on `Known(true)`
+but d10 (and `d39-record-left-dirty-across-chain`) were never added to that set.
+**Evidence:** batches 1 (x3), 4, 13 (x2), 14, 17 — ~10 FPs (TempDOFileEDoc, temp worksheet line,
+OpenDocFiles, DOFileExportedXml...). d39 on temp: batch 19 (DOFile).
+**Approach:** add the same `Known(true)` temp gate the other detectors use to d10 and d39
+(skip/suppress when the op's record is `Known(true)` temporary). Reuse the existing `op.temp_state`
+check + (for d10) the path-resolved verdict. Suppression-direction safe.
+
+## G-14 — G-9 trigger set missed OnLookup / OnAssistEdit field triggers (HIGH volume)
+**Symptom:** d11/d21/d37 still fire on `Rec` inside `OnLookup` and `OnAssistEdit` field triggers
+(and field-level `OnValidate` lookups). G-9 covered OnValidate/OnAction/OnAfterGetRecord/
+OnDrillDown/OnAfterGetCurrRecord but NOT OnLookup/OnAssistEdit — the AL platform loads `Rec`
+before those too, and a `Validate` in OnLookup is persisted by the page framework.
+**Evidence:** batches 12 (x4), 14 (x8), 15 (x4), 18 (x2) — ~18 FPs. residual-of-G9.
+**Approach:** extend `is_platform_loaded_trigger_rec` (detectors/mod.rs) — add `OnLookup`,
+`OnAssistEdit` to the page trigger-name set (and confirm field-level OnValidate is covered).
+
+## G-15 — d3/d42 fire on field WRITES, post-Init writes, and PK fields (medium)
+**Symptom:** (a) `d3-missing-setloadfields` fires when the fields after a `Get`/`FindLast` are
+WRITTEN (Init + assign + Insert / "if not Get then begin Init; ... end"), not read — writes need no
+SetLoadFields. (b) An intervening `Init()`/`Clear()` resets the buffer, making the prior load
+irrelevant. (c) `d42-cross-call-wrong-setloadfields` includes PRIMARY-KEY fields in the
+must-be-loaded set (PK is always loaded — same as the G-12 fix, not applied to d42).
+**Evidence:** batches 3 (write-only-after-get x1, d42 PK x3), 5 (get-false-writes), 6
+(write-after-init), 12 (write-after-init) — ~8 FPs.
+**Approach:** d3 — only count field READS as "accessed without load" (exclude write targets);
+treat an `Init`/`Clear` between the Get and the access as resetting load relevance; also suppress
+when the Get returns into a `if not Get then` construct-and-Insert. d42 — exclude PK fields
+(reuse G-12's PK-exclusion helper).
+
+## G-16 — record loaded via deeper wrappers / record-assignment not recognized (medium)
+**Symptom:** d11/d21 fire "never loaded" when the record was loaded via (a) a multi-hop or
+non-Get-named wrapper (`FindTemplate`->`FindTemplateWithReportID`->FindSet;
+`GetApplicationAreaSetupRecFromCompany(var,...)` facade; `InsertIfNotExists` which Gets-or-Inserts),
+or (b) a record `:=` assignment from a loaded var (`Cust := Rec`, `EmailLog2 := EmailLog`).
+**Evidence:** batches 8, 16 (x4 + assign x2), 18 (facade x2 + assign x1), 19 (InsertIfNotExists)
+— ~10 FPs. residual-of-G10 (one-hop was too shallow) + NEW record-assign-as-load.
+**Approach:** (a) extend G-10's callee-load summary to follow >1 hop (bounded depth) and recognize
+Get/Find anywhere in the wrapper's transitive body on the by-var arg; (b) treat `RecB := RecA` as
+RecB loaded when RecA is loaded (a load event in the intraprocedural load scan).
+
+## G-17 — d33 still misses some one-hop filters + page selection filter (medium)
+**Symptom:** `d33-unfiltered-bulk-write` still fires when the filter is set by (a) an IN-SOURCE
+one-hop helper that G-3 should have caught (`SetEMailTemplateLineFilter`, `SetMergeFieldFilter`),
+(b) a helper defined on a DEPENDENCY table (`SetTemplateFilter` in a .app), or (c)
+`CurrPage.SetSelectionFilter(Rec)` (page row selection).
+**Evidence:** batches 9 (in-source helper not recognized — a G-3 BUG; dep-table helper), 16
+(SetMergeFieldFilter), 17 (CurrPage.SetSelectionFilter x2) — ~5 FPs.
+**Approach:** debug why G-3's one-hop filter summary misses these in-source helpers (binding
+resolution? the helper sets SetRange on the by-var arg — should match); add `SetSelectionFilter`
+as a filter-applying builtin; dep-table helpers need the ABI side (lower priority).
+
+## G-18 — d1 transitive loop FALSE attribution (correctness, low volume)
+**Symptom:** d1 reports an op as in-a-loop when, on the real call path, it is NOT inside any loop —
+the engine attributes a loop from a SIBLING call path of a shared callee. (Distinct from G-4, which
+was wording for genuinely-per-iteration ops; here the op truly runs once.)
+**Evidence:** batch 7 (eDocumentsConfigExists IsEmpty x2 — reached via a non-looping chain, loop
+mis-attributed from RunReport's separate path).
+**Approach:** audit the transitive loop-attribution / path construction — a loop must be on the
+ACTUAL path to the op, not merely in some sibling call of an ancestor. Needs care; correctness fix.
+
+## G-19 — temp via by-var param with no keyword, all callers temp (contentious / likely WONTFIX or source-fix)
+**Symptom:** d1/d3/d10/d33 fire inside a callee on a `var Record X` param that LACKS the `temporary`
+keyword, even though every resolved caller in this app passes a `temporary` local. Per-path the op
+is `ParameterDependent`; with no single caller frame (intra-callee finding) it stays Unknown/fires.
+**Evidence:** batches 1, 11 (x5 TempAut*), 15 (x4 CDO Temp Blob), 16 (x2), 19 — ~12 FPs.
+**Assessment:** OPEN-WORLD CORRECT to fire (the callee could be called with a physical record
+elsewhere). Two non-suppression options: (1) whole-program closed-world — if ALL resolved callers
+pass temp, treat the param as temp (precision, app-scoped); (2) recommend the SOURCE add the
+`temporary` keyword to the param (contract-trust then makes it Known(true)). Likely defer or treat
+as a precision feature, not a clear bug. Do NOT hard-suppress.
+
+## Iteration-2 fix order
+1. **G-13** (d10/d39 temp-gate) — high volume, trivial (reuse temp gate).
+2. **G-14** (OnLookup/OnAssistEdit) — high volume, extend the G-9 set.
+3. **G-15** (d3 writes/Init/PK + d42 PK) — clean sub-classes.
+4. **G-16** (deeper load-wrappers + record-assign) — extend G-10.
+5. **G-17** (d33 one-hop bug + SetSelectionFilter) — debug G-3 + add builtin.
+6. **G-18** (transitive false-attribution) — correctness, careful.
+7. **G-19** — investigate; likely defer/source-fix (do not hard-suppress).
