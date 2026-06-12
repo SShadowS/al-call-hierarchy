@@ -439,14 +439,28 @@ pub(crate) const RECORD_FILTER_OPS: &[&str] = &["SetRange", "SetFilter"];
 
 /// G-3 suppression signal: true iff a CALL SITE strictly before `op_anchor`
 /// in `routine` provably left a narrowing filter on the record variable
-/// `record_variable_name` (docs/engine-gaps.md G-3). Reuses the G-10 one-hop
-/// callee summary: the record variable must be passed as an argument whose
-/// binding RESOLVED to a by-`var` record parameter of a workspace callee, and
-/// that callee's NET effect on that parameter must be "filtered" — its last
-/// filter-relevant op (`SetRange`/`SetFilter`/`Reset`) on the parameter is a
-/// filter, not a `Reset`. A `Reset` on the receiver in the CALLER between the
-/// call and `op_anchor` wipes the callee-applied filters, so that call site
-/// proves nothing (mirrors d33's intraprocedural `was_filtered_before`).
+/// `record_variable_name` (docs/engine-gaps.md G-3, extended by G-17).
+/// Three exact, structural tiers:
+///
+/// - By-`var` argument (G-3): the record variable is passed as an argument
+///   whose binding RESOLVED to a by-`var` record parameter of a workspace
+///   callee, and that callee's NET effect on that parameter is "filtered" —
+///   its last filter-relevant op (`SetRange`/`SetFilter`/`Reset`) on the
+///   parameter is a filter, not a `Reset`.
+/// - Receiver method (G-17a): the record variable is the RECEIVER of a member
+///   call that RESOLVED to a procedure defined on the receiver's own table,
+///   and that table method's NET effect on its implicit self record is
+///   "filtered" (bare `SetRange(...)` in a table method filters the implicit
+///   self, which aliases the caller's receiver — e.g. CDO's
+///   `LineReport.SetEMailTemplateLineFilter(Rec); LineReport.DeleteAll();`,
+///   where the by-VALUE argument only supplies the filter VALUES).
+/// - Page selection (G-17b): `CurrPage.SetSelectionFilter(<var>)` — the
+///   platform builtin that copies the page's row selection onto the argument
+///   record as filters.
+///
+/// A `Reset` on the receiver in the CALLER between the call and `op_anchor`
+/// wipes the callee-applied filters, so that call site proves nothing
+/// (mirrors d33's intraprocedural `was_filtered_before`).
 ///
 /// Anything uncertain (unresolved callee, by-value binding, different
 /// variable, non-filtering callee, call after the op) returns `false` —
@@ -473,11 +487,149 @@ pub(crate) fn record_filtered_by_call_before(
         if reset_after_call {
             continue;
         }
+        // G-17(b): `<page>.SetSelectionFilter(<var>)` — page builtin.
+        if call_is_set_selection_filter_on(cs, &var_lc) {
+            return true;
+        }
+        // G-17(a): member call ON the receiver to a filter method defined on
+        // the receiver's own table.
+        if let PCallee::Member { receiver, method } = &cs.callee {
+            if receiver.to_lowercase() == var_lc
+                && receiver_table_method_net_filters_self(routine, ctx, &var_lc, method)
+            {
+                return true;
+            }
+        }
+        // G-3: by-`var` argument into a resolved callee that filters it.
         if callee_applies_op_to_by_var_arg(ctx, cs, &var_lc, callee_net_filters_param) {
             return true;
         }
     }
     false
+}
+
+/// G-17(b): is `cs` a member call `<receiver>.SetSelectionFilter(<var_lc>)`?
+/// `SetSelectionFilter` is the page/platform builtin that copies the page's
+/// row selection onto the argument record as filters — a narrowing filter on
+/// that record. Matched structurally (the receiver — `CurrPage` or a page
+/// variable — is not a workspace routine, so no callee summary can exist);
+/// the bound argument must be exactly the bulk-op record variable.
+fn call_is_set_selection_filter_on(cs: &PCallSite, var_lc: &str) -> bool {
+    let PCallee::Member { method, .. } = &cs.callee else {
+        return false;
+    };
+    if !method.eq_ignore_ascii_case("SetSelectionFilter") {
+        return false;
+    }
+    cs.argument_bindings
+        .iter()
+        .any(|b| b.source_variable_name.as_deref() == Some(var_lc))
+}
+
+/// G-17(a): does `method`, a procedure defined on the RECEIVER's own table,
+/// provably leave its implicit self record (the caller's receiver) filtered?
+///
+/// The call resolver never resolves a member call through a RECORD receiver
+/// (`parse_object_type_ref` has no `Record` keyword — the G-3 root cause), so
+/// no resolved edge exists for this shape; the join is done here instead: the
+/// receiver variable's RESOLVED `table_id` (the same resolution the bulk op's
+/// own `table_id` uses) identifies the table object, and every in-source
+/// procedure with that name on that object must net-filter its implicit self
+/// (all-must-match is conservative under same-name overloads). An internal
+/// table id is `${appGuid}/table/${n}` while an object id is
+/// `${appGuid}/Table/${n}` — compared case-insensitively; a TableExtension's
+/// `${appGuid}/TableExtension/${n}` can never match, so extension-defined
+/// helpers (different implicit-self semantics on the SAME table) are excluded.
+/// Every uncertainty (unresolved receiver table, no such method, missing
+/// body, parse-incomplete) returns `false` — d33 keeps firing.
+fn receiver_table_method_net_filters_self(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    var_lc: &str,
+    method: &str,
+) -> bool {
+    let Some(table_id) = routine
+        .record_variables
+        .iter()
+        .find(|rv| rv.name.to_lowercase() == var_lc)
+        .and_then(|rv| rv.table_id.as_deref())
+    else {
+        return false;
+    };
+    let mut found = false;
+    for callee in ctx.routine_by_id.values() {
+        if !callee.object_id.eq_ignore_ascii_case(table_id)
+            || callee.kind != "procedure"
+            || !callee.name.eq_ignore_ascii_case(method)
+        {
+            continue;
+        }
+        if !callee.body_available || callee.parse_incomplete {
+            return false;
+        }
+        if !callee_net_filters_implicit_self(callee) {
+            return false;
+        }
+        found = true;
+    }
+    found
+}
+
+/// G-17(a): is the table method `callee`'s NET effect on its implicit SELF
+/// record "filtered"? Inside a table method the implicit self's ops surface
+/// in two shapes the L2 walk produces: bare call sites (`SetRange(...)` —
+/// table PROCEDURES carry no implicit-Rec frame, so the op is recorded as a
+/// bare call) and explicit-`Rec` shapes (`Rec.SetRange(...)` as a member call
+/// site, or a record operation on `Rec` where the walk recognized it). The
+/// LAST filter-relevant event (by source position) must be a filter
+/// (`RECORD_FILTER_OPS`), not a `Reset` — mirrors `callee_net_filters_param`.
+/// No filter-relevant event at all returns `false`.
+fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
+    /// `Some(true)` = filter, `Some(false)` = Reset, `None` = not filter-relevant.
+    fn filter_event(name: &str) -> Option<bool> {
+        if RECORD_FILTER_OPS
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case(name))
+        {
+            Some(true)
+        } else if name.eq_ignore_ascii_case("Reset") {
+            Some(false)
+        } else {
+            None
+        }
+    }
+    fn keep_latest<'a>(
+        last: &mut Option<(&'a PAnchor, bool)>,
+        anchor: &'a PAnchor,
+        is_filter: bool,
+    ) {
+        match last {
+            Some((prev, _)) if !before_anchor(prev, anchor) => {}
+            _ => *last = Some((anchor, is_filter)),
+        }
+    }
+    let mut last: Option<(&PAnchor, bool)> = None;
+    for op in &callee.record_operations {
+        if !op.record_variable_name.eq_ignore_ascii_case("rec") {
+            continue;
+        }
+        if let Some(is_filter) = filter_event(&op.op) {
+            keep_latest(&mut last, &op.source_anchor, is_filter);
+        }
+    }
+    for cs in &callee.call_sites {
+        let name = match &cs.callee {
+            PCallee::Bare { name } => Some(name.as_str()),
+            PCallee::Member { receiver, method } if receiver.eq_ignore_ascii_case("rec") => {
+                Some(method.as_str())
+            }
+            _ => None,
+        };
+        if let Some(is_filter) = name.and_then(filter_event) {
+            keep_latest(&mut last, &cs.source_anchor, is_filter);
+        }
+    }
+    last.is_some_and(|(_, is_filter)| is_filter)
 }
 
 /// G-3: is the callee's NET effect on its parameter `param_lc` (lowercased)

@@ -551,6 +551,38 @@ identifiers, so field writes / expression RHS never suppress. Tests:
 `gap_g10_load_wrappers` stays green.
 
 ## G-17 — d33 still misses some one-hop filters + page selection filter (medium)
+
+**Status: FIXED (commit `fix(engine-g17): d33 recognizes in-source filter helpers +
+CurrPage.SetSelectionFilter (G-17)`).** (Sub-class (b), dependency-table helpers, stays
+deferred — needs the ABI side.)
+ROOT CAUSE of the (a) "G-3 bug": the missed helpers are not by-`var`-argument helpers at all —
+they are procedures defined ON THE RECEIVER'S OWN TABLE
+(`EMailTemplLineReport.SetEMailTemplateLineFilter(Rec); EMailTemplLineReport.DeleteAll();`).
+The argument (`Rec`) is passed BY VALUE and only supplies the filter VALUES; the helper filters
+its implicit SELF record (bare `SetRange(...)` in the table-method body), which aliases the
+caller's receiver. G-3's resolved-by-`var`-binding join can never match that shape, and the
+call resolver can't help either: `parse_object_type_ref` has no `Record` keyword (al-sem
+parity), so a record-receiver member call is never resolved to a table procedure
+(`unknown_method`). Fix in `record_filtered_by_call_before`
+(`src/engine/l5/detectors/mod.rs`), two new tiers ahead of the G-3 by-`var` tier:
+(a) receiver-method (`receiver_table_method_net_filters_self`): join the receiver variable's
+RESOLVED `table_id` (the same record-type resolution the bulk op's `table_id` uses) to the
+in-source table procedure(s) by name — object-id vs table-id compared case-insensitively
+(`guid/Table/n` vs `guid/table/n`), TableExtension ids never match (extension helpers stay
+unrecognized, conservative) — and require ALL same-name candidates to net-filter the implicit
+self (`callee_net_filters_implicit_self`: last `SetRange`/`SetFilter`/`Reset` event on the
+self — surfacing as bare call sites, since table PROCEDURES carry no implicit-Rec frame in
+L2, as `Rec.`-member call sites, or as `Rec` record ops — must be a filter, not a `Reset`);
+(b) `call_is_set_selection_filter_on`: a member call to `SetSelectionFilter` whose bound
+argument is the bulk-op record (the page builtin copies the page's row selection onto the
+argument as filters; matched structurally — the receiver `CurrPage`/page var is not a
+workspace routine). The caller-side-`Reset`-wipes-filters guard applies to both tiers.
+Suppression-direction safe: no-filter, non-filtering receiver method, receiver method whose
+net effect is filter-then-`Reset`, and `SetSelectionFilter` on a DIFFERENT record all keep
+firing. Tests: `tests/gap_g17_d33_filters.rs` (2 suppressions + 4 controls);
+`gap_g3_interproc_filter` stays green. No in-repo golden moved; the CDO-run rebaseline
+remains with the consolidated rebaseline task.
+
 **Symptom:** `d33-unfiltered-bulk-write` still fires when the filter is set by (a) an IN-SOURCE
 one-hop helper that G-3 should have caught (`SetEMailTemplateLineFilter`, `SetMergeFieldFilter`),
 (b) a helper defined on a DEPENDENCY table (`SetTemplateFilter` in a .app), or (c)

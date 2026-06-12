@@ -25,6 +25,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-17 (docs/engine-gaps.md): `d33-unfiltered-bulk-write` no longer fires when the
+  filter was provably applied by (a) an in-source helper defined ON the receiver's
+  own TABLE — the real-world G-3 miss: `LineReport.SetEMailTemplateLineFilter(Rec);
+  LineReport.DeleteAll();` passes the filter-VALUE source by value while the helper
+  filters its implicit self record (bare `SetRange(...)` in a table method), a shape
+  G-3's by-`var`-argument summary could never match because the call resolver's
+  `parse_object_type_ref` has no `Record` keyword, so record-receiver member calls
+  never resolve to table procedures (the G-3 root cause). The G-3 gate
+  (`record_filtered_by_call_before` in `src/engine/l5/detectors/mod.rs`) now adds a
+  receiver-method tier that joins receiver-var `table_id` → in-source table
+  procedure by name (ALL same-name candidates must net-filter the implicit self —
+  last `SetRange`/`SetFilter`/`Reset` event on the self, as bare calls,
+  `Rec.`-member calls, or `Rec` record ops, must be a filter); and (b) the page
+  builtin `CurrPage.SetSelectionFilter(<var>)` (matched structurally: a member call
+  to `SetSelectionFilter` whose bound argument is the bulk-op record — the platform
+  copies the page's row selection onto it as filters). Suppression-direction safe:
+  no-filter, non-filtering receiver method, receiver method whose net effect is
+  filter-then-`Reset`, and `SetSelectionFilter` on a DIFFERENT record all keep
+  firing (`tests/gap_g17_d33_filters.rs`); `tests/gap_g3_interproc_filter.rs` stays
+  green. TableExtension-defined helpers and dependency-table helpers stay
+  unrecognized (conservative; the ABI side is G-17's deferred lower-priority part).
 - G-16 (docs/engine-gaps.md): `d11-modify-without-get` / `d21-read-without-load` no
   longer fire "never loaded" when the record provably was. Two extensions of G-10,
   both suppression-direction safe: (a) the callee-load summary
