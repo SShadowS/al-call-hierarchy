@@ -93,6 +93,7 @@ fn make_routine_for_pass2b(variables: Vec<L3Variable>) -> L3Routine {
         loop_stack: Vec::new(),
         field_argument_infos: None,
         in_until_condition: false,
+        run_trigger: None,
     };
 
     L3Routine {

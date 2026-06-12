@@ -17,7 +17,7 @@ use crate::engine::l3::al_attributes::{find_attribute, string_arg, AttributeInfo
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{anchor_of, is_known_temp};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
@@ -77,6 +77,8 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut candidates_considered = 0usize;
     let mut skipped_non_modify_event = 0u64;
     let mut skipped_no_record_param = 0u64;
+    let mut skipped_run_trigger_false = 0u64;
+    let mut skipped_temp_record = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -121,6 +123,21 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             if !record_param_names.contains(&var_key) {
                 continue;
             }
+            // FP-1: `Modify(false)` / `Delete(false)` / `ModifyAll(..., false)`
+            // (RunTrigger=false) is the canonical pattern to AVOID recursive
+            // trigger re-fire — the platform skips the modify/delete triggers, so
+            // the same event is NOT raised again. No recursion → no finding.
+            // (Only an exact `false` literal suppresses; `true`/unknown keep firing.)
+            if op.run_trigger == Some(false) {
+                skipped_run_trigger_false += 1;
+                continue;
+            }
+            // A provably-temporary record (in-memory) fires no database triggers,
+            // so a Modify/Delete on it cannot re-raise the publisher event.
+            if is_known_temp(op) {
+                skipped_temp_record += 1;
+                continue;
+            }
             emit(routine, op, evt_lc, &mut findings, &fp_index);
         }
     }
@@ -131,6 +148,8 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("nonModifyEvent", skipped_non_modify_event);
     stats.add_skip("noRecordParam", skipped_no_record_param);
+    stats.add_skip("runTriggerFalse", skipped_run_trigger_false);
+    stats.add_skip("tempRecord", skipped_temp_record);
     DetectorOutput::no_diag(findings, stats)
 }
 

@@ -216,6 +216,20 @@ pub struct PRecordOperation {
     /// safe: an exact structural proof, anything else keeps firing).
     #[serde(skip)]
     pub in_until_condition: bool,
+    /// Detector-audit d29 FP-1: the literal `RunTrigger` argument of a mutating
+    /// op — `Modify([RunTrigger])` / `Delete([RunTrigger])` /
+    /// `DeleteAll([RunTrigger])` (arg 0) and `ModifyAll(Field, Value[, RunTrigger])`
+    /// (arg 2). `Some(false)` ⇒ the canonical RunTrigger=false pattern that
+    /// SUPPRESSES trigger re-firing (so no recursive-event loop); `Some(true)` ⇒
+    /// triggers run; `None` ⇒ no literal arg captured / not a mutating op (the
+    /// default — keeps the detector firing). Only `false` (an exact literal) is a
+    /// suppression signal.
+    ///
+    /// INTERNAL-ONLY (`serde(skip)`, excluded from `PartialEq`): never serialized,
+    /// so every feature-level golden stays byte-identical and baseline vectors
+    /// deserialize it to `None`.
+    #[serde(skip)]
+    pub run_trigger: Option<bool>,
 }
 
 /// MANUAL PartialEq: compares exactly the SERIALIZED L2 contract surface.

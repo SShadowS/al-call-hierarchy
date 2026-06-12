@@ -234,6 +234,11 @@ pub struct L3RecordOperation {
     /// walk, an exact structural proof). Forwarded for d1 to suppress the terminator
     /// `Next()`. Never serialized (the L3 projection is field-allowlisted).
     pub in_until_condition: bool,
+    /// Detector-audit d29 FP-1: literal `RunTrigger` arg of a mutating op
+    /// (`Modify`/`Delete`/`DeleteAll`/`ModifyAll`). `Some(false)` ⇒ trigger
+    /// re-firing suppressed (no recursive-event loop). Forwarded for d29. Never
+    /// serialized (the L3 projection is field-allowlisted).
+    pub run_trigger: Option<bool>,
 }
 
 /// A lexical variable (params → locals → globals) carrying its declared type, for
@@ -1218,6 +1223,7 @@ fn project_file(
                     loop_stack: op.loop_stack.clone(),
                     field_argument_infos: op.field_argument_infos.clone(),
                     in_until_condition: op.in_until_condition,
+                    run_trigger: op.run_trigger,
                 })
                 .collect();
             let field_accesses = features.field_accesses.clone();

@@ -346,6 +346,7 @@ fn push_record_op(
         loop_stack: snapshot_loop_stack.clone(),
         source_anchor: anchor.clone(),
         in_until_condition: is_in_until_condition(node),
+        run_trigger: record_op_run_trigger(node, op_type, ctx.source),
     });
     ctx.operation_sites.push(POperationSite {
         id: op_id,
@@ -360,6 +361,26 @@ fn push_record_op(
         control_context: None,
         order: None,
     });
+}
+
+/// Detector-audit d29 FP-1: extract the literal `RunTrigger` boolean argument of
+/// a mutating record op, or `None`. `Modify` / `Delete` / `DeleteAll` carry it at
+/// arg 0; `ModifyAll(Field, NewValue[, RunTrigger])` at arg 2. A non-literal /
+/// absent arg → `None` (the detector keeps firing). Only an exact `false` literal
+/// marks the trigger-suppressing pattern.
+fn record_op_run_trigger(node: Node, op_type: &str, source: &str) -> Option<bool> {
+    let idx = match op_type {
+        "Modify" | "Delete" | "DeleteAll" => 0,
+        "ModifyAll" => 2,
+        _ => return None,
+    };
+    let arg_list = child_of_kind(node, "argument_list")?;
+    let arg = named_children(arg_list).into_iter().nth(idx)?;
+    match node_text(arg, source).trim().to_lowercase().as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
 /// Collect args (texts, infos, nodes) from a call's argument_list.
