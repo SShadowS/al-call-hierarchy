@@ -18,6 +18,9 @@
 //! a sorted `Vec` / `BTreeSet`. No `HashMap` iteration order reaches output.
 
 pub mod capability_query;
+// G-19 — closed-world temp inference for `local` routines (the proven
+// `(routine, param)` set the d1/d3/d10 temp gates consult).
+pub mod closed_world_temp;
 pub mod entry_points;
 pub mod full_summary;
 pub mod reverse_call_graph;

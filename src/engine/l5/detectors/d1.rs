@@ -34,6 +34,7 @@ use crate::engine::l4::effect_lattice::TempStateKind;
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::capability_query::{touches_db_of, EffectPresence};
+use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
@@ -45,7 +46,7 @@ use crate::engine::l5::finding::{
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
-use crate::engine::l5::path_temp_resolve::resolve_temp_along_path;
+use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
 use crate::engine::l5::path_walker::{
     walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop,
 };
@@ -391,6 +392,7 @@ fn build_finding(
     table_by_id: &HashMap<&str, &L3Table>,
     role_by_routine: &HashMap<&str, &str>,
     edge_kind_by_callsite: &HashMap<&str, &str>,
+    closed_world_temp_params: &ClosedWorldTempParams,
 ) -> (Finding, TempVerdict) {
     let terminal_routine = routine_by_id.get(terminal_routine_id).copied();
     let setup_singleton = is_setup_singleton_get(terminal_op, terminal_routine, table_by_id);
@@ -401,11 +403,15 @@ fn build_finding(
     // PD-terminal (by-var param) op resolves per-path: temp on a temp-caller path,
     // physical on a physical-caller path, uncertain at a path root. The edge-kind
     // allowlist guard inside the resolver keeps dynamic/interface/run hops sound.
-    let resolved = resolve_temp_along_path(
+    // G-19: the closed-world proven set lets a PD frame belonging to a `local`
+    // all-temp-callers routine resolve Known(true) even at a path root (the
+    // intra-callee shape) — see `closed_world_temp`.
+    let resolved = resolve_temp_along_path_closed_world(
         &result.path,
         op_temp_state_kind(terminal_op),
         routine_by_id,
         edge_kind_by_callsite,
+        closed_world_temp_params,
     );
     let resolved_verdict = TempVerdict::from_resolved(&resolved);
 
@@ -894,6 +900,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 &ctx.table_by_id,
                 &role_by_routine,
                 &edge_kind_by_callsite,
+                &ctx.closed_world_temp_params,
             );
             findings.push(FindingRec {
                 finding,
@@ -1019,6 +1026,7 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     &ctx.table_by_id,
                     &role_by_routine,
                     &edge_kind_by_callsite,
+                    &ctx.closed_world_temp_params,
                 );
                 findings.push(FindingRec {
                     finding,
@@ -1278,6 +1286,7 @@ fn build_finding_internal(
     table_by_id: &HashMap<&str, &L3Table>,
     role_by_routine: &HashMap<&str, &str>,
     edge_kind_by_callsite: &HashMap<&str, &str>,
+    closed_world_temp_params: &ClosedWorldTempParams,
 ) -> (Finding, TempVerdict) {
     let terminal_op_anchor = anchor_of(&terminal_op.source_anchor, terminal_routine);
     build_finding(
@@ -1291,5 +1300,6 @@ fn build_finding_internal(
         table_by_id,
         role_by_routine,
         edge_kind_by_callsite,
+        closed_world_temp_params,
     )
 }

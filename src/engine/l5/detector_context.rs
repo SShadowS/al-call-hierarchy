@@ -152,6 +152,14 @@ pub struct DetectorContext<'a> {
     /// snapshot/digest cost — it never changes output. Detectors read it via
     /// `get_ordering_facts()`.
     pub ordering_facts: HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts>,
+    /// G-19 — the closed-world proven-temp `(routineId, paramIndex)` set: a
+    /// keyword-less by-var record param of a `local` procedure ALL of whose
+    /// resolved callers (and the routine's complete, fully-resolved same-object
+    /// call surface) prove a `Known(true)` temporary argument. The d1/d3/d10
+    /// temp gates treat such a param exactly like a `Known(true)` temp record.
+    /// Built by `closed_world_temp::prove_closed_world_temp_params`; EVERY
+    /// uncertainty fails the proof (the firing direction) — see module docs.
+    pub closed_world_temp_params: crate::engine::l5::closed_world_temp::ClosedWorldTempParams,
 }
 
 impl DetectorContext<'_> {
@@ -271,6 +279,17 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     )
     .into_iter()
     .collect();
+
+    // G-19 — closed-world proven-temp params for `local` procedures (consumed
+    // by the d1/d3/d10 temp gates). Pure lookup-table build over the routines +
+    // combined graph + reverse graph; entry points are proof-disqualifying.
+    let closed_world_temp_params =
+        crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
+            &ws.routines,
+            &graph,
+            &reverse_call_graph,
+            &entry_points,
+        );
 
     let transaction_spans = compute_transaction_spans(
         &ws.routines,
@@ -432,6 +451,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         app_versions: HashMap::new(),
         root_classifications_by_routine,
         ordering_facts,
+        closed_world_temp_params,
     }
 }
 
@@ -519,6 +539,17 @@ pub(crate) fn build_detector_context_cross_app(
     )
     .into_iter()
     .collect();
+
+    // G-19 — closed-world proven-temp params (see the source-only builder).
+    // Dep routines carry `access_modifier: None` (the ABI does not expose it),
+    // so they can never be proven; primary `local` procedures still can.
+    let closed_world_temp_params =
+        crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
+            ws_routines,
+            &graph,
+            &reverse_call_graph,
+            &entry_points,
+        );
 
     let transaction_spans = compute_transaction_spans(
         ws_routines,
@@ -637,5 +668,6 @@ pub(crate) fn build_detector_context_cross_app(
         app_versions,
         root_classifications_by_routine: HashMap::new(),
         ordering_facts: HashMap::new(),
+        closed_world_temp_params,
     }
 }

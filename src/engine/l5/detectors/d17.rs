@@ -467,6 +467,7 @@ mod tests {
             app_versions,
             root_classifications_by_routine: HashMap::new(),
             ordering_facts: HashMap::new(),
+            closed_world_temp_params: Default::default(),
         }
     }
 

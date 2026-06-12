@@ -70,6 +70,7 @@ use std::collections::HashMap;
 
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::effect_lattice::TempStateKind;
+use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::finding::EvidenceStep;
 
 /// Resolve a terminal op's `temp_state` ALONG ONE WALK PATH to a concrete
@@ -103,6 +104,34 @@ pub fn resolve_temp_along_path(
     routine_by_id: &HashMap<&str, &L3Routine>,
     edge_kind_by_callsite: &HashMap<&str, &str>,
 ) -> TempStateKind {
+    resolve_temp_along_path_closed_world(
+        path,
+        terminal_state,
+        routine_by_id,
+        edge_kind_by_callsite,
+        &ClosedWorldTempParams::new(),
+    )
+}
+
+/// [`resolve_temp_along_path`] PLUS the G-19 closed-world proven set: whenever
+/// the chase holds `ParameterDependent(i)` anchored to a frame `F` with
+/// `(F, i)` closed-world proven (a `local` routine ALL of whose resolved
+/// callers prove a temp argument — see `closed_world_temp`), the state is
+/// `Known(true)` for EVERY possible caller, so the per-path answer is too.
+/// The check fires for any frame on the chase (terminal or upstream); a frame
+/// NOT in the proven set behaves exactly as before (root-PD → `Unknown`).
+///
+/// SOUNDNESS: the proven set quantifies over ALL resolved callers of a closed
+/// (`local`, fully-resolved-call-surface) routine, so it can never contradict a
+/// concrete path: a path whose caller passes a physical record implies the
+/// proof failed for that frame, and the chase proceeds per-path as before.
+pub fn resolve_temp_along_path_closed_world(
+    path: &[EvidenceStep],
+    terminal_state: TempStateKind,
+    routine_by_id: &HashMap<&str, &L3Routine>,
+    edge_kind_by_callsite: &HashMap<&str, &str>,
+    closed_world_temp_params: &ClosedWorldTempParams,
+) -> TempStateKind {
     // The hop steps that carry a real caller callsite, in ROOT→TERMINAL order. The
     // terminal step (last, callsite_id == None) and any seed loop step (callsite_id
     // == None) are naturally excluded. We consume these from the END (the hop that
@@ -113,6 +142,10 @@ pub fn resolve_temp_along_path(
     // `hop_idx` indexes the caller_hops vec; we start at the LAST hop (the one
     // entering the terminal frame) and walk backward (toward root) per PD level.
     let mut hop_idx = caller_hops.len();
+    // The routine OWNING the frame the current PD state is anchored to. Starts at
+    // the TERMINAL frame (the last step's routine — the op's owner); each consumed
+    // hop re-anchors to that hop's parent routine (`hop.routine_id`).
+    let mut frame_routine: Option<&str> = path.last().map(|s| s.routine_id.as_str());
 
     loop {
         let i = match &state {
@@ -120,6 +153,14 @@ pub fn resolve_temp_along_path(
             TempStateKind::Known(_) | TempStateKind::Unknown => return state,
             TempStateKind::ParameterDependent(i) => *i,
         };
+
+        // G-19: PD(i) anchored to a closed-world PROVEN frame is Known(true) for
+        // every possible caller — no path context needed.
+        if let Some(f) = frame_routine {
+            if closed_world_temp_params.contains(&(f.to_string(), i)) {
+                return TempStateKind::Known(true);
+            }
+        }
 
         if hop_idx == 0 {
             // Reached the path ROOT while still PD: the op's tempness depends on an
@@ -148,6 +189,8 @@ pub fn resolve_temp_along_path(
         let parent = routine_by_id.get(hop.routine_id.as_str()).copied();
         let cs_id = hop.callsite_id.as_deref();
         state = step_one_frame(parent, cs_id, i);
+        // A PD result of the substitution is re-anchored to the PARENT frame.
+        frame_routine = Some(hop.routine_id.as_str());
     }
 }
 

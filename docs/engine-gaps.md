@@ -634,6 +634,32 @@ mis-attributed from RunReport's separate path).
 ACTUAL path to the op, not merely in some sibling call of an ancestor. Needs care; correctness fix.
 
 ## G-19 — temp via by-var param with no keyword, all callers temp (contentious / likely WONTFIX or source-fix)
+**Status: FIXED (closed-world local).** Not a hard-suppress and not the app-wide heuristic the
+assessment warned against — the fix is the EXACT provably-sound subset of option (1): a `(routine,
+param)` is treated as `Known(true)` ONLY when the world is genuinely closed. `local` is an AL
+LANGUAGE rule (callable only within the owning object), so "all callers" is enumerable; the proof
+(`src/engine/l5/closed_world_temp.rs`, built once into `DetectorContext.closed_world_temp_params`)
+requires ALL of: (1) the routine is a `local` PROCEDURE (triggers/event-subscribers/publishers are
+runtime-invoked → excluded by kind, entry points by id); (2) closed-world completeness — no
+same-object call site that could name the routine (bare or member-method, quotes stripped,
+case-insensitive, or an `unknown`-shaped callee) is unresolved, and no same-object routine is
+parse-incomplete; (3) ≥1 resolved caller (a dead local is NOT vacuously proven); (4) every caller
+edge is a binding-carrying kind (`direct`|`method` — the `substitute_pd_temp_state` allowlist) and
+its argument binding for the param is `Known(true)` — or `PD(j)` with `(caller, j)` itself proven
+(recursive; cycles ground to NOT-proven); (5) no RE-11 id collision on the routine or any caller
+(colliding ids conflate sibling bodies' edges). ANY failure leaves the param PD/Unknown → fires
+(suppression-direction discipline). Wiring: d3/d10 temp gates consult the set next to the existing
+`Known(true)` gate; d1 resolves per-path via `resolve_temp_along_path_closed_world` (a proven PD
+frame — including the intra-callee path root — resolves `Known(true)` → info downgrade, identical
+to every other proven-temp record). d33 needed no change: it already skips ALL parameter-record
+receivers outright, so the PD shape cannot fire there. Option (2) remains the recommended SOURCE
+fix for the open-world (public/internal) shapes: add the `temporary` keyword to the param —
+contract-trust makes it `Known(true)` (regression-guarded). Tests: `tests/gap_g19_temp_param.rs`
+(closed-world suppression + forwarding chain + keyword guard + 7 firing controls: physical caller,
+public, internal, unresolved same-object call, zero callers, event subscriber, d1 physical path);
+`gap_g13`/`temp_state_*` green. No in-repo golden moved (no fixture has the all-temp-callers
+local shape).
+
 **Symptom:** d1/d3/d10/d33 fire inside a callee on a `var Record X` param that LACKS the `temporary`
 keyword, even though every resolved caller in this app passes a `temporary` local. Per-path the op
 is `ParameterDependent`; with no single caller frame (intra-callee finding) it stays Unknown/fires.

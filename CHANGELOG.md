@@ -25,6 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-19 (docs/engine-gaps.md): d1/d3/d10 no longer fire on a keyword-less by-`var`
+  `Record` parameter of a **`local`** procedure when its temporariness is
+  CLOSED-WORLD PROVEN: the routine is `local` (AL language rule — callable only
+  within its owning object), every same-object call site that could name it is
+  resolved (no parse-incomplete sibling bodies, no unresolved or unclassifiable
+  name-matching calls), it has at least one resolved caller, every caller edge is
+  a binding-carrying kind (`direct`/`method`), and every caller's argument
+  binding for that parameter is `Known(true)` temporary — directly or
+  recursively through another closed-world-proven `local` forwarding parameter
+  (cycles ground to NOT-proven). New `engine::l5::closed_world_temp` module
+  computes the proven `(routineId, paramIndex)` set once in the detector
+  context; the d3/d10 temp gates consult it next to the existing `Known(true)`
+  gate, and d1's per-path resolver
+  (`resolve_temp_along_path_closed_world`) resolves a proven PD frame to
+  `Known(true)` — so the intra-callee shape downgrades to `info` exactly like
+  any other proven-temp record (~12 CDO false positives: GetUpgradeData,
+  MergePdfInBatches/ProcessMergeBatch Temp Blob, TempAut*). Suppression-
+  direction safe — every uncertainty fails the proof and keeps firing:
+  public/internal routines (open world), any physical/unknown caller argument,
+  unresolved same-object name-matching calls, dynamic/interface/event edges,
+  event subscribers and triggers (runtime-invoked), zero-caller dead locals
+  (no vacuous proof), and RE-11 colliding routine ids. The open-world shapes'
+  recommended SOURCE fix remains adding the `temporary` keyword to the
+  parameter (contract-trust `Known(true)` — covered by a regression guard).
+  Tests: `tests/gap_g19_temp_param.rs` (proof + 7 firing controls + keyword
+  guard); `temp_state_path` / `temp_state_substitution` /
+  `temp_state_param_forwarding` / `gap_g13_temp_gate` stay green.
 - G-18 (docs/engine-gaps.md): `d1-db-op-in-loop` no longer attributes a loop to an
   op when the loop is on a SIBLING call path, not on the actual path to the op.
   Root cause: the internal routine id (`compute_routine_id`) carries no member

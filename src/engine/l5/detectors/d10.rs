@@ -25,7 +25,7 @@ const DETECTOR: &str = "d10-self-modifying-loop";
 
 const MUTATING_OPS: &[&str] = &["Modify", "ModifyAll", "Validate", "Delete", "DeleteAll"];
 
-pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d10(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -83,6 +83,18 @@ pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
                     skipped_temp_record += 1;
                     continue;
                 }
+            }
+            // G-19: a ParameterDependent record (keyword-less by-var param)
+            // whose `(routine, param)` is CLOSED-WORLD PROVEN temp — a `local`
+            // routine all of whose resolved callers pass a Known(true) temp —
+            // is treated exactly like Known(true). Any unproven PD keeps firing.
+            if crate::engine::l5::closed_world_temp::pd_state_proven_temp(
+                op.temp_state.as_ref(),
+                &routine.id,
+                &ctx.closed_world_temp_params,
+            ) {
+                skipped_temp_record += 1;
+                continue;
             }
 
             let loop_node = routine.loops.iter().find(|l| l.id == loop_id);

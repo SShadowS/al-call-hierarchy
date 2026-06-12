@@ -200,8 +200,17 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
 
             // Temp records live in memory; SetLoadFields has no SQL benefit.
             // recVar?.tempState.kind === "known" && recVar.tempState.value === true
+            // G-19: a ParameterDependent param record (keyword-less by-var)
+            // CLOSED-WORLD PROVEN temp (`local` routine, all resolved callers
+            // pass Known(true) temp) is treated exactly like Known(true).
             if let Some(rv) = rec_var {
-                if rv.temp_state_known_value() == Some(true) {
+                if rv.temp_state_known_value() == Some(true)
+                    || crate::engine::l5::closed_world_temp::pd_state_proven_temp(
+                        Some(&rv.temp_state),
+                        &routine.id,
+                        &ctx.closed_world_temp_params,
+                    )
+                {
                     skipped_temporary_record += 1;
                     continue;
                 }

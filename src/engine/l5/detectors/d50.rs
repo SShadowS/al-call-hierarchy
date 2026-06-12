@@ -550,6 +550,7 @@ mod tests {
             app_versions: HashMap::new(),
             root_classifications_by_routine,
             ordering_facts: HashMap::new(),
+            closed_world_temp_params: Default::default(),
         }
     }
 
@@ -693,6 +694,7 @@ mod tests {
             app_versions: HashMap::new(),
             root_classifications_by_routine: HashMap::new(),
             ordering_facts: HashMap::new(),
+            closed_world_temp_params: Default::default(),
         };
 
         // Build a minimal L3Resolved for detect_d50 (it uses ws.routines and ws.objects
