@@ -107,14 +107,31 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     .filter(|op| op.record_variable_name.to_lowercase() == source_name_lc)
                     .collect();
 
-                // (1) Caller filtered before the call?
-                let first_prior_filter = ops_on_var.iter().find(|op| {
-                    FILTER_SET_OPS.contains(&op.op.as_str())
-                        && before_anchor(&op.source_anchor, &cs.source_anchor)
-                });
-                let first_prior_filter = match first_prior_filter {
-                    Some(op) => *op,
-                    None => {
+                // (1) Was a filter ACTIVE on R at the callsite? Net-effect scan
+                // in source order (mirrors d33 `was_filtered_before`):
+                // SetRange/SetFilter → filtered, Reset → cleared, last-wins. A
+                // filter the caller itself cleared with its OWN Reset before the
+                // call is not "lost across the helper" — the callee's Reset wipes
+                // nothing. Using the naive first-prior-SetRange (ignoring an
+                // intervening Reset) fires when no filter was active (Gap-T FP).
+                // The witness is the LAST filter-set op still in effect.
+                let mut filtered = false;
+                let mut witness_filter: Option<&L3RecordOperation> = None;
+                for op in &ops_on_var {
+                    if !before_anchor(&op.source_anchor, &cs.source_anchor) {
+                        continue;
+                    }
+                    if FILTER_SET_OPS.contains(&op.op.as_str()) {
+                        filtered = true;
+                        witness_filter = Some(*op);
+                    } else if op.op == "Reset" {
+                        filtered = false;
+                        witness_filter = None;
+                    }
+                }
+                let first_prior_filter = match (filtered, witness_filter) {
+                    (true, Some(op)) => op,
+                    _ => {
                         skipped_no_prior_filter += 1;
                         continue;
                     }

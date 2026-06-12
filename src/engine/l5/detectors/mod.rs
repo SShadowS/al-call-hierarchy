@@ -86,6 +86,22 @@ pub(crate) fn primary_key_field_names_lc(table: &L3Table) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// Detector-audit class E (Gap-Y): the table's FLOWFIELD / FLOWFILTER field
+/// NAMES, lowercased. These are NOT physical columns — `SetLoadFields` /
+/// `AddLoadFields` ignore them (a FlowField is materialised by `CalcFields`,
+/// not a SQL load), so a callee that reads a FlowField does NOT force a wider
+/// narrow on the forwarded record (d42): adding it to `SetLoadFields` would be
+/// a no-op. Used to drop FlowField/FlowFilter entries from d42's required set.
+/// An unresolved table excludes nothing — the detector keeps firing.
+pub(crate) fn flow_field_names_lc(table: &L3Table) -> HashSet<String> {
+    table
+        .fields
+        .iter()
+        .filter(|f| f.field_class == "FlowField" || f.field_class == "FlowFilter")
+        .map(|f| f.name.to_lowercase())
+        .collect()
+}
+
 /// Normalize a `SetLoadFields` / `AddLoadFields` field argument (or any raw
 /// field-name token) for matching against field-access names: trim, strip ONE
 /// pair of surrounding quotes (the L2 body walk keeps the raw `"Unit Price"`

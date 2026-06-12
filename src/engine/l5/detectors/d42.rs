@@ -24,7 +24,8 @@ use crate::engine::l4::summary::FieldList;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, before_anchor, normalize_load_field_arg, primary_key_field_names_lc,
+    anchor_of, before_anchor, flow_field_names_lc, normalize_load_field_arg,
+    primary_key_field_names_lc,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -178,14 +179,23 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 // the required set; when nothing else is required, the
                 // forwarded narrow causes no extra round-trip. An unresolved
                 // table / missing key excludes nothing (keep firing).
-                let pk_fields = ctx
+                // Drop PK fields (always loaded, G-15c) AND FlowField/FlowFilter
+                // fields (class E Gap-Y: not physical columns — SetLoadFields
+                // ignores them, so a FlowField the callee reads never forces a
+                // wider narrow / extra round-trip). An unresolved table excludes
+                // nothing (keep firing).
+                let excluded_fields = ctx
                     .table_by_id
                     .get(callee_role.table_id.as_str())
-                    .map(|t| primary_key_field_names_lc(t))
+                    .map(|t| {
+                        let mut s = primary_key_field_names_lc(t);
+                        s.extend(flow_field_names_lc(t));
+                        s
+                    })
                     .unwrap_or_default();
                 let rf: Vec<String> = rf
                     .into_iter()
-                    .filter(|f| !pk_fields.contains(&normalize_load_field_arg(f)))
+                    .filter(|f| !excluded_fields.contains(&normalize_load_field_arg(f)))
                     .collect();
                 if rf.is_empty() {
                     skipped_pk_only += 1;
