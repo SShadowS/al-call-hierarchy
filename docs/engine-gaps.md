@@ -474,6 +474,13 @@ OpenDocFiles, DOFileExportedXml...). d39 on temp: batch 19 (DOFile).
 **Approach:** add the same `Known(true)` temp gate the other detectors use to d10 and d39
 (skip/suppress when the op's record is `Known(true)` temporary). Reuse the existing `op.temp_state`
 check + (for d10) the path-resolved verdict. Suppression-direction safe.
+**Status: FIXED (commit `fix(engine-g13): temp-gate d10 self-modifying-loop + d39 record-left-dirty (G-13)`).**
+d10 skips ops whose `op.temp_state` is Known(true) (same gate as d33 — d10's findings are
+direct in-routine cursor ops, so the raw op state is the right input; no cross-routine path
+to resolve). d39 skips bindings whose `binding.source_temp_state` is Known(true) (same gate
+as d40 — the subject is the CALLER's forwarded source record). Both gates are exact-match on
+Known(true); physical and Unknown keep firing (controls in `tests/gap_g13_temp_gate.rs`
+prove it). New `tempRecord` skip counter in both detectors' stats.
 
 ## G-14 — G-9 trigger set missed OnLookup / OnAssistEdit field triggers (HIGH volume)
 **Symptom:** d11/d21/d37 still fire on `Rec` inside `OnLookup` and `OnAssistEdit` field triggers

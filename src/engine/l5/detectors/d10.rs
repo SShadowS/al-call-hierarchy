@@ -7,6 +7,11 @@
 //! be corrupted when the iterating record is mutated inside its own loop.
 //!
 //! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
+//!
+//! G-13: ops whose record is `Known(true)` TEMPORARY are skipped — an
+//! in-memory cursor self-modify is safe (cursor corruption only applies to
+//! physical SQL cursors). Mirrors the d33 temp gate. Physical/Unknown keep
+//! firing (suppression-direction safe).
 
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
@@ -26,6 +31,7 @@ pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_parse_incomplete = 0u64;
+    let mut skipped_temp_record = 0u64;
 
     for routine in &ws.routines {
         // roleOf(routine) !== "primary" → skip. Source-only: every routine is
@@ -68,6 +74,15 @@ pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             };
             if op.record_variable_name.to_lowercase() != driver {
                 continue;
+            }
+
+            // G-13: skip Known(true) TEMPORARY records — no SQL cursor to
+            // corrupt when the iterating record is in-memory (same gate as d33).
+            if let Some(ts) = &op.temp_state {
+                if ts.kind == "known" && ts.value == Some(true) {
+                    skipped_temp_record += 1;
+                    continue;
+                }
             }
 
             let loop_node = routine.loops.iter().find(|l| l.id == loop_id);
@@ -147,6 +162,7 @@ pub fn detect_d10(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
+    stats.add_skip("tempRecord", skipped_temp_record);
     DetectorOutput {
         findings,
         stats,

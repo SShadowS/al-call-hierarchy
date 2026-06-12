@@ -11,6 +11,11 @@
 //! (the `dirtyAtExit` fact), `ctx.reverse_call_graph`, and the post-upgrade per-callsite
 //! bindings via `ctx.upgraded_bindings_by_callsite` joined positionally with
 //! `call_site.argument_bindings`.
+//!
+//! G-13: bindings whose caller-side source record is `Known(true)` TEMPORARY
+//! are skipped — discarding in-memory state has no SQL consequence. Mirrors
+//! the d40 `source_temp_state` gate. Physical/Unknown keep firing
+//! (suppression-direction safe).
 
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l4::effect_lattice::EffectPresence;
@@ -31,6 +36,7 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_caller_persists = 0u64;
+    let mut skipped_temp_record = 0u64;
 
     for callee in &ws.routines {
         if !callee.body_available {
@@ -106,6 +112,15 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     && !binding.caller_source_parameter_is_var.unwrap_or(false)
                 {
                     continue;
+                }
+
+                // G-13: skip Known(true) TEMPORARY source records — a temp
+                // record left dirty has no SQL consequence (same gate as d40).
+                if let Some(ts) = &binding.source_temp_state {
+                    if ts.kind == "known" && ts.value == Some(true) {
+                        skipped_temp_record += 1;
+                        continue;
+                    }
                 }
 
                 let source_name_lc = match &binding.source_variable_name {
@@ -206,5 +221,6 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("callerPersists", skipped_caller_persists);
+    stats.add_skip("tempRecord", skipped_temp_record);
     DetectorOutput::no_diag(findings, stats)
 }

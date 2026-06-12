@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-13 (docs/engine-gaps.md): `d10-self-modifying-loop` and `d39-record-left-dirty-across-chain`
+  no longer fire on `Known(true)` TEMPORARY records — they were never added to the temp-state
+  epoch's gate set (d1/d3/d33/d36/d37/d40 were). d10 now skips a mutating op on the iterating
+  record when `op.temp_state` is Known(true) (same gate as d33): an in-memory cursor self-modify
+  is safe — cursor corruption only applies to physical SQL cursors. d39 now skips a forwarded
+  binding when `binding.source_temp_state` is Known(true) (same gate as d40): a temporary record
+  left Validate-dirty across a helper chain has no SQL consequence. Both gates are exact-match
+  on Known(true) — physical and Unknown records keep firing (suppression-direction safe; proven
+  by controls in `tests/gap_g13_temp_gate.rs`). Both detectors gain a `tempRecord` skip counter.
 - G-8 (docs/engine-gaps.md): a codeunit-global `temporary` record FORWARDED by-var into a
   helper (e.g. `TempErrors: Record "Error Message" temporary;` passed to a local
   `LogError(var Errors: Record ...)` that does the db op) no longer resolves "temp state
