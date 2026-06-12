@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-14 (docs/engine-gaps.md): `d11-modify-without-get`, `d21-read-without-load`, and
+  `d37-validate-without-persist` no longer fire on the implicit `Rec` inside page field
+  `OnLookup` / `OnAssistEdit` triggers — the G-9 trigger set
+  (`PAGE_TRIGGERS_REC_LOADED` in `src/engine/l5/detectors/mod.rs`) missed the two
+  field-level lookup triggers even though the AL platform loads `Rec` before they run
+  and the page framework persists a `Validate` performed inside `OnLookup`. The gate
+  stays exact and structural (trigger kind + Page/PageExtension + receiver `Rec`);
+  non-trigger procedures and non-`Rec` receivers keep firing (controls in
+  `tests/gap_g14_onlookup_triggers.rs`). No golden moved.
 - G-13 (docs/engine-gaps.md): `d10-self-modifying-loop` and `d39-record-left-dirty-across-chain`
   no longer fire on `Known(true)` TEMPORARY records — they were never added to the temp-state
   epoch's gate set (d1/d3/d33/d36/d37/d40 were). d10 now skips a mutating op on the iterating

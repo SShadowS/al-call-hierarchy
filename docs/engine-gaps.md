@@ -490,6 +490,10 @@ before those too, and a `Validate` in OnLookup is persisted by the page framewor
 **Evidence:** batches 12 (x4), 14 (x8), 15 (x4), 18 (x2) — ~18 FPs. residual-of-G9.
 **Approach:** extend `is_platform_loaded_trigger_rec` (detectors/mod.rs) — add `OnLookup`,
 `OnAssistEdit` to the page trigger-name set (and confirm field-level OnValidate is covered).
+**Status: FIXED (commit `fix(engine-g14): extend trigger-Rec suppression to OnLookup/OnAssistEdit (G-14)`).**
+`PAGE_TRIGGERS_REC_LOADED` now includes `OnLookup` and `OnAssistEdit` (field-level `OnValidate`
+was already in the G-9 set). Proven by `tests/gap_g14_onlookup_triggers.rs` (suppression +
+non-trigger and non-Rec controls); no golden moved.
 
 ## G-15 — d3/d42 fire on field WRITES, post-Init writes, and PK fields (medium)
 **Symptom:** (a) `d3-missing-setloadfields` fires when the fields after a `Get`/`FindLast` are

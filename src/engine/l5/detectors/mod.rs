@@ -65,12 +65,17 @@ pub(crate) fn before_anchor(a: &PAnchor, b: &PAnchor) -> bool {
 
 /// G-9: page triggers in which the platform has already loaded the implicit
 /// `Rec` before the trigger body runs (docs/engine-gaps.md G-9).
+/// G-14: extended with the field-level lookup triggers `OnLookup` /
+/// `OnAssistEdit` — the platform loads `Rec` before those too, and a
+/// `Validate` inside `OnLookup` is persisted by the page framework.
 const PAGE_TRIGGERS_REC_LOADED: &[&str] = &[
     "OnValidate",
     "OnAction",
     "OnAfterGetRecord",
     "OnDrillDown",
     "OnAfterGetCurrRecord",
+    "OnLookup",
+    "OnAssistEdit",
 ];
 
 /// G-9 suppression signal (exact, structural): true iff `routine` is a page
