@@ -49,6 +49,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- Detector-audit classes A + C (docs/detector-audit.md): `d2-event-fanout-in-loop`
+  no longer false-fires when an event subscriber's in-loop db ops are all
+  structurally non-actionable. Three guards now mirror d1's terminal/op selection:
+  (1) **Next-terminator (G-1)** — a subscriber's own `until <var>.Next() = 0`
+  terminator is the loop's cursor advancement, not a db op; (2) **virtual/system
+  table (G-6)** — a subscriber reading `AllObjWithCaption`/`Field`/`Integer`/… hits
+  the platform's in-memory metadata store, not SQL; (3) **temporary record** — an op
+  provably on a `Known(true)` temporary record does no physical-db work (mirrors
+  d33's temp gate). The three filters are applied in `D2Policy::terminals_at` (so
+  transitive callees are covered too), and the `any_db_subscriber` aggregation now
+  keys off the supplementary walk yielding a Complete path to a SURVIVING db op — so
+  a subscriber touching ONLY terminator/virtual/temp ops is no longer counted as a
+  db subscriber. The `is_terminator_next` / `is_known_temp` helpers were promoted
+  from d1.rs to `detectors/mod.rs` (`pub(crate)`) for reuse; d1 imports them
+  unchanged. Suppression-direction exact: a REAL db op (e.g. `Modify` on a physical
+  record) inside a subscriber loop still fires (control in
+  `tests/gap_audit_d2_guards.rs`).
 - Detector-audit class B (docs/detector-audit.md): d21/d37/d39 no longer false-fire
   on the implicit `Rec` inside table-LEVEL `OnInsert`/`OnModify`/`OnDelete`/`OnRename`
   triggers, where the AL platform loads `Rec` before the trigger body runs AND

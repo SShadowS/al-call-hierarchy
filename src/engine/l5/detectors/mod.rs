@@ -755,6 +755,27 @@ pub(crate) fn op_targets_virtual_system_table(
         .is_some_and(is_virtual_system_table)
 }
 
+/// G-1 (docs/engine-gaps.md): a `Next` op that IS the `until …` terminator of its
+/// enclosing `repeat` loop. `in_until_condition` is the L2 body walk's EXACT
+/// structural proof (the op node sits inside the `condition` field of its nearest
+/// enclosing `repeat_statement`), so this `Next` is the loop's own per-iteration
+/// cursor advancement — removing it breaks the loop, hence never actionable.
+/// Suppression-direction safe: only a structurally-proven terminator `Next` is
+/// skipped; a mid-body `Next` on another cursor (or ANY non-Next db op) keeps firing.
+/// Shared by d1 (interprocedural terminals + in-loop op gate) and d2 (subscriber
+/// db-op selection).
+pub(crate) fn is_terminator_next(op: &L3RecordOperation) -> bool {
+    op.op == "Next" && op.in_until_condition
+}
+
+/// `temp_state.kind === "known" && value === true`. A `None` temp_state (al-sem
+/// always sets `{kind:"unknown"}`) is NOT a known-temp. Shared by d1 and d2
+/// (and mirrors d33's inline gate): an op provably on a temporary record does no
+/// physical-db work.
+pub(crate) fn is_known_temp(op: &L3RecordOperation) -> bool {
+    matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
+}
+
 /// `unquotedFieldName` from `model/expression.ts`:
 /// Resolve a field-name argument to its unquoted form. Prefers `.value` (set on
 /// `quoted_identifier` / `string_literal` / `qualified_enum_value`) over `.text`.

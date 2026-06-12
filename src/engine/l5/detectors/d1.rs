@@ -38,7 +38,8 @@ use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, op_targets_virtual_system_table, unquoted_field_name,
+    anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
+    unquoted_field_name,
 };
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
@@ -72,23 +73,6 @@ const RETRIEVAL_OPS: [&str; 6] = ["FindSet", "FindFirst", "FindLast", "Find", "G
 /// Ops that open a recordset cursor BEFORE a `repeat..until` loop. An in-loop
 /// `Next` on the same record-var IS the cursor advance, not an N+1 antipattern.
 const CURSOR_OPENER_OPS: [&str; 4] = ["FindSet", "FindFirst", "FindLast", "Find"];
-
-/// G-1 (docs/engine-gaps.md): a `Next` op that IS the `until …` terminator of its
-/// enclosing `repeat` loop. `in_until_condition` is the L2 body walk's EXACT
-/// structural proof (the op node sits inside the `condition` field of its nearest
-/// enclosing `repeat_statement`), so this `Next` is the loop's own per-iteration
-/// cursor advancement — removing it breaks the loop, hence never actionable.
-/// Suppression-direction safe: only a structurally-proven terminator `Next` is
-/// skipped; a mid-body `Next` on another cursor (or ANY non-Next db op) keeps firing.
-fn is_terminator_next(op: &L3RecordOperation) -> bool {
-    op.op == "Next" && op.in_until_condition
-}
-
-/// `temp_state.kind === "known" && value === true`. A `None` temp_state (al-sem
-/// always sets `{kind:"unknown"}`) is NOT a known-temp.
-fn is_known_temp(op: &L3RecordOperation) -> bool {
-    matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
-}
 
 /// The terminal op's `temp_state` as a [`TempStateKind`] (the resolver's input).
 /// A `None` temp_state → `Unknown` (al-sem always sets `{kind:"unknown"}` for

@@ -36,7 +36,9 @@ use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
 use crate::engine::l5::capability_query::{touches_db_of, writes_tables_of, EffectPresence};
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{
+    anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
+};
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
@@ -113,6 +115,17 @@ impl<'a> WalkPolicy for D2Policy<'a> {
         r.record_operations
             .iter()
             .filter(|op| is_db_touching_class(classify_op(&op.op)))
+            // Class C (G-1): a `until <var>.Next() …` terminator is the subscriber
+            // loop's own cursor advancement, never an actionable db op — mirrors
+            // d1's interprocedural terminal filter (d1.rs).
+            .filter(|op| !is_terminator_next(op))
+            // Class C (G-6): an op on a BC virtual/system table reads the platform's
+            // in-memory metadata store (no SQL round-trip), so it is never a d2
+            // terminal — mirrors d1.
+            .filter(|op| !op_targets_virtual_system_table(op, r, self.table_by_id))
+            // Class A: an op provably on a Known(true) temporary record does no
+            // physical-db work — mirrors d33's temp gate.
+            .filter(|op| !is_known_temp(op))
             .map(|op| Terminal {
                 routine_id: node.to_string(),
                 local_loop_depth: op.loop_stack.len() as i64,
@@ -388,6 +401,28 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 if touches_db_of(sub_summary) == EffectPresence::No {
                     continue;
                 }
+
+                // Class A/C: the coarse `touchesDb` summary above is unaware of the
+                // structural suppression signals (terminator-Next, virtual/system
+                // table, Known(true) temp) that the D2Policy `terminals_at` filters
+                // out (mirroring d1). Run the supplementary walk FIRST and only count
+                // this subscriber as a real db subscriber when it yields a Complete
+                // path to a SURVIVING (non-suppressed) db op — so a subscriber whose
+                // ops are ALL terminator/virtual/temp does not make d2 fire.
+                let results = walk_evidence(
+                    &sub_routine.id,
+                    &policy,
+                    BOUNDS,
+                    WalkOpts {
+                        initial_loop_depth: 0,
+                        initial_steps: Vec::new(),
+                    },
+                    &ctx.uncertainties_by_node,
+                );
+                let Some(complete) = results.iter().find(|r| r.stop == WalkStop::Complete) else {
+                    continue;
+                };
+
                 any_db_subscriber = true;
                 affected_objects.insert(sub_routine.object_id.clone());
                 for u in &sub_summary_uncertainties(ctx, &sub_routine.id) {
@@ -414,34 +449,22 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                     ),
                 });
 
-                let results = walk_evidence(
-                    &sub_routine.id,
-                    &policy,
-                    BOUNDS,
-                    WalkOpts {
-                        initial_loop_depth: 0,
-                        initial_steps: Vec::new(),
-                    },
-                    &ctx.uncertainties_by_node,
-                );
-                if let Some(complete) = results.iter().find(|r| r.stop == WalkStop::Complete) {
-                    subscriber_steps.extend(complete.path.iter().cloned());
-                    for u in &complete.uncertainties {
-                        uncertainties.push(u.clone());
-                    }
-                    if let Some(term) = complete.path.last() {
-                        if let Some(op_id) = &term.operation_id {
-                            if let Some(term_routine) =
-                                ctx.routine_by_id.get(term.routine_id.as_str()).copied()
+                subscriber_steps.extend(complete.path.iter().cloned());
+                for u in &complete.uncertainties {
+                    uncertainties.push(u.clone());
+                }
+                if let Some(term) = complete.path.last() {
+                    if let Some(op_id) = &term.operation_id {
+                        if let Some(term_routine) =
+                            ctx.routine_by_id.get(term.routine_id.as_str()).copied()
+                        {
+                            if let Some(term_op) = term_routine
+                                .record_operations
+                                .iter()
+                                .find(|o| &o.id == op_id)
                             {
-                                if let Some(term_op) = term_routine
-                                    .record_operations
-                                    .iter()
-                                    .find(|o| &o.id == op_id)
-                                {
-                                    if let Some(tid) = &term_op.table_id {
-                                        affected_tables.insert(tid.clone());
-                                    }
+                                if let Some(tid) = &term_op.table_id {
+                                    affected_tables.insert(tid.clone());
                                 }
                             }
                         }

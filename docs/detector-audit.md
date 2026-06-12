@@ -7,7 +7,7 @@ many detectors), then singletons, then priority.
 
 ## Shared-root class A — temp records not gated (FP) [HIGH volume]
 The temp epoch gated d1/d3/d10/d33/d36/d37/d39/d40, but these still fire on `temporary` records:
-- **d2** (event-fanout-in-loop): no temp guard; subscriber touching only a temp table → `any_db_subscriber=true` → fires.
+- ~~**d2** (event-fanout-in-loop): no temp guard; subscriber touching only a temp table → `any_db_subscriber=true` → fires.~~ **FIXED** (commit `fix(engine-audit-d2)`, engine branch): `is_known_temp` filter added to `D2Policy::terminals_at`; `any_db_subscriber` now keys off a Complete walk to a surviving op. Test: `tests/gap_audit_d2_guards.rs::subscriber_temp_record_ops_are_suppressed`.
 - **d4** (repeated-lookup-in-loop): `d4.rs:57-82` no temp_state check → repeated lookups on temp vars fire.
 - **d8** (commit-in-transaction): `writes_tables_of` counts TEMP-table writes toward the 3-table manager gate (FP inflation).
 - **d29** (modify-in-subscriber): by-value/temp records flagged.
@@ -28,7 +28,7 @@ caller-side persist check (`autoPersistTriggerRec` skip stat). Tests: `tests/gap
 (suppression + non-trigger / non-Rec controls); g9/g14 suites unchanged-green.
 
 ## Shared-root class C — loop-detector guards (Next-terminator + virtual table) missing in d2/d18 (FP)
-- **d2**: `D2Policy.terminals_at` has NO `is_terminator_next` filter (d1 has it at d1.rs:616) AND no `op_targets_virtual_system_table` filter → `repeat..until Rec.Next()` + virtual-table reads in a subscriber fire falsely.
+- ~~**d2**: `D2Policy.terminals_at` has NO `is_terminator_next` filter (d1 has it at d1.rs:616) AND no `op_targets_virtual_system_table` filter → `repeat..until Rec.Next()` + virtual-table reads in a subscriber fire falsely.~~ **FIXED** (commit `fix(engine-audit-d2)`, engine branch): both `is_terminator_next` and `op_targets_virtual_system_table` filters added to `D2Policy::terminals_at` (mirroring d1). Tests: `tests/gap_audit_d2_guards.rs::{subscriber_terminator_next_only_is_suppressed,subscriber_virtual_system_table_reads_are_suppressed}`.
 - **d18**: receives `_ctx` unused → no virtual-table gate; `SetRange` on `Date`/`Integer` virtual table in a loop fires with wrong advice.
 FIX: apply the same d1 guards (terminator-Next, virtual-table) to d2; pass ctx + virtual-table gate to d18.
 
