@@ -296,7 +296,7 @@ pub struct PFieldAccess {
     pub source_anchor: PAnchor,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
 pub struct PVarAssignment {
     #[serde(rename = "lhsName")]
     pub lhs_name: String,
@@ -304,6 +304,30 @@ pub struct PVarAssignment {
     pub rhs_literal_value: Option<String>,
     #[serde(rename = "sourceAnchor")]
     pub source_anchor: PAnchor,
+    /// G-16: the RHS bare-identifier name (lowercased), set ONLY when BOTH the
+    /// assignment target AND the value are bare `identifier` nodes — i.e. a
+    /// whole-variable copy like `Cust := Rec`, never a field write
+    /// (`Rec.Field := x`) or an expression RHS. Consumed by d11/d21's
+    /// record-assign-as-load gate (`RecB := RecA` loads `RecB` when `RecA` is
+    /// provably loaded).
+    ///
+    /// INTERNAL-ONLY (`serde(skip)`): never serialized, so every feature-level
+    /// golden stays byte-identical; deserialized goldens default it to `None`.
+    #[serde(skip)]
+    pub rhs_identifier: Option<String>,
+}
+
+/// MANUAL PartialEq: compares exactly the SERIALIZED L2 contract surface.
+/// `rhs_identifier` is EXCLUDED — it is derived, serde-skipped internal data
+/// (an L5 input, not part of the L2 shape), and baseline vectors deserialize
+/// it to the default `None`; including it would make every freshly-walked
+/// record-copy assignment compare unequal to its vector counterpart.
+impl PartialEq for PVarAssignment {
+    fn eq(&self, other: &Self) -> bool {
+        self.lhs_name == other.lhs_name
+            && self.rhs_literal_value == other.rhs_literal_value
+            && self.source_anchor == other.source_anchor
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

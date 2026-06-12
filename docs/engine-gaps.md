@@ -530,6 +530,25 @@ or (b) a record `:=` assignment from a loaded var (`Cust := Rec`, `EmailLog2 := 
 **Approach:** (a) extend G-10's callee-load summary to follow >1 hop (bounded depth) and recognize
 Get/Find anywhere in the wrapper's transitive body on the by-var arg; (b) treat `RecB := RecA` as
 RecB loaded when RecA is loaded (a load event in the intraprocedural load scan).
+**Status: FIXED (commit `fix(engine-g16): recognize multi-hop load-wrappers + record-assign-as-load (G-16)`).**
+(a) The G-10 callee-load summary (`record_loaded_by_call_before` / `callee_loads_by_var_arg`
+in `src/engine/l5/detectors/mod.rs`) now recurses through `callee_loads_param` bounded at
+`MAX_LOAD_WRAPPER_HOPS = 3` callee hops — every hop reuses the SAME resolved-binding by-`var`
+join (`callee_applies_op_to_by_var_arg`), and a wrapper-internal `<param>.GetBySystemId(...)`
+counts as a tier-1 load too. A load 4+ hops down, an unresolved hop, a by-value binding, or a
+chain that never loads keep firing (`remaining_hops` strictly decreases, so mutually recursive
+wrappers terminate). `InsertIfNotExists`-style Get-or-Insert was already covered at one hop
+(`Init`/`Insert` are in `RECORD_LOAD_OPS`) — locked in as a regression guard. (b) NEW
+`record_loaded_by_assignment_before`: a whole-record assignment `RecB := RecA` strictly before
+the op loads `RecB` when `RecA` is provably loaded at the assignment point (recognized load op /
+loading call before it, platform-loaded trigger `Rec`, parameter record — the detectors' own
+caller-loaded skip — or a further assignment from a loaded var, chain bounded at
+`MAX_ASSIGN_CHAIN_DEPTH = 3`). Carried by the internal-only `PVarAssignment.rhs_identifier`
+(serde-skipped + excluded from the manual `PartialEq`, the G-1 `in_until_condition` pattern —
+L2 feature goldens stay byte-identical), set ONLY when BOTH assignment sides are bare
+identifiers, so field writes / expression RHS never suppress. Tests:
+`tests/gap_g16_deep_wrappers.rs` (4 wrapper + 3 assignment suppressions, 6 controls);
+`gap_g10_load_wrappers` stays green.
 
 ## G-17 — d33 still misses some one-hop filters + page selection filter (medium)
 **Symptom:** `d33-unfiltered-bulk-write` still fires when the filter is set by (a) an IN-SOURCE

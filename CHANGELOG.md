@@ -25,6 +25,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KNOWN_DIVERGENCES.json` stays `[]`.
 
 ### Fixed
+- G-16 (docs/engine-gaps.md): `d11-modify-without-get` / `d21-read-without-load` no
+  longer fire "never loaded" when the record provably was. Two extensions of G-10,
+  both suppression-direction safe: (a) the callee-load summary
+  (`record_loaded_by_call_before` in `src/engine/l5/detectors/mod.rs`) now follows a
+  BOUNDED multi-hop wrapper chain (`MAX_LOAD_WRAPPER_HOPS = 3` callee hops) — every
+  hop is the same resolved-binding by-`var` join as G-10, so
+  `FindTemplate -> FindTemplateWithReportID -> FindSet`, forwarded boolean facade
+  loaders, and `GetBySystemId` inside a wrapper now count, while a load 4+ hops down,
+  an unresolved callee, a by-value binding, or a chain that only filters all keep
+  firing (Get-or-Insert facades like `InsertIfNotExists` were already covered at one
+  hop since `Init`/`Insert` are recognized load ops). (b) NEW record-assign-as-load
+  gate `record_loaded_by_assignment_before`: a whole-record assignment
+  `RecB := RecA` strictly before the op loads `RecB` when `RecA` is provably loaded
+  AT the assignment point — a recognized load op / loading call before it, the
+  platform-loaded trigger `Rec` (G-9), a parameter record (the detectors' own
+  caller-loaded skip), or a further assignment from a loaded var (chain bounded at
+  `MAX_ASSIGN_CHAIN_DEPTH = 3` links). Backed by a new internal-only
+  `PVarAssignment.rhs_identifier` (serde-skipped like G-1's `in_until_condition`,
+  excluded from `PartialEq` — L2 feature goldens stay byte-identical) that is set
+  ONLY when both assignment sides are bare identifiers, so field writes and
+  expression RHS never suppress. Controls in `tests/gap_g16_deep_wrappers.rs` prove
+  no-load, deep-non-loading-chain, beyond-bound-load, assign-from-unloaded,
+  assign-after-op, and RHS-loaded-after-assignment all still fire;
+  `tests/gap_g10_load_wrappers.rs` stays green.
 - G-15 (docs/engine-gaps.md): `d3-missing-setloadfields` no longer fires when the fields
   touched after a retrieval are only WRITTEN, and `d42-cross-call-wrong-setloadfields`
   no longer counts PRIMARY-KEY fields as must-be-loaded. Three exact sub-class

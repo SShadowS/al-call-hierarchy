@@ -216,17 +216,71 @@ pub(crate) fn record_loaded_by_call_before(
     false
 }
 
-/// G-10 tier 2: does the RESOLVED callee of `cs` perform a recognized load op
-/// on the by-`var` record parameter bound to caller variable `var_lc`
-/// (lowercased)? One hop only — the callee's own body is inspected directly,
-/// never its transitive callees. Every uncertainty returns `false`.
+/// G-16: the BOUND on the callee-load summary's wrapper-chain depth. A callee
+/// counts as loading the by-var arg if the load op lands in its own body
+/// (1 hop) or in a callee it forwards the same by-var arg to, up to this many
+/// callee hops total — `FindTemplate` -> `FindTemplateWithReportID` ->
+/// `FindSet` is 2 hops. A load any deeper proves nothing (no unbounded
+/// recursion; the detectors keep firing).
+const MAX_LOAD_WRAPPER_HOPS: u32 = 3;
+
+/// G-10/G-16 tier 2: does the RESOLVED callee of `cs` perform a recognized
+/// load op on the by-`var` record parameter bound to caller variable `var_lc`
+/// (lowercased)? G-16 extends G-10's one-hop summary to a BOUNDED multi-hop
+/// chain (`MAX_LOAD_WRAPPER_HOPS`): every hop must be the SAME
+/// resolved-binding join (resolved callee, by-`var` record parameter), and the
+/// recognized load op must land on the forwarded parameter within the bound.
+/// Every uncertainty returns `false`.
 fn callee_loads_by_var_arg(ctx: &DetectorContext, cs: &PCallSite, var_lc: &str) -> bool {
     callee_applies_op_to_by_var_arg(ctx, cs, var_lc, |callee, param_lc| {
-        callee.record_operations.iter().any(|op| {
-            RECORD_LOAD_OPS.contains(&op.op.as_str())
-                && op.record_variable_name.to_lowercase() == param_lc
-        })
+        callee_loads_param(ctx, callee, param_lc, MAX_LOAD_WRAPPER_HOPS - 1)
     })
+}
+
+/// Does `callee`'s body prove its record parameter `param_lc` (lowercased)
+/// loaded — directly (a recognized `RECORD_LOAD_OPS` op or a tier-1 platform
+/// loader call on it), or by forwarding it by-`var` into a deeper resolved
+/// callee that loads it within `remaining_hops` further hops? `remaining_hops`
+/// strictly decreases per hop, so recursion is bounded even across mutually
+/// recursive wrappers.
+fn callee_loads_param(
+    ctx: &DetectorContext,
+    callee: &L3Routine,
+    param_lc: &str,
+    remaining_hops: u32,
+) -> bool {
+    // Direct load op on the parameter anywhere in the callee body (same
+    // semantics as the detectors' intraprocedural scan — branching ignored,
+    // e.g. `if not R.Get(..) then begin R.Init(); R.Insert(); end` leaves the
+    // record loaded-or-inserted either way).
+    if callee.record_operations.iter().any(|op| {
+        RECORD_LOAD_OPS.contains(&op.op.as_str())
+            && op.record_variable_name.to_lowercase() == param_lc
+    }) {
+        return true;
+    }
+    for cs in &callee.call_sites {
+        // Tier 1 inside the wrapper: `<param>.GetBySystemId(...)`.
+        if let PCallee::Member { receiver, method } = &cs.callee {
+            if receiver.to_lowercase() == param_lc
+                && PLATFORM_LOADER_METHODS
+                    .iter()
+                    .any(|m| m.eq_ignore_ascii_case(method))
+            {
+                return true;
+            }
+        }
+        // Deeper wrapper hop: the parameter forwarded by-`var` into a
+        // resolved callee that loads it (bounded).
+        if remaining_hops > 0
+            && callee_applies_op_to_by_var_arg(ctx, cs, param_lc, |inner, inner_param_lc| {
+                callee_loads_param(ctx, inner, inner_param_lc, remaining_hops - 1)
+            })
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Shared G-10/G-3 one-hop callee-summary join: does the RESOLVED callee of
@@ -285,6 +339,97 @@ fn callee_applies_op_to_by_var_arg(
         }
     }
     false
+}
+
+/// G-16(b): the BOUND on the record-assignment chain depth (`C := B; B := A;`
+/// with `A` loaded proves `C` through 2 links). Bounded so a cyclic
+/// assignment pair can never recurse forever.
+const MAX_ASSIGN_CHAIN_DEPTH: u32 = 3;
+
+/// G-16(b) suppression signal: true iff a whole-record assignment
+/// `<record_variable_name> := <rhs>` strictly before `op_anchor` in `routine`
+/// copies a PROVABLY-LOADED record var into the op's record
+/// (docs/engine-gaps.md G-16). The RHS must be provably loaded AT THE
+/// ASSIGNMENT POINT: a recognized load op / loading call strictly before the
+/// assignment, the platform-loaded trigger `Rec`, a parameter record (caller-
+/// loaded — the same skip d11/d21 apply to direct ops on parameters), or a
+/// further assignment from a loaded var (bounded chain). Anything uncertain
+/// (expression RHS, field write, unknown/unloaded RHS, assignment after the
+/// op) returns `false` — the detectors keep firing.
+pub(crate) fn record_loaded_by_assignment_before(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    record_variable_name: &str,
+    op_anchor: &PAnchor,
+) -> bool {
+    assigned_from_loaded_var_before(
+        routine,
+        ctx,
+        &record_variable_name.to_lowercase(),
+        op_anchor,
+        MAX_ASSIGN_CHAIN_DEPTH,
+    )
+}
+
+/// One assignment-chain link: is there a `var_lc := <rhs-identifier>`
+/// strictly before `anchor` whose RHS is provably loaded at that assignment?
+/// Consumes one unit of `depth` per link.
+fn assigned_from_loaded_var_before(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    var_lc: &str,
+    anchor: &PAnchor,
+    depth: u32,
+) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    routine.var_assignments.iter().any(|asg| {
+        // `lhs_name` / `rhs_identifier` are stored lowercased; `rhs_identifier`
+        // is only Some for a whole-variable copy (bare identifier on BOTH sides).
+        asg.lhs_name == var_lc
+            && before_anchor(&asg.source_anchor, anchor)
+            && asg.rhs_identifier.as_deref().is_some_and(|rhs_lc| {
+                variable_proven_loaded_before(routine, ctx, rhs_lc, &asg.source_anchor, depth - 1)
+            })
+    })
+}
+
+/// Is record variable `var_lc` (lowercased) PROVABLY loaded strictly before
+/// `anchor` in `routine`? Exactly the signals d11/d21 already accept for the
+/// op's own record: the platform-loaded trigger `Rec` (G-9), a parameter
+/// record (caller-loaded — the detectors' own skip), a recognized load op, a
+/// loading call (G-10/G-16a), or — recursively, bounded — an assignment from
+/// another loaded var. A non-record or unknown identifier matches none of
+/// these and returns `false`.
+fn variable_proven_loaded_before(
+    routine: &L3Routine,
+    ctx: &DetectorContext,
+    var_lc: &str,
+    anchor: &PAnchor,
+    depth: u32,
+) -> bool {
+    if is_platform_loaded_trigger_rec(routine, var_lc) {
+        return true;
+    }
+    if routine
+        .record_variables
+        .iter()
+        .any(|rv| rv.is_parameter && rv.name.eq_ignore_ascii_case(var_lc))
+    {
+        return true;
+    }
+    if routine.record_operations.iter().any(|op| {
+        RECORD_LOAD_OPS.contains(&op.op.as_str())
+            && op.record_variable_name.eq_ignore_ascii_case(var_lc)
+            && before_anchor(&op.source_anchor, anchor)
+    }) {
+        return true;
+    }
+    if record_loaded_by_call_before(routine, ctx, var_lc, anchor) {
+        return true;
+    }
+    assigned_from_loaded_var_before(routine, ctx, var_lc, anchor, depth)
 }
 
 /// The narrowing-filter op names d33 recognizes intraprocedurally. Shared so

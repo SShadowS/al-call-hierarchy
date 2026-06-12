@@ -955,10 +955,20 @@ fn collect_var_assignments(ctx: &Ctx, body_node: Node) -> Vec<PVarAssignment> {
                 });
             if let (Some(target), Some(value)) = (target, value) {
                 if let Some(lhs_name) = lhs_identifier_of(target, ctx.source) {
+                    // G-16: a whole-variable copy (`Cust := Rec`) — BOTH sides
+                    // bare identifiers. Internal-only (serde-skipped), consumed
+                    // by d11/d21's record-assign-as-load gate.
+                    let rhs_identifier =
+                        if target.kind() == "identifier" && value.kind() == "identifier" {
+                            Some(node_text(value, ctx.source).to_lowercase())
+                        } else {
+                            None
+                        };
                     out.push(PVarAssignment {
                         lhs_name: lhs_name.to_lowercase(),
                         rhs_literal_value: literal_text_of(value, ctx.source),
                         source_anchor: ctx.anchor(n),
+                        rhs_identifier,
                     });
                 }
             }

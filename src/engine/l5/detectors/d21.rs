@@ -3,10 +3,12 @@
 //!
 //! Read-side sibling of D11. Flags `TestField` / `CalcFields` / `CalcSums` on a
 //! record variable that was never loaded earlier in the same routine. Skips
-//! by-var parameter records (caller-loaded). G-10: a prior call that loads the
-//! record also counts — the platform built-in `GetBySystemId` and any resolved
-//! callee that loads the by-var argument (one-hop callee summary,
-//! `detectors::record_loaded_by_call_before`).
+//! by-var parameter records (caller-loaded). G-10/G-16: a prior call that
+//! loads the record also counts — the platform built-in `GetBySystemId` and
+//! any resolved callee chain that loads the by-var argument (bounded multi-hop
+//! callee summary, `detectors::record_loaded_by_call_before`) — as does a
+//! whole-record assignment from a provably-loaded var
+//! (`detectors::record_loaded_by_assignment_before`).
 //!
 //! Within-detector sort by `compareStrings(a.id, b.id)` (byte order).
 
@@ -14,8 +16,8 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, before_anchor, is_platform_loaded_trigger_rec, record_loaded_by_call_before,
-    RECORD_LOAD_OPS,
+    anchor_of, before_anchor, is_platform_loaded_trigger_rec, record_loaded_by_assignment_before,
+    record_loaded_by_call_before, RECORD_LOAD_OPS,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -83,10 +85,21 @@ pub fn detect_d21(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             if loaded_before {
                 continue;
             }
-            // G-10: the record was loaded by a CALL strictly before this op —
-            // a platform built-in (`GetBySystemId`) or a resolved callee that
-            // loads the by-var argument (one-hop callee summary).
+            // G-10/G-16(a): the record was loaded by a CALL strictly before
+            // this op — a platform built-in (`GetBySystemId`) or a resolved
+            // callee chain that loads the by-var argument (bounded multi-hop
+            // callee summary).
             if record_loaded_by_call_before(
+                routine,
+                ctx,
+                &op.record_variable_name,
+                &op.source_anchor,
+            ) {
+                continue;
+            }
+            // G-16(b): the record was ASSIGNED from a provably-loaded record
+            // var strictly before this op (`RecB := RecA` with RecA loaded).
+            if record_loaded_by_assignment_before(
                 routine,
                 ctx,
                 &op.record_variable_name,
