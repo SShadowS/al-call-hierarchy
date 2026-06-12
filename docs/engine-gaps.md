@@ -9,6 +9,19 @@ classes that remain. Ordered by volume × ease.
 Each gap: symptom, evidence (which triage batches + example sites), suggested approach.
 This is a backlog for later work, not a committed plan.
 
+> **Consolidated golden rebaseline DONE** (`chore(engine-gaps): rebaseline goldens
+> after G-1..G-12 detector-gap fixes`). The per-gap "rebaseline deferred / remains
+> with the consolidated rebaseline task" notes below are now SETTLED. Two content
+> classes actually moved goldens: (a) **G-4** d1 transitive `rootCause` text on
+> `ws-d1` (r4) + `ws-d1-multi-caller` (r4 / cli-a json+html+terminal / gate-sarif) —
+> field-level diff: only `rootCause`, fingerprints/severity/ids unchanged; (b)
+> **G-12** d3 PK-only existence-check `Get` suppression on `ws-inline-suppress`,
+> whose anti-degenerate witness was restored by editing the fixture so
+> `UnsuppressedD3` reads a Normal field (`Name`) after the `Get` (gate-suppress
+> SARIF/PR-summary + the `ws-inline-suppress` L2 feature golden rebaselined). All
+> other gap fixes moved no in-repo golden. `cli_c_cache` did not move → no cache
+> version bump. `KNOWN_DIVERGENCES.json` stays `[]`.
+
 ---
 
 ## G-1 — d1 fires on the `Next()` loop terminator (highest volume, easiest)

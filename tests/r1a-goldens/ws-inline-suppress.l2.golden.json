@@ -27,9 +27,9 @@
             "type": "repeat",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 38,
+              "startLine": 40,
               "startColumn": 12,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 33,
               "syntaxKind": "repeat_statement"
             }
@@ -42,9 +42,9 @@
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 37,
+              "startLine": 39,
               "startColumn": 11,
-              "endLine": 37,
+              "endLine": 39,
               "endColumn": 25,
               "syntaxKind": "call_expression"
             },
@@ -64,9 +64,9 @@
             ],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 39,
+              "startLine": 41,
               "startColumn": 16,
-              "endLine": 39,
+              "endLine": 41,
               "endColumn": 36,
               "syntaxKind": "call_expression"
             },
@@ -86,9 +86,9 @@
             ],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 40,
+              "startLine": 43,
               "startColumn": 18,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 29,
               "syntaxKind": "call_expression"
             },
@@ -106,43 +106,32 @@
             "id": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op0",
             "op": "FindSet",
             "recordVariableName": "Rec3",
+            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 37,
+              "startLine": 39,
               "startColumn": 11,
-              "endLine": 37,
+              "endLine": 39,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           },
           {
             "id": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op1",
             "op": "Get",
             "recordVariableName": "Rec3",
+            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [
-              "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/loop0"
-            ],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 39,
-              "startColumn": 16,
-              "endLine": 39,
-              "endColumn": 36,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
             "fieldArguments": [
               "Rec3.\"No.\""
             ],
@@ -151,12 +140,24 @@
                 "kind": "member_expression",
                 "text": "Rec3.\"No.\""
               }
-            ]
+            ],
+            "loopStack": [
+              "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/loop0"
+            ],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 41,
+              "startColumn": 16,
+              "endLine": 41,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op2",
             "op": "Next",
             "recordVariableName": "Rec3",
+            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
             "tempState": {
               "kind": "known",
               "value": false
@@ -166,13 +167,12 @@
             ],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 40,
+              "startLine": 43,
               "startColumn": 18,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3"
+            }
           }
         ],
         "callSites": [],
@@ -182,10 +182,22 @@
             "fieldName": "No.",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 39,
+              "startLine": 41,
               "startColumn": 25,
-              "endLine": 39,
+              "endLine": 41,
               "endColumn": 35,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
+            "recordVariableName": "Rec3",
+            "fieldName": "Name",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 42,
+              "startColumn": 28,
+              "endLine": 42,
+              "endColumn": 37,
               "syntaxKind": "member_expression"
             }
           }
@@ -194,18 +206,19 @@
           {
             "id": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/rv/rec3",
             "name": "Rec3",
+            "tableName": "IS Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "IS Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 1,
         "hasBranching": true,
         "unreachableStatements": [],
         "identifierReferences": [
+          "lastname",
           "rec3"
         ],
         "variables": [
@@ -216,32 +229,61 @@
             "isParameter": false,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 35,
+              "startLine": 36,
               "startColumn": 8,
-              "endLine": 35,
+              "endLine": 36,
               "endColumn": 30,
+              "syntaxKind": "variable_declaration"
+            }
+          },
+          {
+            "name": "lastname",
+            "declaredType": "Text[50]",
+            "scope": "local",
+            "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 37,
+              "startColumn": 8,
+              "endLine": 37,
+              "endColumn": 27,
               "syntaxKind": "variable_declaration"
             }
           }
         ],
-        "varAssignments": [],
+        "varAssignments": [
+          {
+            "lhsName": "lastname",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 42,
+              "startColumn": 16,
+              "endLine": 42,
+              "endColumn": 37,
+              "syntaxKind": "assignment_statement"
+            }
+          }
+        ],
         "conditionReferences": [
           {
             "identifier": "findset",
             "conditionKind": "if",
             "statementAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 37,
+              "startLine": 39,
               "startColumn": 8,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 34,
               "syntaxKind": "if_statement"
             },
             "referenceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 37,
+              "startLine": 39,
               "startColumn": 16,
-              "endLine": 37,
+              "endLine": 39,
               "endColumn": 23,
               "syntaxKind": "identifier"
             }
@@ -251,17 +293,17 @@
             "conditionKind": "repeat-until",
             "statementAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 38,
+              "startLine": 40,
               "startColumn": 12,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 33,
               "syntaxKind": "repeat_statement"
             },
             "referenceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 40,
+              "startLine": 43,
               "startColumn": 23,
-              "endLine": 40,
+              "endLine": 43,
               "endColumn": 27,
               "syntaxKind": "identifier"
             }
@@ -294,6 +336,9 @@
                         {
                           "kind": "op",
                           "operationId": "r0/0c70b6d49c73d4f05a998b66a0375f5ef580d5e63c48b4f8a93a7882a1c903f2/op1"
+                        },
+                        {
+                          "kind": "other"
                         }
                       ]
                     }
@@ -437,20 +482,11 @@
             "id": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/op0",
             "op": "Get",
             "recordVariableName": "Rec2",
+            "recordVariableId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/rv/rec2",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 24,
-              "startColumn": 8,
-              "endLine": 24,
-              "endColumn": 23,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/rv/rec2",
             "fieldArguments": [
               "20000"
             ],
@@ -460,12 +496,22 @@
                 "text": "20000",
                 "value": "20000"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 24,
+              "startColumn": 8,
+              "endLine": 24,
+              "endColumn": 23,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/op1",
             "op": "Modify",
             "recordVariableName": "Rec2",
+            "recordVariableId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/rv/rec2",
             "tempState": {
               "kind": "known",
               "value": false
@@ -478,8 +524,7 @@
               "endLine": 26,
               "endColumn": 21,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/rv/rec2"
+            }
           }
         ],
         "callSites": [
@@ -570,12 +615,12 @@
           {
             "id": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/rv/rec2",
             "name": "Rec2",
+            "tableName": "IS Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "IS Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -633,6 +678,7 @@
         "varAssignments": [
           {
             "lhsName": "name",
+            "rhsLiteralValue": "other",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
               "startLine": 25,
@@ -640,8 +686,7 @@
               "endLine": 25,
               "endColumn": 28,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "other"
+            }
           }
         ],
         "conditionReferences": [],
@@ -796,20 +841,11 @@
             "id": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/op0",
             "op": "Get",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Sender.Codeunit.al",
-              "startLine": 10,
-              "startColumn": 8,
-              "endLine": 10,
-              "endColumn": 22,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/rv/rec",
             "fieldArguments": [
               "10000"
             ],
@@ -819,12 +855,22 @@
                 "text": "10000",
                 "value": "10000"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Sender.Codeunit.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/op1",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -837,8 +883,7 @@
               "endLine": 12,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -929,12 +974,12 @@
           {
             "id": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/rv/rec",
             "name": "Rec",
+            "tableName": "IS Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "IS Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -992,6 +1037,7 @@
         "varAssignments": [
           {
             "lhsName": "name",
+            "rhsLiteralValue": "changed",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
               "startLine": 11,
@@ -999,8 +1045,7 @@
               "endLine": 11,
               "endColumn": 29,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "changed"
+            }
           }
         ],
         "conditionReferences": [],

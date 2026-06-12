@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Rebaselined the in-repo differential goldens after the G-1..G-12 detector-gap fixes.
+  Two content classes moved: (a) **G-4** d1 transitive-loop `rootCause` text now names
+  the terminal routine ("… reaches <op> in Z, which has no loop of its own — the
+  operation runs once per iteration of that loop.") on `ws-d1` (r4) and
+  `ws-d1-multi-caller` (r4 / cli-a json+html+terminal / gate-sarif) — a field-level
+  change to `rootCause` only; presence, severity, ids, rootCauseKeys, and fingerprints
+  are byte-identical. (b) **G-12** d3 now suppresses the PK-only existence-check `Get`
+  in `ws-inline-suppress`'s `UnsuppressedD3`; the gate-suppress anti-degenerate witness
+  was preserved by editing that fixture so the routine reads a Normal field (`Name`)
+  after the `Get`, yielding a genuine d3 finding — gate-suppress SARIF/PR-summary and
+  the `ws-inline-suppress` L2 feature golden were rebaselined accordingly. Added
+  `REGEN_TEMP_GOLDENS` regen branches to the gate-suppress and L2-features differential
+  harnesses (mirroring the existing gate-sarif / cli-a / r4 / l3rt regen paths). No
+  symbol-reader/cache surface moved (`cli_c_cache` green) → no cache-version bump;
+  `KNOWN_DIVERGENCES.json` stays `[]`.
+
 ### Fixed
 - G-8 (docs/engine-gaps.md): a codeunit-global `temporary` record FORWARDED by-var into a
   helper (e.g. `TempErrors: Record "Error Message" temporary;` passed to a local

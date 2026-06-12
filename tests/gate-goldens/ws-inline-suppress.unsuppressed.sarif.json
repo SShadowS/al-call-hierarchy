@@ -176,7 +176,7 @@
                   "uri": "ws:src/Sender.Codeunit.al"
                 },
                 "region": {
-                  "startLine": 40,
+                  "startLine": 42,
                   "startColumn": 17
                 }
               },
@@ -199,7 +199,7 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 39,
+                            "startLine": 41,
                             "startColumn": 13
                           }
                         },
@@ -215,7 +215,7 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 40,
+                            "startLine": 42,
                             "startColumn": 17
                           }
                         },
@@ -374,7 +374,7 @@
           "ruleId": "d3-missing-setloadfields",
           "level": "warning",
           "message": {
-            "text": "Missing SetLoadFields before a record retrieval — UnsuppressedD3 runs FindSet on Rec3 and then accesses field(s) [no.] — no SetLoadFields was set."
+            "text": "Missing SetLoadFields before a record retrieval — UnsuppressedD3 runs FindSet on Rec3 and then accesses field(s) [name] — no SetLoadFields was set."
           },
           "fingerprints": {
             "al-sem/v1": "91d57a61239f81ab"
@@ -386,7 +386,7 @@
                   "uri": "ws:src/Sender.Codeunit.al"
                 },
                 "region": {
-                  "startLine": 38,
+                  "startLine": 40,
                   "startColumn": 12
                 }
               },
@@ -409,7 +409,7 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 38,
+                            "startLine": 40,
                             "startColumn": 12
                           }
                         },
@@ -425,12 +425,28 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 40,
+                            "startLine": 42,
                             "startColumn": 26
                           }
                         },
                         "message": {
                           "text": "accesses Rec3.No."
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Sender.Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 43,
+                            "startColumn": 29
+                          }
+                        },
+                        "message": {
+                          "text": "accesses Rec3.Name"
                         }
                       }
                     }
@@ -444,7 +460,7 @@
           "ruleId": "d3-missing-setloadfields",
           "level": "warning",
           "message": {
-            "text": "Missing SetLoadFields before a record retrieval — UnsuppressedD3 runs Get on Rec3 and then accesses field(s) [no.] — no SetLoadFields was set."
+            "text": "Missing SetLoadFields before a record retrieval — UnsuppressedD3 runs Get on Rec3 and then accesses field(s) [name] — no SetLoadFields was set."
           },
           "fingerprints": {
             "al-sem/v1": "87b9ffdf36de03aa"
@@ -456,7 +472,7 @@
                   "uri": "ws:src/Sender.Codeunit.al"
                 },
                 "region": {
-                  "startLine": 40,
+                  "startLine": 42,
                   "startColumn": 17
                 }
               },
@@ -479,7 +495,7 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 40,
+                            "startLine": 42,
                             "startColumn": 17
                           }
                         },
@@ -495,12 +511,28 @@
                             "uri": "ws:src/Sender.Codeunit.al"
                           },
                           "region": {
-                            "startLine": 40,
+                            "startLine": 42,
                             "startColumn": 26
                           }
                         },
                         "message": {
                           "text": "accesses Rec3.No."
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ws:src/Sender.Codeunit.al"
+                          },
+                          "region": {
+                            "startLine": 43,
+                            "startColumn": 29
+                          }
+                        },
+                        "message": {
+                          "text": "accesses Rec3.Name"
                         }
                       }
                     }

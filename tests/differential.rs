@@ -718,6 +718,20 @@ fn differential_l2_features_match_goldens() {
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust L2 projection for {fixture}: {e}"));
 
+        // REGEN path (mirrors the L3rt branch / temp-state epoch rebaseline). When
+        // `REGEN_TEMP_GOLDENS` is set, write the ENGINE projection to the golden
+        // file (matching the on-disk pretty form) instead of comparing — the
+        // goldens are Rust-owned baselines (TS oracle retired).
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            let mut pretty = serde_json::to_string_pretty(&projection)
+                .unwrap_or_else(|e| panic!("regen serialize L2 {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN l2 golden: {}", golden_path.display());
+            continue;
+        }
+
         // Forbidden-field scan on BOTH sides (belt-and-suspenders).
         scan_forbidden_keys(
             &golden_json,
@@ -730,6 +744,12 @@ fn differential_l2_features_match_goldens() {
         let g = canonicalize_l2_top(&golden_json);
         let r = canonicalize_l2_top(&rust_json);
         diff_l2_value(fixture, "", &g, &r, &mut all_divergences);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        eprintln!("REGEN l2: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     all_divergences

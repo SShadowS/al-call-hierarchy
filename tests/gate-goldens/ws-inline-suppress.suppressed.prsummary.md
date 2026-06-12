@@ -14,20 +14,22 @@
 
 **MEDIUM**  [d3-missing-setloadfields] Missing SetLoadFields before a record retrieval
   App: Test/InlineSuppress 1.0.0.0  —  "IS Sender".UnsuppressedD3()
-  ws:src/Sender.Codeunit.al:40  Get on Rec3 with no SetLoadFields
-  ws:src/Sender.Codeunit.al:40  accesses Rec3.No.
+  ws:src/Sender.Codeunit.al:42  Get on Rec3 with no SetLoadFields
+  ws:src/Sender.Codeunit.al:42  accesses Rec3.No.
+  ws:src/Sender.Codeunit.al:43  accesses Rec3.Name
   coverage: complete
 
 **MEDIUM**  [d3-missing-setloadfields] Missing SetLoadFields before a record retrieval
   App: Test/InlineSuppress 1.0.0.0  —  "IS Sender".UnsuppressedD3()
-  ws:src/Sender.Codeunit.al:38  FindSet on Rec3 with no SetLoadFields
-  ws:src/Sender.Codeunit.al:40  accesses Rec3.No.
+  ws:src/Sender.Codeunit.al:40  FindSet on Rec3 with no SetLoadFields
+  ws:src/Sender.Codeunit.al:42  accesses Rec3.No.
+  ws:src/Sender.Codeunit.al:43  accesses Rec3.Name
   coverage: complete
 
 **MEDIUM**  [d1-db-op-in-loop] Database operation inside a loop
   App: Test/InlineSuppress 1.0.0.0  —  "IS Sender".UnsuppressedD3()
-  ws:src/Sender.Codeunit.al:39  repeat loop
-  ws:src/Sender.Codeunit.al:40  Get on IS Rec
+  ws:src/Sender.Codeunit.al:41  repeat loop
+  ws:src/Sender.Codeunit.al:42  Get on IS Rec
   coverage: complete
 
 **MEDIUM**  [d3-missing-setloadfields] Missing SetLoadFields before a record retrieval

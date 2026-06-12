@@ -49,6 +49,20 @@ fn read_golden(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
+/// REGEN path (mirrors the gate-sarif / cli-a / r4 harnesses). When
+/// `REGEN_TEMP_GOLDENS` is set, write the ENGINE-produced string to the golden
+/// file instead of comparing — the goldens are Rust-owned baselines. Returns
+/// `true` when a regen write happened (the caller then skips the assert).
+fn maybe_regen(name: &str, rust: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    let path = goldens_dir().join(name);
+    std::fs::write(&path, rust).unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+    eprintln!("REGEN gate-suppress golden: {}", path.display());
+    true
+}
+
 /// The al-sem inline-suppress capture runs `[...DEFAULT_DETECTORS, d47-io-unsafe-txn]`
 /// with `filterFindings(projected, {})` (no allow-list). In the Rust gate, passing the
 /// explicit name list as `--detector` SELECTS exactly those detectors AND allow-lists
@@ -131,6 +145,9 @@ fn first_diff(label: &str, golden: &str, rust: &str) {
 fn inline_suppression_suppressed_sarif_byte_matches() {
     let args = inline_suppress_args(false); // suppression ON
     let rust = run_analyze(&args, "engine-default").expect("run_analyze");
+    if maybe_regen("ws-inline-suppress.suppressed.sarif.json", &rust) {
+        return;
+    }
     let golden = read_golden("ws-inline-suppress.suppressed.sarif.json");
     if rust != golden {
         first_diff("ws-inline-suppress.suppressed.sarif", &golden, &rust);
@@ -148,6 +165,9 @@ fn inline_suppression_suppressed_sarif_byte_matches() {
 fn inline_suppression_unsuppressed_sarif_byte_matches() {
     let args = inline_suppress_args(true); // suppression OFF
     let rust = run_analyze(&args, "engine-default").expect("run_analyze");
+    if maybe_regen("ws-inline-suppress.unsuppressed.sarif.json", &rust) {
+        return;
+    }
     let golden = read_golden("ws-inline-suppress.unsuppressed.sarif.json");
     if rust != golden {
         first_diff("ws-inline-suppress.unsuppressed.sarif", &golden, &rust);
@@ -167,6 +187,9 @@ fn inline_suppression_prsummary_byte_matches() {
     args.format = OutputFormat::PrSummary;
     args.sarif_version_override = None; // PR-summary embeds no version
     let rust = run_analyze(&args, "engine-default").expect("run_analyze");
+    if maybe_regen("ws-inline-suppress.suppressed.prsummary.md", &rust) {
+        return;
+    }
     let golden = read_golden("ws-inline-suppress.suppressed.prsummary.md");
     if rust != golden {
         first_diff("ws-inline-suppress.suppressed.prsummary", &golden, &rust);

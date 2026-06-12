@@ -33,7 +33,7 @@
           "routineId": "225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513",
           "routineName": "ModifyHelper"
         },
-        "rootCause": "A loop in CallerA reaches Modify on MC Customer. (Also reached from 2 other in-loop ancestors.)",
+        "rootCause": "A loop in CallerA reaches Modify on MC Customer in ModifyHelper, which has no loop of its own — the operation runs once per iteration of that loop. (Also reached from 2 other in-loop ancestors.)",
         "severity": "high",
         "title": "Database operation inside a loop"
       }

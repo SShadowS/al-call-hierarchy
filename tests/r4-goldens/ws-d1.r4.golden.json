@@ -10,7 +10,7 @@
       "id": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#341ea40393c719987aa24f563f883e09ab6132174f4ef8275f8d997ecbf8650e/loop0/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0",
       "rootCauseKey": "d1/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/11111111-d100-0000-0000-000000000001:Codeunit:63101#f352f9c43b674ac3339fe9fece62fac2c9069c26169b00ad5f690915ddefb0bb/op0",
       "title": "Database operation inside a loop",
-      "rootCause": "A loop in ProcessAll reaches FindSet on Customer. (Also reached from 1 other in-loop ancestor.)",
+      "rootCause": "A loop in ProcessAll reaches FindSet on Customer in ProcessOne, which has no loop of its own — the operation runs once per iteration of that loop. (Also reached from 1 other in-loop ancestor.)",
       "severity": "medium",
       "confidence": {
         "level": "likely",

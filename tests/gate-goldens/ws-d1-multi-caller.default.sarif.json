@@ -164,7 +164,7 @@
           "ruleId": "d1-db-op-in-loop",
           "level": "error",
           "message": {
-            "text": "Database operation inside a loop — A loop in CallerA reaches Modify on MC Customer. (Also reached from 2 other in-loop ancestors.)"
+            "text": "Database operation inside a loop — A loop in CallerA reaches Modify on MC Customer in ModifyHelper, which has no loop of its own — the operation runs once per iteration of that loop. (Also reached from 2 other in-loop ancestors.)"
           },
           "fingerprints": {
             "al-sem/v1": "7b8051d5229766f0"

@@ -29,15 +29,18 @@ codeunit 50001 "IS Sender"
         Client2.Get('https://example.test/other', Resp2);
     end;
 
-    // Procedure 3: D3 finding (Get without SetLoadFields in a loop) — NOT suppressed.
-    // This produces an unrelated finding that inline suppression must NOT touch.
+    // Procedure 3: D3 finding (Get without SetLoadFields, then a NORMAL field read) — NOT suppressed.
+    // The post-Get read of "Name" (a Normal field) is what makes the missing SetLoadFields wasteful,
+    // so a genuine d3 fires here. This produces an unrelated finding that inline suppression must NOT touch.
     procedure UnsuppressedD3()
     var
         Rec3: Record "IS Rec";
+        LastName: Text[50];
     begin
         if Rec3.FindSet() then
             repeat
                 Rec3.Get(Rec3."No.");
+                LastName := Rec3.Name;
             until Rec3.Next() = 0;
     end;
 }
