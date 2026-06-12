@@ -54,12 +54,12 @@ FIX: net-effect (last SetRange/SetFilter/Reset by source position) for d41 (DONE
 
 ## Singleton bugs (correctness)
 - ~~**d4 BUG-5**: finding id `d4/{routine}/{loop}/{varLc}` omits the literal key → two distinct keys in the same (routine,loop,var) → DUPLICATE ids (no merge_by_terminal).~~ **FIXED** (commit `fix(engine-audit-d4)`, engine branch): the literal key is appended to the id ONLY when a variable has 2+ qualifying key groups — single-key ids stay byte-identical (r4 golden verified unmoved). Test: `tests/gap_audit_d4.rs::two_distinct_keys_in_same_loop_get_distinct_ids`.
-- **d7 BUG-1**: rootCause doubles the anchor routine name (`chain.join` already includes it, appended again, d7.rs:218-223).
-- **d7 FN-1**: SCC anchor = first SORTED member; if that is external/dep → `else continue` drops the whole cycle (should pick first WORKSPACE member).
-- **d12 BUG-1**: missing `dep_routine_ids` primary gate (d12.rs:56-57 commented, not coded) → cross-app dep integration events fire d12.
-- **d14 FP**: `internal_reachable_externally` hardcoded false (detector_context.rs:273) → `internalsVisibleTo` friend-only routines flagged dead. (Documented TODO — wiring app.json.)
-- **d50 BUG**: `CommitBehavior::Suppress` not in the effective-commit set (d50.rs:139 has ignore/error only) → false fire.
-- **d51 BUG**: HTTP GET before Error fires (io_direction not filtered, unlike the commit check, ordering_facts.rs:435-453); io_label fallback hardcodes "write-direction".
+- ~~**d7 BUG-1**: rootCause doubles the anchor routine name (`chain.join` already includes it, appended again, d7.rs:218-223).~~ **DROPPED — misdiagnosis.** The trailing `→ first.name` is INTENTIONAL cycle-closing notation (start = end shows the loop closes); the `ws-d7-event-cycle` golden freezes `SubB → … → SubB`. Faithful to al-sem; not a bug.
+- **d7 FN-1**: SCC anchor = first SORTED member; if that is external/dep → `else continue` drops the whole cycle (should pick first WORKSPACE member). **DEFERRED** — only manifests with cross-app dependency cycles, and changing the anchor moves the rootCause closing name (golden churn). Contentious; low value.
+- ~~**d12 BUG-1**: missing `dep_routine_ids` primary gate (d12.rs:56-57 commented, not coded) → cross-app dep integration events fire d12.~~ **FIXED** (commit `fix(engine-audit-bugs)`): `ctx.dep_routine_ids.contains(pub_routine_id)` skip added (a dependency app's dead event is not the user's to fix). Source-only unaffected (empty dep set). `dependency` skip stat.
+- **d14 FP**: `internal_reachable_externally` hardcoded false (detector_context.rs:273) → `internalsVisibleTo` friend-only routines flagged dead. (Documented TODO — wiring app.json.) DEFER (schema).
+- ~~**d50 BUG**: `CommitBehavior::Suppress` not in the effective-commit set (d50.rs:139 has ignore/error only) → false fire.~~ **DROPPED — misdiagnosis.** BC `CommitBehavior` has only `Ignore` / `Error` (+ implicit `Default`); there is NO `Suppress` member (MS Learn devenv-commitbehavior-attribute). d50's `ignore`/`error` check is complete.
+- ~~**d51 BUG**: HTTP GET before Error fires (io_direction not filtered, unlike the commit check, ordering_facts.rs:435-453); io_label fallback hardcodes "write-direction".~~ **FIXED** (commit `fix(engine-audit-bugs)`): the `IO_BEFORE_ESCAPING_ERROR` arm now suppresses a PROVEN read-direction request (HTTP GET/HEAD → idempotent on retry, no duplication), mirroring the sibling commit arm; `unknown` (Send) keeps firing (suppression-direction safe). io_label fallback left — only reaches FILE-write / unknown, never proven-read. Tests in `ordering_facts`.
 - **d47/d48/d51 FN**: IsolatedStorage.Set / TaskScheduler.CreateTask not modeled as IO (is_io_type narrows to HTTP|FILE, ordering_facts.rs:37).
 
 ## Priority fix order (clearest, highest-value first; group by shared root)
@@ -67,7 +67,7 @@ FIX: net-effect (last SetRange/SetFilter/Reset by source position) for d41 (DONE
 2. **A** — temp-gate d2/d4/d8/d29/d43/d44/d45 — extend temp check / cone temp annotation, high-volume. (d2, d4, d8, d43/44/45 DONE; only d29 remains, folded into #5.)
 3. **C** — d2 + d18 loop guards (terminator-Next, virtual table) — mirror d1, easy.
 4. ~~**E** — d41 net-effect filter + d42 AddLoadFields-full-load + FlowField — clear FP bugs.~~ DONE (d41 net-effect + d42 FlowField; Gap-W dropped as docs-verified misdiagnosis).
-5. **d29 Modify(false)** exemption — clear, canonical pattern.
-6. **bugs**: ~~d4 id~~ (DONE), d7 rootCause+anchor, d12 dep gate, d50 Suppress, d51 io_direction — small correctness fixes.
+5. ~~**d29 Modify(false)** exemption — clear, canonical pattern.~~ DONE (RunTrigger=false + temp).
+6. **bugs**: ~~d4 id~~ (DONE), ~~d7 rootCause~~ (dropped-misdiagnosis), d7 anchor (deferred cross-app), ~~d12 dep gate~~ (DONE), ~~d50 Suppress~~ (dropped-no-such-enum), ~~d51 io_direction~~ (DONE) — small correctness fixes.
 7. **FN**: d20 break, d22 implicit-Rec FlowField, d37 ModifyAll-not-persist — premise-narrowing fixes.
 8. **D** (RecordRef-as-op) — larger (L2 capture); **d34/d35 Unknown-skip**, **d14 internalsVisibleTo**, **d47/d48/d51 IsolatedStorage/TaskScheduler** — investigate/defer (open-world or schema).

@@ -41,6 +41,7 @@ pub fn detect_d12(
 
     let mut candidates_considered = 0usize;
     let mut skipped_other = 0u64;
+    let mut skipped_dependency = 0u64;
 
     for ev in &ctx.event_graph.events {
         if ev.event_kind != "integration" {
@@ -53,8 +54,15 @@ pub fn detect_d12(
             continue;
         };
         let pub_routine: &crate::engine::l3::l3_workspace::L3Routine = pub_routine;
-        // roleOf(routine) !== "primary" → skip. Source-only: every routine is
-        // primary, so this never skips (mirrors al-sem semantics).
+        // roleOf(routine) !== "primary" → skip (al-sem d12 primary gate). A
+        // dependency app's dead integration event is NOT the user's to fix (its
+        // source isn't in the workspace), and a workspace subscriber to it would
+        // be an edge on the event anyway. dep_routine_ids is EMPTY for source-only
+        // runs ⇒ no behavior change there (matches d13/d16/d17 gating).
+        if ctx.dep_routine_ids.contains(pub_routine_id.as_str()) {
+            skipped_dependency += 1;
+            continue;
+        }
         candidates_considered += 1;
         if subs_by_event.get(ev.id.as_str()).copied().unwrap_or(0) > 0 {
             skipped_other += 1;
@@ -119,6 +127,7 @@ pub fn detect_d12(
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
+    stats.add_skip("dependency", skipped_dependency);
     DetectorOutput {
         findings,
         stats,

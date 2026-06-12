@@ -440,6 +440,19 @@ pub fn grade_guarantee(
                     grade: HazardGrade::Suppressed,
                 };
             }
+            // Detector-audit d51 BUG: a PROVEN read-direction request (HTTP
+            // GET/HEAD) re-issued on retry duplicates no external side effect —
+            // it is idempotent by definition. Only write / unknown-direction IO
+            // carries a duplication hazard (mirrors the dir-gate the sibling
+            // EXTERNAL_IO_BEFORE_COMMIT arm applies). Suppression-direction safe:
+            // only the exact "read" signal suppresses; "unknown" keeps firing.
+            if dir == "read" {
+                return TxnGrade {
+                    txn_fact: TxnFact::Unknown,
+                    io_direction: dir,
+                    grade: HazardGrade::Suppressed,
+                };
+            }
             let grade = if guarantee.commit_effectiveness == Some("proven_effective") {
                 HazardGrade::Medium
             } else {
@@ -901,6 +914,28 @@ mod tests {
         // This IS the path both d51 corpus goldens exercise.
         let g = guarantee("IO_BEFORE_ESCAPING_ERROR", true, None);
         let result = grade_guarantee(&g, "HTTP", &detail("method", "POST"));
+        assert_eq!(result.grade, HazardGrade::Low);
+        assert_eq!(result.txn_fact, TxnFact::IoBeforeEscapingError);
+    }
+
+    #[test]
+    fn grade_guarantee_io_before_escaping_error_http_read_suppressed() {
+        // Detector-audit d51 BUG: a proven read-direction request (GET) re-issued
+        // on retry duplicates no side effect → suppressed (vfr + read).
+        let g = guarantee("IO_BEFORE_ESCAPING_ERROR", true, None);
+        let result = grade_guarantee(&g, "HTTP", &detail("method", "GET"));
+        assert_eq!(result.io_direction, "read");
+        assert_eq!(result.grade, HazardGrade::Suppressed);
+        assert_eq!(result.txn_fact, TxnFact::Unknown);
+    }
+
+    #[test]
+    fn grade_guarantee_io_before_escaping_error_unknown_dir_still_fires() {
+        // Suppression-direction: an UNKNOWN-direction request (HttpClient.Send,
+        // method not resolvable) is NOT proven-read → keeps firing (low).
+        let g = guarantee("IO_BEFORE_ESCAPING_ERROR", true, None);
+        let result = grade_guarantee(&g, "HTTP", &detail("method", "Send"));
+        assert_eq!(result.io_direction, "unknown");
         assert_eq!(result.grade, HazardGrade::Low);
         assert_eq!(result.txn_fact, TxnFact::IoBeforeEscapingError);
     }
