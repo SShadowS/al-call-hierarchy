@@ -1,6 +1,4 @@
 --- OnBeforePrintSafe ---
   question: throws-error
-  answer:   unknown
-  blockedBy: 1 blocker(s)
-    [unresolved-callsite] Message in OnBeforePrintSafe @ ws:src/Codeunit.al:20
-  obligations: unresolved=1
+  answer:   no
+  obligations: all clear

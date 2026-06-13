@@ -42,7 +42,7 @@
     "routinesBodyAvailable": 567,
     "routinesParseIncomplete": 1,
     "opaqueApps": 0,
-    "unresolvedCallsites": 55,
+    "unresolvedCallsites": 26,
     "unresolvedMaxDup": 1,
     "dynamicDispatchSites": 3,
     "dynamicMaxDup": 1

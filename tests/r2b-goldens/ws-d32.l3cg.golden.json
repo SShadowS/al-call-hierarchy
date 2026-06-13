@@ -30,8 +30,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#345f5e52afb366606e71a9c6a68966263b56e88128c0015c110e446850acce64",
           "operationId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#345f5e52afb366606e71a9c6a68966263b56e88128c0015c110e446850acce64/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -41,8 +41,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#345f5e52afb366606e71a9c6a68966263b56e88128c0015c110e446850acce64",
           "operationId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#345f5e52afb366606e71a9c6a68966263b56e88128c0015c110e446850acce64/op1",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -88,8 +88,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#a0184139d2dd2997bf7573e6541ca95050db6dd609734f1f0d41cddd3613544f",
           "operationId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#a0184139d2dd2997bf7573e6541ca95050db6dd609734f1f0d41cddd3613544f/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -110,8 +110,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#a0ad4a6f8c5d8785068e191257d21f3dd76e98899b3283df04cf891acfc6a00e",
           "operationId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#a0ad4a6f8c5d8785068e191257d21f3dd76e98899b3283df04cf891acfc6a00e/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -145,8 +145,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61",
           "operationId": "11111111-0000-0000-0000-00000000d320:Codeunit:51500#bca0e9d59f9337b0e33bfdf1db67c10a6dcea8d032d1268c7f85a484478abe61/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     }

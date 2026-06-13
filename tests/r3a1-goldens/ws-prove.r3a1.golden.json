@@ -41,13 +41,6 @@
         "callsiteId": "44444444-4444-4444-4444-444444444444:Codeunit:50308#4fc9c208115a49d177097a4b5f0c47d07a073f6f4ef6ea75daa5daa73fc25ec0/cs0",
         "interfaceName": "IProveProcessor"
       }
-    },
-    {
-      "from": "44444444-4444-4444-4444-444444444444:Codeunit:50313#3a37c5e25937158952eb172527027f46d1f3e4a20a8646fa4a6dbab624521ba5",
-      "uncertainty": {
-        "kind": "unresolved-call",
-        "callsiteId": "44444444-4444-4444-4444-444444444444:Codeunit:50313#3a37c5e25937158952eb172527027f46d1f3e4a20a8646fa4a6dbab624521ba5/cs0"
-      }
     }
   ],
   "typedEdges": [

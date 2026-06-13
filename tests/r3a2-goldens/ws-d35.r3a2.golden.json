@@ -3,15 +3,10 @@
     {
       "routineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",

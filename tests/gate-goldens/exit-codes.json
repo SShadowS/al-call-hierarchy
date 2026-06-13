@@ -47,7 +47,7 @@
       "medium": 1,
       "high": 1,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -56,7 +56,7 @@
       "medium": 1,
       "high": 1,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d46-pos": {
@@ -167,7 +167,7 @@
       "medium": 1,
       "high": 1,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -176,7 +176,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d49-pos-modify-runmodal": {
@@ -327,7 +327,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -336,7 +336,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-d51-neg": {

@@ -70,8 +70,8 @@ impl Resolution {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::call_resolver::UnknownReason;
+    use super::*;
 
     #[test]
     fn dispatch_kind_strings_are_golden_stable() {

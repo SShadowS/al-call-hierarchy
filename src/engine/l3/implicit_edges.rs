@@ -9,9 +9,9 @@
 //! run the table trigger only with `RunTrigger = true` (not captured) → "maybe".
 
 use super::call_resolver::CallEdge;
-use super::taxonomy::{DispatchKind, Resolution};
 use super::l3_workspace::L3Workspace;
 use super::symbol_table::SymbolTable;
+use super::taxonomy::{DispatchKind, Resolution};
 
 /// (trigger routine name, edge Resolution).
 fn trigger_mapping(op: &str) -> Option<(&'static str, Resolution)> {

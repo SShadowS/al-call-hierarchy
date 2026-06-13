@@ -9,15 +9,7 @@
       "resolution": "resolved"
     }
   ],
-  "uncertaintyEdges": [
-    {
-      "from": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93",
-      "uncertainty": {
-        "kind": "unresolved-call",
-        "callsiteId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93/cs0"
-      }
-    }
-  ],
+  "uncertaintyEdges": [],
   "typedEdges": [
     {
       "kind": "direct-call",

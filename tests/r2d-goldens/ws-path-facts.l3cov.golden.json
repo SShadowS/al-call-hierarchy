@@ -5,10 +5,6 @@
   "routinesBodyAvailable": 12,
   "routinesParseIncomplete": [],
   "opaqueApps": [],
-  "unresolvedCallsites": [
-    "11111111-0000-0000-0000-000000abc400:Codeunit:50400#0fe5d16b3d194c2b0d867daf2d2d0529898fc991626e3d4042ef7e2fcbf973cb/cs0",
-    "11111111-0000-0000-0000-000000abc400:Codeunit:50400#2fa2ee639c8cfeddd4129812e20c11e0725d2890f0af6604d03553b49ac32277/cs0",
-    "11111111-0000-0000-0000-000000abc400:Codeunit:50400#d342c18e119878ad459bb45bb516dc39f8b3647b3e176aa2704ca5643092b965/cs0"
-  ],
+  "unresolvedCallsites": [],
   "dynamicDispatchSites": []
 }

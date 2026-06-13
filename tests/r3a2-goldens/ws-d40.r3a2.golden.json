@@ -3,15 +3,10 @@
     {
       "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2cb7630c7b365ec7f918cd1b211f504380952fd50e1dc80fd338ff829831b084",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#2d79504c9882136301b5e09d82e1c41ec0eb524ea9822701d2e5836cd3066af1",
@@ -91,12 +86,7 @@
     {
       "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#4cbd183c201074d4a2be64f3f0282bfed67ab3cf36633af1418c6ee32695845a/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [
         {
           "parameterIndex": 0,
@@ -125,7 +115,7 @@
         }
       ],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-000000abc440:Codeunit:50410#545a6114186c4acdbc2e5c958de4d92f4f25e8af8cca9982187d93c3a01caeef",

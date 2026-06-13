@@ -34,8 +34,8 @@
         {
           "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127",
           "operationId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dc06145e059e9dfd29085f01cb5ecf2099f64618db21d4efd8d9605aa4b04127/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     }

@@ -3,7 +3,6 @@
   [UI_MESSAGE] direct
     evidence: ws:src/Codeunit.al:20 "Message"
     via: 1 path(s)
-  unresolved: 1 callsite(s)
 
 --- OnAfterPostDirect ---
   coverage: complete

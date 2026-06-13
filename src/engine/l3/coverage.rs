@@ -46,9 +46,9 @@ use std::collections::HashMap;
 
 use super::call_graph_projection::cmp_stable;
 use super::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
-use super::taxonomy::{DispatchKind, Resolution};
 use super::l3_workspace::{L3Resolved, L3Routine};
 use super::symbol_table::SymbolTable;
+use super::taxonomy::{DispatchKind, Resolution};
 
 // ---------------------------------------------------------------------------
 // Inputs the source-unit accounting needs (the L3 `buildCoverage` reads these
@@ -113,7 +113,10 @@ pub struct AnalysisCoverage {
 fn is_unresolved_resolution(resolution: Resolution) -> bool {
     matches!(
         resolution,
-        Resolution::Unknown(_) | Resolution::Ambiguous | Resolution::MemberNotFound | Resolution::ExternalTarget
+        Resolution::Unknown(_)
+            | Resolution::Ambiguous
+            | Resolution::MemberNotFound
+            | Resolution::ExternalTarget
     )
 }
 

@@ -13,25 +13,13 @@
   "payload": {
     "question": "writes-table:Customer",
     "result": {
-      "answer": "unknown",
-      "blockedBy": [
-        {
-          "anchor": {
-            "column": 8,
-            "file": "ws:src/Codeunit.al",
-            "line": 20,
-            "sourceKind": "source"
-          },
-          "detail": "Message in OnBeforePrintSafe",
-          "kind": "unresolved-callsite"
-        }
-      ],
+      "answer": "no",
       "obligations": {
         "analysisGaps": 0,
         "coneTruncated": false,
         "coverageComplete": true,
         "openWorldRows": 0,
-        "unresolvedCallsites": 1
+        "unresolvedCallsites": 0
       }
     },
     "routine": {

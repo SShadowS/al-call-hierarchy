@@ -6,8 +6,8 @@
         {
           "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4",
           "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#0f630d036c63fff114eb6cf31862a02e432e3a49301d1cf59d1b2ae14c2390d4/op1",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -52,8 +52,8 @@
         {
           "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce",
           "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#7dbc66436dbe30433b0c622029b2e8f0b6c3f13ecf888e10fa95be0f7c7c1bce/op1",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -63,8 +63,8 @@
         {
           "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d",
           "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#b04c5c8a930840483acfdc9123eab57be60021a13b3244cd3ac010a45e0a925d/op1",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },
@@ -85,8 +85,8 @@
         {
           "from": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096",
           "operationId": "11111111-0000-0000-0000-000000abc200:Codeunit:50200#ff4c784c6277e2fadde98473374e8624112ade91f41ff49d0b6c51da3e490096/op3",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     }

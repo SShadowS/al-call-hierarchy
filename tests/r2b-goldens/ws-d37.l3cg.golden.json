@@ -6,8 +6,8 @@
         {
           "from": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#7e98f1e4048d8dfc2db19c252c53bcc1394f26e6315cb46d5c7ee8d1ee41e7c5",
           "operationId": "11111111-0000-0000-0000-00000000d370:Codeunit:51400#7e98f1e4048d8dfc2db19c252c53bcc1394f26e6315cb46d5c7ee8d1ee41e7c5/op0",
-          "dispatchKind": "unresolved",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     },

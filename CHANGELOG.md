@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Generated AL global-builtin catalog (`src/engine/l3/global_builtins.rs`): offline
+  generator (`tools/gen-al-builtins/`) extracts all 785 distinct compiler-intrinsic method
+  names from the AL compiler DLL's `ClassDocumentationResources` embedded resource
+  (source: `Microsoft.Dynamics.Nav.CodeAnalysis.dll`, AL extension `ms-dynamics-smb.al-18.0.2293710`,
+  97 types). The catalog is a `phf::phf_set!` checked into source; the generator is
+  offline/manual (not in CI). Bare calls not resolved to the caller's own object whose
+  name matches any catalog entry are reclassified from `unknown` (BareUnresolved) to
+  `builtin` — a pure reclassification (no new resolved-to-routine edges). CDO impact on
+  `DocumentOutput/Cloud`: bare-unresolved dropped 1247 → 188 (−1059), unknown total
+  3295 → 2236, `realUnknownRate` 23.6% → 16.0%; resolved count unchanged at 6360.
 - L3 call-graph: intrinsic built-in catalog (`src/engine/l3/member_builtins.rs`, `phf`
   perfect-hash) for Record / RecordRef / FieldRef / KeyRef + framework types (Json*,
   Http*, In/OutStream, TextBuilder, Dialog, List, Dictionary, Xml*). AL's
