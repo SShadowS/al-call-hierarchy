@@ -46,6 +46,7 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-call-graph-stats | \
+         --l3-unknown-breakdown | \
          --l3-event-graph | --l3-coverage | --r2.5a-merged-index | --l3-cross-app | \
          --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
     let mut l3_record_types = false;
     let mut l3_call_graph = false;
     let mut l3_call_graph_stats = false;
+    let mut l3_unknown_breakdown = false;
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
     let mut r2_5a_merged_index = false;
@@ -98,6 +100,10 @@ fn main() -> ExitCode {
         }
         if arg == "--l3-call-graph-stats" {
             l3_call_graph_stats = true;
+            continue;
+        }
+        if arg == "--l3-unknown-breakdown" {
+            l3_unknown_breakdown = true;
             continue;
         }
         if arg == "--l3-event-graph" {
@@ -180,6 +186,7 @@ fn main() -> ExitCode {
         l3_record_types,
         l3_call_graph,
         l3_call_graph_stats,
+        l3_unknown_breakdown,
         l3_event_graph,
         l3_coverage,
         r2_5a_merged_index,
@@ -205,6 +212,7 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-call-graph-stats / \
+             --l3-unknown-breakdown / \
              --l3-event-graph / --l3-coverage / --r2.5a-merged-index / --l3-cross-app / \
              --r3a1-combined-graph / --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / \
              --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries are mutually exclusive"
@@ -833,6 +841,49 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize call-graph stats: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if l3_unknown_breakdown {
+        // Attribute every TRUE-`unknown` edge to its resolver cause (UnknownReason)
+        // — the work-list for the typed-resolution phases. Read-only; fail-closed
+        // → empty breakdown.
+        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+
+        let (histogram, breakdown) = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                let ws = &resolved.workspace;
+                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                let no_deps: Vec<DeclaredDependency> = Vec::new();
+                let no_fetched: Vec<String> = Vec::new();
+                let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+                (Histogram::of_edges(&r.edges), unknown_breakdown(&r.edges))
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty breakdown",
+                    workspace.display()
+                );
+                (Histogram::default(), std::collections::BTreeMap::new())
+            }
+        };
+        let value = serde_json::json!({
+            "totalEdges": histogram.total,
+            "unknownTotal": histogram.unknown,
+            "realUnknownRate": histogram.real_unknown_rate(),
+            "byReason": breakdown,
+        });
+        return match serde_json::to_string_pretty(&value) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize unknown breakdown: {e}");
                 ExitCode::FAILURE
             }
         };

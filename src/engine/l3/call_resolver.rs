@@ -47,6 +47,54 @@ pub struct ExternalTypeRef {
     pub name: String,
 }
 
+/// Why a `resolution == "unknown"` edge could not be resolved. DIAGNOSTIC-only
+/// metadata (never projected to a golden — `CallEdge` is not `Serialize`); it lets
+/// `aldump --l3-unknown-breakdown` attribute the residual real-`unknown` rate to
+/// its causes, which is the work-list for the later typed-resolution phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownReason {
+    /// Bare call, not own-object, not a global builtin.
+    BareUnresolved,
+    /// Member call whose receiver is a compound expression (`a.b.M()`, `(x).M()`,
+    /// indexed) — `simple_receiver_name` declined it.
+    CompoundReceiver,
+    /// Member call whose receiver name is not a local/param/global in the routine
+    /// (object globals not captured, `CurrPage`/`CurrReport`, return-value chains).
+    UntrackedReceiver,
+    /// Member call on a `Record`-typed receiver whose method is NOT a builtin — a
+    /// real table procedure (resolvable by the later Record-dispatch phase).
+    RecordTableProcedure,
+    /// Member call on a RecordRef/FieldRef/KeyRef/framework receiver whose method is
+    /// not in the intrinsic catalog (a catalog gap to fill).
+    FrameworkMethodNotInCatalog,
+    /// Member call whose declared receiver type is a primitive / Variant /
+    /// unrecognized type (no object, no catalog kind).
+    NonObjectReceiverType,
+    /// Member call on an enum-typed receiver (enum statics are not callable here).
+    EnumStatic,
+    /// The L2 callee itself could not be parsed (`PCallee::Unknown`).
+    CalleeUnknown,
+    /// Interface dispatch where NO implementer resolved (open-world / no impls).
+    InterfaceNoImpl,
+}
+
+impl UnknownReason {
+    /// Stable kebab-case label for the diagnostic breakdown histogram.
+    pub fn label(self) -> &'static str {
+        match self {
+            UnknownReason::BareUnresolved => "bare-unresolved",
+            UnknownReason::CompoundReceiver => "compound-receiver",
+            UnknownReason::UntrackedReceiver => "untracked-receiver",
+            UnknownReason::RecordTableProcedure => "record-table-procedure",
+            UnknownReason::FrameworkMethodNotInCatalog => "framework-method-not-in-catalog",
+            UnknownReason::NonObjectReceiverType => "non-object-receiver-type",
+            UnknownReason::EnumStatic => "enum-static",
+            UnknownReason::CalleeUnknown => "callee-unknown",
+            UnknownReason::InterfaceNoImpl => "interface-no-impl",
+        }
+    }
+}
+
 /// A resolved (or unresolved) call edge. Ids are INTERNAL until projected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallEdge {
@@ -62,6 +110,8 @@ pub struct CallEdge {
     /// method-dispatch receiver's declared type.
     pub receiver_type: Option<String>,
     pub dispatch_meta: Option<DispatchMeta>,
+    /// DIAGNOSTIC-only cause for an `unknown` edge (`None` otherwise).
+    pub unknown_reason: Option<UnknownReason>,
 }
 
 impl CallEdge {
@@ -77,6 +127,7 @@ impl CallEdge {
             external_type_ref: None,
             receiver_type: None,
             dispatch_meta: None,
+            unknown_reason: None,
         }
     }
 }
@@ -353,6 +404,7 @@ fn resolve_interface_dispatch(
         let mut e = CallEdge::base(from, callsite_id, operation_id);
         e.dispatch_kind = "interface".to_string();
         e.resolution = "unknown".to_string();
+        e.unknown_reason = Some(UnknownReason::InterfaceNoImpl);
         e.dispatch_meta = Some(dispatch_meta);
         return vec![e];
     }
@@ -407,6 +459,7 @@ fn resolve_call_site(
                     } else {
                         e.dispatch_kind = "unresolved".to_string();
                         e.resolution = "unknown".to_string();
+                        e.unknown_reason = Some(UnknownReason::BareUnresolved);
                     }
                     vec![e]
                 }
@@ -483,11 +536,21 @@ fn resolve_call_site(
         PCallee::Member { receiver, method } => {
             // Step 1 — simple receiver name.
             let Some(receiver_name) = simple_receiver_name(receiver) else {
-                return unknown_method(from, callsite_id, operation_id);
+                return unknown_method(
+                    from,
+                    callsite_id,
+                    operation_id,
+                    UnknownReason::CompoundReceiver,
+                );
             };
             // Step 2 — find the receiver variable (params → locals → globals).
             let Some(recv_var) = routine.variables.iter().find(|v| v.name == receiver_name) else {
-                return unknown_method(from, callsite_id, operation_id);
+                return unknown_method(
+                    from,
+                    callsite_id,
+                    operation_id,
+                    UnknownReason::UntrackedReceiver,
+                );
             };
             // Step 3 — parse the declared type into an object type reference.
             let Some(type_ref) = parse_object_type_ref(&recv_var.declared_type) else {
@@ -497,24 +560,35 @@ fn resolve_call_site(
                 // platform `builtin` terminal — NOT a resolution hole. A Record
                 // method that is NOT an intrinsic (a real table procedure) stays
                 // `unknown` here; table-procedure resolution is Phase 3.
-                if let Some(kind) =
-                    super::member_builtins::classify_receiver(&recv_var.declared_type)
-                {
-                    let method_lc = method.to_lowercase();
-                    if super::member_builtins::member_builtin_disposition(kind, &method_lc)
-                        .is_some()
-                    {
-                        // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
-                        // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
-                        // the catalog for the §5 dynamic->static work, not yet emitted
-                        // differently.)
-                        let mut e = CallEdge::base(from, callsite_id, operation_id);
-                        e.dispatch_kind = "builtin".to_string();
-                        e.resolution = "builtin".to_string();
-                        return vec![e];
-                    }
-                }
-                return unknown_method(from, callsite_id, operation_id);
+                let reason =
+                    match super::member_builtins::classify_receiver(&recv_var.declared_type) {
+                        Some(kind) => {
+                            let method_lc = method.to_lowercase();
+                            if super::member_builtins::member_builtin_disposition(kind, &method_lc)
+                                .is_some()
+                            {
+                                // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
+                                // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
+                                // the catalog for the §5 dynamic->static work, not yet emitted
+                                // differently.)
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.dispatch_kind = "builtin".to_string();
+                                e.resolution = "builtin".to_string();
+                                return vec![e];
+                            }
+                            // Catalog MISS: a Record receiver's non-builtin method is a
+                            // real table procedure (Phase-3 resolvable); a framework
+                            // receiver's miss is a catalog gap.
+                            if kind == super::member_builtins::ReceiverBuiltinKind::Record {
+                                UnknownReason::RecordTableProcedure
+                            } else {
+                                UnknownReason::FrameworkMethodNotInCatalog
+                            }
+                        }
+                        // Primitive / Variant / unrecognized declared type.
+                        None => UnknownReason::NonObjectReceiverType,
+                    };
+                return unknown_method(from, callsite_id, operation_id, reason);
             };
 
             // Step 4 — interface dispatch.
@@ -533,7 +607,7 @@ fn resolve_call_site(
             }
             // Step 5 — enum statics are not callable methods.
             if type_ref.kind == ObjectKind::Enum {
-                return unknown_method(from, callsite_id, operation_id);
+                return unknown_method(from, callsite_id, operation_id, UnknownReason::EnumStatic);
             }
             // Step 6 — Codeunit / Page / Report / Query / XmlPort dispatch.
             let obj = symbols.object_by_type_name(type_ref.kind.as_str(), &type_ref.name);
@@ -612,15 +686,22 @@ fn resolve_call_site(
             let mut e = CallEdge::base(from, callsite_id, operation_id);
             e.dispatch_kind = "unresolved".to_string();
             e.resolution = "unknown".to_string();
+            e.unknown_reason = Some(UnknownReason::CalleeUnknown);
             vec![e]
         }
     }
 }
 
-fn unknown_method(from: &str, callsite_id: &str, operation_id: &str) -> Vec<CallEdge> {
+fn unknown_method(
+    from: &str,
+    callsite_id: &str,
+    operation_id: &str,
+    reason: UnknownReason,
+) -> Vec<CallEdge> {
     let mut e = CallEdge::base(from, callsite_id, operation_id);
     e.dispatch_kind = "method".to_string();
     e.resolution = "unknown".to_string();
+    e.unknown_reason = Some(reason);
     vec![e]
 }
 

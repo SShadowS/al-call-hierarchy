@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Honest resolution taxonomy classifier (`src/engine/l3/resolution_class.rs`) +
   `aldump --l3-call-graph-stats` measurement harness reporting per-bucket edge counts
   and the real-`unknown` edge rate (the north-star metric).
+- `aldump --l3-unknown-breakdown` + resolver-attributed `UnknownReason` on every
+  `unknown` edge: attributes the residual real-`unknown` rate to its causes
+  (bare-unresolved / record-table-procedure / untracked-receiver / compound-receiver
+  / framework-method-not-in-catalog / non-object-receiver-type / enum-static /
+  callee-unknown / interface-no-impl). The work-list for the typed-resolution phases.
+  Measured on CDO (3295 unknown): bare-unresolved 1247, untracked-receiver 881,
+  record-table-procedure 812, compound-receiver 243, non-object-receiver-type 70,
+  framework-method-not-in-catalog 39, interface-no-impl 2, enum-static 1.
 
 ### Changed
 - L3 member-call resolution: a Record/framework receiver whose method is a recognized

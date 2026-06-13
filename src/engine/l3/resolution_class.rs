@@ -94,6 +94,26 @@ impl Histogram {
     }
 }
 
+/// Breakdown of the TRUE-`unknown` edges (those that `classify` as
+/// [`ResolutionClass::Unknown`]) by their resolver-attributed `UnknownReason`
+/// label. `"unattributed"` collects any `unknown` edge missing a reason (should be
+/// zero — every unknown-emission site sets one). Attributes the residual
+/// real-`unknown` rate to its causes (the typed-resolution work-list).
+pub fn unknown_breakdown(edges: &[CallEdge]) -> std::collections::BTreeMap<&'static str, usize> {
+    let mut m: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+    for e in edges {
+        if classify(&e.resolution, &e.dispatch_kind) != ResolutionClass::Unknown {
+            continue;
+        }
+        let label = e
+            .unknown_reason
+            .map(|r| r.label())
+            .unwrap_or("unattributed");
+        *m.entry(label).or_insert(0) += 1;
+    }
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +164,39 @@ mod tests {
         assert_eq!(h.unknown, 1);
         assert_eq!(h.dynamic, 1);
         assert!((h.real_unknown_rate() - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn unknown_breakdown_buckets_by_reason_and_excludes_non_unknown() {
+        use crate::engine::l3::call_resolver::{CallEdge, UnknownReason};
+        let unk = |reason: UnknownReason| {
+            let mut e = CallEdge::base("f", "c", "o");
+            e.resolution = "unknown".to_string();
+            e.dispatch_kind = "method".to_string();
+            e.unknown_reason = Some(reason);
+            e
+        };
+        let mut edges = vec![
+            unk(UnknownReason::RecordTableProcedure),
+            unk(UnknownReason::RecordTableProcedure),
+            unk(UnknownReason::UntrackedReceiver),
+        ];
+        // A dynamic-dispatch edge (resolution unknown but dispatch_kind dynamic) is
+        // NOT a true unknown → excluded. A resolved edge → excluded.
+        let mut dyn_edge = CallEdge::base("f", "c", "o");
+        dyn_edge.resolution = "unknown".to_string();
+        dyn_edge.dispatch_kind = "dynamic".to_string();
+        edges.push(dyn_edge);
+        let mut resolved = CallEdge::base("f", "c", "o");
+        resolved.resolution = "resolved".to_string();
+        resolved.dispatch_kind = "direct".to_string();
+        edges.push(resolved);
+
+        let bd = unknown_breakdown(&edges);
+        assert_eq!(bd.get("record-table-procedure"), Some(&2));
+        assert_eq!(bd.get("untracked-receiver"), Some(&1));
+        // dynamic + resolved are excluded; no "unattributed".
+        assert_eq!(bd.values().sum::<usize>(), 3);
+        assert!(!bd.contains_key("unattributed"));
     }
 }
