@@ -25,6 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the moved L3 call-graph + L3 coverage goldens (builtin reclassification only; no new
   resolved-to-routine edges) and updated the r2b `coverageMatrix.builtin` oracle
   (18→49). `KNOWN_DIVERGENCES.json` stays `[]`.
+- **Test oracle: al-sem byte-parity RETIRED.** The engine is now Rust-owned; tests assert
+  Rust-owned baselines + structural contracts, not equality vs the al-sem TS reference.
+  The builtin reclassification correctly propagates downstream: r3a2 L4-summary phantom
+  `unresolved-call` uncertainties removed (matrix 99→58); the `--require-dependencies`
+  gate preflight reports coverage complete on builtin-only fixtures (exit 4→0, 28 rows;
+  12 genuinely-degraded fixtures keep exit 4); and the `ws-txn-d48-pos` d48 finding's
+  confidence rises `possible`→`likely` (a phantom `HttpClient.Send` uncertainty removed).
+  See CLAUDE.md "Testing Philosophy & Goldens". Legacy al-sem-byte-parity tests
+  (cli-b digest/fingerprint/prove/snapshot, r3a1, r4f_snapshot, gate_prsummary preflight
+  oracles) are pending migration to Rust-owned baselines.
+
+### Fixed
+- Implicit-Rec argument bindings now flow `sourceTempState` (a pre-existing gap from the
+  d22 implicit-Rec work): a trigger forwarding the implicit `Rec` to a record-mutating
+  helper (`OnAfterInsert → Helper(Rec) → Rec.Modify()`) now resolves the cross-call
+  inherited effect's temp-state to `Known(false)` instead of degrading to `Unknown`. The
+  d22 work had rebaselined the d40 golden to expect `Known(false)` but never wired the
+  temp-state through the binding, leaving r3a2/r4/gate red at the branch baseline.
 - Rebaselined goldens after the iter-2 detector-gap fixes (G-13..G-19). Only **G-15**
   (d3 ignores field-writes/post-Init reads after a `Get`; d42 excludes PK-only fields)
   moved finding content; G-13/G-14/G-16/G-17/G-18/G-19 moved no in-repo goldens. The
