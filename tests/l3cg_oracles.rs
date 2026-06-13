@@ -509,6 +509,61 @@ fn every_builtin_member_edge_method_is_in_the_catalog() {
 }
 
 // ---------------------------------------------------------------------------
+// Invariant 11 (Phase 2 — bare-global catalog): a bare call to an AL platform
+// GLOBAL function (Task 2 catalog) classifies `builtin` on the BARE path
+// (dispatchKind "builtin"), is disjoint from `resolved`, and a genuine non-global
+// bare miss STILL classifies `unknown` (the catalog never swallows a real hole).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_global_builtin_is_disjoint_from_resolved_and_unknown_preserved() {
+    // GuiAllowed = platform global (Task 2 catalog, NOT the ~25-entry hand list);
+    // LocalProc = an own-object procedure (resolved); NotARealGlobalZzz = a genuine
+    // bare miss (must stay unknown).
+    let files = &[(
+        "src/main.al",
+        "codeunit 50100 A { procedure Go() begin if GuiAllowed() then LocalProc(); NotARealGlobalZzz(); end; \
+         procedure LocalProc() begin end; }",
+    )];
+    let p = project_ws(files);
+    let edges = all_edges(&p);
+
+    // The bare global is a builtin edge on the BARE path (dispatchKind "builtin"),
+    // with no resolved `to`.
+    let global_builtins: Vec<_> = edges
+        .iter()
+        .filter(|e| e.dispatch_kind == "builtin" && e.resolution == "builtin")
+        .collect();
+    assert!(
+        !global_builtins.is_empty(),
+        "bare GuiAllowed() must be a builtin edge; got {edges:#?}"
+    );
+
+    // CONTRACT: no edge is BOTH builtin and resolved (the two are disjoint).
+    for e in &edges {
+        if e.resolution == "builtin" {
+            assert!(
+                e.to.is_none(),
+                "a builtin edge has no resolved `to`; edge {e:#?}"
+            );
+        }
+    }
+
+    // The own-object call resolved; the genuine non-global bare miss stays unknown
+    // (the catalog did not swallow it).
+    assert!(
+        edges
+            .iter()
+            .any(|e| e.resolution == "resolved" && e.to.is_some()),
+        "the own-object LocalProc() call must resolve"
+    );
+    assert!(
+        edges.iter().any(|e| e.resolution == "unknown"),
+        "a genuine non-global bare miss must STAY unknown (catalog must not over-include)"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Invariant 10 (Phase 2): a Record-receiver method that is a real built-in
 // classifies `builtin`, not `unknown` (the core reclassification contract).
 // ---------------------------------------------------------------------------

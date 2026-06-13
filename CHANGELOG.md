@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- L3 call-graph contract oracle (`tests/l3cg_oracles.rs` Invariant 11): a bare call to an
+  AL platform GLOBAL function (Task 2 catalog) classifies `builtin` on the BARE path
+  (dispatchKind "builtin"), is disjoint from `resolved` (no edge is both builtin and
+  resolved), and a genuine non-global bare miss STILL classifies `unknown` (the catalog
+  never swallows a real hole). Locks the clean-reclassification baseline before the
+  graph-expansion phases. CDO `DocumentOutput/Cloud` cumulative after Tasks 1-3:
+  `realUnknownRate` 23.6% → 15.68%, unknown 3295 → 2191, builtin 3639 → 4743, resolved
+  unchanged at 6360 (pure reclassification, zero new resolved edges); `alsem analyze`
+  1867 findings (detector baseline for the graph-expansion FP checks).
 - Generated AL global-builtin catalog (`src/engine/l3/global_builtins.rs`): offline
   generator (`tools/gen-al-builtins/`) extracts all 785 distinct compiler-intrinsic method
   names from the AL compiler DLL's `ClassDocumentationResources` embedded resource
