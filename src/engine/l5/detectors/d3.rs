@@ -21,7 +21,7 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, normalize_load_field_arg, primary_key_field_names_lc,
+    anchor_of, is_platform_loaded_trigger_rec, normalize_load_field_arg, primary_key_field_names_lc,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -193,6 +193,12 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             }
 
             let var_key = state.record_variable_name.to_lowercase();
+            // d22-FN companion: the IMPLICIT `Rec` of a page/table trigger is
+            // platform-loaded — the platform fetches the row before the trigger
+            // runs, so SetLoadFields advice on it is moot. Skip (mirrors d11/d37).
+            if is_platform_loaded_trigger_rec(routine, &state.record_variable_name) {
+                continue;
+            }
             let rec_var = routine
                 .record_variables
                 .iter()

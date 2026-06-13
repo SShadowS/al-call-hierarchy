@@ -1116,6 +1116,7 @@ fn project_file(
                 routine,
                 object_type,
                 object_number,
+                &extract_object_name(decl, source),
                 source_table_name.as_deref(),
                 &object_procedure_names,
                 &object_globals,

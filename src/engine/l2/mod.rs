@@ -65,6 +65,20 @@ pub(crate) fn extract_object_number(decl: Node, source: &str) -> i64 {
     0
 }
 
+/// The object's declared name (first identifier / quoted_identifier child of the
+/// declaration header), stripped of quotes. Used to seed the implicit-Rec table
+/// name for a table/tableext trigger (whose Rec IS the object).
+pub(crate) fn extract_object_name(decl: Node, source: &str) -> String {
+    for child in named_children(decl) {
+        match child.kind() {
+            "quoted_identifier" => return strip_quotes(node_text(child, source)).to_string(),
+            "identifier" => return node_text(child, source).to_string(),
+            _ => {}
+        }
+    }
+    String::new()
+}
+
 /// Classify routine kind from preceding `attribute_item` siblings (event attrs).
 fn classify_kind(node: Node, source: &str) -> &'static str {
     let mut kind = if node.kind() == "trigger_declaration" {
@@ -180,6 +194,7 @@ pub fn project_routine_features(
     routine: Node,
     object_type: &str,
     object_number: i64,
+    object_name: &str,
     source_table_name: Option<&str>,
     object_procedure_names: &HashSet<String>,
     object_globals: &[features::PVariableSymbol],
@@ -207,7 +222,35 @@ pub fn project_routine_features(
     );
 
     let body = find_code_block(routine);
-    let record_variables = extract_record_variables(routine, &routine_id, &parameters, source);
+    let mut record_variables = extract_record_variables(routine, &routine_id, &parameters, source);
+    // d22 FN fix: register the IMPLICIT `Rec` of a table-trigger / page (SourceTable)
+    // / page-extension routine as a record variable so `Rec.<field>` reads are
+    // captured as field accesses and the table resolves at L3. Table name: a
+    // table/tableext trigger's Rec IS the object itself (object_name); a page /
+    // pageext uses its SourceTable. Skipped when no table name resolves (keeps the
+    // detectors conservative) or a declared `Rec` already exists.
+    if implicit_base_receiver(object_type, kind, source_table_name).is_some()
+        && !record_variables
+            .iter()
+            .any(|v| v.name.eq_ignore_ascii_case("Rec"))
+    {
+        let obj_lc = object_type.to_lowercase();
+        let table_name = if (obj_lc == "table" || obj_lc == "tableextension") && kind == "trigger" {
+            Some(strip_quotes(object_name).to_string())
+        } else {
+            source_table_name.map(|s| strip_quotes(s).to_string())
+        };
+        if let Some(table_name) = table_name.filter(|t| !t.is_empty()) {
+            record_variables.push(scope::RecordVariable {
+                id: format!("{routine_id}/rv/rec"),
+                name: "Rec".to_string(),
+                table_name: Some(table_name),
+                temp_state: scope::ts_known(false),
+                is_parameter: false,
+                parameter_index: None,
+            });
+        }
+    }
     let record_var_names: HashSet<String> = record_variables
         .iter()
         .map(|v| v.name.to_lowercase())
@@ -452,6 +495,7 @@ pub fn features_for_named_routine(
                 routine,
                 object_type,
                 object_number,
+                &extract_object_name(decl, source),
                 source_table_name.as_deref(),
                 &object_procedure_names,
                 &object_globals,
