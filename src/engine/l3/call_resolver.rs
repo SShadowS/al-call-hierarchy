@@ -65,7 +65,7 @@ pub struct CallEdge {
 }
 
 impl CallEdge {
-    fn base(from: &str, callsite_id: &str, operation_id: &str) -> CallEdge {
+    pub(crate) fn base(from: &str, callsite_id: &str, operation_id: &str) -> CallEdge {
         CallEdge {
             from: from.to_string(),
             to: None,

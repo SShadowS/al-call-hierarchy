@@ -23,6 +23,7 @@ pub mod implicit_edges;
 pub mod l3_workspace;
 pub mod receiver;
 pub mod record_types;
+pub mod resolution_class;
 pub mod static_arg;
 pub mod symbol_table;
 pub mod type_ref;
