@@ -331,6 +331,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -371,6 +372,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
               "startLine": 0,
@@ -378,8 +380,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -413,8 +414,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
@@ -422,6 +422,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -441,6 +442,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
               "startLine": 0,
@@ -448,8 +450,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -469,8 +470,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",

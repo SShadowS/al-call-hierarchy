@@ -54,6 +54,7 @@
             "id": "r0/0cdbe01e08d21af241198a2a9dc58e99e5f21cb7e56934f51a0efa9474b94a4e/op0",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/0cdbe01e08d21af241198a2a9dc58e99e5f21cb7e56934f51a0efa9474b94a4e/rv/rec",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -66,8 +67,7 @@
               "endLine": 9,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/0cdbe01e08d21af241198a2a9dc58e99e5f21cb7e56934f51a0efa9474b94a4e/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -99,14 +99,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Publisher.al",
-                  "startLine": 7,
-                  "startColumn": 21,
-                  "endLine": 7,
-                  "endColumn": 24,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "rec",
                 "sourceRecordVariableId": "r0/0cdbe01e08d21af241198a2a9dc58e99e5f21cb7e56934f51a0efa9474b94a4e/rv/rec",
                 "sourceParameterIndex": 0,
@@ -114,6 +106,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 7,
+                  "startColumn": 21,
+                  "endLine": 7,
+                  "endColumn": 24,
+                  "syntaxKind": "identifier"
                 }
               },
               {
@@ -152,12 +152,12 @@
           {
             "id": "r0/0cdbe01e08d21af241198a2a9dc58e99e5f21cb7e56934f51a0efa9474b94a4e/rv/rec",
             "name": "Rec",
+            "tableName": "PostingEntry",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "PostingEntry",
             "parameterIndex": 0
           }
         ],
@@ -174,6 +174,7 @@
             "declaredType": "Record PostingEntry",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -181,14 +182,16 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "ishandled",
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 4,
@@ -196,15 +199,13 @@
               "endLine": 4,
               "endColumn": 27,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "ishandled",
+            "rhsLiteralValue": "false",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 6,
@@ -212,8 +213,7 @@
               "endLine": 6,
               "endColumn": 26,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "false"
+            }
           }
         ],
         "conditionReferences": [
@@ -343,6 +343,7 @@
             "id": "r0/15fd64fd417b4583632f4907f085099bc6c4875547e440d4600833b2947de0eb/op0",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/15fd64fd417b4583632f4907f085099bc6c4875547e440d4600833b2947de0eb/rv/rec",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -355,8 +356,7 @@
               "endLine": 19,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/15fd64fd417b4583632f4907f085099bc6c4875547e440d4600833b2947de0eb/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -388,14 +388,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Publisher.al",
-                  "startLine": 17,
-                  "startColumn": 21,
-                  "endLine": 17,
-                  "endColumn": 24,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "rec",
                 "sourceRecordVariableId": "r0/15fd64fd417b4583632f4907f085099bc6c4875547e440d4600833b2947de0eb/rv/rec",
                 "sourceParameterIndex": 0,
@@ -403,6 +395,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 17,
+                  "startColumn": 21,
+                  "endLine": 17,
+                  "endColumn": 24,
+                  "syntaxKind": "identifier"
                 }
               },
               {
@@ -441,12 +441,12 @@
           {
             "id": "r0/15fd64fd417b4583632f4907f085099bc6c4875547e440d4600833b2947de0eb/rv/rec",
             "name": "Rec",
+            "tableName": "PostingEntry",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "PostingEntry",
             "parameterIndex": 0
           }
         ],
@@ -463,6 +463,7 @@
             "declaredType": "Record PostingEntry",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -470,14 +471,16 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "ishandled",
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 14,
@@ -485,15 +488,13 @@
               "endLine": 14,
               "endColumn": 27,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "ishandled",
+            "rhsLiteralValue": "false",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 16,
@@ -501,8 +502,7 @@
               "endLine": 16,
               "endColumn": 26,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "false"
+            }
           }
         ],
         "conditionReferences": [
@@ -604,7 +604,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -617,6 +616,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -632,12 +632,12 @@
           {
             "id": "r0/f44930a613e96e3a1e1dec6b744d761eac97c00cb58fab69a15b335f95fe03b5/rv/rec",
             "name": "Rec",
+            "tableName": "PostingEntry",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "PostingEntry",
             "parameterIndex": 0
           }
         ],
@@ -651,6 +651,7 @@
             "declaredType": "Record PostingEntry",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -658,14 +659,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "ishandled",
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -673,8 +674,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           }
         ],
         "varAssignments": [],
@@ -705,21 +705,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::PostingMgr",
-              "value": "PostingMgr",
+              "member": "PostingMgr",
               "qualifier": "Codeunit",
-              "member": "PostingMgr"
+              "text": "Codeunit::PostingMgr",
+              "value": "PostingMgr"
             },
             {
               "kind": "string_literal",
@@ -742,9 +741,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::PostingMgr, 'OnBeforePost', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -757,12 +758,12 @@
           {
             "id": "r0/aa1629e1f6b2bd591de6d625dd936a5fc0652b705ed9fbd0beff356736db2354/rv/rec",
             "name": "Rec",
+            "tableName": "PostingEntry",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "PostingEntry",
             "parameterIndex": 0
           }
         ],
@@ -778,6 +779,7 @@
             "declaredType": "Record PostingEntry",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -785,14 +787,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "ishandled",
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -800,13 +802,13 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "ishandled",
+            "rhsLiteralValue": "true",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 5,
@@ -814,8 +816,7 @@
               "endLine": 5,
               "endColumn": 25,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "true"
+            }
           }
         ],
         "conditionReferences": [],
@@ -850,8 +851,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

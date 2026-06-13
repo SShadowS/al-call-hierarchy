@@ -28,6 +28,10 @@
       "objectType": "Page",
       "recordVariables": [
         {
+          "name": "rec",
+          "tableId": "10000005-0000-0000-0000-000000000000:Table:50102"
+        },
+        {
           "name": "s",
           "tableId": "10000005-0000-0000-0000-000000000000:Table:50102"
         }

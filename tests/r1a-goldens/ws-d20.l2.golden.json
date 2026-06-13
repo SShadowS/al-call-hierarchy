@@ -403,6 +403,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
               "startLine": 0,
@@ -410,8 +411,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -470,8 +470,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "exit",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "exit"
           }
         ]
       },

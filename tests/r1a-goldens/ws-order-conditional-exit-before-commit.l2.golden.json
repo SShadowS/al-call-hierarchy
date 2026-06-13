@@ -69,6 +69,7 @@
             "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/op0",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -81,8 +82,7 @@
               "endLine": 13,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -91,12 +91,12 @@
           {
             "id": "r0/9f26ddadb032f668bcd5e04accffc557d0c1e6b2bac3694d41c948246ace0e0b/rv/rec",
             "name": "Rec",
+            "tableName": "CEX Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "CEX Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -112,6 +112,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Poster.Codeunit.al",
               "startLine": 0,
@@ -119,8 +120,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "rec",
@@ -201,8 +201,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "exit",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "exit"
           }
         ]
       },
@@ -294,6 +294,7 @@
             "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/op0",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -306,8 +307,7 @@
               "endLine": 24,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -316,12 +316,12 @@
           {
             "id": "r0/d8b54958b60e27b35685ca98b86a1ecf51782fe726a16f7c875d7dfe61d7b19e/rv/rec",
             "name": "Rec",
+            "tableName": "CEX Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "CEX Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -477,6 +477,7 @@
             "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -489,8 +490,7 @@
               "endLine": 37,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -549,12 +549,12 @@
           {
             "id": "r0/888909c28a715282be9199de64baff3a4038230c9badc39b8b6905a9840e5929/rv/rec",
             "name": "Rec",
+            "tableName": "CEX Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "CEX Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -570,6 +570,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Poster.Codeunit.al",
               "startLine": 0,
@@ -577,8 +578,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "rec",
@@ -660,8 +660,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "error",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "error"
           }
         ]
       },

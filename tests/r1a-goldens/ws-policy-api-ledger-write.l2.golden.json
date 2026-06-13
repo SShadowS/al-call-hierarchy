@@ -51,8 +51,10 @@
             "id": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/rv/rec",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             },
             "loopStack": [],
             "sourceAnchor": {
@@ -66,8 +68,31 @@
           }
         ],
         "callSites": [],
-        "fieldAccesses": [],
-        "recordVariables": [],
+        "fieldAccesses": [
+          {
+            "recordVariableName": "Rec",
+            "fieldName": "Entry No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 26,
+              "startColumn": 20,
+              "endLine": 26,
+              "endColumn": 35,
+              "syntaxKind": "member_expression"
+            }
+          }
+        ],
+        "recordVariables": [
+          {
+            "id": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],
@@ -78,6 +103,7 @@
         "varAssignments": [
           {
             "lhsName": "\"entry no.\"",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Page.al",
               "startLine": 26,
@@ -85,8 +111,7 @@
               "endLine": 26,
               "endColumn": 40,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [],
@@ -120,8 +145,10 @@
           "witnessOperationId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/op0",
           "extra": {
             "kind": "table",
+            "recordVariableId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/rv/rec",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             },
             "opSubtype": "Insert"
           }

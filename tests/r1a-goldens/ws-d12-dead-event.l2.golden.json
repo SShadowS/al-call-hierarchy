@@ -110,7 +110,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -123,6 +122,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -145,6 +145,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/codeunit.al",
               "startLine": 0,
@@ -152,8 +153,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],

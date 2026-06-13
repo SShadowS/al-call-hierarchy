@@ -23,6 +23,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -42,6 +43,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
               "startLine": 0,
@@ -49,8 +51,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -70,8 +71,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000preset1:Codeunit:50000#9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",
@@ -307,20 +307,11 @@
             "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op0",
             "op": "Get",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
-              "startLine": 25,
-              "startColumn": 8,
-              "endLine": 25,
-              "endColumn": 18,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
             "fieldArguments": [
               "1"
             ],
@@ -330,12 +321,22 @@
                 "text": "1",
                 "value": "1"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
+              "startLine": 25,
+              "startColumn": 8,
+              "endLine": 25,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/op1",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -348,8 +349,7 @@
               "endLine": 27,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -440,12 +440,12 @@
           {
             "id": "r0/2d15d1cf7085b0d9922cf3a39dcc04eb0e26aad7a50d8d6ca6341b5c6fb1033f/rv/rec",
             "name": "Rec",
+            "tableName": "Preset Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Preset Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -503,6 +503,7 @@
         "varAssignments": [
           {
             "lhsName": "name",
+            "rhsLiteralValue": "changed",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/PresetTxn.Codeunit.al",
               "startLine": 26,
@@ -510,8 +511,7 @@
               "endLine": 26,
               "endColumn": 29,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "changed"
+            }
           }
         ],
         "conditionReferences": [],

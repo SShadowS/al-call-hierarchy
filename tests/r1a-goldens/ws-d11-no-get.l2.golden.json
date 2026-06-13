@@ -49,6 +49,7 @@
             "id": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/op0",
             "op": "Modify",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
@@ -61,8 +62,7 @@
               "endLine": 6,
               "endColumn": 19,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/rv/customer"
+            }
           }
         ],
         "callSites": [],
@@ -84,12 +84,12 @@
           {
             "id": "r0/e6bb9dde1f2d24dc0075d4e74dc2dd8bd506dea7180fdb6a3a9796ce5604208c/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -117,6 +117,7 @@
         "varAssignments": [
           {
             "lhsName": "\"no.\"",
+            "rhsLiteralValue": "x",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/codeunit.al",
               "startLine": 5,
@@ -124,8 +125,7 @@
               "endLine": 5,
               "endColumn": 23,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "x"
+            }
           }
         ],
         "conditionReferences": [],
@@ -212,6 +212,7 @@
             "id": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/op0",
             "op": "Modify",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/rv/customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -224,8 +225,7 @@
               "endLine": 20,
               "endColumn": 19,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/rv/customer"
+            }
           }
         ],
         "callSites": [],
@@ -247,12 +247,12 @@
           {
             "id": "r0/63fb2d7b2a311ab0ba8c1d304209e88aec2d611d94602e7acd288be86dc83050/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -269,6 +269,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/codeunit.al",
               "startLine": 0,
@@ -276,8 +277,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [
@@ -397,20 +397,11 @@
             "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op0",
             "op": "Get",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/codeunit.al",
-              "startLine": 12,
-              "startColumn": 2,
-              "endLine": 12,
-              "endColumn": 19,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
             "fieldArguments": [
               "'X'"
             ],
@@ -420,12 +411,22 @@
                 "text": "'X'",
                 "value": "X"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/codeunit.al",
+              "startLine": 12,
+              "startColumn": 2,
+              "endLine": 12,
+              "endColumn": 19,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/op1",
             "op": "Modify",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
@@ -438,8 +439,7 @@
               "endLine": 14,
               "endColumn": 19,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer"
+            }
           }
         ],
         "callSites": [],
@@ -461,12 +461,12 @@
           {
             "id": "r0/4f102dec22c9ac026d08d4433697f92a641a9606f351f84b5ab3f516c3b43548/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

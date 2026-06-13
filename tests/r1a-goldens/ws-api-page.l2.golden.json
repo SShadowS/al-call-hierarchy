@@ -23,7 +23,17 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/f2afc27b4eff00ff1956235edbd2d9ad19785ade3fd36fb965aaeca66bc302b3/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],
@@ -62,7 +72,17 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/a3620d32b8575ea4fd575a69352c7201671a0b92709dcc174aabe7700498e22f/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],

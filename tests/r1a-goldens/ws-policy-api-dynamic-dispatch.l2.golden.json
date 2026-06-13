@@ -51,20 +51,11 @@
             "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/op0",
             "op": "Get",
             "recordVariableName": "S",
+            "recordVariableId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Page.al",
-              "startLine": 28,
-              "startColumn": 20,
-              "endLine": 28,
-              "endColumn": 36,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
             "fieldArguments": [
               "Rec.\"No.\""
             ],
@@ -73,7 +64,16 @@
                 "kind": "member_expression",
                 "text": "Rec.\"No.\""
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 28,
+              "startColumn": 20,
+              "endLine": 28,
+              "endColumn": 36,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [
@@ -132,6 +132,18 @@
         ],
         "fieldAccesses": [
           {
+            "recordVariableName": "Rec",
+            "fieldName": "No.",
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Page.al",
+              "startLine": 28,
+              "startColumn": 26,
+              "endLine": 28,
+              "endColumn": 35,
+              "syntaxKind": "member_expression"
+            }
+          },
+          {
             "recordVariableName": "S",
             "fieldName": "Codeunit Id",
             "sourceAnchor": {
@@ -148,12 +160,21 @@
           {
             "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/s",
             "name": "S",
+            "tableName": "Dispatch Setup",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Dispatch Setup"
+            "isParameter": false
+          },
+          {
+            "id": "r0/f889b5a8b14d831845ac1aea029449e518a423d2b32c5f4efab894aac2e70be2/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

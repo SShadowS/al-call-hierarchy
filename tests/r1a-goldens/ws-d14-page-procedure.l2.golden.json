@@ -18,6 +18,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -49,8 +50,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "44444444-0000-0000-0000-00000000d14e:Codeunit:50301#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
@@ -97,6 +97,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -147,8 +148,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

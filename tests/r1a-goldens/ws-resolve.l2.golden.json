@@ -122,20 +122,11 @@
             "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/op0",
             "op": "Get",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/processor.al",
-              "startLine": 12,
-              "startColumn": 8,
-              "endLine": 12,
-              "endColumn": 29,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
             "fieldArguments": [
               "'C0001'"
             ],
@@ -145,7 +136,16 @@
                 "text": "'C0001'",
                 "value": "C0001"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/processor.al",
+              "startLine": 12,
+              "startColumn": 8,
+              "endLine": 12,
+              "endColumn": 29,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [
@@ -183,22 +183,22 @@
           {
             "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           },
           {
             "id": "r0/206335bf973a5ec9cb2539e0d325824af59e5d11ef2b5a243abc60763b911370/rv/salesline",
             "name": "SalesLine",
+            "tableName": "Sales Line",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Sales Line"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -289,6 +289,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -320,8 +321,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

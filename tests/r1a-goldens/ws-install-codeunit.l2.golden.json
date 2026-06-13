@@ -126,6 +126,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -157,8 +158,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

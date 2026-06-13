@@ -106,6 +106,7 @@
             "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -120,13 +121,13 @@
               "endLine": 9,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec"
+            }
           },
           {
             "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -141,8 +142,7 @@
               "endLine": 10,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -151,12 +151,12 @@
           {
             "id": "r0/5bd097eb67c6e5c40557f3c18269897548c44c8b0c8fe78b4af648567cca5a47/rv/rec",
             "name": "Rec",
+            "tableName": "LO Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "LO Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 1,
@@ -186,6 +186,9 @@
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
               "startLine": 5,
@@ -193,15 +196,13 @@
               "endLine": 5,
               "endColumn": 22,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "done",
+            "rhsLiteralValue": "false",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/LoopThenCommit.Codeunit.al",
               "startLine": 7,
@@ -209,8 +210,7 @@
               "endLine": 7,
               "endColumn": 21,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "false"
+            }
           }
         ],
         "conditionReferences": [

@@ -91,6 +91,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -122,10 +123,13 @@
             "id": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/op0",
             "op": "FindSet",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/caller.al",
@@ -134,10 +138,7 @@
               "endLine": 11,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [],
@@ -146,12 +147,12 @@
           {
             "id": "r0/0f4bfd68b3b1c9ceca6634bf99ea26eaffdce2b86cbd65260a8da46655b15124/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -216,8 +217,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

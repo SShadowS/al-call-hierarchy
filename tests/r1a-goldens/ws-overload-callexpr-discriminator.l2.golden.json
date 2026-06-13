@@ -94,6 +94,7 @@
             "id": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -106,13 +107,13 @@
               "endLine": 6,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec"
+            }
           },
           {
             "id": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -125,8 +126,7 @@
               "endLine": 7,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -135,12 +135,12 @@
           {
             "id": "r0/b624f98812a2b495ed0c0ad3802ae71d23d8235ea9aede72730524f6d879a8d9/rv/rec",
             "name": "Rec",
+            "tableName": "CE Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "CE Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -155,6 +155,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Target.Codeunit.al",
               "startLine": 0,
@@ -162,8 +163,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "rec",
@@ -266,6 +266,7 @@
             "declaredType": "Text",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Target.Codeunit.al",
               "startLine": 0,
@@ -273,8 +274,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -451,6 +451,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -486,8 +487,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

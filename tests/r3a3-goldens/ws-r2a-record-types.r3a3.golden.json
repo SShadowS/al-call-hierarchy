@@ -129,8 +129,10 @@
 					"extra": {
 						"kind": "table",
 						"opSubtype": "Modify",
+						"recordVariableId": "r0/7c5ea76a29da1ad429fbe8da5d35db4144e6ffedb88646f62da75ae49834357c/rv/rec",
 						"tempState": {
-							"kind": "unknown"
+							"kind": "known",
+							"value": false
 						}
 					}
 				}
@@ -158,8 +160,10 @@
 					"extra": {
 						"kind": "table",
 						"opSubtype": "Modify",
+						"recordVariableId": "r0/625c461177a40e58def191ce8909c1dddd128540a9fe95e03c2caf6d4963fe72/rv/rec",
 						"tempState": {
-							"kind": "unknown"
+							"kind": "known",
+							"value": false
 						}
 					}
 				},
@@ -174,8 +178,10 @@
 					"extra": {
 						"kind": "table",
 						"opSubtype": "Modify",
+						"recordVariableId": "r0/625c461177a40e58def191ce8909c1dddd128540a9fe95e03c2caf6d4963fe72/rv/rec",
 						"tempState": {
-							"kind": "unknown"
+							"kind": "known",
+							"value": false
 						}
 					}
 				}

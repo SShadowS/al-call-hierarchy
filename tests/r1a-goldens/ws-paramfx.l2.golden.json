@@ -69,20 +69,11 @@
             "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op0",
             "op": "Validate",
             "recordVariableName": "SalesLine",
+            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/enricher.al",
-              "startLine": 10,
-              "startColumn": 8,
-              "endLine": 10,
-              "endColumn": 34,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
             "fieldArguments": [
               "Amount"
             ],
@@ -92,12 +83,22 @@
                 "text": "Amount",
                 "value": "Amount"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/enricher.al",
+              "startLine": 10,
+              "startColumn": 8,
+              "endLine": 10,
+              "endColumn": 34,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/op1",
             "op": "Reset",
             "recordVariableName": "SalesLine",
+            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -110,8 +111,7 @@
               "endLine": 11,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline"
+            }
           }
         ],
         "callSites": [],
@@ -120,12 +120,12 @@
           {
             "id": "r0/c82631f4c81532890fc07f0b9311a574d1529b43b69e872e20ecd189ad2c0ada/rv/salesline",
             "name": "SalesLine",
+            "tableName": "Sales Line",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Sales Line",
             "parameterIndex": 0
           }
         ],
@@ -142,6 +142,7 @@
             "declaredType": "Record \"Sales Line\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/enricher.al",
               "startLine": 0,
@@ -149,8 +150,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -254,12 +254,12 @@
           {
             "id": "r0/c962affadaaa6ee10853f16325a7c9fba5c92a051945e49287e82567a24905c9/rv/salesline",
             "name": "SalesLine",
+            "tableName": "Sales Line",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Sales Line",
             "parameterIndex": 0
           }
         ],
@@ -275,6 +275,7 @@
             "declaredType": "Record \"Sales Line\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/enricher.al",
               "startLine": 0,
@@ -282,8 +283,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [
@@ -384,6 +384,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/enricher.al",
               "startLine": 0,
@@ -391,8 +392,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],

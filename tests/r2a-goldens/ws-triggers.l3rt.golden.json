@@ -81,21 +81,36 @@
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
       "name": "OnInsert",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ],
       "recordOperations": []
     },
     {
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
       "name": "OnModify",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ],
       "recordOperations": []
     },
     {
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
       "name": "OnValidate",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "77777777-7777-7777-7777-777777777777:Table:51100"
+        }
+      ],
       "recordOperations": []
     }
   ]

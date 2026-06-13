@@ -69,6 +69,7 @@
             "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op0",
             "op": "Init",
             "recordVariableName": "TempRec",
+            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec",
             "tempState": {
               "kind": "known",
               "value": true
@@ -81,13 +82,13 @@
               "endLine": 10,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec"
+            }
           },
           {
             "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/op1",
             "op": "Insert",
             "recordVariableName": "TempRec",
+            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec",
             "tempState": {
               "kind": "known",
               "value": true
@@ -100,8 +101,7 @@
               "endLine": 12,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec"
+            }
           }
         ],
         "callSites": [
@@ -173,12 +173,12 @@
           {
             "id": "r0/f35bc738e668ea19a0011919f59fe8f2cd330dc1b6f29948a1b1b6c32b77d7a5/rv/temprec",
             "name": "TempRec",
+            "tableName": "D49 Rec",
             "tempState": {
               "kind": "known",
               "value": true
             },
-            "isParameter": false,
-            "tableName": "D49 Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -206,6 +206,7 @@
         "varAssignments": [
           {
             "lhsName": "\"no.\"",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sender.Codeunit.al",
               "startLine": 11,
@@ -213,8 +214,7 @@
               "endLine": 11,
               "endColumn": 26,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [],

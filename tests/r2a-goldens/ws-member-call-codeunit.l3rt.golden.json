@@ -102,7 +102,12 @@
       "stableRoutineId": "44444444-4444-4444-4444-444444444444:Table:50102#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
       "name": "OnInsert",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "44444444-4444-4444-4444-444444444444:Table:50102"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",

@@ -156,21 +156,36 @@
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
       "name": "OnInsert",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010"
+        }
+      ],
       "recordOperations": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#63b4541a24f63b3659b9b29bf5ef73537a6715d1ec840fb6d39de361ea7ca603",
       "name": "OnModify",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010"
+        }
+      ],
       "recordOperations": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70011#508f205f25a9da9374cc240933be5522d7af843db4d90c4b9a46dd409a748942",
       "name": "OnDelete",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70011"
+        }
+      ],
       "recordOperations": []
     }
   ]

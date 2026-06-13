@@ -178,8 +178,10 @@
 					"extra": {
 						"kind": "table",
 						"opSubtype": "TestField",
+						"recordVariableId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/rv/rec",
 						"tempState": {
-							"kind": "unknown"
+							"kind": "known",
+							"value": false
 						}
 					}
 				}

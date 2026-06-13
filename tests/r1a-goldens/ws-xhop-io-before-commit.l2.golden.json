@@ -207,12 +207,12 @@
           {
             "id": "r0/4a82d640157e5d3e86e22fb32d552b7eae05998554cae1fc6c5b985e42c8cd19/rv/rec",
             "name": "Rec",
+            "tableName": "XI Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "XI Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

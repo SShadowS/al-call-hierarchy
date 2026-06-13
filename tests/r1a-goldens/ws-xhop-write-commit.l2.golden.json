@@ -148,6 +148,7 @@
             "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -160,13 +161,13 @@
               "endLine": 7,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec"
+            }
           },
           {
             "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -179,8 +180,7 @@
               "endLine": 8,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -219,12 +219,12 @@
           {
             "id": "r0/f58107ca515b8e9c73ae6cb2cc37b42fc59211c71ad1fcfc14dd4ba977457bee/rv/rec",
             "name": "Rec",
+            "tableName": "XW Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "XW Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

@@ -69,6 +69,7 @@
             "id": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op0",
             "op": "Insert",
             "recordVariableName": "R",
+            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r",
             "tempState": {
               "kind": "known",
               "value": false
@@ -81,13 +82,13 @@
               "endLine": 7,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r"
+            }
           },
           {
             "id": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/op1",
             "op": "Modify",
             "recordVariableName": "R",
+            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r",
             "tempState": {
               "kind": "known",
               "value": false
@@ -100,8 +101,7 @@
               "endLine": 8,
               "endColumn": 18,
               "syntaxKind": "identifier"
-            },
-            "recordVariableId": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r"
+            }
           }
         ],
         "callSites": [],
@@ -110,12 +110,12 @@
           {
             "id": "r0/2630194b98de9d334d473c5f337a11c22510a43e21dd5f67eef355a73c1df14f/rv/r",
             "name": "R",
+            "tableName": "Probe Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Probe Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

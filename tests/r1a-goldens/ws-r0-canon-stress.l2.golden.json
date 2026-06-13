@@ -93,34 +93,34 @@
           {
             "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/cust",
             "name": "Cust",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           },
           {
             "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/sales header",
             "name": "Sales Header",
+            "tableName": "Sales Header",
             "tempState": {
               "kind": "known",
               "value": false
             },
             "isParameter": true,
-            "tableName": "Sales Header",
             "parameterIndex": 1
           },
           {
             "id": "r0/0e7a2da462e01e28baa466bde9732abb1ad2681da30c915273613e665528e300/rv/tempbuffer",
             "name": "TempBuffer",
+            "tableName": "Temp Buffer",
             "tempState": {
               "kind": "known",
               "value": true
             },
             "isParameter": true,
-            "tableName": "Temp Buffer",
             "parameterIndex": 3
           }
         ],
@@ -134,6 +134,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -141,14 +142,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "sales header",
             "declaredType": "Record \"Sales Header\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -156,14 +157,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "items",
             "declaredType": "array[10] of Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 2,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -171,14 +172,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 2
+            }
           },
           {
             "name": "tempbuffer",
             "declaredType": "Record \"Temp Buffer\" temporary",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 3,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -186,14 +187,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 3
+            }
           },
           {
             "name": "kind",
             "declaredType": "Enum \"Doc Kind\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 4,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -201,14 +202,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 4
+            }
           },
           {
             "name": "opt",
             "declaredType": "Option Open,Closed",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 5,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -216,14 +217,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 5
+            }
           },
           {
             "name": "postcode",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 6,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -231,14 +232,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 6
+            }
           },
           {
             "name": "note",
             "declaredType": "Text[100]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 7,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -246,8 +247,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 7
+            }
           }
         ],
         "varAssignments": [],
@@ -296,6 +296,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -303,14 +304,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "b",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -318,8 +319,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           }
         ],
         "varAssignments": [],
@@ -354,7 +354,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "BusinessEvent",
           "args": [
             {
               "kind": "boolean",
@@ -362,6 +361,7 @@
               "value": "false"
             }
           ],
+          "name": "BusinessEvent",
           "raw": "[BusinessEvent(false)]"
         }
       ],
@@ -384,6 +384,7 @@
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -391,8 +392,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -423,7 +423,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -436,6 +435,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -458,6 +458,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -465,8 +466,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -552,6 +552,7 @@
             "declaredType": "Text",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -559,8 +560,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -613,6 +613,7 @@
             "declaredType": "Decimal",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -620,8 +621,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -657,7 +657,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "Obsolete",
           "args": [
             {
               "kind": "string_literal",
@@ -670,10 +669,10 @@
               "value": "24.0"
             }
           ],
+          "name": "Obsolete",
           "raw": "[Obsolete('use OnBeforePost', '24.0')]"
         },
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -686,6 +685,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -792,6 +792,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -799,8 +800,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -835,7 +835,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "InternalEvent",
           "args": [
             {
               "kind": "boolean",
@@ -843,6 +842,7 @@
               "value": "false"
             }
           ],
+          "name": "InternalEvent",
           "raw": "[InternalEvent(false)]"
         }
       ],
@@ -888,21 +888,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"Canon Stress Publisher\"",
-              "value": "Canon Stress Publisher",
+              "member": "Canon Stress Publisher",
               "qualifier": "Codeunit",
-              "member": "Canon Stress Publisher"
+              "text": "Codeunit::\"Canon Stress Publisher\"",
+              "value": "Canon Stress Publisher"
             },
             {
               "kind": "string_literal",
@@ -925,9 +924,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Canon Stress Publisher\", 'OnBeforePost', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -947,6 +948,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/publisher.al",
               "startLine": 0,
@@ -954,8 +956,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -987,8 +988,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "f00dcafe-0000-4000-ca11-5715e55beef0:Table:70010#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
@@ -1004,7 +1004,17 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/10682233096cc8110d74f1262bfb7b0d9fc5989b751ffae1497359757ae52b81/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],
@@ -1043,7 +1053,17 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/dc4a5f36ebb942d339ae9b6f27861963018491353d8678154c19093ee3b274ed/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],
@@ -1082,7 +1102,17 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/f280b5ec73f071d696443006930781c86bb2154d9cff0e2749fbd606a300ad8b/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],

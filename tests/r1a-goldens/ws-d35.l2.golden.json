@@ -16,14 +16,13 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "integer",
@@ -51,9 +50,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, 50, 'OnBeforePrint', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -160,8 +161,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f",
@@ -172,14 +172,13 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "integer",
@@ -207,9 +206,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, 50, 'OnAfterPost', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -287,8 +288,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a",
@@ -296,6 +296,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -362,8 +363,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#c937f452b226f2394cc4c00d2efb29e7f15730196e2230b656bab5c00ec98d1a",
@@ -448,14 +448,13 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "integer",
@@ -483,9 +482,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, 50, 'OnAfterValidate', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -563,8 +564,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

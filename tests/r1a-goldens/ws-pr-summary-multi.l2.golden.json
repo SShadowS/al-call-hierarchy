@@ -79,20 +79,11 @@
             "id": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/op0",
             "op": "Get",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Main.Codeunit.al",
-              "startLine": 9,
-              "startColumn": 8,
-              "endLine": 9,
-              "endColumn": 18,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
             "fieldArguments": [
               "1"
             ],
@@ -102,12 +93,22 @@
                 "text": "1",
                 "value": "1"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Main.Codeunit.al",
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 18,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/op1",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -120,8 +121,7 @@
               "endLine": 11,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -212,12 +212,12 @@
           {
             "id": "r0/c7043ebdf1e2b090ee360fd80dca16569ae7d887c602d8c6d2fc1e8bfbe0807d/rv/rec",
             "name": "Rec",
+            "tableName": "PR Summary Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "PR Summary Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -275,6 +275,7 @@
         "varAssignments": [
           {
             "lhsName": "name",
+            "rhsLiteralValue": "changed",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Main.Codeunit.al",
               "startLine": 10,
@@ -282,8 +283,7 @@
               "endLine": 10,
               "endColumn": 29,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "changed"
+            }
           }
         ],
         "conditionReferences": [],
@@ -384,6 +384,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -403,6 +404,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Main.Codeunit.al",
               "startLine": 0,
@@ -410,8 +412,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -431,8 +432,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-0000-0000-0000-000000pr0001:Codeunit:50201#9d761e54de05881f5b1df98326c571fd22bb03b4664dd403919d1f8a7c179997",

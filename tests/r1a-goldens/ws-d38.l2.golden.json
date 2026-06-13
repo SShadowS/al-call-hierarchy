@@ -222,7 +222,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -235,10 +234,10 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         },
         {
-          "name": "Obsolete",
           "args": [
             {
               "kind": "string_literal",
@@ -252,12 +251,13 @@
             },
             {
               "kind": "qualified_enum_value",
-              "text": "ObsoleteState::Removed",
-              "value": "Removed",
+              "member": "Removed",
               "qualifier": "ObsoleteState",
-              "member": "Removed"
+              "text": "ObsoleteState::Removed",
+              "value": "Removed"
             }
           ],
+          "name": "Obsolete",
           "raw": "[Obsolete('Removed; use OnAfterDoStuffV2.', '25.0', ObsoleteState::Removed)]"
         }
       ],
@@ -280,6 +280,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -287,8 +288,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -320,7 +320,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -333,10 +332,10 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         },
         {
-          "name": "Obsolete",
           "args": [
             {
               "kind": "string_literal",
@@ -349,6 +348,7 @@
               "value": "24.0"
             }
           ],
+          "name": "Obsolete",
           "raw": "[Obsolete('Use OnAfterDoStuffV2; this will be removed in 25.0.', '24.0')]"
         }
       ],
@@ -371,6 +371,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -378,8 +379,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -410,7 +410,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -423,6 +422,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -445,6 +445,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -452,8 +453,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -484,21 +484,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D38 Publisher\"",
-              "value": "D38 Publisher",
+              "member": "D38 Publisher",
               "qualifier": "Codeunit",
-              "member": "D38 Publisher"
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher"
             },
             {
               "kind": "string_literal",
@@ -521,9 +520,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffRemoved', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -543,6 +544,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -550,8 +552,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -583,8 +584,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#59d7af5c2715cb165574a78a34cb471711a9b30325001327757c39a2b8957494",
@@ -595,21 +595,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D38 NonExistent\"",
-              "value": "D38 NonExistent",
+              "member": "D38 NonExistent",
               "qualifier": "Codeunit",
-              "member": "D38 NonExistent"
+              "text": "Codeunit::\"D38 NonExistent\"",
+              "value": "D38 NonExistent"
             },
             {
               "kind": "string_literal",
@@ -632,9 +631,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 NonExistent\", 'OnSomethingUnknown', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -678,8 +679,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#82277aa1af63a4c29199e9338593282df1f0620d7d3c2f63b6ccf14504060732",
@@ -690,21 +690,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D38 Publisher\"",
-              "value": "D38 Publisher",
+              "member": "D38 Publisher",
               "qualifier": "Codeunit",
-              "member": "D38 Publisher"
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher"
             },
             {
               "kind": "string_literal",
@@ -727,9 +726,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterFresh', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -749,6 +750,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -756,8 +758,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -789,8 +790,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d380:Codeunit:51401#b4d6ffec876b5d6a69372da98e5b2b05a6d87ca56fcd8015f1d5e5fd0f56439b",
@@ -801,21 +801,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D38 Publisher\"",
-              "value": "D38 Publisher",
+              "member": "D38 Publisher",
               "qualifier": "Codeunit",
-              "member": "D38 Publisher"
+              "text": "Codeunit::\"D38 Publisher\"",
+              "value": "D38 Publisher"
             },
             {
               "kind": "string_literal",
@@ -838,9 +837,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D38 Publisher\", 'OnAfterDoStuffPending', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -860,6 +861,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -867,8 +869,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -900,8 +901,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

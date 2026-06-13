@@ -56,6 +56,10 @@
         {
           "name": "anotherline",
           "tableId": "11111111-d1it-0000-0000-000000000001:Table:72100"
+        },
+        {
+          "name": "rec",
+          "tableId": "11111111-d1it-0000-0000-000000000001:Table:72100"
         }
       ],
       "recordOperations": [

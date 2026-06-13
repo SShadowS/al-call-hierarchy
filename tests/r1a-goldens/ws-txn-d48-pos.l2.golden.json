@@ -161,6 +161,7 @@
         "varAssignments": [
           {
             "lhsName": "method",
+            "rhsLiteralValue": "post",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 13,
@@ -168,8 +169,7 @@
               "endLine": 13,
               "endColumn": 28,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "post"
+            }
           }
         ],
         "conditionReferences": [],
@@ -292,6 +292,10 @@
             "declaredType": "Integer",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "literal",
+              "value": "0"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 26,
@@ -299,16 +303,13 @@
               "endLine": 26,
               "endColumn": 19,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "literal",
-              "value": "0"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "i",
+            "rhsLiteralValue": "0",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 28,
@@ -316,11 +317,11 @@
               "endLine": 28,
               "endColumn": 14,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "0"
+            }
           },
           {
             "lhsName": "i",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 30,
@@ -328,8 +329,7 @@
               "endLine": 30,
               "endColumn": 18,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [
@@ -398,6 +398,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -481,8 +482,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d480:Codeunit:50002#197d34c68565ddcb1cc7fa6474f1b19b163362119fb2dcd8b8eaff37d3af2ce9",
@@ -703,6 +703,10 @@
             "declaredType": "Integer",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "literal",
+              "value": "0"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 67,
@@ -710,16 +714,13 @@
               "endLine": 67,
               "endColumn": 19,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "literal",
-              "value": "0"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "i",
+            "rhsLiteralValue": "0",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 69,
@@ -727,11 +728,11 @@
               "endLine": 69,
               "endColumn": 14,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "0"
+            }
           },
           {
             "lhsName": "i",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Pos.Codeunit.al",
               "startLine": 71,
@@ -739,8 +740,7 @@
               "endLine": 71,
               "endColumn": 18,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [

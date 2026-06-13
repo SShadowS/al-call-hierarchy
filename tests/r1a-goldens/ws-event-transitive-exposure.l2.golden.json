@@ -57,14 +57,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Publisher.al",
-                  "startLine": 4,
-                  "startColumn": 17,
-                  "endLine": 4,
-                  "endColumn": 20,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "doc",
                 "sourceRecordVariableId": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/rv/doc",
                 "sourceParameterIndex": 0,
@@ -72,6 +64,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 17,
+                  "endLine": 4,
+                  "endColumn": 20,
+                  "syntaxKind": "identifier"
                 }
               }
             ],
@@ -98,12 +98,12 @@
           {
             "id": "r0/4cd5dfb97fac5923ca0f054252d5293d4bd36ec288dd2288e3196e907cc43027/rv/doc",
             "name": "Doc",
+            "tableName": "Sales Header",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Sales Header",
             "parameterIndex": 0
           }
         ],
@@ -119,6 +119,7 @@
             "declaredType": "Record \"Sales Header\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -126,8 +127,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -163,7 +163,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -176,6 +175,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -191,12 +191,12 @@
           {
             "id": "r0/6295e47ecf668152e48755369c2a8aa0f0b5b2b22b1cba3e313a5ddf32fbeb9a/rv/doc",
             "name": "Doc",
+            "tableName": "Sales Header",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Sales Header",
             "parameterIndex": 0
           }
         ],
@@ -210,6 +210,7 @@
             "declaredType": "Record \"Sales Header\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -217,8 +218,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -249,21 +249,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::ExportMgr",
-              "value": "ExportMgr",
+              "member": "ExportMgr",
               "qualifier": "Codeunit",
-              "member": "ExportMgr"
+              "text": "Codeunit::ExportMgr",
+              "value": "ExportMgr"
             },
             {
               "kind": "string_literal",
@@ -286,9 +285,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::ExportMgr, 'OnExport', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -340,6 +341,7 @@
             "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op0",
             "op": "Init",
             "recordVariableName": "L",
+            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l",
             "tempState": {
               "kind": "known",
               "value": false
@@ -352,13 +354,13 @@
               "endLine": 7,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l"
+            }
           },
           {
             "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/op1",
             "op": "Insert",
             "recordVariableName": "L",
+            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l",
             "tempState": {
               "kind": "known",
               "value": false
@@ -371,8 +373,7 @@
               "endLine": 9,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l"
+            }
           }
         ],
         "callSites": [],
@@ -406,23 +407,23 @@
           {
             "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/doc",
             "name": "Doc",
+            "tableName": "Sales Header",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Sales Header",
             "parameterIndex": 0
           },
           {
             "id": "r0/e8761aa9b38316cb03701eca9f7d828f325d1357625ad1502a893316243fa928/rv/l",
             "name": "L",
+            "tableName": "Document Log",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Document Log"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -438,6 +439,7 @@
             "declaredType": "Record \"Sales Header\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Subscriber.al",
               "startLine": 0,
@@ -445,8 +447,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "l",
@@ -533,8 +534,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

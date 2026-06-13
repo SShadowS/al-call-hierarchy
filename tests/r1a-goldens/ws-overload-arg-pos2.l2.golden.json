@@ -87,6 +87,9 @@
               {
                 "parameterIndex": 1,
                 "sourceKind": "parameter",
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 14,
@@ -94,14 +97,14 @@
                   "endLine": 14,
                   "endColumn": 24,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "instr",
-                "sourceParameterIndex": 0,
-                "callerSourceParameterIsVar": false
+                }
               },
               {
                 "parameterIndex": 2,
                 "sourceKind": "parameter",
+                "sourceVariableName": "acc",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 14,
@@ -109,10 +112,7 @@
                   "endLine": 14,
                   "endColumn": 29,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "acc",
-                "sourceParameterIndex": 1,
-                "callerSourceParameterIsVar": false
+                }
               }
             ],
             "loopStack": [],
@@ -150,6 +150,7 @@
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -157,14 +158,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -172,8 +173,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "sha",
@@ -234,6 +234,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -286,8 +287,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:Codeunit:50100#be006be101702ffd2fd98f3cbd192ca239edff06dc39039d14165b2553a601b4",
@@ -348,6 +348,9 @@
               {
                 "parameterIndex": 1,
                 "sourceKind": "parameter",
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 6,
@@ -355,14 +358,14 @@
                   "endLine": 6,
                   "endColumn": 42,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "instr",
-                "sourceParameterIndex": 0,
-                "callerSourceParameterIsVar": false
+                }
               },
               {
                 "parameterIndex": 2,
                 "sourceKind": "parameter",
+                "sourceVariableName": "acc",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 6,
@@ -370,10 +373,7 @@
                   "endLine": 6,
                   "endColumn": 47,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "acc",
-                "sourceParameterIndex": 1,
-                "callerSourceParameterIsVar": false
+                }
               }
             ],
             "loopStack": [],
@@ -438,6 +438,7 @@
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -445,14 +446,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -460,8 +461,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "sha",
@@ -585,6 +585,7 @@
             "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -597,13 +598,13 @@
               "endLine": 11,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec"
+            }
           },
           {
             "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -616,8 +617,7 @@
               "endLine": 12,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -626,12 +626,12 @@
           {
             "id": "r0/7e83507dadcabe52223d97c9fe6496b1f70904d6914c8f5ee9d350d784993e73/rv/rec",
             "name": "Rec",
+            "tableName": "Probe File",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Probe File"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -646,6 +646,7 @@
             "declaredType": "Interface \"Probe ILog\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -653,14 +654,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "s",
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -668,14 +669,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 2,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -683,8 +684,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 2
+            }
           },
           {
             "name": "rec",
@@ -787,6 +787,7 @@
             "declaredType": "Interface \"Probe ILog\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -794,14 +795,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "s",
             "declaredType": "Text",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -809,14 +810,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 2,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -824,8 +825,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 2
+            }
           }
         ],
         "varAssignments": [],
@@ -897,6 +897,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -904,14 +905,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "s",
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -919,14 +920,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 2,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -934,8 +935,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 2
+            }
           }
         ],
         "varAssignments": [],
@@ -999,6 +999,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -1006,14 +1007,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "s",
             "declaredType": "Text",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -1021,14 +1022,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "acc",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 2,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sha.Codeunit.al",
               "startLine": 0,
@@ -1036,8 +1037,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 2
+            }
           }
         ],
         "varAssignments": [],

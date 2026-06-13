@@ -146,6 +146,7 @@
         "varAssignments": [
           {
             "lhsName": "method",
+            "rhsLiteralValue": "post",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D48Neg.Codeunit.al",
               "startLine": 11,
@@ -153,8 +154,7 @@
               "endLine": 11,
               "endColumn": 28,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "post"
+            }
           }
         ],
         "conditionReferences": [],

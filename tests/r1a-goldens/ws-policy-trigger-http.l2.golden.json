@@ -90,7 +90,17 @@
           }
         ],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/e2d6d5fb812251f4909bf17a00c13d25fe326ee75fb753f61e15fcf391bedde2/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],

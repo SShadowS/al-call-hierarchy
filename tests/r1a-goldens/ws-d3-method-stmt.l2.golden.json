@@ -75,12 +75,12 @@
           {
             "id": "r0/78aa260fb616deb789e3b7021d420d4bbe1f8b75d5dab32090d3978887ede64b/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 1,
@@ -210,20 +210,11 @@
             "id": "r0/a5bb0573d8f6d4b1da02e720990893dac70c487ba7718fb5ca3868482efdf125/op0",
             "op": "Get",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/a5bb0573d8f6d4b1da02e720990893dac70c487ba7718fb5ca3868482efdf125/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/D3MethodStmt.al",
-              "startLine": 21,
-              "startColumn": 8,
-              "endLine": 21,
-              "endColumn": 25,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/a5bb0573d8f6d4b1da02e720990893dac70c487ba7718fb5ca3868482efdf125/rv/customer",
             "fieldArguments": [
               "'X'"
             ],
@@ -233,7 +224,16 @@
                 "text": "'X'",
                 "value": "X"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/D3MethodStmt.al",
+              "startLine": 21,
+              "startColumn": 8,
+              "endLine": 21,
+              "endColumn": 25,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [],
@@ -255,12 +255,12 @@
           {
             "id": "r0/a5bb0573d8f6d4b1da02e720990893dac70c487ba7718fb5ca3868482efdf125/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -290,6 +290,9 @@
             "declaredType": "Text",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D3MethodStmt.al",
               "startLine": 19,
@@ -297,9 +300,6 @@
               "endLine": 19,
               "endColumn": 16,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
@@ -432,10 +432,13 @@
             "id": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/op0",
             "op": "FindSet",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D3MethodStmt.al",
@@ -444,15 +447,13 @@
               "endLine": 9,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           },
           {
             "id": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/op1",
             "op": "Next",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
@@ -467,8 +468,7 @@
               "endLine": 12,
               "endColumn": 33,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/rv/customer"
+            }
           }
         ],
         "callSites": [
@@ -509,12 +509,12 @@
           {
             "id": "r0/914cf7c14f020bd17957dc1073102cac70c639f846f09ac731cf71376ddaa9cc/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 1,
@@ -715,10 +715,13 @@
             "id": "r0/42d64f9e1f6124c68e2f3f35a091c8f725d81964ee40dd528ae2552b6f1347ba/op0",
             "op": "FindSet",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/42d64f9e1f6124c68e2f3f35a091c8f725d81964ee40dd528ae2552b6f1347ba/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/D3MethodStmt.al",
@@ -727,10 +730,7 @@
               "endLine": 33,
               "endColumn": 29,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/42d64f9e1f6124c68e2f3f35a091c8f725d81964ee40dd528ae2552b6f1347ba/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [],
@@ -752,12 +752,12 @@
           {
             "id": "r0/42d64f9e1f6124c68e2f3f35a091c8f725d81964ee40dd528ae2552b6f1347ba/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

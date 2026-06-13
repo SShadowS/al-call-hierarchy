@@ -77,14 +77,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Pub.al",
-                  "startLine": 2,
-                  "startColumn": 53,
-                  "endLine": 2,
-                  "endColumn": 54,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "c",
                 "sourceRecordVariableId": "r0/8cfbb820fbb8071f8fee221ea5db9a1ed90568ca86954dd4c58ed17122759438/rv/c",
                 "sourceParameterIndex": 0,
@@ -92,6 +84,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Pub.al",
+                  "startLine": 2,
+                  "startColumn": 53,
+                  "endLine": 2,
+                  "endColumn": 54,
+                  "syntaxKind": "identifier"
                 }
               }
             ],
@@ -118,12 +118,12 @@
           {
             "id": "r0/8cfbb820fbb8071f8fee221ea5db9a1ed90568ca86954dd4c58ed17122759438/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -139,6 +139,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Pub.al",
               "startLine": 0,
@@ -146,8 +147,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -183,7 +183,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -196,6 +195,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -211,12 +211,12 @@
           {
             "id": "r0/95cd05cf885ec68ac8c618e64490b83ba1773847d93a61121c645934aae1168c/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -230,6 +230,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Pub.al",
               "startLine": 0,
@@ -237,8 +238,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -269,21 +269,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -306,9 +305,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -321,12 +322,12 @@
           {
             "id": "r0/648ce500c52b25678f03fbdc36dd1c0f552264c88432b2bd4b3c91af8dfcbe6c/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -340,6 +341,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub1.al",
               "startLine": 0,
@@ -347,8 +349,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -380,8 +381,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50002#7e9cf21f5f784dbc84851d7122dce2b2ef0b585d0ca87d8f16b38f0473ccceda",
@@ -392,21 +392,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -429,9 +428,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -444,12 +445,12 @@
           {
             "id": "r0/e43a9843a9fccbfc9341679223934f8e350a3f821fd1692348439afe1215ef78/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -463,6 +464,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub2.al",
               "startLine": 0,
@@ -470,8 +472,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -503,8 +504,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50003#27a952fec22d577406d1daeaa7f6a7d6d24aca264734f953feddf8cbbc21ad6d",
@@ -515,21 +515,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -552,9 +551,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -567,12 +568,12 @@
           {
             "id": "r0/b1f309ca65a81d3fb88abf417c49c10d10c0c697f5bf10807696f7a0c07f62af/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -586,6 +587,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub3.al",
               "startLine": 0,
@@ -593,8 +595,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -626,8 +627,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50004#1c9bfb33d47fd86246b038e49a2998c6a24217b2e7c1bd16f5087dd08d1fa0ee",
@@ -638,21 +638,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -675,9 +674,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -690,12 +691,12 @@
           {
             "id": "r0/2c400bb0c868240cb078fb8675010d369111ece093c6ca71a20de8a77743f74c/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -709,6 +710,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub4.al",
               "startLine": 0,
@@ -716,8 +718,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -749,8 +750,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50005#5aa0cca8f7d3429d724a861ded561eee7cd017f756b05fd600467cdfa0e42cb9",
@@ -761,21 +761,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -798,9 +797,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -813,12 +814,12 @@
           {
             "id": "r0/51a18485197a96827844bcb33a0e9e03de24b2fac0af2a8b087e7b83da7777da/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -832,6 +833,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub5.al",
               "startLine": 0,
@@ -839,8 +841,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -872,8 +873,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "66666666-6666-6666-6666-666666666666:Codeunit:50006#9f3987afc31b61bfde14caea8909c75986ae9579c51e3bfad0d18707758ef940",
@@ -884,21 +884,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::BigPub",
-              "value": "BigPub",
+              "member": "BigPub",
               "qualifier": "Codeunit",
-              "member": "BigPub"
+              "text": "Codeunit::BigPub",
+              "value": "BigPub"
             },
             {
               "kind": "string_literal",
@@ -921,9 +920,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::BigPub, 'OnE', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -936,12 +937,12 @@
           {
             "id": "r0/fd4181334650521d8705b039863d5dadd5212dfc976a315792a7c4fbf5e1d80a/rv/c",
             "name": "C",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -955,6 +956,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub6.al",
               "startLine": 0,
@@ -962,8 +964,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -995,8 +996,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

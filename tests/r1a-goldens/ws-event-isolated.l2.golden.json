@@ -16,7 +16,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -29,6 +28,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -74,7 +74,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "BusinessEvent",
           "args": [
             {
               "kind": "boolean",
@@ -87,6 +86,7 @@
               "value": "true"
             }
           ],
+          "name": "BusinessEvent",
           "raw": "[BusinessEvent(false, true)]"
         }
       ],
@@ -132,7 +132,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -150,6 +149,7 @@
               "value": "true"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false, true)]"
         }
       ],
@@ -195,7 +195,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "BusinessEvent",
           "args": [
             {
               "kind": "boolean",
@@ -203,6 +202,7 @@
               "value": "false"
             }
           ],
+          "name": "BusinessEvent",
           "raw": "[BusinessEvent(false)]"
         }
       ],
@@ -248,7 +248,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -266,6 +265,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(true, false, false)]"
         }
       ],

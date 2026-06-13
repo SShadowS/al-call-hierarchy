@@ -69,6 +69,9 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 10,
@@ -76,14 +79,14 @@
                   "endLine": 10,
                   "endColumn": 22,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "instr",
-                "sourceParameterIndex": 0,
-                "callerSourceParameterIsVar": false
+                }
               },
               {
                 "parameterIndex": 1,
                 "sourceKind": "parameter",
+                "sourceVariableName": "accno",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Caller.Codeunit.al",
                   "startLine": 10,
@@ -91,10 +94,7 @@
                   "endLine": 10,
                   "endColumn": 29,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "accno",
-                "sourceParameterIndex": 1,
-                "callerSourceParameterIsVar": false
+                }
               }
             ],
             "loopStack": [],
@@ -131,6 +131,7 @@
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -138,14 +139,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "accno",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -153,8 +154,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "archive",
@@ -275,6 +275,7 @@
             "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op0",
             "op": "Init",
             "recordVariableName": "FileArchive",
+            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive",
             "tempState": {
               "kind": "known",
               "value": false
@@ -287,13 +288,13 @@
               "endLine": 8,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive"
+            }
           },
           {
             "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/op1",
             "op": "Insert",
             "recordVariableName": "FileArchive",
+            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive",
             "tempState": {
               "kind": "known",
               "value": false
@@ -306,8 +307,7 @@
               "endLine": 9,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive"
+            }
           }
         ],
         "callSites": [],
@@ -316,12 +316,12 @@
           {
             "id": "r0/aa3ce8708753c29781f24bbd1d09359ee7c7d8e64d8e87a4b787d5ab7afa87d9/rv/filearchive",
             "name": "FileArchive",
+            "tableName": "Probe File Archive",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Probe File Archive"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -336,6 +336,7 @@
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Archive.Codeunit.al",
               "startLine": 0,
@@ -343,14 +344,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "accno",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Archive.Codeunit.al",
               "startLine": 0,
@@ -358,8 +359,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "filearchive",
@@ -756,6 +756,9 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
+                "sourceVariableName": "instr",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
                   "startLine": 11,
@@ -763,14 +766,14 @@
                   "endLine": 11,
                   "endColumn": 28,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "instr",
-                "sourceParameterIndex": 0,
-                "callerSourceParameterIsVar": false
+                }
               },
               {
                 "parameterIndex": 1,
                 "sourceKind": "parameter",
+                "sourceVariableName": "accno",
+                "sourceParameterIndex": 1,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
                   "startLine": 11,
@@ -778,10 +781,7 @@
                   "endLine": 11,
                   "endColumn": 35,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "accno",
-                "sourceParameterIndex": 1,
-                "callerSourceParameterIsVar": false
+                }
               }
             ],
             "loopStack": [],
@@ -818,6 +818,7 @@
             "declaredType": "InStream",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
               "startLine": 0,
@@ -825,14 +826,14 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "accno",
             "declaredType": "Code[20]",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 1,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/GlobalReceivers.Codeunit.al",
               "startLine": 0,
@@ -840,8 +841,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 1
+            }
           },
           {
             "name": "globalarchive",
@@ -936,17 +936,10 @@
             "id": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",
             "op": "TestField",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/rv/rec",
             "tempState": {
-              "kind": "unknown"
-            },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/FileArchive.Table.al",
-              "startLine": 16,
-              "startColumn": 2,
-              "endLine": 16,
-              "endColumn": 28,
-              "syntaxKind": "call_expression"
+              "kind": "known",
+              "value": false
             },
             "fieldArguments": [
               "\"Entry No.\""
@@ -957,12 +950,31 @@
                 "text": "\"Entry No.\"",
                 "value": "Entry No."
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/FileArchive.Table.al",
+              "startLine": 16,
+              "startColumn": 2,
+              "endLine": 16,
+              "endColumn": 28,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],
@@ -1005,8 +1017,10 @@
           "witnessOperationId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/op0",
           "extra": {
             "kind": "table",
+            "recordVariableId": "r0/365698b15d197a9a83c3b9fc3a58d948f873e2839c814b0740298159ba52a8ba/rv/rec",
             "tempState": {
-              "kind": "unknown"
+              "kind": "known",
+              "value": false
             },
             "opSubtype": "TestField"
           }

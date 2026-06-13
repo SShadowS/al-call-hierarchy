@@ -21,8 +21,8 @@
       ],
       "attributesParsed": [
         {
-          "name": "TryFunction",
           "args": [],
+          "name": "TryFunction",
           "raw": "[TryFunction]"
         }
       ],
@@ -76,6 +76,7 @@
             "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -88,13 +89,13 @@
               "endLine": 7,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec"
+            }
           },
           {
             "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -107,8 +108,7 @@
               "endLine": 8,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -117,12 +117,12 @@
           {
             "id": "r0/9b97857da66195a738a47232a5faaa0b9a166371b73cbc07aba3f400e0acde67/rv/rec",
             "name": "Rec",
+            "tableName": "TF Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "TF Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

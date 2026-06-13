@@ -165,6 +165,7 @@
             "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -179,13 +180,13 @@
               "endLine": 10,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec"
+            }
           },
           {
             "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -200,8 +201,7 @@
               "endLine": 11,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -242,12 +242,12 @@
           {
             "id": "r0/860d5e0489ba6e75eea5ef715a1f876225a9afed4f981a6dcfae34e18a6673dc/rv/rec",
             "name": "Rec",
+            "tableName": "XL Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "XL Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 1,
@@ -292,6 +292,9 @@
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
               "startLine": 6,
@@ -299,15 +302,13 @@
               "endLine": 6,
               "endColumn": 22,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "done",
+            "rhsLiteralValue": "false",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/XLCaller.Codeunit.al",
               "startLine": 8,
@@ -315,8 +316,7 @@
               "endLine": 8,
               "endColumn": 21,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "false"
+            }
           }
         ],
         "conditionReferences": [

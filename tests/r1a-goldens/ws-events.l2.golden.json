@@ -21,7 +21,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -34,6 +33,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -152,21 +152,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"Work Engine\"",
-              "value": "Work Engine",
+              "member": "Work Engine",
               "qualifier": "Codeunit",
-              "member": "Work Engine"
+              "text": "Codeunit::\"Work Engine\"",
+              "value": "Work Engine"
             },
             {
               "kind": "string_literal",
@@ -189,9 +188,11 @@
               "value": "true"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Work Engine\", 'OnAfterDoWork', '', true, true)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -235,8 +236,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "88888888-8888-8888-8888-888888888888:Codeunit:51201#cfd8945a4ad1fbdb2e10040effb2aff532999d8a707a507196b19d4fa9919651",
@@ -247,21 +247,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"Sales-Post\"",
-              "value": "Sales-Post",
+              "member": "Sales-Post",
               "qualifier": "Codeunit",
-              "member": "Sales-Post"
+              "text": "Codeunit::\"Sales-Post\"",
+              "value": "Sales-Post"
             },
             {
               "kind": "string_literal",
@@ -284,9 +283,11 @@
               "value": "true"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"Sales-Post\", 'OnAfterPostSalesDoc', '', true, true)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -330,8 +331,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

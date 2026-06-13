@@ -209,6 +209,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/EarlyExitGuarded.Codeunit.al",
               "startLine": 0,
@@ -216,8 +217,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -280,8 +280,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "exit",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "exit"
           }
         ]
       },
@@ -347,6 +347,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/ConditionalCommit.Codeunit.al",
               "startLine": 0,
@@ -354,8 +355,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -496,6 +496,9 @@
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/LoopCommit.Codeunit.al",
               "startLine": 4,
@@ -503,15 +506,13 @@
               "endLine": 4,
               "endColumn": 16,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "done",
+            "rhsLiteralValue": "true",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/LoopCommit.Codeunit.al",
               "startLine": 8,
@@ -519,8 +520,7 @@
               "endLine": 8,
               "endColumn": 15,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "true"
+            }
           }
         ],
         "conditionReferences": [
@@ -852,6 +852,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -883,8 +884,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "44444444-4444-4444-4444-444444444444:Codeunit:50306#228a030e151f7c46afdc2d288b0920caf58832e471a537ca606911768f9dca17",
@@ -1099,8 +1099,8 @@
       ],
       "attributesParsed": [
         {
-          "name": "TryFunction",
           "args": [],
+          "name": "TryFunction",
           "raw": "[TryFunction]"
         }
       ],
@@ -1222,6 +1222,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/NestedCommit.Codeunit.al",
               "startLine": 0,
@@ -1229,14 +1230,16 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "done",
             "declaredType": "Boolean",
             "scope": "local",
             "isParameter": false,
+            "initializer": {
+              "kind": "expression"
+            },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/NestedCommit.Codeunit.al",
               "startLine": 4,
@@ -1244,15 +1247,13 @@
               "endLine": 4,
               "endColumn": 16,
               "syntaxKind": "variable_declaration"
-            },
-            "initializer": {
-              "kind": "expression"
             }
           }
         ],
         "varAssignments": [
           {
             "lhsName": "done",
+            "rhsLiteralValue": "true",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/NestedCommit.Codeunit.al",
               "startLine": 9,
@@ -1260,8 +1261,7 @@
               "endLine": 9,
               "endColumn": 16,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "true"
+            }
           }
         ],
         "conditionReferences": [
@@ -1448,6 +1448,7 @@
             "id": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/op0",
             "op": "Init",
             "recordVariableName": "Entry",
+            "recordVariableId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/rv/entry",
             "tempState": {
               "kind": "known",
               "value": false
@@ -1460,13 +1461,13 @@
               "endLine": 16,
               "endColumn": 14,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/rv/entry"
+            }
           },
           {
             "id": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/op1",
             "op": "Insert",
             "recordVariableName": "Entry",
+            "recordVariableId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/rv/entry",
             "tempState": {
               "kind": "known",
               "value": false
@@ -1479,8 +1480,7 @@
               "endLine": 18,
               "endColumn": 16,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/rv/entry"
+            }
           }
         ],
         "callSites": [],
@@ -1502,12 +1502,12 @@
           {
             "id": "r0/859f2e3f9fffcc8857521a46e87b06f169bedc99ba3f090b8a61f90d3708a3ab/rv/entry",
             "name": "Entry",
+            "tableName": "Prove Entry",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Prove Entry"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -1535,6 +1535,7 @@
         "varAssignments": [
           {
             "lhsName": "\"entry no.\"",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/ProveExtras.Codeunit.al",
               "startLine": 17,
@@ -1542,8 +1543,7 @@
               "endLine": 17,
               "endColumn": 24,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [],
@@ -1688,7 +1688,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -1701,6 +1700,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -1938,6 +1938,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/ProveExtras.Codeunit.al",
               "startLine": 0,
@@ -1945,8 +1946,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -2006,8 +2006,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "error",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "error"
           }
         ]
       },

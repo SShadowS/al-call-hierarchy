@@ -63,6 +63,7 @@
             "declaredType": "Integer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Target.Codeunit.al",
               "startLine": 0,
@@ -70,8 +71,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -135,6 +135,7 @@
             "declaredType": "Text",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Target.Codeunit.al",
               "startLine": 0,
@@ -142,8 +143,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -250,12 +250,12 @@
           {
             "id": "r0/03993d7aa84934b305a696d5e9b240316cf7ba216cea5b64169ba056a6022ecb/rv/rec",
             "name": "Rec",
+            "tableName": "FD Rec",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "FD Rec",
             "parameterIndex": 0
           }
         ],
@@ -272,6 +272,7 @@
             "declaredType": "Record \"FD Rec\"",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Caller.Codeunit.al",
               "startLine": 0,
@@ -279,8 +280,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "t",

@@ -50,6 +50,7 @@
             "id": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/op0",
             "op": "Insert",
             "recordVariableName": "Cust",
+            "recordVariableId": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/rv/cust",
             "tempState": {
               "kind": "known",
               "value": false
@@ -62,8 +63,7 @@
               "endLine": 9,
               "endColumn": 25,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/rv/cust"
+            }
           }
         ],
         "callSites": [],
@@ -85,12 +85,12 @@
           {
             "id": "r0/57085dff18917dda71dc9bdf96f4107cb51fdc40edac7d0c6b4946b98d156e4b/rv/cust",
             "name": "Cust",
+            "tableName": "Test Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Test Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -118,6 +118,7 @@
         "varAssignments": [
           {
             "lhsName": "\"no.\"",
+            "rhsLiteralValue": "c001",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Install.al",
               "startLine": 8,
@@ -125,8 +126,7 @@
               "endLine": 8,
               "endColumn": 28,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "c001"
+            }
           }
         ],
         "conditionReferences": [],

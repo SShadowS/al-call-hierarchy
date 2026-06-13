@@ -57,14 +57,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Publisher.al",
-                  "startLine": 4,
-                  "startColumn": 20,
-                  "endLine": 4,
-                  "endColumn": 21,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "w",
                 "sourceRecordVariableId": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/rv/w",
                 "sourceParameterIndex": 0,
@@ -72,6 +64,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 20,
+                  "endLine": 4,
+                  "endColumn": 21,
+                  "syntaxKind": "identifier"
                 }
               }
             ],
@@ -98,12 +98,12 @@
           {
             "id": "r0/288dd0816e3e9b2d37766e65e3f82de406183bb582ce2beb3e62126b179bce9e/rv/w",
             "name": "W",
+            "tableName": "Widget",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Widget",
             "parameterIndex": 0
           }
         ],
@@ -119,6 +119,7 @@
             "declaredType": "Record Widget",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -126,8 +127,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -163,7 +163,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -176,6 +175,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -191,12 +191,12 @@
           {
             "id": "r0/c494e2e26ef5d2e521cb5a07d634e52f8231eadd92f0f38901b3ed4e56632da0/rv/w",
             "name": "W",
+            "tableName": "Widget",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Widget",
             "parameterIndex": 0
           }
         ],
@@ -210,6 +210,7 @@
             "declaredType": "Record Widget",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -217,8 +218,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -249,21 +249,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::Publisher",
-              "value": "Publisher",
+              "member": "Publisher",
               "qualifier": "Codeunit",
-              "member": "Publisher"
+              "text": "Codeunit::Publisher",
+              "value": "Publisher"
             },
             {
               "kind": "string_literal",
@@ -286,9 +285,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -320,6 +321,7 @@
             "id": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/op0",
             "op": "Modify",
             "recordVariableName": "W",
+            "recordVariableId": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/rv/w",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -332,8 +334,7 @@
               "endLine": 5,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/rv/w"
+            }
           }
         ],
         "callSites": [],
@@ -342,12 +343,12 @@
           {
             "id": "r0/7a01e4b04f497cdc05872527c6565acd35cac5ca1f9f0f623dd489a6466c9fad/rv/w",
             "name": "W",
+            "tableName": "Widget",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Widget",
             "parameterIndex": 0
           }
         ],
@@ -363,6 +364,7 @@
             "declaredType": "Record Widget",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub1.al",
               "startLine": 0,
@@ -370,8 +372,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -425,8 +426,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-2222-2222-2222-222222222222:Codeunit:50002#a1a3b21703db032bf67700be87863bc50598a4cd66a489398a10c01910138e6a",
@@ -437,21 +437,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::Publisher",
-              "value": "Publisher",
+              "member": "Publisher",
               "qualifier": "Codeunit",
-              "member": "Publisher"
+              "text": "Codeunit::Publisher",
+              "value": "Publisher"
             },
             {
               "kind": "string_literal",
@@ -474,9 +473,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnAfterPost', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -508,6 +509,7 @@
             "id": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/op0",
             "op": "Modify",
             "recordVariableName": "W",
+            "recordVariableId": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/rv/w",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -520,8 +522,7 @@
               "endLine": 5,
               "endColumn": 23,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/rv/w"
+            }
           }
         ],
         "callSites": [],
@@ -530,12 +531,12 @@
           {
             "id": "r0/e9b4e01b5e4f674429c91bb687da02eb49e865ccc93d19815cad305835d38813/rv/w",
             "name": "W",
+            "tableName": "Widget",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Widget",
             "parameterIndex": 0
           }
         ],
@@ -551,6 +552,7 @@
             "declaredType": "Record Widget",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Sub2.al",
               "startLine": 0,
@@ -558,8 +560,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -613,8 +614,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -49,10 +49,13 @@
             "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/op0",
             "op": "FindSet",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/cycle.al",
@@ -61,10 +64,7 @@
               "endLine": 6,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [
@@ -102,12 +102,12 @@
           {
             "id": "r0/a5b1cf7aae0cd7b05efa40d416af1446f56b5821d71e324843902260a6c10985/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

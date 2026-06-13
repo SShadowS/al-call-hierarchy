@@ -57,14 +57,6 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
-                "argumentAnchor": {
-                  "sourceUnitId": "ws:src/Publisher.al",
-                  "startLine": 4,
-                  "startColumn": 22,
-                  "endLine": 4,
-                  "endColumn": 25,
-                  "syntaxKind": "identifier"
-                },
                 "sourceVariableName": "inv",
                 "sourceRecordVariableId": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/rv/inv",
                 "sourceParameterIndex": 0,
@@ -72,6 +64,14 @@
                 "sourceTempState": {
                   "kind": "parameter-dependent",
                   "parameterIndex": 0
+                },
+                "argumentAnchor": {
+                  "sourceUnitId": "ws:src/Publisher.al",
+                  "startLine": 4,
+                  "startColumn": 22,
+                  "endLine": 4,
+                  "endColumn": 25,
+                  "syntaxKind": "identifier"
                 }
               }
             ],
@@ -98,12 +98,12 @@
           {
             "id": "r0/6ed8dbf226a6ce93a7c18561deb437ee1e49107ac33a55c8df2fd9b3a7ce5857/rv/inv",
             "name": "Inv",
+            "tableName": "Inventory",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Inventory",
             "parameterIndex": 0
           }
         ],
@@ -119,6 +119,7 @@
             "declaredType": "Record Inventory",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -126,8 +127,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -163,7 +163,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -176,6 +175,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -191,12 +191,12 @@
           {
             "id": "r0/9e1e6b0771b4bdb5de60aef74eaa7546b18a69264eef32468b66904317e024f4/rv/inv",
             "name": "Inv",
+            "tableName": "Inventory",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Inventory",
             "parameterIndex": 0
           }
         ],
@@ -210,6 +210,7 @@
             "declaredType": "Record Inventory",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",
               "startLine": 0,
@@ -217,8 +218,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -249,21 +249,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::InvMgr",
-              "value": "InvMgr",
+              "member": "InvMgr",
               "qualifier": "Codeunit",
-              "member": "InvMgr"
+              "text": "Codeunit::InvMgr",
+              "value": "InvMgr"
             },
             {
               "kind": "string_literal",
@@ -286,9 +285,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -320,6 +321,7 @@
             "id": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/op0",
             "op": "Modify",
             "recordVariableName": "Inv",
+            "recordVariableId": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/rv/inv",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -332,8 +334,7 @@
               "endLine": 6,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/rv/inv"
+            }
           }
         ],
         "callSites": [],
@@ -367,12 +368,12 @@
           {
             "id": "r0/078ece006d8588c196a4f9751345a9250c4d74951d4d6b35f0c444444cdf1876/rv/inv",
             "name": "Inv",
+            "tableName": "Inventory",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Inventory",
             "parameterIndex": 0
           }
         ],
@@ -388,6 +389,7 @@
             "declaredType": "Record Inventory",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/SubWriter.al",
               "startLine": 0,
@@ -395,8 +397,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [
@@ -465,8 +466,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:Codeunit:50002#cd5423a371900a70eacf7a6fe6aa5771386fad10ef81746b9f0dd61becbd43ff",
@@ -477,21 +477,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::InvMgr",
-              "value": "InvMgr",
+              "member": "InvMgr",
               "qualifier": "Codeunit",
-              "member": "InvMgr"
+              "text": "Codeunit::InvMgr",
+              "value": "InvMgr"
             },
             {
               "kind": "string_literal",
@@ -514,9 +513,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::InvMgr, 'OnAfterAdjust', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -548,20 +549,11 @@
             "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/op0",
             "op": "Get",
             "recordVariableName": "Other",
+            "recordVariableId": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/other",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/SubReader.al",
-              "startLine": 7,
-              "startColumn": 11,
-              "endLine": 7,
-              "endColumn": 31,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/other",
             "fieldArguments": [
               "Inv.\"No.\""
             ],
@@ -570,7 +562,16 @@
                 "kind": "member_expression",
                 "text": "Inv.\"No.\""
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/SubReader.al",
+              "startLine": 7,
+              "startColumn": 11,
+              "endLine": 7,
+              "endColumn": 31,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [],
@@ -592,23 +593,23 @@
           {
             "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/inv",
             "name": "Inv",
+            "tableName": "Inventory",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Inventory",
             "parameterIndex": 0
           },
           {
             "id": "r0/4de250486fbeac0a896b90086d605de1f30fd0c42b94fc4b448cf55ac02eb395/rv/other",
             "name": "Other",
+            "tableName": "Inventory",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Inventory"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -624,6 +625,7 @@
             "declaredType": "Record Inventory",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/SubReader.al",
               "startLine": 0,
@@ -631,8 +633,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "other",
@@ -739,8 +740,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

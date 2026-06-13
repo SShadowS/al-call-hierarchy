@@ -175,6 +175,7 @@
             "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op0",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -187,8 +188,7 @@
               "endLine": 6,
               "endColumn": 14,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -197,12 +197,12 @@
           {
             "id": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/rv/rec",
             "name": "Rec",
+            "tableName": "File Archive Entry",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "File Archive Entry"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -385,6 +385,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/FileArchive.Codeunit.al",
               "startLine": 0,
@@ -392,8 +393,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -456,8 +456,8 @@
             "parentFrameId": 0,
             "kind": "if-then",
             "branchAlwaysTerminates": true,
-            "branchTerminatesBy": "error",
-            "branchMayFallThrough": false
+            "branchMayFallThrough": false,
+            "branchTerminatesBy": "error"
           }
         ]
       },
@@ -519,6 +519,9 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "parameter",
+                "sourceVariableName": "ok",
+                "sourceParameterIndex": 0,
+                "callerSourceParameterIsVar": false,
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
                   "startLine": 7,
@@ -526,10 +529,7 @@
                   "endLine": 7,
                   "endColumn": 29,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "ok",
-                "sourceParameterIndex": 0,
-                "callerSourceParameterIsVar": false
+                }
               }
             ],
             "loopStack": [],
@@ -565,6 +565,7 @@
             "declaredType": "Boolean",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/ImportValidator.Codeunit.al",
               "startLine": 0,
@@ -572,8 +573,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           },
           {
             "name": "archive",

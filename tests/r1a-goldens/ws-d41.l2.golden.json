@@ -44,20 +44,11 @@
             "id": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/op0",
             "op": "SetRange",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Codeunit.al",
-              "startLine": 28,
-              "startColumn": 8,
-              "endLine": 28,
-              "endColumn": 41,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/rv/customer",
             "fieldArguments": [
               "\"No.\"",
               "'C0001'"
@@ -73,7 +64,16 @@
                 "text": "'C0001'",
                 "value": "C0001"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 28,
+              "startColumn": 8,
+              "endLine": 28,
+              "endColumn": 41,
+              "syntaxKind": "call_expression"
+            }
           }
         ],
         "callSites": [
@@ -99,6 +99,12 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "local",
+                "sourceVariableName": "customer",
+                "sourceRecordVariableId": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/rv/customer",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                },
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Codeunit.al",
                   "startLine": 29,
@@ -106,12 +112,6 @@
                   "endLine": 29,
                   "endColumn": 32,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "customer",
-                "sourceRecordVariableId": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/rv/customer",
-                "sourceTempState": {
-                  "kind": "known",
-                  "value": false
                 }
               }
             ],
@@ -138,12 +138,12 @@
           {
             "id": "r0/4b21c2bb80cbf7090a44deb33711ecf9c3367bbca9620c8d705782537083e8b8/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -202,6 +202,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -233,6 +234,7 @@
             "id": "r0/7b847abe1829425b98ebeba6aa84983b2f468b3e3a1a2512fe331fea714be98c/op0",
             "op": "Reset",
             "recordVariableName": "Cust",
+            "recordVariableId": "r0/7b847abe1829425b98ebeba6aa84983b2f468b3e3a1a2512fe331fea714be98c/rv/cust",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
@@ -245,8 +247,7 @@
               "endLine": 43,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/7b847abe1829425b98ebeba6aa84983b2f468b3e3a1a2512fe331fea714be98c/rv/cust"
+            }
           }
         ],
         "callSites": [],
@@ -255,12 +256,12 @@
           {
             "id": "r0/7b847abe1829425b98ebeba6aa84983b2f468b3e3a1a2512fe331fea714be98c/rv/cust",
             "name": "Cust",
+            "tableName": "Customer",
             "tempState": {
               "kind": "parameter-dependent",
               "parameterIndex": 0
             },
             "isParameter": true,
-            "tableName": "Customer",
             "parameterIndex": 0
           }
         ],
@@ -276,6 +277,7 @@
             "declaredType": "Record Customer",
             "scope": "parameter",
             "isParameter": true,
+            "parameterIndex": 0,
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
               "startLine": 0,
@@ -283,8 +285,7 @@
               "endLine": 0,
               "endColumn": 0,
               "syntaxKind": "parameter"
-            },
-            "parameterIndex": 0
+            }
           }
         ],
         "varAssignments": [],
@@ -309,8 +310,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-000000abc410:Codeunit:50420#2fcef404b402c9f21041f67cd90328ae4154ef18bd4572d2b2ba52c502758c41",
@@ -369,20 +369,11 @@
             "id": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/op0",
             "op": "SetRange",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Codeunit.al",
-              "startLine": 7,
-              "startColumn": 8,
-              "endLine": 7,
-              "endColumn": 41,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
             "fieldArguments": [
               "\"No.\"",
               "'C0001'"
@@ -398,16 +389,28 @@
                 "text": "'C0001'",
                 "value": "C0001"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Codeunit.al",
+              "startLine": 7,
+              "startColumn": 8,
+              "endLine": 7,
+              "endColumn": 41,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/op1",
             "op": "FindFirst",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
@@ -416,10 +419,7 @@
               "endLine": 9,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [
@@ -445,6 +445,12 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "local",
+                "sourceVariableName": "customer",
+                "sourceRecordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                },
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Codeunit.al",
                   "startLine": 8,
@@ -452,12 +458,6 @@
                   "endLine": 8,
                   "endColumn": 32,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "customer",
-                "sourceRecordVariableId": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
-                "sourceTempState": {
-                  "kind": "known",
-                  "value": false
                 }
               }
             ],
@@ -484,12 +484,12 @@
           {
             "id": "r0/351d8a05c42ec18fbdd1f6199878c03f7de580045fd6a45a79774fef88f8bc3e/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -601,10 +601,13 @@
             "id": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/op0",
             "op": "FindFirst",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
@@ -613,10 +616,7 @@
               "endLine": 38,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [
@@ -642,6 +642,12 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "local",
+                "sourceVariableName": "customer",
+                "sourceRecordVariableId": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/rv/customer",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                },
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Codeunit.al",
                   "startLine": 37,
@@ -649,12 +655,6 @@
                   "endLine": 37,
                   "endColumn": 32,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "customer",
-                "sourceRecordVariableId": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/rv/customer",
-                "sourceTempState": {
-                  "kind": "known",
-                  "value": false
                 }
               }
             ],
@@ -681,12 +681,12 @@
           {
             "id": "r0/ecb39b9386c5bf67e3060180c8ec4d9be95fc89bc57f08331986f29bea384af7/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -834,10 +834,27 @@
             "id": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op0",
             "op": "SetRange",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [
+              "\"No.\"",
+              "'C0001'"
+            ],
+            "fieldArgumentInfos": [
+              {
+                "kind": "quoted_identifier",
+                "text": "\"No.\"",
+                "value": "No."
+              },
+              {
+                "kind": "string_literal",
+                "text": "'C0001'",
+                "value": "C0001"
+              }
+            ],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
@@ -846,8 +863,17 @@
               "endLine": 17,
               "endColumn": 41,
               "syntaxKind": "call_expression"
-            },
+            }
+          },
+          {
+            "id": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op1",
+            "op": "SetRange",
+            "recordVariableName": "Customer",
             "recordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
             "fieldArguments": [
               "\"No.\"",
               "'C0001'"
@@ -863,16 +889,7 @@
                 "text": "'C0001'",
                 "value": "C0001"
               }
-            ]
-          },
-          {
-            "id": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op1",
-            "op": "SetRange",
-            "recordVariableName": "Customer",
-            "tempState": {
-              "kind": "known",
-              "value": false
-            },
+            ],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
@@ -881,33 +898,19 @@
               "endLine": 19,
               "endColumn": 41,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
-            "fieldArguments": [
-              "\"No.\"",
-              "'C0001'"
-            ],
-            "fieldArgumentInfos": [
-              {
-                "kind": "quoted_identifier",
-                "text": "\"No.\"",
-                "value": "No."
-              },
-              {
-                "kind": "string_literal",
-                "text": "'C0001'",
-                "value": "C0001"
-              }
-            ]
+            }
           },
           {
             "id": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/op2",
             "op": "FindFirst",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Codeunit.al",
@@ -916,10 +919,7 @@
               "endLine": 20,
               "endColumn": 28,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [
@@ -945,6 +945,12 @@
               {
                 "parameterIndex": 0,
                 "sourceKind": "local",
+                "sourceVariableName": "customer",
+                "sourceRecordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                },
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Codeunit.al",
                   "startLine": 18,
@@ -952,12 +958,6 @@
                   "endLine": 18,
                   "endColumn": 32,
                   "syntaxKind": "identifier"
-                },
-                "sourceVariableName": "customer",
-                "sourceRecordVariableId": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
-                "sourceTempState": {
-                  "kind": "known",
-                  "value": false
                 }
               }
             ],
@@ -984,12 +984,12 @@
           {
             "id": "r0/d2c078eaff2ea5e880d302f4cccdafc9a048542d9ebbd462cd6af7a15859e80c/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

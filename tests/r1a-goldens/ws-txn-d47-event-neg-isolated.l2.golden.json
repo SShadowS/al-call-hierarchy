@@ -74,20 +74,11 @@
             "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op0",
             "op": "Get",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
-              "startLine": 11,
-              "startColumn": 8,
-              "endLine": 11,
-              "endColumn": 22,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
             "fieldArguments": [
               "10000"
             ],
@@ -97,12 +88,22 @@
                 "text": "10000",
                 "value": "10000"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Publisher.Codeunit.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/op1",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -115,8 +116,7 @@
               "endLine": 13,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -167,12 +167,12 @@
           {
             "id": "r0/721dae296e4657b7beb7ba891cc487d985645881bf456d82d19d294694f307d3/rv/rec",
             "name": "Rec",
+            "tableName": "D47 Isolated Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "D47 Isolated Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -200,6 +200,7 @@
         "varAssignments": [
           {
             "lhsName": "name",
+            "rhsLiteralValue": "updated",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.Codeunit.al",
               "startLine": 12,
@@ -207,8 +208,7 @@
               "endLine": 12,
               "endColumn": 29,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "updated"
+            }
           }
         ],
         "conditionReferences": [],
@@ -289,7 +289,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -307,6 +306,7 @@
               "value": "true"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false, true)]"
         }
       ],
@@ -352,21 +352,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D47 Isolated Publisher\"",
-              "value": "D47 Isolated Publisher",
+              "member": "D47 Isolated Publisher",
               "qualifier": "Codeunit",
-              "member": "D47 Isolated Publisher"
+              "text": "Codeunit::\"D47 Isolated Publisher\"",
+              "value": "D47 Isolated Publisher"
             },
             {
               "kind": "string_literal",
@@ -389,9 +388,11 @@
               "value": "false"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D47 Isolated Publisher\", 'OnAfterProcessIsolated', '', false, false)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -597,8 +598,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

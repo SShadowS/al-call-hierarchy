@@ -129,6 +129,7 @@
             "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -141,13 +142,13 @@
               "endLine": 6,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+            }
           },
           {
             "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -160,13 +161,13 @@
               "endLine": 7,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+            }
           },
           {
             "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/op3",
             "op": "Modify",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -179,8 +180,7 @@
               "endLine": 9,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec"
+            }
           }
         ],
         "callSites": [],
@@ -189,12 +189,12 @@
           {
             "id": "r0/1e44e7222d0503a8c501ccad679342874c62d83dfc3947bf5ec21abe7494e98a/rv/rec",
             "name": "Rec",
+            "tableName": "TC Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "TC Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

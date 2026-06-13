@@ -33,6 +33,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -186,8 +187,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d50a:Codeunit:50200#a6f92b1e5bb3136870d2899a70cbf892fd183132481d199afb1c8f9d21b70359",
@@ -326,20 +326,11 @@
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op0",
             "op": "Get",
             "recordVariableName": "Hdr",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/hdr",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Posting.al",
-              "startLine": 11,
-              "startColumn": 8,
-              "endLine": 11,
-              "endColumn": 22,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/hdr",
             "fieldArguments": [
               "10000"
             ],
@@ -349,12 +340,22 @@
                 "text": "10000",
                 "value": "10000"
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Posting.al",
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 22,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op1",
             "op": "Modify",
             "recordVariableName": "Hdr",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/hdr",
             "tempState": {
               "kind": "known",
               "value": false
@@ -367,27 +368,17 @@
               "endLine": 13,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/hdr"
+            }
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op2",
             "op": "SetRange",
             "recordVariableName": "Line",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/line",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "loopStack": [],
-            "sourceAnchor": {
-              "sourceUnitId": "ws:src/Posting.al",
-              "startLine": 14,
-              "startColumn": 8,
-              "endLine": 14,
-              "endColumn": 43,
-              "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/line",
             "fieldArguments": [
               "\"Doc No.\"",
               "Hdr.\"No.\""
@@ -402,12 +393,22 @@
                 "kind": "member_expression",
                 "text": "Hdr.\"No.\""
               }
-            ]
+            ],
+            "loopStack": [],
+            "sourceAnchor": {
+              "sourceUnitId": "ws:src/Posting.al",
+              "startLine": 14,
+              "startColumn": 8,
+              "endLine": 14,
+              "endColumn": 43,
+              "syntaxKind": "call_expression"
+            }
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op3",
             "op": "ModifyAll",
             "recordVariableName": "Line",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/line",
             "tempState": {
               "kind": "known",
               "value": false
@@ -420,13 +421,13 @@
               "endLine": 15,
               "endColumn": 33,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/line"
+            }
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op4",
             "op": "Init",
             "recordVariableName": "Entry",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/entry",
             "tempState": {
               "kind": "known",
               "value": false
@@ -439,13 +440,13 @@
               "endLine": 16,
               "endColumn": 20,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/entry"
+            }
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/op5",
             "op": "Insert",
             "recordVariableName": "Entry",
+            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/entry",
             "tempState": {
               "kind": "known",
               "value": false
@@ -458,8 +459,7 @@
               "endLine": 17,
               "endColumn": 22,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/entry"
+            }
           }
         ],
         "callSites": [
@@ -522,32 +522,32 @@
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/hdr",
             "name": "Hdr",
+            "tableName": "D50 Header",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "D50 Header"
+            "isParameter": false
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/line",
             "name": "Line",
+            "tableName": "D50 Line",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "D50 Line"
+            "isParameter": false
           },
           {
             "id": "r0/51e409590829da9fe3650346b5e1e19d31ec8726c45a813e76acfb989ca6b695/rv/entry",
             "name": "Entry",
+            "tableName": "D50 Entry",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "D50 Entry"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -606,6 +606,7 @@
         "varAssignments": [
           {
             "lhsName": "status",
+            "rhsLiteralValue": "1",
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Posting.al",
               "startLine": 12,
@@ -613,8 +614,7 @@
               "endLine": 12,
               "endColumn": 23,
               "syntaxKind": "assignment_statement"
-            },
-            "rhsLiteralValue": "1"
+            }
           }
         ],
         "conditionReferences": [],

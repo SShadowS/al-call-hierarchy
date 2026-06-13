@@ -197,7 +197,12 @@
       "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Page:50900#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
       "name": "OnOpenPage",
       "objectType": "Page",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r0/7c5ea76a29da1ad429fbe8da5d35db4144e6ffedb88646f62da75ae49834357c/op0",
@@ -211,7 +216,12 @@
       "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Table:50900#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
       "name": "OnInsert",
       "objectType": "Table",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec",
+          "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50900"
+        }
+      ],
       "recordOperations": [
         {
           "operationId": "r0/625c461177a40e58def191ce8909c1dddd128540a9fe95e03c2caf6d4963fe72/op0",

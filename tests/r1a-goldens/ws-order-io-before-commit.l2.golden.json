@@ -89,6 +89,7 @@
             "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op0",
             "op": "Init",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -101,13 +102,13 @@
               "endLine": 9,
               "endColumn": 18,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec"
+            }
           },
           {
             "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/op1",
             "op": "Insert",
             "recordVariableName": "Rec",
+            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
             "tempState": {
               "kind": "known",
               "value": false
@@ -120,8 +121,7 @@
               "endLine": 10,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec"
+            }
           }
         ],
         "callSites": [
@@ -199,12 +199,12 @@
           {
             "id": "r0/8983eff21a03e75342b96f52810958fa80418209e81babd746a204a4a3d53088/rv/rec",
             "name": "Rec",
+            "tableName": "OI Rec",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "OI Rec"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,

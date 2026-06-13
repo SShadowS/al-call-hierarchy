@@ -13,6 +13,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "internal",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -78,8 +79,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "internal"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#7881d6169f1d9d60aa6c5a623109e0211ff3826a282ff176e9af3df9c41f0ac8",
@@ -126,6 +126,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -157,8 +158,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
@@ -239,6 +239,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -270,8 +271,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#f4e95dc1a40ad0e140415094a938b69f1f0ffed4e41459bf7caddd1a3978e44b",
@@ -279,6 +279,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "internal",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -310,8 +311,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "internal"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "33333333-0000-0000-0000-00000000d14d:Codeunit:50116#fc16d01edf836c03ea90ac87d7ccf47c01c56330d4465050cc5f103d3f332ced",
@@ -319,6 +319,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "protected",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -350,8 +351,7 @@
       "capabilityFactsDirect": [],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "protected"
+      "capabilityDiagnostics": []
     }
   ]
 }

@@ -14,8 +14,10 @@
 					"extra": {
 						"kind": "table",
 						"opSubtype": "Insert",
+						"recordVariableId": "r0/d6bacc1311406110508a7afa81b542aba0abee6fd6d38d63d43cae3491b76704/rv/rec",
 						"tempState": {
-							"kind": "unknown"
+							"kind": "known",
+							"value": false
 						}
 					}
 				}

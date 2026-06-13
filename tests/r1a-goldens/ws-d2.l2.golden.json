@@ -266,7 +266,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -279,6 +278,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -478,7 +478,6 @@
       ],
       "attributesParsed": [
         {
-          "name": "IntegrationEvent",
           "args": [
             {
               "kind": "boolean",
@@ -491,6 +490,7 @@
               "value": "false"
             }
           ],
+          "name": "IntegrationEvent",
           "raw": "[IntegrationEvent(false, false)]"
         }
       ],
@@ -536,21 +536,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D2 Publisher\"",
-              "value": "D2 Publisher",
+              "member": "D2 Publisher",
               "qualifier": "Codeunit",
-              "member": "D2 Publisher"
+              "text": "Codeunit::\"D2 Publisher\"",
+              "value": "D2 Publisher"
             },
             {
               "kind": "string_literal",
@@ -573,9 +572,11 @@
               "value": "true"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D2 Publisher\", 'OnProcessLine', '', true, true)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -607,10 +608,13 @@
             "id": "r0/ead13ed879b59adcc99fe37843cd70a4dffbe6c488453c051a4404b409bd4e3a/op0",
             "op": "FindSet",
             "recordVariableName": "Customer",
+            "recordVariableId": "r0/ead13ed879b59adcc99fe37843cd70a4dffbe6c488453c051a4404b409bd4e3a/rv/customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/subscriber.al",
@@ -619,10 +623,7 @@
               "endLine": 7,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/ead13ed879b59adcc99fe37843cd70a4dffbe6c488453c051a4404b409bd4e3a/rv/customer",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           }
         ],
         "callSites": [],
@@ -631,12 +632,12 @@
           {
             "id": "r0/ead13ed879b59adcc99fe37843cd70a4dffbe6c488453c051a4404b409bd4e3a/rv/customer",
             "name": "Customer",
+            "tableName": "Customer",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "Customer"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -712,8 +713,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "22222222-d200-0000-0000-000000000002:Codeunit:64102#f8154584e1e27f484e40a75672dc34f9d2cebf5d71845a7949c25f6d646b2b7e",
@@ -724,21 +724,20 @@
       ],
       "attributesParsed": [
         {
-          "name": "EventSubscriber",
           "args": [
             {
               "kind": "qualified_enum_value",
-              "text": "ObjectType::Codeunit",
-              "value": "Codeunit",
+              "member": "Codeunit",
               "qualifier": "ObjectType",
-              "member": "Codeunit"
+              "text": "ObjectType::Codeunit",
+              "value": "Codeunit"
             },
             {
               "kind": "database_reference",
-              "text": "Codeunit::\"D2 Publisher\"",
-              "value": "D2 Publisher",
+              "member": "D2 Publisher",
               "qualifier": "Codeunit",
-              "member": "D2 Publisher"
+              "text": "Codeunit::\"D2 Publisher\"",
+              "value": "D2 Publisher"
             },
             {
               "kind": "string_literal",
@@ -761,9 +760,11 @@
               "value": "true"
             }
           ],
+          "name": "EventSubscriber",
           "raw": "[EventSubscriber(ObjectType::Codeunit, Codeunit::\"D2 Publisher\", 'OnQuietEvent', '', true, true)]"
         }
       ],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -807,8 +808,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     }
   ]
 }

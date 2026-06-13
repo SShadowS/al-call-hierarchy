@@ -26,7 +26,11 @@
       "stableRoutineId": "55555555-0000-0000-0000-000000000001:Page:50502#a1e310d727dcddbada11a96782c8bc8dd8dc623d65648eedc8a89505b984e42d",
       "name": "ApiHelper",
       "objectType": "Page",
-      "recordVariables": [],
+      "recordVariables": [
+        {
+          "name": "rec"
+        }
+      ],
       "recordOperations": []
     }
   ]

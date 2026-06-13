@@ -19,6 +19,7 @@
       "kind": "procedure",
       "attributes": [],
       "attributesParsed": [],
+      "accessModifier": "local",
       "bodyAvailable": true,
       "parseIncomplete": false,
       "features": {
@@ -110,10 +111,13 @@
             "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0",
             "op": "Get",
             "recordVariableName": "Setup",
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
             "tempState": {
               "kind": "known",
               "value": false
             },
+            "fieldArguments": [],
+            "fieldArgumentInfos": [],
             "loopStack": [],
             "sourceAnchor": {
               "sourceUnitId": "ws:src/NormalCU.al",
@@ -122,15 +126,13 @@
               "endLine": 31,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
-            "fieldArguments": [],
-            "fieldArgumentInfos": []
+            }
           },
           {
             "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op1",
             "op": "Init",
             "recordVariableName": "Setup",
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
             "tempState": {
               "kind": "known",
               "value": false
@@ -143,13 +145,13 @@
               "endLine": 32,
               "endColumn": 24,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup"
+            }
           },
           {
             "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2",
             "op": "Insert",
             "recordVariableName": "Setup",
+            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
             "tempState": {
               "kind": "known",
               "value": false
@@ -162,8 +164,7 @@
               "endLine": 33,
               "endColumn": 26,
               "syntaxKind": "call_expression"
-            },
-            "recordVariableId": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup"
+            }
           }
         ],
         "callSites": [],
@@ -172,12 +173,12 @@
           {
             "id": "r0/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/rv/setup",
             "name": "Setup",
+            "tableName": "My Setup",
             "tempState": {
               "kind": "known",
               "value": false
             },
-            "isParameter": false,
-            "tableName": "My Setup"
+            "isParameter": false
           }
         ],
         "nestingDepth": 0,
@@ -319,8 +320,7 @@
       ],
       "capabilityStatus": "complete",
       "capabilityReasons": [],
-      "capabilityDiagnostics": [],
-      "accessModifier": "local"
+      "capabilityDiagnostics": []
     },
     {
       "stableRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
