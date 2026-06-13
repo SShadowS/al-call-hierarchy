@@ -1245,6 +1245,10 @@
                 "parameterIndex": 0,
                 "sourceKind": "implicit-rec",
                 "sourceVariableName": "rec",
+                "sourceTempState": {
+                  "kind": "known",
+                  "value": false
+                },
                 "argumentAnchor": {
                   "sourceUnitId": "ws:src/Trigger.al",
                   "startLine": 12,
