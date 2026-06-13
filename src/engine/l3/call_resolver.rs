@@ -115,6 +115,9 @@ pub struct CallEdge {
     /// method-dispatch receiver's declared type.
     pub receiver_type: Option<String>,
     pub dispatch_meta: Option<DispatchMeta>,
+    /// For `FrameworkMethodNotInCatalog` unknown edges: the `"Kind::method_lc"`
+    /// detail string that identifies the catalog gap. `None` on all other edges.
+    pub unknown_method_name: Option<String>,
 }
 
 impl CallEdge {
@@ -130,6 +133,7 @@ impl CallEdge {
             external_type_ref: None,
             receiver_type: None,
             dispatch_meta: None,
+            unknown_method_name: None,
         }
     }
 }
@@ -560,35 +564,55 @@ fn resolve_call_site(
                 // platform `builtin` terminal — NOT a resolution hole. A Record
                 // method that is NOT an intrinsic (a real table procedure) stays
                 // `unknown` here; table-procedure resolution is Phase 3.
-                let reason =
-                    match super::member_builtins::classify_receiver(&recv_var.declared_type) {
-                        Some(kind) => {
-                            let method_lc = method.to_lowercase();
-                            if super::member_builtins::member_builtin_disposition(kind, &method_lc)
-                                .is_some()
-                            {
-                                // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
-                                // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
-                                // the catalog for the §5 dynamic->static work, not yet emitted
-                                // differently.)
-                                let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                e.dispatch_kind = DispatchKind::Builtin;
-                                e.resolution = Resolution::Builtin;
-                                return vec![e];
-                            }
-                            // Catalog MISS: a Record receiver's non-builtin method is a
-                            // real table procedure (Phase-3 resolvable); a framework
-                            // receiver's miss is a catalog gap.
-                            if kind == super::member_builtins::ReceiverBuiltinKind::Record {
-                                UnknownReason::RecordTableProcedure
-                            } else {
-                                UnknownReason::FrameworkMethodNotInCatalog
-                            }
+                match super::member_builtins::classify_receiver(&recv_var.declared_type) {
+                    Some(kind) => {
+                        let method_lc = method.to_lowercase();
+                        if super::member_builtins::member_builtin_disposition(kind, &method_lc)
+                            .is_some()
+                        {
+                            // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
+                            // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
+                            // the catalog for the §5 dynamic->static work, not yet emitted
+                            // differently.)
+                            let mut e = CallEdge::base(from, callsite_id, operation_id);
+                            e.dispatch_kind = DispatchKind::Builtin;
+                            e.resolution = Resolution::Builtin;
+                            return vec![e];
                         }
-                        // Primitive / Variant / unrecognized declared type.
-                        None => UnknownReason::NonObjectReceiverType,
-                    };
-                return unknown_method(from, callsite_id, operation_id, reason);
+                        // Catalog MISS: a Record receiver's non-builtin method is a
+                        // real table procedure (Phase-3 resolvable); a framework
+                        // receiver's miss is a catalog gap — capture the detail for
+                        // the `aldump --l3-unknown-breakdown` diagnostic.
+                        if kind == super::member_builtins::ReceiverBuiltinKind::Record {
+                            return unknown_method(
+                                from,
+                                callsite_id,
+                                operation_id,
+                                UnknownReason::RecordTableProcedure,
+                            );
+                        } else {
+                            let mut edges = unknown_method(
+                                from,
+                                callsite_id,
+                                operation_id,
+                                UnknownReason::FrameworkMethodNotInCatalog,
+                            );
+                            if let Some(e) = edges.first_mut() {
+                                e.unknown_method_name = Some(format!("{:?}::{}", kind, method_lc));
+                            }
+                            return edges;
+                        }
+                    }
+                    // Primitive / Variant / unrecognized declared type.
+                    None => {
+                        return unknown_method(
+                            from,
+                            callsite_id,
+                            operation_id,
+                            UnknownReason::NonObjectReceiverType,
+                        );
+                    }
+                }
             };
 
             // Step 4 — interface dispatch.

@@ -148,6 +148,11 @@ static RECORD: phf::Set<&'static str> = phf_set! {
     "copylinks", "haslinks", "locktable", "consistent", "changecompany",
     "readpermission", "writepermission", "setloadfields", "addloadfields",
     "areanyfieldsmodified", "getascending",
+    // Added from compiler JSON:
+    "arefieldsloaded", "currentcompany", "fullyqualifiedname", "istemporary",
+    "loadfields", "readconsistency", "readisolation", "recordlevellocking",
+    "relation", "securityfiltering", "setascending", "setbaseloadfields",
+    "tablename", "truncate",
 };
 
 // --- RecordRef (Map: Open/GetTable/SetTable flow a table type -> FlowsType). ---
@@ -202,6 +207,35 @@ static RECORDREF: phf::Map<&'static str, Disposition> = phf_map! {
     "changecompany" => Disposition::Builtin,
     "calcfields" => Disposition::Builtin,
     "calcsums" => Disposition::Builtin,
+    // Added from compiler JSON:
+    "addlink" => Disposition::Builtin,
+    "arefieldsloaded" => Disposition::Builtin,
+    "clearmarks" => Disposition::Builtin,
+    "copylinks" => Disposition::Builtin,
+    "currentcompany" => Disposition::Builtin,
+    "currentkey" => Disposition::Builtin,
+    "duplicate" => Disposition::Builtin,
+    "fullyqualifiedname" => Disposition::Builtin,
+    "getbysystemid" => Disposition::Builtin,
+    "istemporary" => Disposition::Builtin,
+    "isdirty" => Disposition::Builtin,
+    "loadfields" => Disposition::Builtin,
+    "locktable" => Disposition::Builtin,
+    "readconsistency" => Disposition::Builtin,
+    "readisolation" => Disposition::Builtin,
+    "readpermission" => Disposition::Builtin,
+    "recordlevellocking" => Disposition::Builtin,
+    "rename" => Disposition::Builtin,
+    "securityfiltering" => Disposition::Builtin,
+    "setautocalcfields" => Disposition::Builtin,
+    "systemcreatedatno" => Disposition::Builtin,
+    "systemcreatedbyno" => Disposition::Builtin,
+    "systemidno" => Disposition::Builtin,
+    "systemmodifiedatno" => Disposition::Builtin,
+    "systemmodifiedbyno" => Disposition::Builtin,
+    "truncate" => Disposition::Builtin,
+    "writepermission" => Disposition::Builtin,
+    "setrecfilter" => Disposition::Builtin,
 };
 
 // --- FieldRef ---
@@ -210,6 +244,11 @@ static FIELDREF: phf::Set<&'static str> = phf_set! {
     "length", "optioncaption", "optionmembers", "record", "validate",
     "calcfield", "setrange", "setfilter", "getfilter", "getrangemin",
     "getrangemax", "testfield",
+    // Added from compiler JSON:
+    "calcsum", "enumvaluecount", "fielderror", "getenumvaluecaption",
+    "getenumvaluecaptionfromordinalvalue", "getenumvaluename",
+    "getenumvaluenamefromordinalvalue", "getenumvalueordinal", "isenum",
+    "isoptimizedfortextsearch", "optionstring",
 };
 
 // --- KeyRef ---
@@ -222,22 +261,36 @@ static JSONOBJECT: phf::Set<&'static str> = phf_set! {
     "add", "contains", "get", "remove", "replace", "keys", "values",
     "selecttoken", "readfrom", "writeto", "astoken", "getenumerator", "path",
     "gettype",
+    // Added from compiler JSON:
+    "clone", "getarray", "getbiginteger", "getboolean", "getbyte", "getchar",
+    "getdate", "getdatetime", "getdecimal", "getduration", "getinteger",
+    "getobject", "getoption", "gettext", "gettime", "readfromyaml",
+    "selecttokens", "writewithsecretsto", "writetoyaml",
 };
 static JSONTOKEN: phf::Set<&'static str> = phf_set! {
     "isarray", "isobject", "isvalue", "asarray", "asobject", "asvalue",
     "selecttoken", "readfrom", "writeto", "gettype", "path", "clone",
     "writelinesto",
+    // Added from compiler JSON:
+    "selecttokens",
 };
 static JSONARRAY: phf::Set<&'static str> = phf_set! {
     "add", "addfirst", "set", "get", "getrange", "remove", "indexof", "contains",
     "count", "readfrom", "writeto", "astoken", "getenumerator", "path",
     "gettype", "insert",
+    // Added from compiler JSON:
+    "clone", "getarray", "getbiginteger", "getboolean", "getbyte", "getchar",
+    "getdate", "getdatetime", "getdecimal", "getduration", "getinteger",
+    "getobject", "getoption", "gettext", "gettime", "removeat", "selecttoken",
+    "selecttokens",
 };
 static JSONVALUE: phf::Set<&'static str> = phf_set! {
     "asboolean", "asbyte", "asinteger", "asbiginteger", "asdecimal", "asoption",
     "astext", "aschar", "ascode", "asdate", "astime", "asdatetime", "asduration",
     "asguid", "setvalue", "readfrom", "writeto", "isnull", "isundefined",
     "gettype", "clone",
+    // Added from compiler JSON:
+    "astoken", "path", "selecttoken", "setvaluetonull", "setvaluetoundefined",
 };
 
 // --- Http* ---
@@ -245,15 +298,25 @@ static HTTPCLIENT: phf::Set<&'static str> = phf_set! {
     "get", "post", "put", "patch", "delete", "send", "clear", "addrequestheader",
     "defaultrequestheaders", "timeout", "useragent", "usewindowsauthentication",
     "usedefaultnetworkwindowsauthentication",
+    // Added from compiler JSON:
+    "addcertificate", "getbaseaddress", "setbaseaddress", "useresponsecookies",
+    "useservercertificatevalidation",
 };
 static HTTPREQUEST: phf::Set<&'static str> = phf_set! {
     "method", "setrequesturi", "getrequesturi", "content", "headers", "getheaders",
+    // Added from compiler JSON:
+    "getcookie", "getcookienames", "getsecretrequesturi", "removecookie",
+    "setcookie", "setsecretrequesturi",
 };
 static HTTPRESPONSE: phf::Set<&'static str> = phf_set! {
     "issuccessstatuscode", "httpstatuscode", "reasonphrase", "content", "headers", "getheaders",
+    // Added from compiler JSON:
+    "getcookie", "getcookienames", "isblockedbyenvironment",
 };
 static HTTPHEADERS: phf::Set<&'static str> = phf_set! {
     "add", "remove", "clear", "contains", "getvalues", "tryadd",
+    // Added from compiler JSON:
+    "containssecret", "getsecretvalues", "keys", "tryaddwithoutvalidation",
 };
 static HTTPCONTENT: phf::Set<&'static str> = phf_set! {
     "writefrom", "readas", "getheaders", "clear",
@@ -262,6 +325,8 @@ static HTTPCONTENT: phf::Set<&'static str> = phf_set! {
 // --- Streams ---
 static INSTREAM: phf::Set<&'static str> = phf_set! {
     "read", "readtext", "eos", "len", "position", "resetposition", "readline",
+    // Added from compiler JSON:
+    "length",
 };
 static OUTSTREAM: phf::Set<&'static str> = phf_set! {
     "write", "writetext", "writeline",
@@ -270,11 +335,16 @@ static OUTSTREAM: phf::Set<&'static str> = phf_set! {
 // --- TextBuilder ---
 static TEXTBUILDER: phf::Set<&'static str> = phf_set! {
     "append", "appendline", "clear", "insert", "remove", "replace", "length", "totext",
+    // Added from compiler JSON:
+    "capacity", "ensurecapacity", "maxcapacity",
 };
 
 // --- Dialog ---
 static DIALOG: phf::Set<&'static str> = phf_set! {
     "open", "close", "update", "hidepart",
+    // Added from compiler JSON:
+    "confirm", "error", "hidesubsequentdialogs", "loginternalerror", "message",
+    "strmenu",
 };
 
 // --- List of [T] ---
@@ -302,6 +372,30 @@ static XML: phf::Set<&'static str> = phf_set! {
     "value", "innertext", "name", "namespaceuri", "localname", "hasattributes",
     "haschildnodes", "parentnode", "firstchild", "lastchild", "nextsibling",
     "count", "get", "gettype", "clone", "normalize", "wasprocessed",
+    // Added from compiler JSON (union of all Xml* types):
+    "addafterself", "addbeforeself", "addfirst", "addnamespace",
+    "asxmlcdata", "asxmldeclaration", "asxmldocumenttype", "asxmlnode",
+    "asxmlprocessinginstruction",
+    "attributes",
+    "createnamespacedeclaration",
+    "encoding",
+    "getdata", "getdeclaration",
+    "getdescendantelements", "getdescendantnodes", "getdocument",
+    "getdocumenttype", "getinternalsubset", "getnamespaceofprefix",
+    "getparent", "getprefixofnamespace", "getpublicid", "getroot",
+    "getsystemid", "gettarget",
+    "haselements", "hasnamespace",
+    "innerxml", "isempty", "isnamespacedeclaration",
+    "isxmlcdata", "isxmldeclaration", "isxmldocumenttype", "isxmlprocessinginstruction",
+    "lookupnamespace", "lookupprefix",
+    "nametable", "namespaceprefix",
+    "popscope", "preservewhitespace", "pushscope",
+    "removeallattributes", "removeattribute", "removenodes", "removenamespace",
+    "replacenodes", "replacewith",
+    "setdata", "setdeclaration", "setinternalsubset",
+    "setname", "setpublicid", "setsystemid", "settarget",
+    "standalone",
+    "version",
 };
 
 #[cfg(test)]

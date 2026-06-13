@@ -403,6 +403,7 @@ fn multiset_is_sorted_and_preserves_duplicates_synthetically() {
         external_type_ref: None,
         receiver_type: None,
         dispatch_meta: None,
+        unknown_method_name: None,
     };
     let edges = vec![
         edge(

@@ -35,6 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Measured on CDO (3295 unknown): bare-unresolved 1247, untracked-receiver 881,
   record-table-procedure 812, compound-receiver 243, non-object-receiver-type 70,
   framework-method-not-in-catalog 39, interface-no-impl 2, enum-static 1.
+- `aldump --l3-unknown-breakdown` now includes `"frameworkMethodDetail"` in the JSON
+  output: a per-`(KindName::method)` breakdown of `framework-method-not-in-catalog`
+  edges, sourced from the new `CallEdge.unknown_method_name` diagnostic field. Helps
+  identify specific catalog gaps without full call-graph inspection.
+- Member-builtin catalog expanded from compiler JSON (`member_builtins.json`) closing
+  all 18 `framework-method-not-in-catalog` unknown edges on the CDO workspace (from 39
+  pre-global-builtin reclassification). Key additions: RecordRef `setrecfilter` + 26
+  new Builtin entries; Record 14 new methods (arefieldsloaded, currentcompany,
+  fullyqualifiedname, istemporary, readconsistency, readisolation, recordlevellocking,
+  relation, securityfiltering, setascending, setbaseloadfields, tablename, truncate,
+  loadfields); FieldRef 11 new enum-reflection methods; Json* types 35+ methods
+  (GetArray/GetObject/GetText etc., SelectTokens, clone, YAML variants); Http*
+  types expanded with certificate, cookie, secret-URI support; TextBuilder capacity
+  methods; Dialog confirm/error/message/strmenu; XML types full union of all Xml*
+  compiler types (60+ net-new entries). Pure reclassification — resolved count
+  unchanged. CDO after: `framework-method-not-in-catalog` = 0, unknown 2209→2191,
+  realUnknownRate 15.8%→15.7%.
 
 ### Changed
 - L3 taxonomy refactor: replaced the stringly-typed `CallEdge.dispatch_kind: String` /

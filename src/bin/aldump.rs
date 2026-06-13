@@ -854,28 +854,35 @@ fn main() -> ExitCode {
         use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
-        let (histogram, breakdown) = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let ws = &resolved.workspace;
-                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-                let no_deps: Vec<DeclaredDependency> = Vec::new();
-                let no_fetched: Vec<String> = Vec::new();
-                let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-                (Histogram::of_edges(&r.edges), unknown_breakdown(&r.edges))
-            }
-            None => {
-                eprintln!(
+        let (histogram, breakdown, framework_detail) =
+            match assemble_and_resolve_workspace_default(&workspace) {
+                Some(resolved) => {
+                    let ws = &resolved.workspace;
+                    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                    let no_deps: Vec<DeclaredDependency> = Vec::new();
+                    let no_fetched: Vec<String> = Vec::new();
+                    let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+                    let (bd, det) = unknown_breakdown(&r.edges);
+                    (Histogram::of_edges(&r.edges), bd, det)
+                }
+                None => {
+                    eprintln!(
                     "aldump: warning: fail-closed/empty layout at {} — emitting empty breakdown",
                     workspace.display()
                 );
-                (Histogram::default(), std::collections::BTreeMap::new())
-            }
-        };
+                    (
+                        Histogram::default(),
+                        std::collections::BTreeMap::new(),
+                        std::collections::BTreeMap::new(),
+                    )
+                }
+            };
         let value = serde_json::json!({
             "totalEdges": histogram.total,
             "unknownTotal": histogram.unknown,
             "realUnknownRate": histogram.real_unknown_rate(),
             "byReason": breakdown,
+            "frameworkMethodDetail": framework_detail,
         });
         return match serde_json::to_string_pretty(&value) {
             Ok(json) => {

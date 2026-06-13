@@ -99,8 +99,14 @@ impl Histogram {
 /// label. `"unattributed"` collects any `unknown` edge missing a reason (should be
 /// zero — every unknown-emission site sets one). Attributes the residual
 /// real-`unknown` rate to its causes (the typed-resolution work-list).
-pub fn unknown_breakdown(edges: &[CallEdge]) -> std::collections::BTreeMap<&'static str, usize> {
+pub fn unknown_breakdown(
+    edges: &[CallEdge],
+) -> (
+    std::collections::BTreeMap<&'static str, usize>,
+    std::collections::BTreeMap<String, usize>,
+) {
     let mut m: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+    let mut detail: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for e in edges {
         if classify(e.resolution, e.dispatch_kind) != ResolutionClass::Unknown {
             continue;
@@ -111,8 +117,11 @@ pub fn unknown_breakdown(edges: &[CallEdge]) -> std::collections::BTreeMap<&'sta
             .map(|r| r.label())
             .unwrap_or("unattributed");
         *m.entry(label).or_insert(0) += 1;
+        if let Some(ref name) = e.unknown_method_name {
+            *detail.entry(name.clone()).or_insert(0) += 1;
+        }
     }
-    m
+    (m, detail)
 }
 
 #[cfg(test)]
@@ -242,7 +251,7 @@ mod tests {
         resolved.dispatch_kind = DispatchKind::Direct;
         edges.push(resolved);
 
-        let bd = unknown_breakdown(&edges);
+        let (bd, _detail) = unknown_breakdown(&edges);
         assert_eq!(bd.get("record-table-procedure"), Some(&2));
         assert_eq!(bd.get("untracked-receiver"), Some(&1));
         // dynamic + resolved are excluded; no "unattributed".
