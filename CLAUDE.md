@@ -13,7 +13,7 @@ cargo build                    # Debug build
 cargo build --release          # Optimized release (full LTO)
 cargo build --profile release-fast  # Faster build with thin LTO
 cargo test                     # Run tests
-cargo fmt                      # Format code
+rustfmt path/to/file.rs        # Format a file (NEVER `cargo fmt` — whole-crate churn)
 cargo clippy --all-targets --all-features  # Lint
 ```
 
@@ -113,8 +113,48 @@ This project uses the V2 tree-sitter-al grammar. Key differences from V1:
 | Event subscribers | Yes |
 | External .app dependencies | Yes |
 
+## Project Direction & The Moat
+
+The product's moat is **precise whole-program call-graph resolution** for AL. The
+north-star metric is the **real-`unknown` edge rate** on real BC apps (measure with
+`aldump --l3-call-graph-stats <workspace>`): drive it toward zero, where the residual
+is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin` (platform
+intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency object) /
+`unknown` (a TRUE failure — the signal to eliminate). See the call-graph resolution
+redesign spec under `docs/superpowers/specs/`.
+
+## Testing Philosophy & Goldens
+
+- **The al-sem TypeScript reference is RETIRED.** This engine began as a faithful Rust
+  port of al-sem (TS), validated by byte-for-byte differential goldens. That era is over.
+  The engine is now **Rust-owned**: correctness and resolution precision take priority
+  over reproducing al-sem's output.
+- **No byte-to-byte parity with al-sem.** Tests assert **Rust-owned baselines** (goldens
+  regenerated from THIS engine) and **structural CONTRACTS** (invariants that hold
+  regardless of which engine is "right" — e.g. "every `builtin` edge's method is in the
+  catalog", "no edge is both `builtin` and `resolved`"). When the Rust engine is
+  intentionally MORE accurate than al-sem (resolving record/framework built-ins, removing
+  phantom uncertainties, etc.), that divergence is CORRECT — rebaseline the Rust-owned
+  golden; do not chase al-sem.
+- **We control all downstream consumers.** Every program consuming engine output (CLI
+  formats, snapshots, fingerprints, SARIF, digests, prove/diff) is ours to change. Output
+  shape may be refactored freely when it improves the product — update the consumers and
+  their goldens together.
+- **Goldens regen:** `REGEN_TEMP_GOLDENS=1 cargo test` rewrites Rust-owned goldens.
+  Inspect the diff is intended before committing. Manifest "matrix" oracles hold
+  Rust-owned numbers; update them to the current Rust value when the engine intentionally
+  improves.
+- **`U:\Git\al-sem` is a frozen historical reference, not a live oracle** — never read
+  goldens from it or write into it at test time. Tests still pointing at the al-sem repo
+  (some cli-b differentials, r3a1/r4f) are LEGACY and should be migrated to in-repo
+  Rust-owned goldens or contract assertions when touched.
+- **`KNOWN_DIVERGENCES.json`** is a legacy port-parity artifact; it is not the mechanism
+  for Rust-ahead-of-al-sem behavior (that is just the new correct baseline).
+
 ## Development Guidelines
 
 - **CHANGELOG.md must be updated** after making any feature additions, bug fixes, or breaking changes
 - Follow [Keep a Changelog](https://keepachangelog.com/) format
 - Group changes under: Added, Changed, Deprecated, Removed, Fixed, Security
+- **Format per-file with `rustfmt <file>`**, never `cargo fmt`. Stage only intended paths;
+  never `git add -A`. Never push or merge to `master` without an explicit request.
