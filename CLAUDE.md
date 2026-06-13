@@ -151,6 +151,16 @@ redesign spec under `docs/superpowers/specs/`.
 - **`KNOWN_DIVERGENCES.json`** is a legacy port-parity artifact; it is not the mechanism
   for Rust-ahead-of-al-sem behavior (that is just the new correct baseline).
 
+## Working Principle
+
+**Always pursue the best solution — not the simplest, easiest, or quickest.** Time is not
+a constraint and this project is not yet released, so refactoring is always on the table
+and all downstream consumers are ours to change. Fix root causes, never symptoms: when a
+golden or test disagrees with the code, find out WHY before rebaselining (a wrong golden
+or half-finished feature gets fixed properly, not papered over). Prefer correct
+architecture over a quick patch even when larger; verify by building/running/measuring,
+not by assertion.
+
 ## Development Guidelines
 
 - **CHANGELOG.md must be updated** after making any feature additions, bug fixes, or breaking changes
