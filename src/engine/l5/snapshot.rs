@@ -41,6 +41,7 @@ use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, POperationSite};
 use crate::engine::l2::operation_order::{apply_operation_order, OperationOrder, ScopeFrame};
 use crate::engine::l3::event_graph::EventSymbol;
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
+use crate::engine::l3::taxonomy::DispatchKind;
 use crate::engine::l4::capability_cone::{
     build_r3a3_source_only_base, CapabilityExtra, CapabilityFact, R3a3SourceBase, ValueSource,
 };
@@ -1598,7 +1599,7 @@ fn derive_callsite_resolutions(
         BTreeMap::new();
     let mut group_order: Vec<String> = Vec::new();
     for ce in &base.calls.edges {
-        if ce.dispatch_kind == "implicit-trigger" {
+        if ce.dispatch_kind == DispatchKind::ImplicitTrigger {
             continue;
         }
         let key = ce.callsite_id.clone();
@@ -1622,12 +1623,12 @@ fn derive_callsite_resolutions(
             .get(&callsite_key)
             .cloned()
             .unwrap_or_default();
-        let dispatch_kind = map_dispatch_kind(&representative.dispatch_kind).to_string();
+        let dispatch_kind = map_dispatch_kind(representative.dispatch_kind.as_str()).to_string();
         let rc = result_consumed.get(&callsite_key).copied();
         let ua = under_asserterror.get(&callsite_key).copied() == Some(true);
 
         // Interface dispatch group → polymorphic.
-        let has_interface = group_edges.iter().any(|e| e.dispatch_kind == "interface");
+        let has_interface = group_edges.iter().any(|e| e.dispatch_kind == DispatchKind::Interface);
         if has_interface {
             let empty: Vec<(String, Option<String>)> = Vec::new();
             let iface = iface_edges_by_callsite.get(&callsite_key).unwrap_or(&empty);
@@ -1810,7 +1811,7 @@ fn classify_resolution(
         "opaque" => base_row("unfetched-dependency", Vec::new(), None),
         "builtin" => base_row("builtin", Vec::new(), None),
         _ => {
-            if ce.dispatch_kind == "dynamic" {
+            if ce.dispatch_kind == DispatchKind::Dynamic {
                 base_row("dynamic-target", Vec::new(), None)
             } else {
                 base_row("unresolved-receiver-type", Vec::new(), None)

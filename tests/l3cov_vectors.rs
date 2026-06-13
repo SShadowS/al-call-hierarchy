@@ -36,11 +36,12 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l3::call_resolver::CallEdge;
+use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, UnknownReason};
 use al_call_hierarchy::engine::l3::coverage::{
     build_coverage, AnalysisCoverage, CoverageDiagnostic, CoverageUnit,
 };
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
+use al_call_hierarchy::engine::l3::taxonomy::{DispatchKind, Resolution};
 use serde_json::Value;
 
 const APP_GUID: &str = "2d000000-0000-0000-0000-0000000002dd";
@@ -114,6 +115,39 @@ struct VectorEdge {
     #[serde(rename = "dispatchKind")]
     dispatch_kind: String,
     resolution: String,
+}
+
+/// Parse a golden `dispatchKind` wire string back into the strict enum.
+fn dispatch_kind_from_wire(s: &str) -> DispatchKind {
+    match s {
+        "direct" => DispatchKind::Direct,
+        "interface" => DispatchKind::Interface,
+        "builtin" => DispatchKind::Builtin,
+        "unresolved" => DispatchKind::Unresolved,
+        "dynamic" => DispatchKind::Dynamic,
+        "method" => DispatchKind::Method,
+        "implicit-trigger" => DispatchKind::ImplicitTrigger,
+        "page-run" => DispatchKind::PageRun,
+        "report-run" => DispatchKind::ReportRun,
+        "codeunit-run" => DispatchKind::CodeunitRun,
+        other => panic!("unexpected dispatchKind in vector fixture: {other}"),
+    }
+}
+
+/// Parse a golden `resolution` wire string back into the strict enum. `unknown`
+/// folds an `UnknownReason`; the vectors carry no reason, so use `CalleeUnknown`.
+fn resolution_from_wire(s: &str) -> Resolution {
+    match s {
+        "resolved" => Resolution::Resolved,
+        "maybe" => Resolution::Maybe,
+        "builtin" => Resolution::Builtin,
+        "member-not-found" => Resolution::MemberNotFound,
+        "ambiguous" => Resolution::Ambiguous,
+        "opaque" => Resolution::Opaque,
+        "external-target" => Resolution::ExternalTarget,
+        "unknown" => Resolution::Unknown(UnknownReason::CalleeUnknown),
+        other => panic!("unexpected resolution in vector fixture: {other}"),
+    }
 }
 
 fn load_vectors() -> VectorsDoc {
@@ -257,13 +291,12 @@ fn multiset_duplicate_vector_preserves_dups() {
             to: None,
             callsite_id: e.callsite_id.clone(),
             operation_id: e.operation_id.clone(),
-            dispatch_kind: e.dispatch_kind.clone(),
-            resolution: e.resolution.clone(),
+            dispatch_kind: dispatch_kind_from_wire(&e.dispatch_kind),
+            resolution: resolution_from_wire(&e.resolution),
             candidates: None,
             external_type_ref: None,
             receiver_type: None,
             dispatch_meta: None,
-            unknown_reason: None,
         })
         .collect();
 

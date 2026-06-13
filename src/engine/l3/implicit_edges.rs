@@ -9,16 +9,17 @@
 //! run the table trigger only with `RunTrigger = true` (not captured) → "maybe".
 
 use super::call_resolver::CallEdge;
+use super::taxonomy::{DispatchKind, Resolution};
 use super::l3_workspace::L3Workspace;
 use super::symbol_table::SymbolTable;
 
-/// (record-op name, trigger routine name, edge resolution).
-fn trigger_mapping(op: &str) -> Option<(&'static str, &'static str)> {
+/// (trigger routine name, edge Resolution).
+fn trigger_mapping(op: &str) -> Option<(&'static str, Resolution)> {
     match op {
-        "Validate" => Some(("OnValidate", "resolved")),
-        "Insert" => Some(("OnInsert", "maybe")),
-        "Modify" => Some(("OnModify", "maybe")),
-        "Delete" => Some(("OnDelete", "maybe")),
+        "Validate" => Some(("OnValidate", Resolution::Resolved)),
+        "Insert" => Some(("OnInsert", Resolution::Maybe)),
+        "Modify" => Some(("OnModify", Resolution::Maybe)),
+        "Delete" => Some(("OnDelete", Resolution::Maybe)),
         _ => None,
     }
 }
@@ -54,13 +55,12 @@ pub fn build_implicit_trigger_edges(
                 to: Some(trigger.id.clone()),
                 callsite_id: op.id.clone(),
                 operation_id: op.id.clone(),
-                dispatch_kind: "implicit-trigger".to_string(),
-                resolution: resolution.to_string(),
+                dispatch_kind: DispatchKind::ImplicitTrigger,
+                resolution,
                 candidates: None,
                 external_type_ref: None,
                 receiver_type: None,
                 dispatch_meta: None,
-                unknown_reason: None,
             });
         }
     }

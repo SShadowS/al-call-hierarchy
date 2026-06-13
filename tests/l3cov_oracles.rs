@@ -55,6 +55,7 @@ use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDepend
 use al_call_hierarchy::engine::l3::coverage::{build_coverage, CoverageDiagnostic, CoverageUnit};
 use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve_default, L3Resolved};
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+use al_call_hierarchy::engine::l3::taxonomy::DispatchKind;
 
 const APP_GUID: &str = "0d000000-0000-0000-0000-0000000002dd";
 
@@ -137,7 +138,7 @@ fn rederive_multisets(resolved: &L3Resolved) -> (Vec<String>, Vec<String>) {
     unresolved.sort();
     let mut dynamic: Vec<String> = edges
         .iter()
-        .filter(|e| e.dispatch_kind == "dynamic")
+        .filter(|e| e.dispatch_kind == DispatchKind::Dynamic)
         .map(|e| stable_site(&e.operation_id))
         .collect();
     dynamic.sort();
@@ -370,22 +371,38 @@ fn opaque_apps_empty_and_no_real_duplicate_source_only() {
 
 #[test]
 fn multiset_is_sorted_and_preserves_duplicates_synthetically() {
-    use al_call_hierarchy::engine::l3::call_resolver::CallEdge;
+    use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, UnknownReason};
+    use al_call_hierarchy::engine::l3::taxonomy::{DispatchKind, Resolution};
 
     // Two unresolved edges sharing one callsiteId + two dynamic edges sharing one
     // operationId — exactly the synthetic shape al-sem's `buildCoverage` preserves.
+    let dk_of = |dk: &str| match dk {
+        "unresolved" => DispatchKind::Unresolved,
+        "interface" => DispatchKind::Interface,
+        "dynamic" => DispatchKind::Dynamic,
+        "method" => DispatchKind::Method,
+        "builtin" => DispatchKind::Builtin,
+        other => panic!("unexpected dispatch_kind in test: {other}"),
+    };
+    let res_of = |res: &str| match res {
+        "unknown" => Resolution::Unknown(UnknownReason::CalleeUnknown),
+        "member-not-found" => Resolution::MemberNotFound,
+        "maybe" => Resolution::Maybe,
+        "opaque" => Resolution::Opaque,
+        "builtin" => Resolution::Builtin,
+        other => panic!("unexpected resolution in test: {other}"),
+    };
     let edge = |cs: &str, op: &str, dk: &str, res: &str| CallEdge {
         from: "r0/deadbeef".to_string(),
         to: None,
         callsite_id: cs.to_string(),
         operation_id: op.to_string(),
-        dispatch_kind: dk.to_string(),
-        resolution: res.to_string(),
+        dispatch_kind: dk_of(dk),
+        resolution: res_of(res),
         candidates: None,
         external_type_ref: None,
         receiver_type: None,
         dispatch_meta: None,
-        unknown_reason: None,
     };
     let edges = vec![
         edge(

@@ -46,6 +46,7 @@ use std::collections::HashMap;
 
 use super::call_graph_projection::cmp_stable;
 use super::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
+use super::taxonomy::{DispatchKind, Resolution};
 use super::l3_workspace::{L3Resolved, L3Routine};
 use super::symbol_table::SymbolTable;
 
@@ -109,10 +110,10 @@ pub struct AnalysisCoverage {
 // are NOT counted (Rev 2 MUST-FIX #2).
 // ---------------------------------------------------------------------------
 
-fn is_unresolved_resolution(resolution: &str) -> bool {
+fn is_unresolved_resolution(resolution: Resolution) -> bool {
     matches!(
         resolution,
-        "unknown" | "ambiguous" | "member-not-found" | "external-target"
+        Resolution::Unknown(_) | Resolution::Ambiguous | Resolution::MemberNotFound | Resolution::ExternalTarget
     )
 }
 
@@ -192,7 +193,7 @@ pub fn build_coverage(
     // --- unresolved callsites MULTISET (4 resolutions; dups PRESERVED). ---
     let mut unresolved_callsites: Vec<String> = call_graph
         .iter()
-        .filter(|e| is_unresolved_resolution(&e.resolution))
+        .filter(|e| is_unresolved_resolution(e.resolution))
         .map(|e| stable_site(&e.callsite_id, by_internal))
         .collect();
     unresolved_callsites.sort_by(|a, b| cmp_stable(a, b));
@@ -200,7 +201,7 @@ pub fn build_coverage(
     // --- dynamic dispatch sites MULTISET (dispatchKind == "dynamic"; dups PRESERVED). ---
     let mut dynamic_dispatch_sites: Vec<String> = call_graph
         .iter()
-        .filter(|e| e.dispatch_kind == "dynamic")
+        .filter(|e| e.dispatch_kind == DispatchKind::Dynamic)
         .map(|e| stable_site(&e.operation_id, by_internal))
         .collect();
     dynamic_dispatch_sites.sort_by(|a, b| cmp_stable(a, b));

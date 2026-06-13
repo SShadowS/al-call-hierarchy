@@ -11,6 +11,7 @@
 //! `aldump --l3-call-graph-stats` harness and the Phase-2 contract oracles.
 
 use super::call_resolver::CallEdge;
+use super::taxonomy::{DispatchKind, Resolution};
 
 /// The honest taxonomy bucket for one edge (spec §6 + the reporting extras).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,21 +33,20 @@ pub enum ResolutionClass {
     Unknown,
 }
 
-/// Classify ONE edge from its `(resolution, dispatch_kind)` pair. Pure, total,
-/// never panics. `dynamic` is keyed on the dispatch kind because a dynamic
-/// object-run target stores `resolution == "unknown"` today (it is NOT a true
-/// failure — it is a known-dynamic site).
-pub fn classify(resolution: &str, dispatch_kind: &str) -> ResolutionClass {
-    if dispatch_kind == "dynamic" {
+/// Classify ONE edge from its `(Resolution, DispatchKind)` enum pair. Pure, total,
+/// never panics. `Dynamic` dispatch kind is keyed specially because a dynamic
+/// object-run target has `resolution == Unknown(...)` but is NOT a true failure.
+pub fn classify(resolution: Resolution, dispatch_kind: DispatchKind) -> ResolutionClass {
+    if dispatch_kind == DispatchKind::Dynamic {
         return ResolutionClass::Dynamic;
     }
     match resolution {
-        "resolved" | "maybe" => ResolutionClass::Resolved,
-        "builtin" => ResolutionClass::Builtin,
-        "external-target" | "opaque" => ResolutionClass::External,
-        "ambiguous" => ResolutionClass::Ambiguous,
-        "member-not-found" => ResolutionClass::MemberNotFound,
-        _ => ResolutionClass::Unknown,
+        Resolution::Resolved | Resolution::Maybe => ResolutionClass::Resolved,
+        Resolution::Builtin => ResolutionClass::Builtin,
+        Resolution::ExternalTarget | Resolution::Opaque => ResolutionClass::External,
+        Resolution::Ambiguous => ResolutionClass::Ambiguous,
+        Resolution::MemberNotFound => ResolutionClass::MemberNotFound,
+        Resolution::Unknown(_) => ResolutionClass::Unknown,
     }
 }
 
@@ -71,7 +71,7 @@ impl Histogram {
         let mut h = Histogram::default();
         for e in edges {
             h.total += 1;
-            match classify(&e.resolution, &e.dispatch_kind) {
+            match classify(e.resolution, e.dispatch_kind) {
                 ResolutionClass::Resolved => h.resolved += 1,
                 ResolutionClass::Builtin => h.builtin += 1,
                 ResolutionClass::Dynamic => h.dynamic += 1,
@@ -102,11 +102,12 @@ impl Histogram {
 pub fn unknown_breakdown(edges: &[CallEdge]) -> std::collections::BTreeMap<&'static str, usize> {
     let mut m: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
     for e in edges {
-        if classify(&e.resolution, &e.dispatch_kind) != ResolutionClass::Unknown {
+        if classify(e.resolution, e.dispatch_kind) != ResolutionClass::Unknown {
             continue;
         }
         let label = e
-            .unknown_reason
+            .resolution
+            .unknown_reason()
             .map(|r| r.label())
             .unwrap_or("unattributed");
         *m.entry(label).or_insert(0) += 1;
@@ -120,42 +121,92 @@ mod tests {
 
     #[test]
     fn classifies_the_honest_buckets() {
-        assert_eq!(classify("resolved", "direct"), ResolutionClass::Resolved);
-        assert_eq!(classify("maybe", "interface"), ResolutionClass::Resolved);
-        assert_eq!(classify("builtin", "builtin"), ResolutionClass::Builtin);
-        assert_eq!(classify("unknown", "dynamic"), ResolutionClass::Dynamic);
+        use super::super::call_resolver::UnknownReason;
         assert_eq!(
-            classify("external-target", "method"),
+            classify(Resolution::Resolved, DispatchKind::Direct),
+            ResolutionClass::Resolved
+        );
+        assert_eq!(
+            classify(Resolution::Maybe, DispatchKind::Interface),
+            ResolutionClass::Resolved
+        );
+        assert_eq!(
+            classify(Resolution::Builtin, DispatchKind::Builtin),
+            ResolutionClass::Builtin
+        );
+        assert_eq!(
+            classify(
+                Resolution::Unknown(UnknownReason::BareUnresolved),
+                DispatchKind::Dynamic
+            ),
+            ResolutionClass::Dynamic
+        );
+        assert_eq!(
+            classify(Resolution::ExternalTarget, DispatchKind::Method),
             ResolutionClass::External
         );
         assert_eq!(
-            classify("opaque", "codeunit-run"),
+            classify(Resolution::Opaque, DispatchKind::CodeunitRun),
             ResolutionClass::External
         );
-        assert_eq!(classify("ambiguous", "direct"), ResolutionClass::Ambiguous);
         assert_eq!(
-            classify("member-not-found", "method"),
+            classify(Resolution::Ambiguous, DispatchKind::Direct),
+            ResolutionClass::Ambiguous
+        );
+        assert_eq!(
+            classify(Resolution::MemberNotFound, DispatchKind::Method),
             ResolutionClass::MemberNotFound
         );
-        assert_eq!(classify("unknown", "method"), ResolutionClass::Unknown);
-        assert_eq!(classify("unknown", "unresolved"), ResolutionClass::Unknown);
+        assert_eq!(
+            classify(
+                Resolution::Unknown(UnknownReason::BareUnresolved),
+                DispatchKind::Method
+            ),
+            ResolutionClass::Unknown
+        );
+        assert_eq!(
+            classify(
+                Resolution::Unknown(UnknownReason::BareUnresolved),
+                DispatchKind::Unresolved
+            ),
+            ResolutionClass::Unknown
+        );
     }
 
     #[test]
     fn histogram_counts_and_real_unknown_rate() {
-        use crate::engine::l3::call_resolver::CallEdge;
-        let edge = |res: &str, dk: &str| {
-            let mut e = CallEdge::base("f", "c", "o");
-            e.resolution = res.to_string();
-            e.dispatch_kind = dk.to_string();
-            e
-        };
+        use crate::engine::l3::call_resolver::{CallEdge, UnknownReason};
         let edges = vec![
-            edge("resolved", "direct"),
-            edge("builtin", "builtin"),
-            edge("builtin", "builtin"),
-            edge("unknown", "method"),
-            edge("unknown", "dynamic"),
+            {
+                let mut e = CallEdge::base("f", "c", "o");
+                e.resolution = Resolution::Resolved;
+                e.dispatch_kind = DispatchKind::Direct;
+                e
+            },
+            {
+                let mut e = CallEdge::base("f", "c", "o");
+                e.resolution = Resolution::Builtin;
+                e.dispatch_kind = DispatchKind::Builtin;
+                e
+            },
+            {
+                let mut e = CallEdge::base("f", "c", "o");
+                e.resolution = Resolution::Builtin;
+                e.dispatch_kind = DispatchKind::Builtin;
+                e
+            },
+            {
+                let mut e = CallEdge::base("f", "c", "o");
+                e.resolution = Resolution::Unknown(UnknownReason::BareUnresolved);
+                e.dispatch_kind = DispatchKind::Method;
+                e
+            },
+            {
+                let mut e = CallEdge::base("f", "c", "o");
+                e.resolution = Resolution::Unknown(UnknownReason::DynamicObjectRunTarget);
+                e.dispatch_kind = DispatchKind::Dynamic;
+                e
+            },
         ];
         let h = Histogram::of_edges(&edges);
         assert_eq!(h.total, 5);
@@ -171,9 +222,8 @@ mod tests {
         use crate::engine::l3::call_resolver::{CallEdge, UnknownReason};
         let unk = |reason: UnknownReason| {
             let mut e = CallEdge::base("f", "c", "o");
-            e.resolution = "unknown".to_string();
-            e.dispatch_kind = "method".to_string();
-            e.unknown_reason = Some(reason);
+            e.resolution = Resolution::Unknown(reason);
+            e.dispatch_kind = DispatchKind::Method;
             e
         };
         let mut edges = vec![
@@ -182,14 +232,14 @@ mod tests {
             unk(UnknownReason::UntrackedReceiver),
         ];
         // A dynamic-dispatch edge (resolution unknown but dispatch_kind dynamic) is
-        // NOT a true unknown → excluded. A resolved edge → excluded.
+        // NOT a true unknown -- excluded. A resolved edge -- excluded.
         let mut dyn_edge = CallEdge::base("f", "c", "o");
-        dyn_edge.resolution = "unknown".to_string();
-        dyn_edge.dispatch_kind = "dynamic".to_string();
+        dyn_edge.resolution = Resolution::Unknown(UnknownReason::DynamicObjectRunTarget);
+        dyn_edge.dispatch_kind = DispatchKind::Dynamic;
         edges.push(dyn_edge);
         let mut resolved = CallEdge::base("f", "c", "o");
-        resolved.resolution = "resolved".to_string();
-        resolved.dispatch_kind = "direct".to_string();
+        resolved.resolution = Resolution::Resolved;
+        resolved.dispatch_kind = DispatchKind::Direct;
         edges.push(resolved);
 
         let bd = unknown_breakdown(&edges);

@@ -202,8 +202,8 @@ fn project_edge(e: &CallEdge, m: &StableMap) -> PCallEdge {
     PCallEdge {
         from: m.stable_routine(&e.from),
         operation_id: m.stable_site(&e.operation_id),
-        dispatch_kind: e.dispatch_kind.clone(),
-        resolution: e.resolution.clone(),
+        dispatch_kind: e.dispatch_kind.as_str().to_string(),
+        resolution: e.resolution.as_str().to_string(),
         to: e.to.as_deref().map(|t| m.stable_routine(t)),
         // Per Rev2 #7: project ids to StableRoutineId FIRST, then sort. al-sem only
         // emits `candidates` when non-empty.

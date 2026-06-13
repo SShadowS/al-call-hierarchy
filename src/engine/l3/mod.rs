@@ -28,4 +28,5 @@ pub mod resolution_class;
 pub mod static_arg;
 pub mod symbol_table;
 pub mod type_ref;
+pub mod taxonomy;
 pub mod type_rel;

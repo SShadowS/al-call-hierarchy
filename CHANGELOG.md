@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   framework-method-not-in-catalog 39, interface-no-impl 2, enum-static 1.
 
 ### Changed
+- L3 taxonomy refactor: replaced the stringly-typed `CallEdge.dispatch_kind: String` /
+  `resolution: String` (a TS-port hangover) with strict Rust enums `DispatchKind` /
+  `Resolution` (`src/engine/l3/taxonomy.rs`). `Resolution::Unknown(UnknownReason)` folds
+  the former `unknown_reason` side-field into the enum payload, so every `unknown` edge
+  carries a compiler-enforced cause ("unattributed" is now structurally impossible);
+  added `UnknownReason::DynamicObjectRunTarget` for the dynamic object-run edge.
+  `enum.as_str()` reproduces the exact golden strings at the projection boundary — the
+  refactor is internal-only and fully byte-stable (zero golden changes).
 - L3 member-call resolution: a Record/framework receiver whose method is a recognized
   intrinsic now resolves to `builtin` (and leaves `unresolvedCallsites`). Non-intrinsic
   Record methods (real table procedures) remain `unknown`, pending Phase 3. Rebaselined

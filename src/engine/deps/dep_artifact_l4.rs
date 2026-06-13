@@ -51,6 +51,7 @@ use crate::engine::deps::app_package_zip::{extract_navx_manifest_xml, strip_app_
 use crate::engine::l2::operation_order::apply_operation_order;
 use crate::engine::l3::al_attributes::{find_attribute, has_attribute, AttributeInfo};
 use crate::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 use crate::engine::l3::event_graph::{build_event_graph, EventSymbol};
 use crate::engine::l3::l3_workspace::{assemble_workspace_units, resolve, L3Routine, L3Workspace};
 use crate::engine::l3::symbol_table::SymbolTable;
@@ -362,9 +363,9 @@ pub fn build_dep_artifact_l4(
         if !own_routine_ids.contains(&ce.from) || !own_routine_ids.contains(to) {
             continue;
         }
-        let admit = ce.dispatch_kind == "direct"
-            || (ce.dispatch_kind == "method" && ce.resolution == "resolved")
-            || (ce.dispatch_kind == "interface" && ce.resolution == "maybe");
+        let admit = ce.dispatch_kind == DispatchKind::Direct
+            || (ce.dispatch_kind == DispatchKind::Method && ce.resolution == Resolution::Resolved)
+            || (ce.dispatch_kind == DispatchKind::Interface && ce.resolution == Resolution::Maybe);
         if !admit {
             continue;
         }

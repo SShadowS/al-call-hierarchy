@@ -21,6 +21,7 @@ use super::symbol_table::SymbolTable;
 use super::type_ref::{parse_object_type_ref, ObjectKind};
 use super::type_rel::{type_relation, TypeRelation};
 use crate::engine::l2::features::PCallSite;
+use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,9 @@ pub enum UnknownReason {
     CalleeUnknown,
     /// Interface dispatch where NO implementer resolved (open-world / no impls).
     InterfaceNoImpl,
+    /// Object-run whose target is a dynamic variable (not a static ref) -- the
+    /// dispatch kind is `dynamic`; target is unknowable without runtime info.
+    DynamicObjectRunTarget,
 }
 
 impl UnknownReason {
@@ -91,6 +95,7 @@ impl UnknownReason {
             UnknownReason::EnumStatic => "enum-static",
             UnknownReason::CalleeUnknown => "callee-unknown",
             UnknownReason::InterfaceNoImpl => "interface-no-impl",
+            UnknownReason::DynamicObjectRunTarget => "dynamic-objectrun-target",
         }
     }
 }
@@ -102,16 +107,14 @@ pub struct CallEdge {
     pub to: Option<String>,
     pub callsite_id: String,
     pub operation_id: String,
-    pub dispatch_kind: String,
-    pub resolution: String,
+    pub dispatch_kind: DispatchKind,
+    pub resolution: Resolution,
     /// candidates (internal routine ids), for ambiguous / member-not-found.
     pub candidates: Option<Vec<String>>,
     pub external_type_ref: Option<ExternalTypeRef>,
     /// method-dispatch receiver's declared type.
     pub receiver_type: Option<String>,
     pub dispatch_meta: Option<DispatchMeta>,
-    /// DIAGNOSTIC-only cause for an `unknown` edge (`None` otherwise).
-    pub unknown_reason: Option<UnknownReason>,
 }
 
 impl CallEdge {
@@ -121,13 +124,12 @@ impl CallEdge {
             to: None,
             callsite_id: callsite_id.to_string(),
             operation_id: operation_id.to_string(),
-            dispatch_kind: String::new(),
-            resolution: String::new(),
+            dispatch_kind: DispatchKind::Unresolved,
+            resolution: Resolution::Unknown(UnknownReason::CalleeUnknown),
             candidates: None,
             external_type_ref: None,
             receiver_type: None,
             dispatch_meta: None,
-            unknown_reason: None,
         }
     }
 }
@@ -310,11 +312,11 @@ fn resolve_by_name_and_arity<'a>(
 }
 
 /// Map an object-run objectKind to its dispatch kind.
-fn object_run_dispatch_kind(object_kind: &str) -> &'static str {
+fn object_run_dispatch_kind(object_kind: &str) -> DispatchKind {
     match object_kind {
-        "Page" => "page-run",
-        "Report" => "report-run",
-        _ => "codeunit-run",
+        "Page" => DispatchKind::PageRun,
+        "Report" => DispatchKind::ReportRun,
+        _ => DispatchKind::CodeunitRun,
     }
 }
 
@@ -375,8 +377,8 @@ fn resolve_interface_dispatch(
             ArityResolution::Resolved(r) => {
                 let mut e = CallEdge::base(from, callsite_id, operation_id);
                 e.to = Some(r.id.clone());
-                e.dispatch_kind = "interface".to_string();
-                e.resolution = "maybe".to_string();
+                e.dispatch_kind = DispatchKind::Interface;
+                e.resolution = Resolution::Maybe;
                 resolved_edges.push(e);
             }
             ArityResolution::NotFound => {
@@ -402,9 +404,8 @@ fn resolve_interface_dispatch(
 
     if resolved_edges.is_empty() {
         let mut e = CallEdge::base(from, callsite_id, operation_id);
-        e.dispatch_kind = "interface".to_string();
-        e.resolution = "unknown".to_string();
-        e.unknown_reason = Some(UnknownReason::InterfaceNoImpl);
+        e.dispatch_kind = DispatchKind::Interface;
+        e.resolution = Resolution::Unknown(UnknownReason::InterfaceNoImpl);
         e.dispatch_meta = Some(dispatch_meta);
         return vec![e];
     }
@@ -447,34 +448,33 @@ fn resolve_call_site(
                     }
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
                     e.to = Some(r.id.clone());
-                    e.dispatch_kind = "direct".to_string();
-                    e.resolution = "resolved".to_string();
+                    e.dispatch_kind = DispatchKind::Direct;
+                    e.resolution = Resolution::Resolved;
                     vec![e]
                 }
                 ArityResolution::NotFound => {
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
                     if global_builtin_disposition(name).is_some() {
-                        e.dispatch_kind = "builtin".to_string();
-                        e.resolution = "builtin".to_string();
+                        e.dispatch_kind = DispatchKind::Builtin;
+                        e.resolution = Resolution::Builtin;
                     } else {
-                        e.dispatch_kind = "unresolved".to_string();
-                        e.resolution = "unknown".to_string();
-                        e.unknown_reason = Some(UnknownReason::BareUnresolved);
+                        e.dispatch_kind = DispatchKind::Unresolved;
+                        e.resolution = Resolution::Unknown(UnknownReason::BareUnresolved);
                     }
                     vec![e]
                 }
                 ArityResolution::NoArityMatch(candidates) => {
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = "direct".to_string();
-                    e.resolution = "member-not-found".to_string();
+                    e.dispatch_kind = DispatchKind::Direct;
+                    e.resolution = Resolution::MemberNotFound;
                     e.candidates = Some(sorted_ids(&candidates));
                     vec![e]
                 }
                 ArityResolution::Ambiguous(candidates) => {
                     mark_bindings_ambiguous(state);
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = "direct".to_string();
-                    e.resolution = "ambiguous".to_string();
+                    e.dispatch_kind = DispatchKind::Direct;
+                    e.resolution = Resolution::Ambiguous;
                     e.candidates = Some(sorted_ids(&candidates));
                     vec![e]
                 }
@@ -490,8 +490,8 @@ fn resolve_call_site(
             let Some(target_ref) = target_ref else {
                 // Dynamic target (a variable) — known shape, unknown target.
                 let mut e = CallEdge::base(from, callsite_id, operation_id);
-                e.dispatch_kind = "dynamic".to_string();
-                e.resolution = "unknown".to_string();
+                e.dispatch_kind = DispatchKind::Dynamic;
+                e.resolution = Resolution::Unknown(UnknownReason::DynamicObjectRunTarget);
                 return vec![e];
             };
             let target_object = if *target_is_name {
@@ -505,8 +505,8 @@ fn resolve_call_site(
             let Some(target_object) = target_object else {
                 // Target named/numbered but not in indexed source.
                 let mut e = CallEdge::base(from, callsite_id, operation_id);
-                e.dispatch_kind = dispatch_kind.to_string();
-                e.resolution = "opaque".to_string();
+                e.dispatch_kind = dispatch_kind;
+                e.resolution = Resolution::Opaque;
                 return vec![e];
             };
             // Entry routine: OnRun trigger, else the first routine in document order.
@@ -524,13 +524,13 @@ fn resolve_call_site(
                 }
                 let mut e = CallEdge::base(from, callsite_id, operation_id);
                 e.to = Some(entry.id.clone());
-                e.dispatch_kind = dispatch_kind.to_string();
-                e.resolution = "resolved".to_string();
+                e.dispatch_kind = dispatch_kind;
+                e.resolution = Resolution::Resolved;
                 return vec![e];
             }
             let mut e = CallEdge::base(from, callsite_id, operation_id);
-            e.dispatch_kind = dispatch_kind.to_string();
-            e.resolution = "opaque".to_string();
+            e.dispatch_kind = dispatch_kind;
+            e.resolution = Resolution::Opaque;
             vec![e]
         }
         PCallee::Member { receiver, method } => {
@@ -572,8 +572,8 @@ fn resolve_call_site(
                                 // the catalog for the §5 dynamic->static work, not yet emitted
                                 // differently.)
                                 let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                e.dispatch_kind = "builtin".to_string();
-                                e.resolution = "builtin".to_string();
+                                e.dispatch_kind = DispatchKind::Builtin;
+                                e.resolution = Resolution::Builtin;
                                 return vec![e];
                             }
                             // Catalog MISS: a Record receiver's non-builtin method is a
@@ -617,12 +617,12 @@ fn resolve_call_site(
                     name: type_ref.name.clone(),
                 };
                 let mut e = CallEdge::base(from, callsite_id, operation_id);
-                e.dispatch_kind = "method".to_string();
+                e.dispatch_kind = DispatchKind::Method;
                 e.external_type_ref = Some(external);
                 e.resolution = if unfetched_declared_dependency {
-                    "opaque".to_string()
+                    Resolution::Opaque
                 } else {
-                    "external-target".to_string()
+                    Resolution::ExternalTarget
                 };
                 return vec![e];
             };
@@ -634,8 +634,8 @@ fn resolve_call_site(
                     }
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
                     e.to = Some(r.id.clone());
-                    e.dispatch_kind = "method".to_string();
-                    e.resolution = "resolved".to_string();
+                    e.dispatch_kind = DispatchKind::Method;
+                    e.resolution = Resolution::Resolved;
                     e.receiver_type = Some(recv_var.declared_type.clone());
                     vec![e]
                 }
@@ -652,21 +652,21 @@ fn resolve_call_site(
                             }
                             let mut e = CallEdge::base(from, callsite_id, operation_id);
                             e.to = Some(on_run.id.clone());
-                            e.dispatch_kind = "codeunit-run".to_string();
-                            e.resolution = "resolved".to_string();
+                            e.dispatch_kind = DispatchKind::CodeunitRun;
+                            e.resolution = Resolution::Resolved;
                             return vec![e];
                         }
                     }
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = "method".to_string();
-                    e.resolution = "member-not-found".to_string();
+                    e.dispatch_kind = DispatchKind::Method;
+                    e.resolution = Resolution::MemberNotFound;
                     vec![e]
                 }
                 ArityResolution::NoArityMatch(candidates) => {
                     let ids = sorted_ids(&candidates);
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = "method".to_string();
-                    e.resolution = "member-not-found".to_string();
+                    e.dispatch_kind = DispatchKind::Method;
+                    e.resolution = Resolution::MemberNotFound;
                     if !ids.is_empty() {
                         e.candidates = Some(ids);
                     }
@@ -675,8 +675,8 @@ fn resolve_call_site(
                 ArityResolution::Ambiguous(candidates) => {
                     mark_bindings_ambiguous(state);
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = "method".to_string();
-                    e.resolution = "ambiguous".to_string();
+                    e.dispatch_kind = DispatchKind::Method;
+                    e.resolution = Resolution::Ambiguous;
                     e.candidates = Some(sorted_ids(&candidates));
                     vec![e]
                 }
@@ -684,9 +684,8 @@ fn resolve_call_site(
         }
         PCallee::Unknown => {
             let mut e = CallEdge::base(from, callsite_id, operation_id);
-            e.dispatch_kind = "unresolved".to_string();
-            e.resolution = "unknown".to_string();
-            e.unknown_reason = Some(UnknownReason::CalleeUnknown);
+            e.dispatch_kind = DispatchKind::Unresolved;
+            e.resolution = Resolution::Unknown(UnknownReason::CalleeUnknown);
             vec![e]
         }
     }
@@ -699,9 +698,8 @@ fn unknown_method(
     reason: UnknownReason,
 ) -> Vec<CallEdge> {
     let mut e = CallEdge::base(from, callsite_id, operation_id);
-    e.dispatch_kind = "method".to_string();
-    e.resolution = "unknown".to_string();
-    e.unknown_reason = Some(reason);
+    e.dispatch_kind = DispatchKind::Method;
+    e.resolution = Resolution::Unknown(reason);
     vec![e]
 }
 

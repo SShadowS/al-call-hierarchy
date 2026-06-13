@@ -26,6 +26,7 @@ use crate::engine::l2::features::PCallee;
 use crate::engine::l3::call_resolver::{
     resolve_calls, CallEdge, DeclaredDependency, ResolvedCalls,
 };
+use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 use crate::engine::l3::event_graph::{build_event_graph, EventGraph, EventSymbol};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l3::symbol_table::SymbolTable;
@@ -156,6 +157,21 @@ fn uncertainty_sort_key(ue: &UncertaintyEdge) -> String {
 // Edge-kind / object-run helpers (al-sem `EDGE_KINDS` / `OBJECT_RUN_KINDS` etc.).
 // ---------------------------------------------------------------------------
 
+/// Enum-typed: CallEdge dispatch kinds that become resolved combined edges.
+fn is_edge_kind_enum(kind: DispatchKind) -> bool {
+    matches!(
+        kind,
+        DispatchKind::Direct
+            | DispatchKind::Method
+            | DispatchKind::CodeunitRun
+            | DispatchKind::ReportRun
+            | DispatchKind::PageRun
+            | DispatchKind::Interface
+            | DispatchKind::ImplicitTrigger
+            | DispatchKind::Dynamic
+    )
+}
+
 /// CallGraph dispatchKinds that become resolved routine→routine combined edges
 /// (when `to` is set). Mirrors al-sem `EDGE_KINDS`.
 fn is_edge_kind(kind: &str) -> bool {
@@ -211,24 +227,22 @@ pub fn build_combined_graph(
     for ce in &resolved.edges {
         // event-dispatch dispatchKind never appears in resolve_calls output; al-sem
         // skips it here regardless (event hops come from the event graph).
-        if ce.dispatch_kind == "event-dispatch" {
-            continue;
-        }
+        // (resolve_calls does not produce event-dispatch edges, so no check needed.)
         if let Some(to) = &ce.to {
-            if is_edge_kind(&ce.dispatch_kind) {
+            if is_edge_kind_enum(ce.dispatch_kind) {
                 edges.push(CombinedEdge {
                     from: ce.from.clone(),
                     to: to.clone(),
-                    kind: ce.dispatch_kind.clone(),
+                    kind: ce.dispatch_kind.as_str().to_string(),
                     callsite_id: Some(ce.callsite_id.clone()),
                     operation_id: Some(ce.operation_id.clone()),
                     event_id: None,
                     subscriber_app_id: None,
-                    resolution: ce.resolution.clone(),
+                    resolution: ce.resolution.as_str().to_string(),
                 });
             }
             // Resolved interface dispatch ("maybe"): open-world uncertainty, once.
-            if ce.dispatch_kind == "interface"
+            if ce.dispatch_kind == DispatchKind::Interface
                 && !interface_open_world_emitted.contains(&ce.callsite_id)
             {
                 interface_open_world_emitted.insert(ce.callsite_id.clone());
@@ -251,7 +265,7 @@ pub fn build_combined_graph(
             continue;
         }
         // to-less edge → typed uncertainty on the `from` routine.
-        if ce.dispatch_kind == "interface" {
+        if ce.dispatch_kind == DispatchKind::Interface {
             // Zero-impl interface dispatch → "interface-open-world".
             if !interface_open_world_emitted.contains(&ce.callsite_id) {
                 interface_open_world_emitted.insert(ce.callsite_id.clone());
@@ -271,27 +285,27 @@ pub fn build_combined_graph(
                     },
                 });
             }
-        } else if ce.dispatch_kind == "dynamic" {
+        } else if ce.dispatch_kind == DispatchKind::Dynamic {
             uncertainty_edges.push(UncertaintyEdge {
                 from: ce.from.clone(),
                 uncertainty: simple_uncertainty_op("dynamic-dispatch", &ce.operation_id),
             });
-        } else if ce.resolution == "ambiguous" {
+        } else if ce.resolution == Resolution::Ambiguous {
             uncertainty_edges.push(UncertaintyEdge {
                 from: ce.from.clone(),
                 uncertainty: simple_uncertainty_cs("ambiguous-overload", &ce.callsite_id),
             });
-        } else if ce.resolution == "member-not-found" {
+        } else if ce.resolution == Resolution::MemberNotFound {
             uncertainty_edges.push(UncertaintyEdge {
                 from: ce.from.clone(),
                 uncertainty: simple_uncertainty_cs("member-not-found", &ce.callsite_id),
             });
-        } else if ce.resolution == "external-target" {
+        } else if ce.resolution == Resolution::ExternalTarget {
             uncertainty_edges.push(UncertaintyEdge {
                 from: ce.from.clone(),
                 uncertainty: simple_uncertainty_cs("external-target", &ce.callsite_id),
             });
-        } else if ce.resolution == "builtin" {
+        } else if ce.resolution == Resolution::Builtin {
             // Recognized global builtin — known terminal, no uncertainty.
         } else {
             uncertainty_edges.push(UncertaintyEdge {
@@ -489,7 +503,7 @@ fn build_typed_edges(
     let mut interface_order: Vec<String> = Vec::new();
     let mut interface_edges_by_callsite: HashMap<String, Vec<&CallEdge>> = HashMap::new();
     for ce in &resolved.edges {
-        if ce.dispatch_kind == "interface" && ce.resolution == "maybe" && ce.to.is_some() {
+        if ce.dispatch_kind == DispatchKind::Interface && ce.resolution == Resolution::Maybe && ce.to.is_some() {
             if !interface_edges_by_callsite.contains_key(&ce.callsite_id) {
                 interface_order.push(ce.callsite_id.clone());
             }
@@ -504,8 +518,8 @@ fn build_typed_edges(
     let mut typed_edges: Vec<TypedEdge> = Vec::new();
 
     for ce in &resolved.edges {
-        if ce.dispatch_kind == "event-dispatch" || ce.dispatch_kind == "implicit-trigger" {
-            continue;
+        if ce.dispatch_kind == DispatchKind::ImplicitTrigger {
+            continue; // implicit-trigger edges not typed; event-dispatch never in resolve_calls
         }
         let Some(call_site) = call_site_by_id.get(ce.callsite_id.as_str()) else {
             continue; // opaque (dependency-only) callsite — skip
@@ -513,7 +527,7 @@ fn build_typed_edges(
 
         if let Some(to) = &ce.to {
             // Resolved edges
-            if ce.dispatch_kind == "direct" {
+            if ce.dispatch_kind == DispatchKind::Direct {
                 typed_edges.push(TypedEdge {
                     kind: "direct-call".to_string(),
                     from: ce.from.clone(),
@@ -528,7 +542,7 @@ fn build_typed_edges(
                     object_type: None,
                     target_id_source: None,
                 });
-            } else if ce.dispatch_kind == "method" && ce.resolution == "resolved" {
+            } else if ce.dispatch_kind == DispatchKind::Method && ce.resolution == Resolution::Resolved {
                 typed_edges.push(TypedEdge {
                     kind: "variable-typed-call".to_string(),
                     from: ce.from.clone(),
@@ -543,7 +557,7 @@ fn build_typed_edges(
                     object_type: None,
                     target_id_source: None,
                 });
-            } else if ce.dispatch_kind == "interface" && ce.resolution == "maybe" {
+            } else if ce.dispatch_kind == DispatchKind::Interface && ce.resolution == Resolution::Maybe {
                 // Interface dispatch: emit one edge per resolved candidate, once per
                 // callsite (when first encountered), then skip.
                 if interface_typed_emitted.contains(&ce.callsite_id) {
@@ -582,8 +596,8 @@ fn build_typed_edges(
                         target_id_source: None,
                     });
                 }
-            } else if is_object_run_kind(&ce.dispatch_kind) {
-                let Some(object_type) = dispatch_kind_to_object_type(&ce.dispatch_kind) else {
+            } else if is_object_run_kind(ce.dispatch_kind.as_str()) {
+                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str()) else {
                     continue;
                 };
                 let Some(target_object) = object_id_by_routine.get(to.as_str()) else {
@@ -607,8 +621,8 @@ fn build_typed_edges(
             // method unresolved / interface non-maybe etc. — skip
         } else {
             // Unresolved edges
-            if is_object_run_kind(&ce.dispatch_kind) {
-                let Some(object_type) = dispatch_kind_to_object_type(&ce.dispatch_kind) else {
+            if is_object_run_kind(ce.dispatch_kind.as_str()) {
+                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str()) else {
                     continue;
                 };
                 let target_id_source = object_run_target_id_source(&call_site.callee);
@@ -631,7 +645,7 @@ fn build_typed_edges(
                     object_type: Some(object_type.to_string()),
                     target_id_source: Some(target_id_source),
                 });
-            } else if ce.dispatch_kind == "dynamic" {
+            } else if ce.dispatch_kind == DispatchKind::Dynamic {
                 // Dynamic dispatch — objectType from the callee when it's object-run.
                 if let PCallee::ObjectRun { object_kind, .. } = &call_site.callee {
                     let target_id_source = object_run_target_id_source(&call_site.callee);

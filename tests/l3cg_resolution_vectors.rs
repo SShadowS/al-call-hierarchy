@@ -190,8 +190,8 @@ fn project_edge(e: &CallEdge, m: &StableMap) -> ProjEdge {
         from: m.stable_routine(&e.from),
         to: e.to.as_deref().map(|t| m.stable_routine(t)),
         operation_id: m.stable_site(&e.operation_id),
-        dispatch_kind: e.dispatch_kind.clone(),
-        resolution: e.resolution.clone(),
+        dispatch_kind: e.dispatch_kind.as_str().to_string(),
+        resolution: e.resolution.as_str().to_string(),
         // Per Rev2 note 7: project ids to StableRoutineId FIRST, then sort.
         candidates: e.candidates.as_ref().map(|cs| {
             let mut v: Vec<String> = cs.iter().map(|c| m.stable_routine(c)).collect();

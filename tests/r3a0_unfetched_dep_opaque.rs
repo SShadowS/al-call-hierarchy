@@ -75,7 +75,7 @@ fn member_edge(edges: &[CallEdge]) -> &CallEdge {
     let matches: Vec<&CallEdge> = edges
         .iter()
         .filter(|e| {
-            e.dispatch_kind == "method"
+            e.dispatch_kind.as_str() == "method"
                 && e.external_type_ref
                     .as_ref()
                     .is_some_and(|x| x.name == "R3a0 Unfetched Cu")
@@ -141,7 +141,8 @@ fn unfetched_declared_dep_member_miss_is_opaque_and_absent_from_unresolved() {
 
     // The now-live Fix-1 branch: the member MIGHT live in the unfetched declared dep.
     assert_eq!(
-        edge.resolution, "opaque",
+        edge.resolution.as_str(),
+        "opaque",
         "an unfetched-declared-dep member miss classifies `opaque` (Fix 1, production path)"
     );
 
@@ -170,7 +171,8 @@ fn no_declared_dep_member_miss_is_external_target_and_present() {
     // external. This is the outcome the buggy/old resolver produced for ALL such misses;
     // with Fix 1 it is reserved for the all-deps-fetched (or no-deps) case.
     assert_eq!(
-        edge.resolution, "external-target",
+        edge.resolution.as_str(),
+        "external-target",
         "with NO declared dep, the member miss is `external-target`"
     );
 
@@ -194,7 +196,7 @@ fn opaque_classification_is_byte_stable() {
     }];
     let (ra, ea) = resolve_with_deps(&declared);
     let (rb, eb) = resolve_with_deps(&declared);
-    assert_eq!(member_edge(&ea).resolution, "opaque");
+    assert_eq!(member_edge(&ea).resolution.as_str(), "opaque");
     assert_eq!(member_edge(&eb).resolution, member_edge(&ea).resolution);
     assert_eq!(
         unresolved_callsites(&ra, &ea),
