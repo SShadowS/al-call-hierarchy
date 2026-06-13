@@ -1,0 +1,4 @@
+# .NET build artifacts — do not commit
+bin/
+obj/
+probe/
