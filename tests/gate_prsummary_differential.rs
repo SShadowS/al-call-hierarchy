@@ -574,17 +574,18 @@ fn anti_degenerate_exit_zero_to_one_transition() {
     );
 }
 
-/// The preflight exit-4 (ws-txn-d47-pos-http-nocommit --require-dependencies → 4).
+/// The preflight exit-4 (ws-txn-d47-pos-file --require-dependencies → 4).
+///
+/// Uses a fixture that is GENUINELY degraded after the intrinsic-builtin
+/// reclassification (its residual unresolved callsite is a real non-builtin gap).
+/// ws-txn-d47-pos-http-nocommit is no longer degraded — its only unresolved call
+/// was `HttpClient.Send`, now correctly classified `builtin` (exit 4→0).
 #[test]
 fn anti_degenerate_preflight_exit_four() {
-    let rd = run_exit_require_deps(
-        "ws-txn-d47-pos-http-nocommit",
-        Some("transaction-integrity"),
-        None,
-    );
+    let rd = run_exit_require_deps("ws-txn-d47-pos-file", Some("transaction-integrity"), None);
     assert_eq!(
         rd, 4,
-        "ws-txn-d47-pos-http-nocommit --require-dependencies should exit 4 (degraded coverage)"
+        "ws-txn-d47-pos-file --require-dependencies should exit 4 (degraded coverage)"
     );
 }
 
@@ -594,8 +595,8 @@ fn anti_degenerate_preflight_exit_four() {
 
 /// Oracle 4 — F2: preflight degraded stderr warning (the "no silent clean" contract).
 ///
-/// `run_analyze_with_exit` on a degraded fixture (ws-txn-d47-pos-http-nocommit has
-/// unresolved callsites per the exit-codes golden: require-dependencies → 4) WITHOUT
+/// `run_analyze_with_exit` on a degraded fixture (ws-txn-d47-pos-file has a real
+/// unresolved callsite per the exit-codes golden: require-dependencies → 4) WITHOUT
 /// `--require-dependencies` must:
 ///   - return exit NOT 4 (0 since no --fail-on)
 ///   - return `stderr_warning = Some(msg)` with the al-sem warning string format
@@ -604,11 +605,11 @@ fn anti_degenerate_preflight_exit_four() {
 /// the 3rd tuple field (the warning) was previously discarded.
 #[test]
 fn oracle_f2_preflight_degraded_warning_without_require_deps() {
-    // ws-txn-d47-pos-http-nocommit is known-degraded (require-deps exits 4).
+    // ws-txn-d47-pos-file is known-degraded (require-deps exits 4).
     // Without --require-dependencies, exit must NOT be 4 — we get CLEAN (0) since
     // the exit-codes golden shows "none": 0 for this fixture's txn slot.
     let (_, exit_code, warning) = run_prsummary_full(
-        "ws-txn-d47-pos-http-nocommit",
+        "ws-txn-d47-pos-file",
         Some("transaction-integrity"),
         None,
         None,  // no --fail-on
@@ -639,7 +640,7 @@ fn oracle_f2_preflight_degraded_warning_without_require_deps() {
 ///
 /// (a) degraded fixture + `--require-dependencies` + `--fail-on critical` → exit 4
 ///     (PREFLIGHT_FAILED (4) takes precedence over FINDINGS (1)).
-///     ws-txn-d47-pos-http-nocommit txn slot has findings at critical severity
+///     ws-txn-d47-pos-file txn slot has findings at critical severity
 ///     (exit-codes golden: critical → 1 without require-deps).
 ///
 /// (b) invalid `--fail-on` string → `Err(...)` from `run_analyze_with_exit`
@@ -652,7 +653,7 @@ fn oracle_exit_precedence_preflight_wins_over_findings() {
     // The fixture has critical findings (exit-codes golden: critical → 1 for txn slot).
     // With --require-dependencies, preflight exit 4 must win over findings exit 1.
     let (_, exit_code, _) = run_prsummary_full(
-        "ws-txn-d47-pos-http-nocommit",
+        "ws-txn-d47-pos-file",
         Some("transaction-integrity"),
         None,
         Some("critical"), // --fail-on critical
