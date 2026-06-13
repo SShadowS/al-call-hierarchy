@@ -491,6 +491,29 @@ fn resolve_call_site(
             };
             // Step 3 — parse the declared type into an object type reference.
             let Some(type_ref) = parse_object_type_ref(&recv_var.declared_type) else {
+                // Phase 2: the receiver is a Record / RecordRef / FieldRef / KeyRef
+                // / framework type (none of which `parse_object_type_ref` accepts).
+                // If the method is a recognized COMPILER INTRINSIC, the edge is a
+                // platform `builtin` terminal — NOT a resolution hole. A Record
+                // method that is NOT an intrinsic (a real table procedure) stays
+                // `unknown` here; table-procedure resolution is Phase 3.
+                if let Some(kind) =
+                    super::member_builtins::classify_receiver(&recv_var.declared_type)
+                {
+                    let method_lc = method.to_lowercase();
+                    if super::member_builtins::member_builtin_disposition(kind, &method_lc)
+                        .is_some()
+                    {
+                        // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
+                        // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
+                        // the catalog for the §5 dynamic->static work, not yet emitted
+                        // differently.)
+                        let mut e = CallEdge::base(from, callsite_id, operation_id);
+                        e.dispatch_kind = "builtin".to_string();
+                        e.resolution = "builtin".to_string();
+                        return vec![e];
+                    }
+                }
                 return unknown_method(from, callsite_id, operation_id);
             };
 
