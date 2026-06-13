@@ -340,8 +340,8 @@
         "callsiteId": "r0/fbb9cf674ae49f1430f9c8c28952aca6029162d1d710f840a6b67ae8a0a3d8c3/cs0",
         "from": "11111111-0000-0000-0000-0000000d4720:Codeunit:50001#286cfef4fb8de5396d3920d266b96550e0dfbeec1e622b269958aae4c2b671ae",
         "calleeDisplay": "Client.Post",
-        "dispatchKind": "method",
-        "status": "unresolved-receiver-type",
+        "dispatchKind": "unresolved",
+        "status": "builtin",
         "resolvedEdges": []
       }
     ],

@@ -76,6 +76,16 @@ fn r4f_snapshot_matches_goldens() {
 
         let rust_text = run_rust(fixture);
 
+        // Rust-owned baseline: `REGEN_TEMP_GOLDENS=1` rewrites the golden from THIS
+        // engine (al-sem byte-parity retired — see CLAUDE.md). The anti-degenerate
+        // oracles below assert the structural contract regardless.
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            std::fs::write(&golden_path, &rust_text)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r4f snapshot golden: {}", golden_path.display());
+            continue;
+        }
+
         assert_eq!(
             rust_text,
             golden_text,

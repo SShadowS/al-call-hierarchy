@@ -249,8 +249,8 @@
         "callsiteId": "r0/0b637c19b140d4d4b3bdc6a8a454c7e68a83f732d24adbd3d5a9aa97e86bd9f5/cs0",
         "from": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
         "calleeDisplay": "Client.Get",
-        "dispatchKind": "method",
-        "status": "unresolved-receiver-type",
+        "dispatchKind": "unresolved",
+        "status": "builtin",
         "resolvedEdges": []
       }
     ],
