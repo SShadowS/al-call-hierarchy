@@ -161,9 +161,22 @@ fn extract_argument_bindings(ctx: &Ctx, arg_nodes: &[Node]) -> Vec<PCallArgument
             } else {
                 Some(lc_name.clone())
             };
-            // For implicit-rec, leave the rec-var-derived fields empty (as before
-            // the var existed) so the binding shape is byte-identical to pre-fix.
+            // For implicit-rec, leave the rec-var-IDENTITY fields empty (as before the
+            // var existed) so the binding shape + the implicit-rec forward-detector skip
+            // (keyed on `source_kind`, not these fields) stay byte-identical to pre-fix.
             let bound_rec_var = if is_implicit_rec { None } else { rec_var };
+            // BUT the implicit Rec carries a KNOWN temp-state (registered `Known(false)`
+            // for a real table/page Rec — see l2/mod.rs implicit-Rec registration). That
+            // temp-state MUST flow into the binding so cross-call inherited effects can
+            // substitute it: without it, a `Helper(Rec)` forward whose callee Modifies a
+            // `var` record param degrades the inherited effect's temp-state to `Unknown`
+            // (the `substitute_pd_temp_state` None→Unknown branch) instead of the correct
+            // `Known(false)` (d40: OnAfterInsert → TouchHelper(Rec) → Cust.Modify()).
+            let source_temp_state = match bound_rec_var {
+                Some(rv) => Some(rv.temp_state.clone()),
+                None if is_implicit_rec => rec_var.map(|rv| rv.temp_state.clone()),
+                None => None,
+            };
             PCallArgumentBinding {
                 parameter_index,
                 source_kind: source_kind.to_string(),
@@ -171,7 +184,7 @@ fn extract_argument_bindings(ctx: &Ctx, arg_nodes: &[Node]) -> Vec<PCallArgument
                 source_record_variable_id: bound_rec_var.map(|rv| rv.id.clone()),
                 source_parameter_index: param.map(|p| p.index),
                 caller_source_parameter_is_var: param.map(|p| p.is_var),
-                source_temp_state: bound_rec_var.map(|rv| rv.temp_state.clone()),
+                source_temp_state,
                 argument_anchor,
             }
         })
