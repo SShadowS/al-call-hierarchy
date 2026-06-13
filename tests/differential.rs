@@ -1631,6 +1631,19 @@ fn differential_l3_call_graph_match_goldens() {
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust L3cg projection for {fixture}: {e}"));
 
+        // REGEN path (mirrors the l2 / l3rt branches). When `REGEN_TEMP_GOLDENS`
+        // is set, write the ENGINE projection to the golden file instead of
+        // comparing — Rust-owned baselines (TS oracle retired).
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            let mut pretty = serde_json::to_string_pretty(&projection)
+                .unwrap_or_else(|e| panic!("regen serialize L3cg {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN l3cg golden: {}", golden_path.display());
+            continue;
+        }
+
         // Forbidden later-gate / L4 field scan on BOTH sides (hard fail).
         scan_l3cg_forbidden(
             &golden_json,
@@ -1645,6 +1658,12 @@ fn differential_l3_call_graph_match_goldens() {
 
         // Order-independent multiset group + binding compare.
         diff_l3cg(fixture, &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        eprintln!("REGEN l3cg: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     all_divergences

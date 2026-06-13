@@ -190,6 +190,21 @@ pub fn resolve_routine_record_types(
             }
             op.table_id = Some(own_id.clone());
         }
+        // d22 FN fix: the IMPLICIT `Rec` record VARIABLE (registered at L2 with no
+        // table_name so it never hijacks the extends resolution above) gets its
+        // table_id from the SAME effective-own-table, so field accesses on the
+        // implicit Rec resolve their table (d22 FlowField check, etc.). Only fills
+        // an unresolved `rec`/`xrec` var — never overrides a declared one.
+        for rv in routine.record_variables.iter_mut() {
+            if rv.table_id.is_some() {
+                continue;
+            }
+            let name = rv.name.to_lowercase();
+            if name != "rec" && name != "xrec" {
+                continue;
+            }
+            rv.table_id = Some(own_id.clone());
+        }
     }
 
     // --- pass: RecordRef GetTable / OpenTemporary local-only tempState (Task 12 / G6) ----
@@ -372,6 +387,15 @@ pub fn resolve_routine_record_types(
             let name = op.record_variable_name.to_lowercase();
             if name == "rec" || name == "xrec" {
                 op.temp_state = Some(crate::engine::l2::scope::ts_known(true));
+            }
+        }
+        // The implicit Rec/xRec record VARIABLE (d22 FN registration) must agree —
+        // on a SourceTableTemporary page it is genuinely temporary. Without this the
+        // L2-default Known(false) would wrongly mark a temp-page Rec as physical.
+        for variable in routine.record_variables.iter_mut() {
+            let name = variable.name.to_lowercase();
+            if name == "rec" || name == "xrec" {
+                variable.temp_state = crate::engine::l2::scope::ts_known(true);
             }
         }
     }

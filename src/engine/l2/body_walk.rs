@@ -140,12 +140,19 @@ fn extract_argument_bindings(ctx: &Ctx, arg_nodes: &[Node]) -> Vec<PCallArgument
             let lc_name = text.to_lowercase();
             let rec_var = rec_var_by_lc.get(&lc_name);
             let param = param_by_lc.get(&lc_name);
+            // The d22 FN fix registers the IMPLICIT trigger/page `Rec` as a record
+            // variable (table_name None). For ARGUMENT BINDINGS it must still
+            // classify as "implicit-rec" (not "local") — preserving the pre-fix
+            // forward-detector behavior (e.g. d40's implicit-rec skip). A genuinely
+            // DECLARED `Rec`/`xRec` var (table_name set) stays "local".
+            let is_implicit_rec = (lc_name == "rec" || lc_name == "xrec")
+                && rec_var.map(|rv| rv.table_name.is_none()).unwrap_or(true);
             let source_kind = if param.is_some() {
                 "parameter"
+            } else if is_implicit_rec {
+                "implicit-rec"
             } else if rec_var.is_some() {
                 "local"
-            } else if lc_name == "rec" || lc_name == "xrec" {
-                "implicit-rec"
             } else {
                 "unknown"
             };
@@ -154,14 +161,17 @@ fn extract_argument_bindings(ctx: &Ctx, arg_nodes: &[Node]) -> Vec<PCallArgument
             } else {
                 Some(lc_name.clone())
             };
+            // For implicit-rec, leave the rec-var-derived fields empty (as before
+            // the var existed) so the binding shape is byte-identical to pre-fix.
+            let bound_rec_var = if is_implicit_rec { None } else { rec_var };
             PCallArgumentBinding {
                 parameter_index,
                 source_kind: source_kind.to_string(),
                 source_variable_name,
-                source_record_variable_id: rec_var.map(|rv| rv.id.clone()),
+                source_record_variable_id: bound_rec_var.map(|rv| rv.id.clone()),
                 source_parameter_index: param.map(|p| p.index),
                 caller_source_parameter_is_var: param.map(|p| p.is_var),
-                source_temp_state: rec_var.map(|rv| rv.temp_state.clone()),
+                source_temp_state: bound_rec_var.map(|rv| rv.temp_state.clone()),
                 argument_anchor,
             }
         })

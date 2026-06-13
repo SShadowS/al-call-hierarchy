@@ -196,7 +196,12 @@
         "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Table:50000#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
         "name": "OnInsert",
         "objectType": "Table",
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "name": "Rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
         "recordOperations": [
           {
             "operationId": "r0/8d80aa0dee611de018ba6737dbeed8dcd1e010583132a391ab4cc5a818c97981/op0",
@@ -232,7 +237,12 @@
         "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:Page:50100#d5b90afe13d05769339bd1cbd6824a564b23c559ef00ed654c8accf74b02e407",
         "name": "OnOpenPage",
         "objectType": "Page",
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "name": "Rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
         "recordOperations": [
           {
             "operationId": "r0/5a1e29c7cc4f5c2bc2470312b4fe1b4a514cec206aa3a45020d4b6fc57f7cc60/op0",
@@ -261,7 +271,12 @@
         "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:TableExtension:50100#dc0b298612568cc481c70b34b5f694da490765a87f0501fa8e8566143467f916",
         "name": "OnBeforeModify",
         "objectType": "TableExtension",
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "name": "Rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
         "recordOperations": [
           {
             "operationId": "r0/50c07ed30fdbf243f13e256502b196fdaa6a9ee6841c44d41ccb81d020506f40/op0",
@@ -290,7 +305,12 @@
         "stableRoutineId": "2a000000-0000-0000-0000-0000000002aa:PageExtension:50101#c61793b51db155d5f30630cf4f4640931c2f93380ff5b0863cc412c4e4a39303",
         "name": "OnAfterGetRecord",
         "objectType": "PageExtension",
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "name": "Rec",
+            "tableId": "2a000000-0000-0000-0000-0000000002aa:Table:50000"
+          }
+        ],
         "recordOperations": [
           {
             "operationId": "r0/bf7738c097937a2326b9e3905ed9157f7590a41117b2deabcfe3be4aad6f5f4d/op0",
