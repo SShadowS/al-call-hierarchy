@@ -22,6 +22,11 @@ lsp-types = "0.97"
 # Data structures
 string-interner = "0.17"
 smallvec = "1.11"
+# Perfect-hash intrinsic built-in catalog (call-graph resolution phase 2). The AL
+# record + framework built-ins are COMPILER INTRINSICS (not in any .app
+# SymbolReference.json), so the catalog is a hand-built, data-driven asset kept
+# separate from the .app symbol pool. `macros` enables the compile-time phf_map!/phf_set!.
+phf = { version = "0.11", features = ["macros"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

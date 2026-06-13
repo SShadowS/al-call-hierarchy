@@ -21,6 +21,7 @@ pub mod event_graph;
 pub mod extension_fields;
 pub mod implicit_edges;
 pub mod l3_workspace;
+pub mod member_builtins;
 pub mod receiver;
 pub mod record_types;
 pub mod resolution_class;
