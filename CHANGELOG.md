@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3 — Record table-procedure dispatch** (`src/engine/l3/call_resolver.rs`): member
+  calls on `Record <Table>`-typed variables where the method is NOT a built-in intrinsic are
+  now resolved to the table's user-defined procedure. The resolver looks up the receiver's
+  table object id via `routine.record_variables` (resolved by `record_types` pass 1/3) then
+  falls back to parsing the declared type via `record_types::record_table_name_of`, then calls
+  `resolve_by_name_and_arity` with full arity/overload disambiguation. Edges become
+  `resolution=resolved`, `dispatchKind=method`, `to=<routine-id>`. CDO `DocumentOutput/Cloud`
+  impact: `record-table-procedure` unknown edges 806 → 66 (−740), `resolved` 6358 → 7098
+  (+740), `realUnknownRate` 15.68% → 10.39% (−5.29 pp). Residual 66 unknowns are genuine
+  non-resolvable cases: implicit `Rec` in table triggers (deferred to Task 6 — the implicit
+  `Rec` is NOT in `routine.variables` so Step 2 returns UntrackedReceiver before Phase 3
+  fires), plus calls on record vars from unindexed external tables. Detector delta vs 1867
+  baseline: PENDING (analysis in progress; no new golden failures; oracle invariants pass).
+  Contract oracle (Invariant 2: every resolved `to` exists in the symbol table) verified.
+  Deferred: implicit-Rec table-trigger dispatch (requires Task 6 ReceiverType lattice).
+  New tests in `tests/l3cg_record_dispatch.rs` (5 tests: resolve, builtin-unchanged,
+  missing-stays-unknown, implicit-rec-deferred, arity-overload).
 - L3 call-graph contract oracle (`tests/l3cg_oracles.rs` Invariant 11): a bare call to an
   AL platform GLOBAL function (Task 2 catalog) classifies `builtin` on the BARE path
   (dispatchKind "builtin"), is disjoint from `resolved` (no edge is both builtin and

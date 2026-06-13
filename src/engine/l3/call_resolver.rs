@@ -584,6 +584,92 @@ fn resolve_call_site(
                         // receiver's miss is a catalog gap — capture the detail for
                         // the `aldump --l3-unknown-breakdown` diagnostic.
                         if kind == super::member_builtins::ReceiverBuiltinKind::Record {
+                            // Phase 3: resolve the method as a user table procedure.
+                            // We need the TABLE OBJECT's id (L3Routine.object_id
+                            // format: `{appGuid}/Table/{number}` — capital T from
+                            // encode_object_id). L3Table.id uses lowercase `table`, so
+                            // we cannot pass table_id directly to resolve_by_name_and_arity.
+                            // Instead resolve via symbols.object_by_type_name("Table").
+                            //
+                            // Resolution order:
+                            //   (1) match receiver_name in record_variables → table_id
+                            //       → L3Table.name → object_by_type_name("Table");
+                            //   (2) fallback: parse table name directly from
+                            //       declared_type via record_table_name_of.
+                            let receiver_name_lc = receiver_name.to_lowercase();
+
+                            // Collect owned data before borrow of recv_var.declared_type.
+                            let declared_type = recv_var.declared_type.clone();
+
+                            let table_obj_id: Option<String> = {
+                                // Path 1: via record_variables resolved table_id.
+                                let via_rv = routine
+                                    .record_variables
+                                    .iter()
+                                    .find(|rv| rv.name.to_lowercase() == receiver_name_lc)
+                                    .and_then(|rv| rv.table_id.as_deref())
+                                    .and_then(|tid| symbols.table_by_id(tid))
+                                    .map(|t| t.name.clone())
+                                    .and_then(|tname| symbols.object_by_type_name("Table", &tname))
+                                    .map(|obj| obj.id.clone());
+                                if via_rv.is_some() {
+                                    via_rv
+                                } else {
+                                    // Path 2: parse table name from declared_type.
+                                    super::record_types::record_table_name_of(&declared_type)
+                                        .and_then(|tname| {
+                                            symbols.object_by_type_name("Table", &tname)
+                                        })
+                                        .map(|obj| obj.id.clone())
+                                }
+                            };
+
+                            if let Some(table_obj_id) = table_obj_id {
+                                match resolve_by_name_and_arity(
+                                    symbols,
+                                    &table_obj_id,
+                                    method,
+                                    routine,
+                                    call_site,
+                                ) {
+                                    ArityResolution::Resolved(r) => {
+                                        if let Some(d) = upgrade_bindings(state, r, callsite_id) {
+                                            diagnostics.push(d);
+                                        }
+                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                        e.to = Some(r.id.clone());
+                                        e.dispatch_kind = DispatchKind::Method;
+                                        e.resolution = Resolution::Resolved;
+                                        e.receiver_type = Some(declared_type);
+                                        return vec![e];
+                                    }
+                                    ArityResolution::NoArityMatch(candidates) => {
+                                        let ids = sorted_ids(&candidates);
+                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                        e.dispatch_kind = DispatchKind::Method;
+                                        e.resolution = Resolution::MemberNotFound;
+                                        if !ids.is_empty() {
+                                            e.candidates = Some(ids);
+                                        }
+                                        return vec![e];
+                                    }
+                                    ArityResolution::Ambiguous(candidates) => {
+                                        mark_bindings_ambiguous(state);
+                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                        e.dispatch_kind = DispatchKind::Method;
+                                        e.resolution = Resolution::Ambiguous;
+                                        e.candidates = Some(sorted_ids(&candidates));
+                                        return vec![e];
+                                    }
+                                    ArityResolution::NotFound => {
+                                        // Genuinely not a table procedure — a builtin
+                                        // we lack in the catalog or a real hole. Fall
+                                        // through to unknown(RecordTableProcedure).
+                                    }
+                                }
+                            }
+                            // No table id resolvable, or method NotFound in the table
+                            // — keep the honest unknown signal.
                             return unknown_method(
                                 from,
                                 callsite_id,
