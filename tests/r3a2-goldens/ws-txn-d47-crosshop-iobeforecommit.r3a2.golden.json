@@ -26,28 +26,18 @@
           "via": "direct"
         }
       ],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-0000000d4707:Codeunit:50001#cf1494626ea00642639f1b86e348d62477694361a624251216b9cbbf3f0b47ea/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     }
   ]
 }

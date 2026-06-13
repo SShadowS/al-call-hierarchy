@@ -11,15 +11,10 @@
     {
       "routineId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs1"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     }
   ]
 }

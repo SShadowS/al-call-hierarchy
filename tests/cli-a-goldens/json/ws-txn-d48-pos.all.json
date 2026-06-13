@@ -1,0 +1,353 @@
+{
+  "alsemVersion": "cli-a-json-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "analyze-report",
+  "payload": {
+    "findings": [
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d480/Codeunit/50000",
+          "11111111-0000-0000-0000-00000000d480/Codeunit/50001"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d48-io-in-loop",
+        "fingerprint": "2ceb27da1c981caf",
+        "fixHint": {
+          "description": "Move the HTTP call outside the loop or batch requests to avoid N external calls per iteration.",
+          "safety": "medium"
+        },
+        "id": "d48/0b1ef04c0e266459/f873cf14844a1f76705035492ed87950710976b98936aa66391b519d9b334e3f/0b1ef04c0e266459/0111c3fe83ddeeebad9d2c78e9c8ed9e21034f7922c67bd2eb59f8a2cd305dda/0b1ef04c0e266459/0111c3fe83ddeeebad9d2c78e9c8ed9e21034f7922c67bd2eb59f8a2cd305dda/cs0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 9,
+          "file": "ws:src/D48Pos.Codeunit.al",
+          "line": 15,
+          "objectId": "11111111-0000-0000-0000-00000000d480/Codeunit/50000",
+          "objectName": "D48 Sender",
+          "routineId": "0b1ef04c0e266459/0111c3fe83ddeeebad9d2c78e9c8ed9e21034f7922c67bd2eb59f8a2cd305dda",
+          "routineName": "SendOne"
+        },
+        "rootCause": "A repeat loop in ProcessAll reaches HTTP Send in SendOne on every iteration.",
+        "severity": "high",
+        "title": "External IO inside a loop"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d480/Codeunit/50003"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d48-io-in-loop",
+        "fingerprint": "8d34f0d4cf0d4d4a",
+        "fixHint": {
+          "description": "Move the FILE call outside the loop or batch requests to avoid N external calls.",
+          "safety": "medium"
+        },
+        "id": "d48/0b1ef04c0e266459/99ac6d3c1e759fff528a2eb5db53868fb9f2629fc45087d1089771aa2874c4ad/0b1ef04c0e266459/99ac6d3c1e759fff528a2eb5db53868fb9f2629fc45087d1089771aa2874c4ad/cs0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 13,
+          "file": "ws:src/D48Pos.Codeunit.al",
+          "line": 73,
+          "objectId": "11111111-0000-0000-0000-00000000d480/Codeunit/50003",
+          "objectName": "D48 File Loop",
+          "routineId": "0b1ef04c0e266459/99ac6d3c1e759fff528a2eb5db53868fb9f2629fc45087d1089771aa2874c4ad",
+          "routineName": "ExportAll"
+        },
+        "rootCause": "A repeat loop in ExportAll directly calls FILE IO on every iteration.",
+        "severity": "medium",
+        "title": "External IO inside a loop"
+      }
+    ],
+    "summary": {
+      "byDetector": {
+        "d48-io-in-loop": 2
+      },
+      "bySeverity": {
+        "high": 1,
+        "medium": 1
+      },
+      "detectorStats": [
+        {
+          "candidatesConsidered": 5,
+          "detector": "d1-db-op-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {
+            "opaqueCallee": 1
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d2-event-fanout-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {
+            "opaqueCallee": 1
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d3-missing-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d4-repeated-lookup-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d5-set-based-opportunity",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d7-recursive-event-expansion",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d8-commit-in-transaction",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d9-transaction-span-summary",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d10-self-modifying-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d11-modify-without-get",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d12-dead-integration-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d13-cross-app-internal-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d14-dead-routine",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d16-obsolete-routine-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d17-min-version-drift",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d18-constant-filter-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d19-unused-parameter",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d20-unreachable-after-exit",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d21-read-without-load",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d22-flowfield-without-calcfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d29-subscriber-modify-on-event-record",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d32-constant-boolean-parameter",
+          "findingsEmitted": 0,
+          "skipped": {
+            "noBooleanParams": 1,
+            "nonLocal": 4
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d33-unfiltered-bulk-write",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d34-commit-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d35-commit-in-event-subscriber",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d36-late-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d37-validate-without-persist",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d38-subscriber-to-obsolete-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d39-record-left-dirty-across-chain",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d41-transitive-filter-loss",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d42-cross-call-wrong-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d43-event-ishandled-skip",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d44-event-multi-subscriber-overlap",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d45-event-transitive-table-exposure",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d40-transitive-load-missing",
+          "findingsEmitted": 0,
+          "skipped": {
+            "unresolved": 2
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d46-commit-in-lifecycle",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d47-io-unsafe-txn",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d48-io-in-loop",
+          "findingsEmitted": 2,
+          "skipped": {
+            "opaqueCallee": 1
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d49-uncommitted-write-before-ui",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d50-checked-run-implicit-commit",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d51-retry-side-effect-duplication",
+          "findingsEmitted": 0,
+          "skipped": {}
+        }
+      ],
+      "opaqueApps": [],
+      "routinesAnalyzed": 5,
+      "sourceUnitsParsed": 1,
+      "totalFindings": 2
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

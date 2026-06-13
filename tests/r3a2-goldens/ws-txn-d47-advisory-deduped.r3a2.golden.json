@@ -26,15 +26,10 @@
           "via": "direct"
         }
       ],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-0000000d4709:Codeunit:50000#c060142e805d125abdc32d8cda876e933b88a991122461776aab7a80ef79c434/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     }
   ]
 }

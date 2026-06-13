@@ -3,15 +3,10 @@
     {
       "routineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#203bf3fc97cb426cf570fd515117222edb80b14a19f86247495cdf13fcb74a29",
       "dbEffects": [],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#203bf3fc97cb426cf570fd515117222edb80b14a19f86247495cdf13fcb74a29/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#276e24476ff697a296e0f64e0130375cec64b11dac9d82dfcd1529ae48871f79",
@@ -59,15 +54,10 @@
           "via": "direct"
         }
       ],
-      "uncertainties": [
-        {
-          "kind": "unresolved-call",
-          "callsiteId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#3a857f5c82ad647955f05294ce9a9f9283a2575ceac6ad3fd6d02d8454787c91/cs0"
-        }
-      ],
+      "uncertainties": [],
       "parameterRoles": [],
       "inRecursiveCycle": false,
-      "hasUnresolvedCalls": true
+      "hasUnresolvedCalls": false
     },
     {
       "routineId": "11111111-0000-0000-0000-00000000d03c:Codeunit:50300#62fbe6a775868bd1f6917f526b128a86a9cb645b6feca7207bdcfddf1cf32244",

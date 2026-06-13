@@ -87,7 +87,7 @@
       "medium": 1,
       "high": 1,
       "critical": 1,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -96,7 +96,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d47-pos-http-commit-after": {
@@ -107,7 +107,7 @@
       "medium": 1,
       "high": 1,
       "critical": 1,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -116,7 +116,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d47-pos-file": {
@@ -207,7 +207,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -216,7 +216,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-d51-jobqueue": {
@@ -227,7 +227,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -236,7 +236,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d46-neg": {
@@ -267,7 +267,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -276,7 +276,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d47-neg-temp": {
@@ -287,7 +287,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -296,7 +296,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d48-neg": {
@@ -307,7 +307,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -316,7 +316,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-txn-d49-neg-no-write": {
@@ -347,7 +347,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     },
     "default": {
       "none": 0,
@@ -356,7 +356,7 @@
       "medium": 0,
       "high": 0,
       "critical": 0,
-      "require-dependencies": 4
+      "require-dependencies": 0
     }
   },
   "ws-d1-multi-caller": {

@@ -6,7 +6,7 @@
   ws:src/D48Pos.Codeunit.al:32  calls SendOne
   ws:src/D48Pos.Codeunit.al:40  calls SendOne
   ws:src/D48Pos.Codeunit.al:15  HTTP Send
-  coverage: partial — capped by: unresolved-call
+  coverage: complete
 
 **MEDIUM**  [d48-io-in-loop] External IO inside a loop
   App: PT/D48 IO In Loop Pos 1.0.0.0  —  "D48 File Loop".ExportAll()
