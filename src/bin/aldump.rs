@@ -45,12 +45,12 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-event-graph | \
-         --l3-coverage | --r2.5a-merged-index | --l3-cross-app | --r3a1-combined-graph | \
-         --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | --r3a4-dep-hooks | \
-         --r3a5-cross-app-summary | --r4-findings | --r4f-root-classifications | \
-         --r4f-return-summaries | --r4f-snapshot | --r4f-digest-effects | \
-         --r4f-scoped-guarantees] \
+        "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-call-graph-stats | \
+         --l3-event-graph | --l3-coverage | --r2.5a-merged-index | --l3-cross-app | \
+         --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
+         --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
+         --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
+         --r4f-digest-effects | --r4f-scoped-guarantees] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -60,6 +60,7 @@ fn main() -> ExitCode {
     let mut l2 = false;
     let mut l3_record_types = false;
     let mut l3_call_graph = false;
+    let mut l3_call_graph_stats = false;
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
     let mut r2_5a_merged_index = false;
@@ -93,6 +94,10 @@ fn main() -> ExitCode {
         }
         if arg == "--l3-call-graph" {
             l3_call_graph = true;
+            continue;
+        }
+        if arg == "--l3-call-graph-stats" {
+            l3_call_graph_stats = true;
             continue;
         }
         if arg == "--l3-event-graph" {
@@ -174,6 +179,7 @@ fn main() -> ExitCode {
         l2,
         l3_record_types,
         l3_call_graph,
+        l3_call_graph_stats,
         l3_event_graph,
         l3_coverage,
         r2_5a_merged_index,
@@ -198,10 +204,10 @@ fn main() -> ExitCode {
         > 1
     {
         eprintln!(
-            "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-event-graph / \
-             --l3-coverage / --r2.5a-merged-index / --l3-cross-app / --r3a1-combined-graph / \
-             --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / --r3a4-dep-hooks / \
-             --r3a5-cross-app-summary / --r4f-return-summaries are mutually exclusive"
+            "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-call-graph-stats / \
+             --l3-event-graph / --l3-coverage / --r2.5a-merged-index / --l3-cross-app / \
+             --r3a1-combined-graph / --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / \
+             --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries are mutually exclusive"
         );
         return usage();
     }
@@ -782,6 +788,51 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize L3 event-graph projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if l3_call_graph_stats {
+        // Honest-taxonomy histogram (spec §6/§8): bucket every resolved call edge
+        // by ResolutionClass + report the real-`unknown` rate. Read-only over the
+        // resolved edges (the same capture `--l3-call-graph` uses). Fail-closed →
+        // an all-zero histogram (never throws).
+        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::resolution_class::Histogram;
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+
+        let histogram = match assemble_and_resolve_workspace_default(&workspace) {
+            Some(resolved) => {
+                let ws = &resolved.workspace;
+                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                let no_deps: Vec<DeclaredDependency> = Vec::new();
+                let no_fetched: Vec<String> = Vec::new();
+                let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+                Histogram::of_edges(&r.edges)
+            }
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty layout at {} — emitting empty histogram",
+                    workspace.display()
+                );
+                Histogram::default()
+            }
+        };
+        let mut value = serde_json::to_value(&histogram).unwrap_or(serde_json::json!({}));
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "realUnknownRate".to_string(),
+                serde_json::json!(histogram.real_unknown_rate()),
+            );
+        }
+        return match serde_json::to_string_pretty(&value) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize call-graph stats: {e}");
                 ExitCode::FAILURE
             }
         };
