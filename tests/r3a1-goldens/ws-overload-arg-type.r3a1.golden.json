@@ -4,9 +4,9 @@
       "from": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f",
       "to": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50211#dd7aa85accf51e27c71bb88d1e8351632369870a8931913ec7328b545b922101",
       "kind": "method",
-      "resolution": "resolved",
       "callsiteId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/cs0",
-      "operationId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/op0"
+      "operationId": "cccccccc-dddd-eeee-ffff-111111111111:Codeunit:50210#47ac52e3cedd7911413c0fea6d6ca40c5dbb10b261ee8634481eb5aa99fdbc0f/op0",
+      "resolution": "resolved"
     }
   ],
   "uncertaintyEdges": [

@@ -4,9 +4,9 @@
       "from": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c",
       "to": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#a5119c7ec90cf7ebfa4468defc3c17328d874b21f3f74ff532dbcf498e7a1b35",
       "kind": "direct",
-      "resolution": "resolved",
       "callsiteId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/cs0",
-      "operationId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op3"
+      "operationId": "11111111-0000-0000-0000-000000aa0001:Codeunit:50100#af96b31a282187289b00b23b259d0a0b26df24dacd7618ea10432dc2b4c4d11c/op3",
+      "resolution": "resolved"
     }
   ],
   "uncertaintyEdges": [],

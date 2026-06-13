@@ -405,6 +405,19 @@ fn differential_r3a1_combined_graph_match_goldens() {
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust R3a-1 projection for {fixture}: {e}"));
 
+        // Rust-owned baseline: `REGEN_TEMP_GOLDENS=1` rewrites each golden from THIS
+        // engine (al-sem byte-parity retired — see CLAUDE.md). The manifest `matrix`
+        // block is then updated by hand to the Rust corpus totals.
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            let mut pretty = serde_json::to_string_pretty(&projection)
+                .unwrap_or_else(|e| panic!("regen serialize r3a1 {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r3a1 golden: {}", golden_path.display());
+            continue;
+        }
+
         // Forbidden later-gate field scan on BOTH sides.
         scan_forbidden(
             &golden_json,
@@ -420,6 +433,14 @@ fn differential_r3a1_combined_graph_match_goldens() {
 
         // Positional structural diff (both sides already canonically sorted).
         diff_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        eprintln!(
+            "REGEN r3a1: wrote {} golden(s); now update tests/r3a1-goldens/manifest.json `matrix` to the Rust totals",
+            goldens.len()
+        );
+        return;
     }
 
     all_divergences

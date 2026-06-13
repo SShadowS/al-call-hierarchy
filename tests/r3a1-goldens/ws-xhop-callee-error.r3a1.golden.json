@@ -4,20 +4,12 @@
       "from": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
       "to": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50101#43e602765cb1fd17e5fc0bbf0765132e02f875c506ee04d4a32471c9443fed36",
       "kind": "method",
-      "resolution": "resolved",
       "callsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0",
-      "operationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/op0"
+      "operationId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/op0",
+      "resolution": "resolved"
     }
   ],
-  "uncertaintyEdges": [
-    {
-      "from": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
-      "uncertainty": {
-        "kind": "unresolved-call",
-        "callsiteId": "aaaaaaaa-0000-0000-0000-000000xe0001:Codeunit:50102#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs1"
-      }
-    }
-  ],
+  "uncertaintyEdges": [],
   "typedEdges": [
     {
       "kind": "variable-typed-call",

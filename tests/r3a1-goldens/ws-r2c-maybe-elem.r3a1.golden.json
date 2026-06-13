@@ -4,9 +4,9 @@
       "from": "c2c00001-0000-0000-0000-000000000001:Codeunit:50100#a4783091e5a2ce84b875f460663fb04cafedd8ec26bc670ff1654e96f0fdce60",
       "to": "c2c00001-0000-0000-0000-000000000001:Codeunit:50101#586c01506844ee66234f0eac8161f3212a76c85876e492d51d2be7671ef40289",
       "kind": "event-dispatch",
-      "resolution": "resolved",
       "eventId": "c2c00001-0000-0000-0000-000000000001:Codeunit:50100::OnRealEvent::a4783091e5a2ce84b875f460663fb04cafedd8ec26bc670ff1654e96f0fdce60",
-      "subscriberAppId": "c2c00001-0000-0000-0000-000000000001"
+      "subscriberAppId": "c2c00001-0000-0000-0000-000000000001",
+      "resolution": "resolved"
     }
   ],
   "uncertaintyEdges": [],

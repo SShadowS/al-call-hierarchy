@@ -4,17 +4,17 @@
       "from": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
       "to": "c2c00003-0000-0000-0000-000000000003:Codeunit:50101#35d8450a746d67271ca6d6c2dbe94029d62b55ed632fb1ab15d0a99483673254",
       "kind": "event-dispatch",
-      "resolution": "resolved",
       "eventId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnMixedCaseEvent::5564a26181b69bc2f43593cb296d906ef0b0f292b24cdee1cdee8c6dc935326d",
-      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003"
+      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003",
+      "resolution": "resolved"
     },
     {
       "from": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100#4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
       "to": "c2c00003-0000-0000-0000-000000000003:Codeunit:50101#5285b7d236572c1b52ae29c00b5e18e583c829f2f72470236efe7e2c9830c496",
       "kind": "event-dispatch",
-      "resolution": "resolved",
       "eventId": "c2c00003-0000-0000-0000-000000000003:Codeunit:50100::OnIsolatedInt::4f8e1f5b4420eac650ab49ea6a972f094948658b622a6cd6c87d37ed974bd430",
-      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003"
+      "subscriberAppId": "c2c00003-0000-0000-0000-000000000003",
+      "resolution": "resolved"
     }
   ],
   "uncertaintyEdges": [],

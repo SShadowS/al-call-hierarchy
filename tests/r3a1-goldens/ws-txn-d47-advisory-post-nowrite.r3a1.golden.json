@@ -1,14 +1,6 @@
 {
   "combinedEdges": [],
-  "uncertaintyEdges": [
-    {
-      "from": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d",
-      "uncertainty": {
-        "kind": "unresolved-call",
-        "callsiteId": "11111111-0000-0000-0000-0000000d4708:Codeunit:50000#38785981526f441a4cb71e374fd572a1301c4a60258e926b749bb4aa8a5e1a2d/cs0"
-      }
-    }
-  ],
+  "uncertaintyEdges": [],
   "typedEdges": [],
   "sccs": [
     {
