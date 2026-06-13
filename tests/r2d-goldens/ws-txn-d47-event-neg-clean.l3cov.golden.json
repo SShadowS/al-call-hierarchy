@@ -5,8 +5,6 @@
   "routinesBodyAvailable": 3,
   "routinesParseIncomplete": [],
   "opaqueApps": [],
-  "unresolvedCallsites": [
-    "11111111-0000-0000-0000-0000000d4722:Codeunit:50001#8d7dd2d296ce1acbf5f1df52cdfdb49f32dd6aad54cc639c7031aef6f95d21df/cs0"
-  ],
+  "unresolvedCallsites": [],
   "dynamicDispatchSites": []
 }

@@ -50,8 +50,8 @@
         {
           "from": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d",
           "operationId": "aaaaaaaa-2222-3333-4444-555555555555:Codeunit:50100#7e3817eb5015f1c4e6b570d2ecb92df2677abe051b07ce2e73fa4788cd26e27d/op5",
-          "dispatchKind": "method",
-          "resolution": "unknown"
+          "dispatchKind": "builtin",
+          "resolution": "builtin"
         }
       ]
     }
