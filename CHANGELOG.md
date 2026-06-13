@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- L3 call-graph: intrinsic built-in catalog (`src/engine/l3/member_builtins.rs`, `phf`
+  perfect-hash) for Record / RecordRef / FieldRef / KeyRef + framework types (Json*,
+  Http*, In/OutStream, TextBuilder, Dialog, List, Dictionary, Xml*). AL's
+  compiler-intrinsic member methods (not present in any `.app` `SymbolReference.json`)
+  now classify as `builtin` on the member resolution path instead of `unknown`. Phases
+  1–2 of the call-graph resolution redesign (`docs/superpowers/specs/2026-06-13-call-graph-resolution-redesign.md`).
+- Honest resolution taxonomy classifier (`src/engine/l3/resolution_class.rs`) +
+  `aldump --l3-call-graph-stats` measurement harness reporting per-bucket edge counts
+  and the real-`unknown` edge rate (the north-star metric).
+
 ### Changed
+- L3 member-call resolution: a Record/framework receiver whose method is a recognized
+  intrinsic now resolves to `builtin` (and leaves `unresolvedCallsites`). Non-intrinsic
+  Record methods (real table procedures) remain `unknown`, pending Phase 3. Rebaselined
+  the moved L3 call-graph + L3 coverage goldens (builtin reclassification only; no new
+  resolved-to-routine edges) and updated the r2b `coverageMatrix.builtin` oracle
+  (18→49). `KNOWN_DIVERGENCES.json` stays `[]`.
 - Rebaselined goldens after the iter-2 detector-gap fixes (G-13..G-19). Only **G-15**
   (d3 ignores field-writes/post-Init reads after a `Get`; d42 excludes PK-only fields)
   moved finding content; G-13/G-14/G-16/G-17/G-18/G-19 moved no in-repo goldens. The
