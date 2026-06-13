@@ -1,0 +1,284 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-0000000d4701",
+        "name": "D47 HTTP No Commit Pos",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/cs0",
+        "controlContext": "top-level",
+        "endColumn": 53,
+        "endLine": 16,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 2
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 16
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/cs0",
+        "dispatchKind": "unresolved",
+        "from": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "resolvedEdges": [],
+        "status": "builtin"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Modify",
+          "recordVariableId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/rv/rec",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "modify",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-0000000d4701/table/50100",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "via": "self",
+        "witnessOperationId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/op1"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/rv/rec",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "read",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-0000000d4701/table/50100",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "via": "self",
+        "witnessOperationId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/op0"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "bodyArgSource": {
+            "initializer": {
+              "kind": "unknown"
+            },
+            "kind": "constant-var",
+            "varName": "resp"
+          },
+          "kind": "http",
+          "method": "Get"
+        },
+        "op": "send",
+        "provenance": "direct",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/ping"
+        },
+        "resourceKind": "http",
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "via": "self",
+        "witnessCallsiteId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/cs0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "13aad8b79845edd88fa8f9efa2cb6b2ea76329c02b384cc93305211342a8e5df",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Table:50100",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D47 Sender",
+        "SendAfterModify",
+        "D47 Rec"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-0000000d4701:Codeunit:50000",
+        "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "11111111-0000-0000-0000-0000000d4701:Table:50100"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "97fb2b08d9962367c0680c4ef65c382cdc796f6bed7097faae86e98038397afe",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [
+      {
+        "controlContext": "top-level",
+        "displayText": "Rec.Get",
+        "endColumn": 22,
+        "endLine": 13,
+        "operationId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/op0",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 13
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "Rec.Modify",
+        "endColumn": 20,
+        "endLine": 15,
+        "operationId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26/op1",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 1
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 15
+      }
+    ],
+    "permissionFacts": [
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "modify"
+        },
+        "kind": "required",
+        "rights": [
+          "M"
+        ],
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "target": "11111111-0000-0000-0000-0000000d4701:Table:50100",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "read"
+        },
+        "kind": "required",
+        "rights": [
+          "R"
+        ],
+        "subject": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "target": "11111111-0000-0000-0000-0000000d4701:Table:50100",
+        "targetKind": "TableData"
+      }
+    ],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "fdc6b75ea570d51f/9c0f92a9f093955ad5d6c71cf854f29a0b67e3de8319ed914a83fc04f1a59b26",
+          "range": {
+            "endColumn": 8,
+            "endLine": 17,
+            "startColumn": 4,
+            "startLine": 7
+          },
+          "sourceUnitId": "ws:src/Sender.Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [
+      {
+        "kind": "table",
+        "shapeFingerprint": "e6779008e2c488814d1ffccb900b8a8d8b0550b21e9b032ca0627e0d511f570e",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Table:50100"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "26839cc5e09f3400e05e701c85022ec2bacd89495b27312a0730169c5fd8604d",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Table:50100#1"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "af2f8a90d76f97de64eae9dfb5b852b0d10dc35125da0871a6e71e637447d8b3",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Table:50100#2"
+      },
+      {
+        "kind": "key",
+        "shapeFingerprint": "ebb4b079eedab3cc66e0e89c81769db29f48bfb4a1c5abf48e9c6dd8bc93fcac",
+        "stableId": "11111111-0000-0000-0000-0000000d4701:Table:50100#K0"
+      }
+    ],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [],
+    "workspaceFingerprint": "0d6c610dea8d73d6142bb6b9375463620d7e10a84ead5599d3040ada0008b395"
+  },
+  "schemaVersion": "1.1.0"
+}

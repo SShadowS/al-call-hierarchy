@@ -1,0 +1,4 @@
+--- OnRun ---
+  question: may-commit
+  answer:   no
+  obligations: all clear

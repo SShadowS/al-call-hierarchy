@@ -1,0 +1,27 @@
+--- CallerB ---
+  coverage: complete
+  [DB_MODIFY] transitive
+    evidence: ws:src/D1MultiCaller.al:18 "Cust.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d01a/table/50101, resourceDisplay=MC Customer
+    via: 1 path(s)
+
+--- CallerC ---
+  coverage: complete
+  [DB_MODIFY] transitive
+    evidence: ws:src/D1MultiCaller.al:18 "Cust.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d01a/table/50101, resourceDisplay=MC Customer
+    via: 1 path(s)
+
+--- CallerA ---
+  coverage: complete
+  [DB_MODIFY] transitive
+    evidence: ws:src/D1MultiCaller.al:18 "Cust.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d01a/table/50101, resourceDisplay=MC Customer
+    via: 1 path(s)
+
+--- ModifyHelper ---
+  coverage: complete
+  [DB_MODIFY] direct
+    evidence: ws:src/D1MultiCaller.al:18 "Cust.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d01a/table/50101, resourceDisplay=MC Customer
+    via: 1 path(s)

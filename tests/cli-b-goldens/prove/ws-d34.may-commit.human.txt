@@ -1,0 +1,7 @@
+--- DirectCommitInLoop ---
+  question: may-commit
+  answer:   yes
+  evidence: 1 effect(s)
+    [COMMIT] direct — ws:src/Codeunit.al:9
+      conditionality: loop-body
+  obligations: all clear

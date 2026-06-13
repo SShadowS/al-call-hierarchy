@@ -1,0 +1,556 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-00000000d340",
+        "name": "D34 Commit In Loop",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "DoWork",
+        "callsiteId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/cs0",
+        "controlContext": "loop-body",
+        "endColumn": 21,
+        "endLine": 8,
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 12,
+        "startLine": 8
+      },
+      {
+        "calleeDisplay": "Persist",
+        "callsiteId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+        "controlContext": "loop-body",
+        "endColumn": 22,
+        "endLine": 30,
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 12,
+        "startLine": 30
+      },
+      {
+        "calleeDisplay": "DoWork",
+        "callsiteId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/cs0",
+        "controlContext": "loop-body",
+        "endColumn": 21,
+        "endLine": 39,
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 12,
+        "startLine": 39
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "Persist",
+        "callsiteId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "resolvedEdges": [
+          "f23b51346cc95ed2"
+        ],
+        "status": "resolved"
+      },
+      {
+        "calleeDisplay": "DoWork",
+        "callsiteId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "resolvedEdges": [
+          "d86cfbdb28749a4d"
+        ],
+        "status": "resolved"
+      },
+      {
+        "calleeDisplay": "DoWork",
+        "callsiteId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "resolvedEdges": [
+          "78ce64dae6962793"
+        ],
+        "status": "resolved"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "inherited",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "via": "call",
+        "witnessCallsiteId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+        "witnessOperationId": "e09e92b394f6df1a/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "via": "self",
+        "witnessOperationId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "via": "self",
+        "witnessOperationId": "e09e92b394f6df1a/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "via": "self",
+        "witnessOperationId": "e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "via": "self",
+        "witnessOperationId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/op0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "35ccc584fec5bd6c987d5d7edf527e3c0d1b0978c2117a07f0fc60796357e0e1",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "stableId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D34 Demo",
+        "TransitiveCommit",
+        "DirectCommitInLoop",
+        "Persist",
+        "DoWork",
+        "NestedCommit",
+        "CommitAfterLoop"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "47b6a8edc7543cb0b04737e0351a4d305e23a4260b805ef631e5f4183ccdc180",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [
+      {
+        "controlContext": "loop-body",
+        "displayText": "commit",
+        "endColumn": 20,
+        "endLine": 9,
+        "operationId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op0",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 1
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 12,
+        "startLine": 9
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "commit",
+        "endColumn": 16,
+        "endLine": 47,
+        "operationId": "e09e92b394f6df1a/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/op0",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 8,
+        "startLine": 47
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "commit",
+        "endColumn": 16,
+        "endLine": 40,
+        "operationId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/op0",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 1
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 8,
+        "startLine": 40
+      },
+      {
+        "controlContext": "loop-body",
+        "displayText": "commit",
+        "endColumn": 24,
+        "endLine": 21,
+        "operationId": "e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/op0",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 2,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "sourceFile": "ws:src/Codeunit.al",
+        "startColumn": 16,
+        "startLine": 21
+      }
+    ],
+    "permissionFacts": [],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf",
+          "range": {
+            "endColumn": 8,
+            "endLine": 31,
+            "startColumn": 4,
+            "startLine": 25
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d",
+          "range": {
+            "endColumn": 8,
+            "endLine": 11,
+            "startColumn": 4,
+            "startLine": 3
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750",
+          "range": {
+            "endColumn": 8,
+            "endLine": 22,
+            "startColumn": 4,
+            "startLine": 14
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861",
+          "range": {
+            "endColumn": 8,
+            "endLine": 41,
+            "startColumn": 4,
+            "startLine": 34
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "frameId": 1,
+          "kind": "loop",
+          "parentFrameId": 0
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "frameId": 1,
+          "kind": "loop",
+          "parentFrameId": 0
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#a1b9cc4ad880cc9614f28dfa11dcdc8eeca1411055296c89a3f5c9590d6848f7": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "frameId": 1,
+          "kind": "loop",
+          "parentFrameId": 0
+        },
+        {
+          "frameId": 2,
+          "kind": "loop",
+          "parentFrameId": 1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "frameId": 1,
+          "kind": "loop",
+          "parentFrameId": 0
+        }
+      ]
+    },
+    "schemaFacts": [],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [
+      {
+        "callsiteId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+        "edgeId": "f23b51346cc95ed2",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0661e3a8928c818db31af5a44a748eee17758feb8709d77d61fee7e218825282",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf",
+          "range": {
+            "endColumn": 22,
+            "endLine": 30,
+            "startColumn": 12,
+            "startLine": 30
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#2a1cf2a83798e70f92fda0ecc5f6822fd52b4a96db103863a6c66bc229588480"
+      },
+      {
+        "callsiteId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/cs0",
+        "edgeId": "d86cfbdb28749a4d",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#0fc05684eea4c93694ab363754c6385862712ddc26ea6b78d79572fa55cd707c",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d",
+          "range": {
+            "endColumn": 21,
+            "endLine": 8,
+            "startColumn": 12,
+            "startLine": 8
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4"
+      },
+      {
+        "callsiteId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861/cs0",
+        "edgeId": "78ce64dae6962793",
+        "from": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#fc47fa3cd873bd2861e56846998566c2c2f273bd68a11f52e7bee8c3d2d1d021",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "e09e92b394f6df1a/86a4c072419b015025aa45ec09412bae901eff1afc07ca4dc83a384519e2e861",
+          "range": {
+            "endColumn": 21,
+            "endLine": 39,
+            "startColumn": 12,
+            "startLine": 39
+          },
+          "sourceUnitId": "ws:src/Codeunit.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d340:Codeunit:51000#71ee6ca8cae96cc44f98a4a38e0352a3804af68dc4524c8172530b3da4bfe6b4"
+      }
+    ],
+    "workspaceFingerprint": "18bd295463f855581d92f3e2f4f696aec9575f2eee33c1469df6c45ca2d35d4e"
+  },
+  "schemaVersion": "1.1.0"
+}

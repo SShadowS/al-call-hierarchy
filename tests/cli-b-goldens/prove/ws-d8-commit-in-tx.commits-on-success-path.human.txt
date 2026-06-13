@@ -1,0 +1,7 @@
+--- HandlePosted ---
+  question: commits-on-success-path
+  answer:   yes
+  evidence: 1 effect(s)
+    [COMMIT] direct — ws:src/subscriber.al:10
+      conditionality: unconditional-on-success
+  obligations: all clear

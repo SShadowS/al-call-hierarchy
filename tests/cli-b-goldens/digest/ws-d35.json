@@ -1,0 +1,426 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-detect",
+      "message": "d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "Message",
+              "file": "ws:src/Codeunit.al",
+              "line": 20,
+              "sourceKind": "source"
+            },
+            "factId": "7198f604bf96d187",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "UI_MESSAGE",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Codeunit.al",
+            "line": 18,
+            "sourceKind": "source"
+          },
+          "display": "OnBeforePrintSafe",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93"
+        },
+        "unresolved": [
+          {
+            "calleeDisplay": "Message",
+            "callsiteAnchor": {
+              "column": 8,
+              "file": "ws:src/Codeunit.al",
+              "line": 20,
+              "sourceKind": "source"
+            },
+            "owningRoutine": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#1be0eff0fbb25b77ecb6f9f1b24ebe73871f6247c771631252866fb39fabeb93",
+            "owningRoutineDisplay": "OnBeforePrintSafe",
+            "status": "unresolved-receiver-type"
+          }
+        ],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      },
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/Codeunit.al",
+              "line": 6,
+              "sourceKind": "source"
+            },
+            "factId": "ec9f0023d191aa8e",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "ec9f0023d191aa8e",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "922630b94cda5acc",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-no-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Codeunit.al",
+            "line": 4,
+            "sourceKind": "source"
+          },
+          "display": "OnAfterPostDirect",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#70651530caee0c1d7a5bff0fa6da803446a7a10092730ec1ad3d142da9620c7f"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      },
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/Codeunit.al",
+              "line": 31,
+              "sourceKind": "source"
+            },
+            "factId": "4549d99f460be7e2",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "4549d99f460be7e2",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "b40c5d1e1481d0a7",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-no-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 8,
+            "file": "ws:src/Codeunit.al",
+            "line": 31,
+            "sourceKind": "source"
+          },
+          "display": "PersistAudit",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      },
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/Codeunit.al",
+              "line": 26,
+              "sourceKind": "source"
+            },
+            "factId": "541ed9dd32e394c4",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "541ed9dd32e394c4",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "b627ad3ddc42ac6d",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-no-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Codeunit.al",
+            "line": 24,
+            "sourceKind": "source"
+          },
+          "display": "NonSubscriberCommit",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#c937f452b226f2394cc4c00d2efb29e7f15730196e2230b656bab5c00ec98d1a"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      },
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/Codeunit.al",
+              "line": 31,
+              "sourceKind": "source"
+            },
+            "factId": "be9d380ab7d877e9",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "transitive",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "be9d380ab7d877e9",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "2819d611e0a70d40",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-no-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              [
+                {
+                  "anchor": {
+                    "column": 8,
+                    "file": "ws:src/Codeunit.al",
+                    "line": 13,
+                    "sourceKind": "source"
+                  },
+                  "calleeDisplay": "PersistAudit",
+                  "callsiteId": "2ffd4af23d76aec9/939ecc3af3daa4cb1820b33d65e175d7c8af0fca371ac5e9ec5bf0648dceb282/cs0",
+                  "edgeKind": "direct-call",
+                  "fromDisplay": "OnAfterValidateTransitive",
+                  "fromRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050",
+                  "kind": "call",
+                  "toDisplay": "PersistAudit",
+                  "toRoutineId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#a48ec94ff9566709129af3e35f12ad569c376df0c9883faaebb98023a0e9da4a"
+                }
+              ]
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Codeunit.al",
+            "line": 11,
+            "sourceKind": "source"
+          },
+          "display": "OnAfterValidateTransitive",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d350:Codeunit:51100#efdfd5305f3740f85650f1d429eb33b8150f1c17402c8d89f568453390c1e050"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 2
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 5,
+      "rootsResolved": 5,
+      "totalEffects": 5,
+      "totalUnresolved": 1
+    },
+    "workspaceFingerprint": "f6926434e3c7c47f07ebe2d627f769e903e898f08ea05d5357827ef685db3a81"
+  },
+  "schemaVersion": "1.3.0"
+}

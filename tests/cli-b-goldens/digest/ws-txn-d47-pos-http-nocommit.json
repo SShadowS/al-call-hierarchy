@@ -1,0 +1,124 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/Rec.Table.al",
+        "src/Sender.Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [
+      {
+        "file": "src/Rec.Table.al",
+        "kind": "file-unmatched"
+      }
+    ],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "resourceDisplay": "D47 Rec",
+              "resourceId": "11111111-0000-0000-0000-0000000d4701/table/50100"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Rec.Modify",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 15,
+              "sourceKind": "source"
+            },
+            "factId": "b22a11f2ebc436e1",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "DB_MODIFY",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "method": "Get"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Client.Get",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 16,
+              "sourceKind": "source"
+            },
+            "factId": "20558edabd436752",
+            "guarantees": [
+              "WRITE_PENDING_AT_EXTERNAL_IO"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "ioOccurrenceId": "20558edabd436752",
+                "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+                "scope": "root",
+                "validForRefutation": true,
+                "writeOccurrenceId": "b22a11f2ebc436e1"
+              }
+            ],
+            "transactionContext": "unknown",
+            "type": "HTTP",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 7,
+            "sourceKind": "source"
+          },
+          "display": "SendAfterModify",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-0000000d4701:Codeunit:50000#afbd4d21cd130a0310f3053cdb1624182dade39345a728046cb409622a883fcf"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 1,
+      "rootsResolved": 1,
+      "totalEffects": 2,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "0d6c610dea8d73d6142bb6b9375463620d7e10a84ead5599d3040ada0008b395"
+  },
+  "schemaVersion": "1.3.0"
+}

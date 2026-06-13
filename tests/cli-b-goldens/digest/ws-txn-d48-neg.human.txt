@@ -1,0 +1,6 @@
+--- SendOnce ---
+  coverage: complete
+  [HTTP] direct
+    evidence: ws:src/D48Neg.Codeunit.al:12 "Client.Send"
+    detail: method=Send
+    via: 1 path(s)

@@ -130,22 +130,43 @@ const SNAPSHOT_CORPUS: &[&str] = &[
 
 const SHARD_FIXTURE: &str = "ws-d8-commit-in-tx";
 
-/// al-sem repo root (override with `AL_SEM_DIR`).
-fn al_sem_dir() -> PathBuf {
-    std::env::var("AL_SEM_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(r"U:\Git\al-sem"))
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// In-repo fixtures (Rust-owned; al-sem byte-parity retired — see CLAUDE.md).
 fn fixtures_dir() -> PathBuf {
-    al_sem_dir().join("test").join("fixtures")
+    repo_root().join("tests").join("r0-corpus")
 }
 
+/// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    al_sem_dir()
-        .join("scripts")
+    repo_root()
+        .join("tests")
         .join("cli-b-goldens")
         .join("snapshot")
+}
+
+/// Byte-compare a golden, or rewrite it when `REGEN_TEMP_GOLDENS` is set
+/// (Rust-owned baseline). Creates parent dirs on regen.
+fn check_or_regen(golden_path: &Path, got: &[u8], label: &str) {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if let Some(parent) = golden_path.parent() {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", parent.display()));
+        }
+        std::fs::write(golden_path, got)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        return;
+    }
+    let want = std::fs::read(golden_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
+    assert_eq!(
+        got,
+        want.as_slice(),
+        "cli-b GATE: {label} did NOT byte-match ({})",
+        golden_path.display()
+    );
 }
 
 /// Compose the full snapshot tree for one fixture. Returns the tree, the resolved
@@ -216,14 +237,7 @@ fn raw_json_matches_goldens() {
         let tree = tree_for(fixture);
         let got = serialize_json(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.raw.json"));
-        let want = std::fs::read_to_string(&golden_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
-        assert_eq!(
-            got,
-            want,
-            "cli-b GATE: {fixture}.raw.json did NOT byte-match ({})",
-            golden_path.display()
-        );
+        check_or_regen(&golden_path, got.as_bytes(), &format!("{fixture}.raw.json"));
     }
 }
 
@@ -236,14 +250,7 @@ fn envelope_json_matches_goldens() {
         let diags = envelope_diagnostics(&ws_dir, &resolved);
         let got = serialize_envelope(&tree, VERSION_OVERRIDE, true, &diags);
         let golden_path = goldens_dir().join(format!("{fixture}.envelope.json"));
-        let want = std::fs::read_to_string(&golden_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
-        assert_eq!(
-            got,
-            want,
-            "cli-b GATE: {fixture}.envelope.json did NOT byte-match ({})",
-            golden_path.display()
-        );
+        check_or_regen(&golden_path, got.as_bytes(), &format!("{fixture}.envelope.json"));
     }
 }
 
@@ -253,6 +260,15 @@ fn cbor_matches_goldens() {
         let tree = tree_for(fixture);
         let got = serialize_cbor(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor"));
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            if let Some(p) = golden_path.parent() {
+                std::fs::create_dir_all(p).ok();
+            }
+            std::fs::write(&golden_path, &got)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            assert_eq!(got[0], 0xb9, "{fixture}.cbor must start with the map-16 header");
+            continue;
+        }
         let want = std::fs::read(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         if got != want {
@@ -281,6 +297,14 @@ fn cbor_gz_matches_goldens() {
         let tree = tree_for(fixture);
         let got = serialize_cbor_gz(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor.gz"));
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            if let Some(p) = golden_path.parent() {
+                std::fs::create_dir_all(p).ok();
+            }
+            std::fs::write(&golden_path, &got)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            continue;
+        }
         let want = std::fs::read(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         if got != want {
@@ -312,6 +336,17 @@ fn shards_match_goldens() {
     for (variant, primary_only) in [("all", false), ("primary", true)] {
         let files = serialize_sharded(&tree, VERSION_OVERRIDE, primary_only);
         let dir = shards_base.join(variant);
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            // Fresh write of the exact shard set (clear stale files first).
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir)
+                .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", dir.display()));
+            for f in &files {
+                std::fs::write(dir.join(&f.name), &f.bytes)
+                    .unwrap_or_else(|e| panic!("regen write shard {}: {e}", f.name));
+            }
+            continue;
+        }
         for f in &files {
             let golden_path = dir.join(&f.name);
             let want = std::fs::read(&golden_path)
@@ -340,17 +375,5 @@ fn shards_match_goldens() {
     }
 }
 
-/// `#[ignore]` re-baseline: shells `bun run scripts/dump-snapshot.ts` in the al-sem
-/// repo to regenerate the goldens. Only run when intentionally updating.
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem = al_sem_dir();
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-snapshot.ts"])
-        .current_dir(&al_sem)
-        .status()
-        .expect("spawn bun dump-snapshot");
-    assert!(status.success(), "dump-snapshot.ts failed");
-    let _ = Path::new(&al_sem);
-}
+// Rust-owned goldens are regenerated in-process via `REGEN_TEMP_GOLDENS=1 cargo
+// test --test cli_b_snapshot_differential` (al-sem `dump-snapshot.ts` retired).

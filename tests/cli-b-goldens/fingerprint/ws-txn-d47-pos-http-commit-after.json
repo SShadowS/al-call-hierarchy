@@ -1,0 +1,208 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-0000000d4702/table/50100",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "8e6dbe8a3efa1732",
+                    "op": "modify",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-0000000d4702/table/50100",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Rec.Modify",
+                          "file": "ws:src/Sender.Codeunit.al",
+                          "line": 16,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "bc9111dfe1c1b2f9/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op1"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "eedad5a370bc1b0a",
+                    "op": "read",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-0000000d4702/table/50100",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Rec.Get",
+                          "file": "ws:src/Sender.Codeunit.al",
+                          "line": 14,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "bc9111dfe1c1b2f9/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-0000000d4702/table/50100",
+                "ops": [
+                  "modify",
+                  "read"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "http",
+            "resources": [
+              {
+                "display": "https://example.test/ping",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "d32fe797dab7e0f9",
+                    "op": "send",
+                    "provenance": "direct",
+                    "resourceKind": "http",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "send"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "transaction",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "68fcc51e7015288d",
+                    "op": "commit",
+                    "provenance": "direct",
+                    "resourceKind": "transaction",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "commit",
+                          "file": "ws:src/Sender.Codeunit.al",
+                          "line": 18,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "bc9111dfe1c1b2f9/67546f13322e2ed52f1a7a3f33492abbe9ae04758f15f9b670ce97703dc761f1/op2"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "commit"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "yes",
+          "witnessFactId": "68fcc51e7015288d"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "MR",
+            "targetDisplay": "11111111-0000-0000-0000-0000000d4702/table/50100",
+            "targetId": "11111111-0000-0000-0000-0000000d4702/table/50100",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "SendThenCommit",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 1,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 1
+    },
+    "workspaceFingerprint": "b8c1a945e4edfea887c05e1dfe4a05cd92953972fc5ee005c195f03c170a5e84"
+  },
+  "schemaVersion": "1.2.0"
+}

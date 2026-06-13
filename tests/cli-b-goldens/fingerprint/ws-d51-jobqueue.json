@@ -1,0 +1,122 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-discover",
+      "message": "[roots-config/kinds-mismatch] roots.config.json entry \"post-then-error-jobqueue\" disagrees with AST: ast-only=[\"public-procedure\"], config-only=[\"job-queue-entrypoint\"].",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast+config",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "http",
+            "resources": [
+              {
+                "display": "https://api.example.test/orders",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "d20c40fd76169af8",
+                    "op": "send",
+                    "provenance": "direct",
+                    "resourceKind": "http",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "send"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "ui",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "a59c64c7671e8edd",
+                    "op": "ui-error",
+                    "provenance": "direct",
+                    "resourceKind": "ui",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "ui-error"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [],
+        "rootKinds": [
+          "job-queue-entrypoint",
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "PostThenError",
+          "objectDisplay": "",
+          "stableId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 1,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 1
+    },
+    "workspaceFingerprint": "37a0814c1077c76f9f8ac81ad844302230b98ba1e215572a5cc7a9a3541c2f28"
+  },
+  "schemaVersion": "1.2.0"
+}

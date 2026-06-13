@@ -1,0 +1,19 @@
+--- a/src/posting.al
++++ b/src/posting.al
+@@ -3,14 +3,15 @@
+     procedure PostSalesDoc()
+     var
+         Header: Record "Sales Header";
+-        Line: Record "Sales Line";
++        Line: Record "Sales Line";
++        // added a comment to mark as changed
+     begin
+         Header.Get('001');
+         Header."Status Posted" := true;
+         Header.Modify();
+         Line.SetRange("Document No.", Header."No.");
+         Line.ModifyAll("Status Posted", true);
+         OnAfterPostSalesDoc(Header);
+         Header."Last Posting Date" := Today;
+         Header.Modify();
+     end;

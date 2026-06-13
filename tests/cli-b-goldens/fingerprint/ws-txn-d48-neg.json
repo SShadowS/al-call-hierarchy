@@ -1,0 +1,83 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "http",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "unresolved",
+                    "factId": "78fae84771356a85",
+                    "op": "send",
+                    "provenance": "direct",
+                    "resourceKind": "http",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "send"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "SendOnce",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 1,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 1
+    },
+    "workspaceFingerprint": "17fbcaab4eb174ec9f7c2e3d53f24d2fc8c3bbf94cf005e47d7c9d3069575c4a"
+  },
+  "schemaVersion": "1.2.0"
+}

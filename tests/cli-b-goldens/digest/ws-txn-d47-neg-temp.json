@@ -1,0 +1,107 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/Rec.Table.al",
+        "src/Sender.Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [
+      {
+        "file": "src/Rec.Table.al",
+        "kind": "file-unmatched"
+      }
+    ],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "resourceDisplay": "D47 Rec",
+              "resourceId": "11111111-0000-0000-0000-0000000d4705/table/50100"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "TempRec.Insert",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 14,
+              "sourceKind": "source"
+            },
+            "factId": "2326183bfc144961",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "DB_INSERT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "method": "Get"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Client.Get",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 15,
+              "sourceKind": "source"
+            },
+            "factId": "0ac5fd76cdfd467f",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "HTTP",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 6,
+            "sourceKind": "source"
+          },
+          "display": "SendAfterTempInsert",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 1,
+      "rootsResolved": 1,
+      "totalEffects": 2,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "d7511a4fe3bcaed11cec5244ebdc7b282e2294c2cf2e3782c9f106718516fe98"
+  },
+  "schemaVersion": "1.3.0"
+}

@@ -1,0 +1,4 @@
+--- NonExistentRoutineXYZ ---
+  question: may-commit
+  answer:   unknown
+  obligations: coverage=incomplete

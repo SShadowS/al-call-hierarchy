@@ -1,0 +1,20 @@
+Rendering 1 root classification.
+
+::PostThenError  [job-queue-entrypoint, public-procedure] [config-asserted]
+  coverage:   complete
+  http:       "https://api.example.test/orders"
+  ui:         "<unknown>"
+
+  witnesses:
+    error-throw error — 1 path shown
+      Path 1/1 shown:
+        direct error-call at ws:src/Sender.Codeunit.al:14:8
+
+    send http — 1 path shown
+      Path 1/1 shown:
+        call Client.Post at ws:src/Sender.Codeunit.al:13:8
+
+    ui-error ui — 1 path shown
+      Path 1/1 shown:
+        call Error at ws:src/Sender.Codeunit.al:14:8
+

@@ -1,0 +1,115 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "http",
+            "resources": [
+              {
+                "display": "https://api.example.test/orders",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "d0c1b0150519b923",
+                    "op": "send",
+                    "provenance": "direct",
+                    "resourceKind": "http",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "send"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "ui",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "39f4fcc45ac2db0d",
+                    "op": "ui-error",
+                    "provenance": "direct",
+                    "resourceKind": "ui",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "ui-error"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "GetThenError",
+          "objectDisplay": "",
+          "stableId": "aaaabbbb-cccc-dddd-eeee-100000000d51:Codeunit:50201#2e254ac7f120ad15b09c2e5449a1513e4746dbbfba3c362dc73c040a888723e1"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 1,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 1
+    },
+    "workspaceFingerprint": "cce9f4a181c0dc8ab6f329a35c9ae37a2adb0432613af167f388719bb9d5bb05"
+  },
+  "schemaVersion": "1.2.0"
+}

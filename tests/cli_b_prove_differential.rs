@@ -26,22 +26,33 @@ use al_call_hierarchy::engine::l5::prove::run_prove_pipeline;
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 
-/// al-sem repo root (override with `AL_SEM_DIR`).
-fn al_sem_dir() -> PathBuf {
-    std::env::var("AL_SEM_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(r"U:\Git\al-sem"))
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// In-repo fixtures (Rust-owned; al-sem byte-parity retired — see CLAUDE.md).
 fn fixtures_dir() -> PathBuf {
-    al_sem_dir().join("test").join("fixtures")
+    repo_root().join("tests").join("r0-corpus")
 }
 
+/// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    al_sem_dir()
-        .join("scripts")
-        .join("cli-b-goldens")
-        .join("prove")
+    repo_root().join("tests").join("cli-b-goldens").join("prove")
+}
+
+/// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
+/// return true so the caller skips the byte-compare. al-sem byte-parity retired.
+fn regen_golden(golden_path: &std::path::Path, got: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    if let Some(parent) = golden_path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", parent.display()));
+    }
+    std::fs::write(golden_path, got)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    true
 }
 
 /// (fixture, golden_slug, routine, question, expected_exit_code)
@@ -257,6 +268,9 @@ fn json_matches_goldens() {
         );
 
         let golden_path = gdir.join(format!("{golden_slug}.json"));
+        if regen_golden(&golden_path, &got_json) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| {
             panic!(
                 "{fixture}/{routine}/{question}: golden not found at {}",
@@ -288,6 +302,9 @@ fn human_matches_goldens() {
         });
 
         let golden_path = gdir.join(format!("{golden_slug}.human.txt"));
+        if regen_golden(&golden_path, &got_human) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| {
             panic!(
                 "{fixture}/{routine}/{question}: human golden not found at {}",
@@ -322,21 +339,5 @@ fn dummy_doc_exits_2() {
     assert_eq!(exit, 2, "dummy-doc case must exit 2 (routine not resolved)");
 }
 
-/// Refresh helper — regenerate the prove goldens via `bun run scripts/dump-prove.ts`.
-/// Only run via `cargo test -- --ignored refresh_goldens`.
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem = al_sem_dir();
-    let status = std::process::Command::new("bun")
-        .arg("run")
-        .arg("scripts/dump-prove.ts")
-        .current_dir(&al_sem)
-        .env("AL_SEM_VERSION_OVERRIDE", VERSION_OVERRIDE)
-        .status()
-        .expect("bun not found on PATH");
-    assert!(
-        status.success(),
-        "bun run scripts/dump-prove.ts failed with status {status}"
-    );
-}
+// Rust-owned goldens regenerated in-process via
+// `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_prove_differential`.

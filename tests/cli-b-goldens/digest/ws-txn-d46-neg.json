@@ -1,0 +1,286 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/NormalCU.al"
+      ]
+    },
+    "changedRootsDiagnostics": [],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/NormalCU.al",
+              "line": 35,
+              "sourceKind": "source"
+            },
+            "factId": "e8247058a0a08504",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "e8247058a0a08504",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "a9d5cc0e9903edf5",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "conditional",
+            "confidence": "static",
+            "detail": {
+              "resourceDisplay": "My Setup",
+              "resourceId": "11111111-0000-0000-0000-00000000d461/table/50000"
+            },
+            "evidence": {
+              "column": 12,
+              "excerpt": "Setup.Insert",
+              "file": "ws:src/NormalCU.al",
+              "line": 33,
+              "sourceKind": "source"
+            },
+            "factId": "590d9521a63915ee",
+            "guarantees": [
+              "COMMIT_REACHABLE"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              }
+            ],
+            "transactionContext": "unknown",
+            "type": "DB_INSERT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 15,
+            "file": "ws:src/NormalCU.al",
+            "line": 31,
+            "sourceKind": "source"
+          },
+          "display": "DoSetup",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      },
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/NormalCU.al",
+              "line": 35,
+              "sourceKind": "source"
+            },
+            "factId": "cf71de2d5b2ac938",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN"
+            ],
+            "provenance": "transitive",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "cf71de2d5b2ac938",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "07a1c732965b1998",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              [
+                {
+                  "anchor": {
+                    "column": 8,
+                    "file": "ws:src/NormalCU.al",
+                    "line": 24,
+                    "sourceKind": "source"
+                  },
+                  "calleeDisplay": "DoSetup",
+                  "callsiteId": "fe1e8919dd325793/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+                  "edgeKind": "direct-call",
+                  "fromDisplay": "RunSetup",
+                  "fromRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+                  "kind": "call",
+                  "toDisplay": "DoSetup",
+                  "toRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+                }
+              ]
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "conditional",
+            "confidence": "static",
+            "detail": {
+              "resourceDisplay": "My Setup",
+              "resourceId": "11111111-0000-0000-0000-00000000d461/table/50000"
+            },
+            "evidence": {
+              "column": 12,
+              "excerpt": "Setup.Insert",
+              "file": "ws:src/NormalCU.al",
+              "line": 33,
+              "sourceKind": "source"
+            },
+            "factId": "ef4ed3fcce8e9f8e",
+            "guarantees": [
+              "COMMIT_REACHABLE"
+            ],
+            "provenance": "transitive",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              }
+            ],
+            "transactionContext": "unknown",
+            "type": "DB_INSERT",
+            "viaPaths": [
+              [
+                {
+                  "anchor": {
+                    "column": 8,
+                    "file": "ws:src/NormalCU.al",
+                    "line": 24,
+                    "sourceKind": "source"
+                  },
+                  "calleeDisplay": "DoSetup",
+                  "callsiteId": "fe1e8919dd325793/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+                  "edgeKind": "direct-call",
+                  "fromDisplay": "RunSetup",
+                  "fromRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+                  "kind": "call",
+                  "toDisplay": "DoSetup",
+                  "toRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+                }
+              ]
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/NormalCU.al",
+            "line": 22,
+            "sourceKind": "source"
+          },
+          "display": "RunSetup",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 2
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 2,
+      "rootsResolved": 2,
+      "totalEffects": 4,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "153dd1f50142677bb6b39ef22a0e7e2e23f75e2a3c9f1a1a81e883dd47ae93a7"
+  },
+  "schemaVersion": "1.3.0"
+}

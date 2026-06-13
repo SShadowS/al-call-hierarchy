@@ -1,0 +1,6 @@
+--- MessageOnly ---
+  coverage: complete
+  [UI_MESSAGE] direct
+    evidence: ws:src/Sender.Codeunit.al:8 "Message"
+    via: 1 path(s)
+  unresolved: 1 callsite(s)

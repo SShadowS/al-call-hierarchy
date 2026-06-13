@@ -1,0 +1,126 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-discover",
+      "message": "[roots-config/kinds-mismatch] roots.config.json entry \"post-then-error-jobqueue\" disagrees with AST: ast-only=[\"public-procedure\"], config-only=[\"job-queue-entrypoint\"].",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/Sender.Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "error-call",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 14,
+              "sourceKind": "source"
+            },
+            "factId": "f3a404acb14ebd93",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "ERROR_THROW",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "method": "Post"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Client.Post",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 13,
+              "sourceKind": "source"
+            },
+            "factId": "dde7b942651b2dee",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "HTTP",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "Error",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 14,
+              "sourceKind": "source"
+            },
+            "factId": "2e0fd7f106549395",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "UI_ERROR",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 7,
+            "sourceKind": "source"
+          },
+          "display": "PostThenError",
+          "objectDisplay": "",
+          "stableId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 1,
+      "rootsResolved": 1,
+      "totalEffects": 3,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "37a0814c1077c76f9f8ac81ad844302230b98ba1e215572a5cc7a9a3541c2f28"
+  },
+  "schemaVersion": "1.3.0"
+}

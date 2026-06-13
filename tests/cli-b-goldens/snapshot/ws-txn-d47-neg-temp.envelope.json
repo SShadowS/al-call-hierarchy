@@ -1,0 +1,235 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-0000000d4705",
+        "name": "D47 Temp Neg",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/cs0",
+        "controlContext": "top-level",
+        "endColumn": 53,
+        "endLine": 15,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 2
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 15
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/cs0",
+        "dispatchKind": "unresolved",
+        "from": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "resolvedEdges": [],
+        "status": "builtin"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Insert",
+          "recordVariableId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/rv/temprec",
+          "tempState": {
+            "kind": "known",
+            "value": true
+          }
+        },
+        "op": "insert",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-0000000d4705/table/50100",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "via": "self",
+        "witnessOperationId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/op1"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "bodyArgSource": {
+            "initializer": {
+              "kind": "unknown"
+            },
+            "kind": "constant-var",
+            "varName": "resp"
+          },
+          "kind": "http",
+          "method": "Get"
+        },
+        "op": "send",
+        "provenance": "direct",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/ping"
+        },
+        "resourceKind": "http",
+        "subject": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "via": "self",
+        "witnessCallsiteId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/cs0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "13aad8b79845edd88fa8f9efa2cb6b2ea76329c02b384cc93305211342a8e5df",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Table:50100",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D47 Sender",
+        "SendAfterTempInsert",
+        "D47 Rec"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-0000000d4705:Codeunit:50000",
+        "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "11111111-0000-0000-0000-0000000d4705:Table:50100"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "922e4bfced2171aafe26b9da70305d06fce0f6a8a38a98ffcc2e11459550f225",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [
+      {
+        "controlContext": "top-level",
+        "displayText": "TempRec.Insert",
+        "endColumn": 24,
+        "endLine": 14,
+        "operationId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f/op1",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 1
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 14
+      }
+    ],
+    "permissionFacts": [
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "insert"
+        },
+        "kind": "required",
+        "rights": [
+          "I"
+        ],
+        "subject": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "target": "11111111-0000-0000-0000-0000000d4705:Table:50100",
+        "targetKind": "TableData"
+      }
+    ],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "6224575dba0b6fd2/f6e2770015e3f510574833a323941cd801ce31346f858592ee4d2179439ad52f",
+          "range": {
+            "endColumn": 8,
+            "endLine": 16,
+            "startColumn": 4,
+            "startLine": 6
+          },
+          "sourceUnitId": "ws:src/Sender.Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-0000000d4705:Codeunit:50000#cc7e0d05e04c6c2a3061943bdc3dc62be0146ae5a91d97774026d7e5158f39ba": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [
+      {
+        "kind": "table",
+        "shapeFingerprint": "e6779008e2c488814d1ffccb900b8a8d8b0550b21e9b032ca0627e0d511f570e",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Table:50100"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "26839cc5e09f3400e05e701c85022ec2bacd89495b27312a0730169c5fd8604d",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Table:50100#1"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "af2f8a90d76f97de64eae9dfb5b852b0d10dc35125da0871a6e71e637447d8b3",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Table:50100#2"
+      },
+      {
+        "kind": "key",
+        "shapeFingerprint": "a2c561c5115e3b444b9cd3de546f0021e25a7e6a5b8f5fcb5b54e96e7c482d6e",
+        "stableId": "11111111-0000-0000-0000-0000000d4705:Table:50100#K0"
+      }
+    ],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [],
+    "workspaceFingerprint": "d7511a4fe3bcaed11cec5244ebdc7b282e2294c2cf2e3782c9f106718516fe98"
+  },
+  "schemaVersion": "1.1.0"
+}

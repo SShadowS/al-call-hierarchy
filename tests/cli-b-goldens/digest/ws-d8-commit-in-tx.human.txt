@@ -1,0 +1,36 @@
+--- PostSalesDoc ---
+  coverage: complete
+  [COMMIT] transitive
+    evidence: ws:src/subscriber.al:10 "commit"
+    via: 1 path(s)
+  [DB_INSERT] transitive
+    evidence: ws:src/subscriber.al:9 "Audit.Insert"
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/table/50100, resourceDisplay=Audit Entry
+    via: 1 path(s)
+  [DB_MODIFY] direct
+    evidence: ws:src/posting.al:9 "Header.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/table/36, resourceDisplay=Sales Header
+    via: 1 path(s)
+  [DB_MODIFY] direct
+    evidence: ws:src/posting.al:11 "Line.ModifyAll"
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/table/37, resourceDisplay=Sales Line
+    via: 1 path(s)
+  [DB_MODIFY] direct
+    evidence: ws:src/posting.al:14 "Header.Modify"
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/table/36, resourceDisplay=Sales Header
+    via: 1 path(s)
+  [EVENT_PUBLISH] transitive
+    evidence: (unavailable)
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc, resourceDisplay=onafterpostsalesdoc, eventClass=Integration
+    via: 1 path(s)
+  diagnostic: evidence-unavailable (EVENT_PUBLISH)
+
+--- HandlePosted ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/subscriber.al:10 "commit"
+    via: 1 path(s)
+  [DB_INSERT] direct
+    evidence: ws:src/subscriber.al:9 "Audit.Insert"
+    detail: resourceId=11111111-0000-0000-0000-00000000d80a/table/50100, resourceDisplay=Audit Entry
+    via: 1 path(s)

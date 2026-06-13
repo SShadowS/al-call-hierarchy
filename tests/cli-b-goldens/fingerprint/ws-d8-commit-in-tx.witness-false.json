@@ -1,0 +1,326 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-detect",
+      "message": "d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d80a/table/36",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "6a529432c0e63f01",
+                    "op": "modify",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/36",
+                    "resourceKind": "table",
+                    "via": "self"
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "6a529432c0e63f01",
+                    "op": "modify",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/36",
+                    "resourceKind": "table",
+                    "via": "self"
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "4f4164e8a141d242",
+                    "op": "read",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/36",
+                    "resourceKind": "table",
+                    "via": "self"
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d80a/table/36",
+                "ops": [
+                  "modify",
+                  "read"
+                ]
+              },
+              {
+                "display": "11111111-0000-0000-0000-00000000d80a/table/37",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "2f594dc3de62d07f",
+                    "op": "modify",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/37",
+                    "resourceKind": "table",
+                    "via": "self"
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d80a/table/37",
+                "ops": [
+                  "modify"
+                ]
+              },
+              {
+                "display": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "001eab9cd3f0065a",
+                    "op": "insert",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                    "resourceKind": "table",
+                    "via": "call"
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                "ops": [
+                  "insert"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "event",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "2e00048416e0f044",
+                    "op": "publish",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc",
+                    "resourceKind": "event",
+                    "via": "call"
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc",
+                "ops": [
+                  "publish"
+                ]
+              },
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "8bd20e823db97e3e",
+                    "op": "subscribe",
+                    "provenance": "inherited",
+                    "resourceKind": "event",
+                    "via": "call"
+                  }
+                ],
+                "ops": [
+                  "subscribe"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "transaction",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "2f477d3bc86e941a",
+                    "op": "commit",
+                    "provenance": "inherited",
+                    "resourceKind": "transaction",
+                    "via": "call"
+                  }
+                ],
+                "ops": [
+                  "commit"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "yes",
+          "witnessFactId": "2f477d3bc86e941a"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "MR",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d80a/table/36",
+            "targetId": "11111111-0000-0000-0000-00000000d80a/table/36",
+            "targetKind": "table"
+          },
+          {
+            "coverage": "complete",
+            "rights": "M",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d80a/table/37",
+            "targetId": "11111111-0000-0000-0000-00000000d80a/table/37",
+            "targetKind": "table"
+          },
+          {
+            "coverage": "complete",
+            "rights": "W",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d80a/table/50100",
+            "targetId": "11111111-0000-0000-0000-00000000d80a/table/50100",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "PostSalesDoc",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1"
+        }
+      },
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "a1def6136369a8bf",
+                    "op": "insert",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                    "resourceKind": "table",
+                    "via": "self"
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d80a/table/50100",
+                "ops": [
+                  "insert"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "event",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "2131ee23b7645a1f",
+                    "op": "subscribe",
+                    "provenance": "direct",
+                    "resourceKind": "event",
+                    "via": "self"
+                  }
+                ],
+                "ops": [
+                  "subscribe"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "transaction",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "7b21e97e4fb56ff3",
+                    "op": "commit",
+                    "provenance": "direct",
+                    "resourceKind": "transaction",
+                    "via": "self"
+                  }
+                ],
+                "ops": [
+                  "commit"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "yes",
+          "witnessFactId": "7b21e97e4fb56ff3"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "W",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d80a/table/50100",
+            "targetId": "11111111-0000-0000-0000-00000000d80a/table/50100",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "event-subscriber"
+        ],
+        "routine": {
+          "display": "HandlePosted",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50109#715258fd9a80d3130d49a07aadbc434d15fe547b2e1521eb003f19d3a5ce6bf0"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": false
+    },
+    "summary": {
+      "renderedBlocks": 2,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 2
+    },
+    "workspaceFingerprint": "422fd5d79e0d95f73a850372a04ff8ed07ccc5ee82deecc2ee2bcf44aa4ef31f"
+  },
+  "schemaVersion": "1.2.0"
+}

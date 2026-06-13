@@ -1,0 +1,11 @@
+Rendering 1 root classification.
+
+::MessageOnly  [public-procedure]
+  coverage:   complete
+  ui:         "<unknown>"
+
+  witnesses:
+    ui-message ui — 1 path shown
+      Path 1/1 shown:
+        call Message at ws:src/Sender.Codeunit.al:8:8
+

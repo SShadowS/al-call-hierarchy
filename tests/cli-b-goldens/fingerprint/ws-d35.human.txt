@@ -1,0 +1,54 @@
+Rendering 4 root classifications.
+
+::OnBeforePrintSafe  [event-subscriber]
+  coverage:   complete
+  ui:         "<unknown>"
+
+  witnesses:
+    subscribe event — 1 path shown
+      Path 1/1 shown:
+        subscribe event
+
+    ui-message ui — 1 path shown
+      Path 1/1 shown:
+        call Message at ws:src/Codeunit.al:20:8
+
+
+::OnAfterPostDirect  [event-subscriber]
+  coverage:   complete
+  commit:     yes
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        direct commit at ws:src/Codeunit.al:6:8
+
+    subscribe event — 1 path shown
+      Path 1/1 shown:
+        subscribe event
+
+
+::NonSubscriberCommit  [public-procedure]
+  coverage:   complete
+  commit:     yes
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        direct commit at ws:src/Codeunit.al:26:8
+
+
+::OnAfterValidateTransitive  [event-subscriber]
+  coverage:   complete
+  commit:     yes
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        PersistAudit (via PersistAudit at ws:src/Codeunit.al:13:8)
+          → direct commit at ws:src/Codeunit.al:31:8
+
+    subscribe event — 1 path shown
+      Path 1/1 shown:
+        subscribe event
+

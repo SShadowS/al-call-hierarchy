@@ -1,0 +1,86 @@
+Rendering 2 root classifications.
+
+::PostSalesDoc  [public-procedure]
+  coverage:   complete
+  writes:     TableData "11111111-0000-0000-0000-00000000d80a/table/50100"
+  reads:      TableData "11111111-0000-0000-0000-00000000d80a/table/36"
+  commit:     yes
+  publish:    Event "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc"
+  http:       none
+  storage:    none
+  file:       none
+  background: none
+  telemetry:  none
+  ui:         none
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d80a/table/36" MR
+    TableData "11111111-0000-0000-0000-00000000d80a/table/37" M
+    TableData "11111111-0000-0000-0000-00000000d80a/table/50100" W
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        OnAfterPostSalesDoc (via OnAfterPostSalesDoc at ws:src/posting.al:12:8)
+          → event 11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc
+            → direct commit at ws:src/subscriber.al:10:8
+
+    insert table "11111111-0000-0000-0000-00000000d80a/table/50100" — 1 path shown
+      Path 1/1 shown:
+        OnAfterPostSalesDoc (via OnAfterPostSalesDoc at ws:src/posting.al:12:8)
+          → event 11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc
+            → direct Audit.Insert at ws:src/subscriber.al:9:8
+
+    modify table "11111111-0000-0000-0000-00000000d80a/table/36" — 1 path shown
+      Path 1/1 shown:
+        direct Header.Modify at ws:src/posting.al:9:8
+
+    modify table "11111111-0000-0000-0000-00000000d80a/table/36" — 1 path shown
+      Path 1/1 shown:
+        direct Header.Modify at ws:src/posting.al:14:8
+
+    modify table "11111111-0000-0000-0000-00000000d80a/table/37" — 1 path shown
+      Path 1/1 shown:
+        direct Line.ModifyAll at ws:src/posting.al:11:8
+
+    publish event "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc" — 1 path shown
+      Path 1/1 shown:
+        OnAfterPostSalesDoc (via OnAfterPostSalesDoc at ws:src/posting.al:12:8)
+          → publish event
+
+    read table "11111111-0000-0000-0000-00000000d80a/table/36" — 1 path shown
+      Path 1/1 shown:
+        direct Header.Get at ws:src/posting.al:7:8
+
+    subscribe event — 1 path shown
+      Path 1/1 shown:
+        OnAfterPostSalesDoc (via OnAfterPostSalesDoc at ws:src/posting.al:12:8)
+          → event 11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc
+            → subscribe event
+
+
+::HandlePosted  [event-subscriber]
+  coverage:   complete
+  writes:     TableData "11111111-0000-0000-0000-00000000d80a/table/50100"
+  commit:     yes
+  http:       none
+  storage:    none
+  file:       none
+  background: none
+  telemetry:  none
+  ui:         none
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d80a/table/50100" W
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        direct commit at ws:src/subscriber.al:10:8
+
+    insert table "11111111-0000-0000-0000-00000000d80a/table/50100" — 1 path shown
+      Path 1/1 shown:
+        direct Audit.Insert at ws:src/subscriber.al:9:8
+
+    subscribe event — 1 path shown
+      Path 1/1 shown:
+        subscribe event
+

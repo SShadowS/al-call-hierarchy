@@ -1,0 +1,153 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-00000000d481",
+        "name": "D48 IO In Loop Neg",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "Client.Send",
+        "callsiteId": "4359c17162d3bf58/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049/cs0",
+        "controlContext": "top-level",
+        "endColumn": 30,
+        "endLine": 12,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "sourceFile": "ws:src/D48Neg.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 12
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "Client.Send",
+        "callsiteId": "4359c17162d3bf58/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049/cs0",
+        "dispatchKind": "unresolved",
+        "from": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "resolvedEdges": [],
+        "status": "builtin"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "unresolved",
+        "extra": {
+          "bodyArgSource": {
+            "initializer": {
+              "kind": "unknown"
+            },
+            "kind": "constant-var",
+            "varName": "req"
+          },
+          "kind": "http",
+          "method": "Send"
+        },
+        "op": "send",
+        "provenance": "direct",
+        "resourceArgSource": {
+          "kind": "unknown"
+        },
+        "resourceKind": "http",
+        "subject": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "via": "self",
+        "witnessCallsiteId": "4359c17162d3bf58/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049/cs0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "8ae78cd4316e3d9fca58ca87716e17ed1f656538d70e58be69f77c334b5f92df",
+        "stableId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "stableId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D48 Sender Neg",
+        "SendOnce"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-00000000d481:Codeunit:50000",
+        "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "9f4af6fbb4c104636810d4f68a2524d74d9f964421f02619f0da601219f73dfb",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [],
+    "permissionFacts": [],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "4359c17162d3bf58/027b190c8d7f64f9af48ef766492468522a030709daf161984d6d7a07dce2049",
+          "range": {
+            "endColumn": 8,
+            "endLine": 13,
+            "startColumn": 4,
+            "startLine": 5
+          },
+          "sourceUnitId": "ws:src/D48Neg.Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [],
+    "workspaceFingerprint": "17fbcaab4eb174ec9f7c2e3d53f24d2fc8c3bbf94cf005e47d7c9d3069575c4a"
+  },
+  "schemaVersion": "1.1.0"
+}

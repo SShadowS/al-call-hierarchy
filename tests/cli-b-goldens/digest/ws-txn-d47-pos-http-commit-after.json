@@ -1,0 +1,214 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/Rec.Table.al",
+        "src/Sender.Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [
+      {
+        "file": "src/Rec.Table.al",
+        "kind": "file-unmatched"
+      }
+    ],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {},
+            "evidence": {
+              "column": 8,
+              "excerpt": "commit",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 18,
+              "sourceKind": "source"
+            },
+            "factId": "bb65e9c61d5d3ff8",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "COMMIT_ON_SUCCESS_PATH",
+              "COMMIT_DOMINATES_RETURN",
+              "WRITE_COMMITTED_BEFORE_RETURN",
+              "EXTERNAL_IO_BEFORE_COMMIT"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_ON_SUCCESS_PATH",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "WRITE_COMMITTED_BEFORE_RETURN",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "EXTERNAL_IO_BEFORE_COMMIT",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "commitOccurrenceId": "bb65e9c61d5d3ff8",
+                "interveningBoundary": "none",
+                "label": "COMMIT_DOMINATES_RETURN",
+                "returnOccurrenceId": "baceacea4c138350",
+                "scope": "root",
+                "validForRefutation": true
+              }
+            ],
+            "transactionContext": "span-has-known-writes",
+            "type": "COMMIT",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "resourceDisplay": "D47 Rec",
+              "resourceId": "11111111-0000-0000-0000-0000000d4702/table/50100"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Rec.Modify",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 16,
+              "sourceKind": "source"
+            },
+            "factId": "681dfca33234eb32",
+            "guarantees": [
+              "COMMIT_REACHABLE"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              }
+            ],
+            "transactionContext": "unknown",
+            "type": "DB_MODIFY",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          },
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "method": "Get"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Client.Get",
+              "file": "ws:src/Sender.Codeunit.al",
+              "line": 17,
+              "sourceKind": "source"
+            },
+            "factId": "64804a20aa38a3ec",
+            "guarantees": [
+              "COMMIT_REACHABLE",
+              "EXTERNAL_IO_BEFORE_COMMIT",
+              "WRITE_PENDING_AT_EXTERNAL_IO"
+            ],
+            "provenance": "direct",
+            "scopedGuarantees": [
+              {
+                "interveningBoundary": "none",
+                "label": "COMMIT_REACHABLE",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "EXTERNAL_IO_BEFORE_COMMIT",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+                "scope": "owning-routine",
+                "validForRefutation": false
+              },
+              {
+                "interveningBoundary": "none",
+                "ioOccurrenceId": "64804a20aa38a3ec",
+                "label": "WRITE_PENDING_AT_EXTERNAL_IO",
+                "scope": "root",
+                "validForRefutation": true,
+                "writeOccurrenceId": "681dfca33234eb32"
+              }
+            ],
+            "transactionContext": "unknown",
+            "type": "HTTP",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 8,
+            "sourceKind": "source"
+          },
+          "display": "SendThenCommit",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-0000000d4702:Codeunit:50000#ac74742b81f7f1f1ddeda902e79e314c6d65bb8e97f49257b6268d29e0cabe95"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 1,
+      "rootsResolved": 1,
+      "totalEffects": 3,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "b8c1a945e4edfea887c05e1dfe4a05cd92953972fc5ee005c195f03c170a5e84"
+  },
+  "schemaVersion": "1.3.0"
+}

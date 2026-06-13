@@ -1,0 +1,4 @@
+--- OnRun ---
+  question: commits-on-success-path
+  answer:   no
+  obligations: all clear

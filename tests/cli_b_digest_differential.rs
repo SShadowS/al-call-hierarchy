@@ -55,22 +55,33 @@ const DIGEST_CORPUS: &[&str] = &[
 
 const DIFF_FIXTURE: &str = "ws-d8-commit-in-tx";
 
-/// al-sem repo root (override with `AL_SEM_DIR`).
-fn al_sem_dir() -> PathBuf {
-    std::env::var("AL_SEM_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(r"U:\Git\al-sem"))
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// In-repo fixtures (Rust-owned; al-sem byte-parity retired — see CLAUDE.md).
 fn fixtures_dir() -> PathBuf {
-    al_sem_dir().join("test").join("fixtures")
+    repo_root().join("tests").join("r0-corpus")
 }
 
+/// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    al_sem_dir()
-        .join("scripts")
-        .join("cli-b-goldens")
-        .join("digest")
+    repo_root().join("tests").join("cli-b-goldens").join("digest")
+}
+
+/// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
+/// return true so the caller skips the byte-compare. al-sem byte-parity retired.
+fn regen_golden(golden_path: &std::path::Path, got: &str) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    if let Some(parent) = golden_path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", parent.display()));
+    }
+    std::fs::write(golden_path, got)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    true
 }
 
 /// Collect all `.al` files in `<fixture>/src/`, sorted, workspace-relative.
@@ -199,6 +210,9 @@ fn json_matches_goldens() {
     for fixture in DIGEST_CORPUS {
         let (got_json, _) = run_files_digest(fixture);
         let golden_path = goldens_dir().join(format!("{fixture}.json"));
+        if regen_golden(&golden_path, &got_json) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|_| panic!("{fixture}: golden not found at {}", golden_path.display()));
 
@@ -222,6 +236,9 @@ fn human_matches_goldens() {
     for fixture in DIGEST_CORPUS {
         let (_, got_human) = run_files_digest(fixture);
         let golden_path = goldens_dir().join(format!("{fixture}.human.txt"));
+        if regen_golden(&golden_path, &got_human) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|_| panic!("{fixture}: human golden not found at {}", golden_path.display()));
 
@@ -244,6 +261,9 @@ fn human_matches_goldens() {
 fn diff_json_matches_golden() {
     let got = run_diff_digest(DIFF_FIXTURE);
     let golden_path = goldens_dir().join(format!("{DIFF_FIXTURE}.diff.json"));
+    if regen_golden(&golden_path, &got) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|_| panic!("{DIFF_FIXTURE}: diff.json golden not found at {}", golden_path.display()));
 
@@ -261,21 +281,5 @@ fn diff_json_matches_golden() {
     }
 }
 
-/// Refresh helper — regenerate the digest goldens via `bun run scripts/dump-digest.ts`.
-/// Only run via `cargo test -- --ignored refresh_goldens`.
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem = al_sem_dir();
-    let status = std::process::Command::new("bun")
-        .arg("run")
-        .arg("scripts/dump-digest.ts")
-        .current_dir(&al_sem)
-        .env("AL_SEM_VERSION_OVERRIDE", VERSION_OVERRIDE)
-        .status()
-        .expect("bun not found on PATH");
-    assert!(
-        status.success(),
-        "bun run scripts/dump-digest.ts failed with status {status}"
-    );
-}
+// Rust-owned goldens regenerated in-process via
+// `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_digest_differential`.

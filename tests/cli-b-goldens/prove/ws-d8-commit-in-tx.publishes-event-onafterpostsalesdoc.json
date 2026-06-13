@@ -1,0 +1,89 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-detect",
+      "message": "d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "prove",
+  "payload": {
+    "question": "publishes-event:onafterpostsalesdoc",
+    "result": {
+      "answer": "yes",
+      "evidence": [
+        {
+          "conditionality": "unknown",
+          "confidence": "static",
+          "detail": {
+            "eventClass": "Integration",
+            "resourceDisplay": "onafterpostsalesdoc",
+            "resourceId": "11111111-0000-0000-0000-00000000d80a/Codeunit/50108/event/onafterpostsalesdoc"
+          },
+          "evidence": {
+            "sourceKind": "unavailable"
+          },
+          "factId": "9a275bc82593f13c",
+          "guarantees": [
+            "ORDERING_UNKNOWN"
+          ],
+          "provenance": "transitive",
+          "scopedGuarantees": [
+            {
+              "interveningBoundary": "none",
+              "label": "ORDERING_UNKNOWN",
+              "scope": "owning-routine",
+              "validForRefutation": false
+            }
+          ],
+          "transactionContext": "unknown",
+          "type": "EVENT_PUBLISH",
+          "viaPaths": [
+            [
+              {
+                "anchor": {
+                  "column": 8,
+                  "file": "ws:src/posting.al",
+                  "line": 12,
+                  "sourceKind": "source"
+                },
+                "calleeDisplay": "OnAfterPostSalesDoc",
+                "callsiteId": "323c302a83ac644b/825ec967c74345fb0413f0bb078ac538bb70100a89e09849a93faf10f875e96a/cs0",
+                "edgeKind": "direct-call",
+                "fromDisplay": "PostSalesDoc",
+                "fromRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1",
+                "kind": "call",
+                "toDisplay": "OnAfterPostSalesDoc",
+                "toRoutineId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#eaac6eca26a910fdaf516812b47df87bc3b39578ed2941a6341edc720ca4b5ec"
+              }
+            ]
+          ],
+          "viaPathsTruncated": false
+        }
+      ],
+      "obligations": {
+        "analysisGaps": 0,
+        "coneTruncated": false,
+        "coverageComplete": true,
+        "openWorldRows": 0,
+        "unresolvedCallsites": 0
+      }
+    },
+    "routine": {
+      "anchor": {
+        "column": 4,
+        "file": "ws:src/posting.al",
+        "line": 2,
+        "sourceKind": "source"
+      },
+      "display": "PostSalesDoc",
+      "objectDisplay": "",
+      "stableId": "11111111-0000-0000-0000-00000000d80a:Codeunit:50108#2e5621326f8bababbcb4016a11968674e37ac0be41cdb950e2e16bf34125f1b1"
+    },
+    "workspaceFingerprint": "422fd5d79e0d95f73a850372a04ff8ed07ccc5ee82deecc2ee2bcf44aa4ef31f"
+  },
+  "schemaVersion": "1.2.0"
+}

@@ -1,0 +1,63 @@
+Rendering 4 root classifications.
+
+::CallerB  [public-procedure]
+  coverage:   complete
+  reads:      TableData "11111111-0000-0000-0000-00000000d01a/table/50101"
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d01a/table/50101" MR
+
+  witnesses:
+    modify table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        ModifyHelper (via ModifyHelper at ws:src/D1MultiCaller.al:34:12)
+          → direct Cust.Modify at ws:src/D1MultiCaller.al:18:8
+
+    read table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        direct Cust.FindSet at ws:src/D1MultiCaller.al:32:8
+
+
+::CallerC  [public-procedure]
+  coverage:   complete
+  reads:      TableData "11111111-0000-0000-0000-00000000d01a/table/50101"
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d01a/table/50101" MR
+
+  witnesses:
+    modify table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        ModifyHelper (via ModifyHelper at ws:src/D1MultiCaller.al:42:12)
+          → direct Cust.Modify at ws:src/D1MultiCaller.al:18:8
+
+    read table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        direct Cust.FindSet at ws:src/D1MultiCaller.al:40:8
+
+
+::CallerA  [public-procedure]
+  coverage:   complete
+  reads:      TableData "11111111-0000-0000-0000-00000000d01a/table/50101"
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d01a/table/50101" MR
+
+  witnesses:
+    modify table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        ModifyHelper (via ModifyHelper at ws:src/D1MultiCaller.al:26:12)
+          → direct Cust.Modify at ws:src/D1MultiCaller.al:18:8
+
+    read table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        direct Cust.FindSet at ws:src/D1MultiCaller.al:24:8
+
+
+::ModifyHelper  [public-procedure]
+  coverage:   complete
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d01a/table/50101" M
+
+  witnesses:
+    modify table "11111111-0000-0000-0000-00000000d01a/table/50101" — 1 path shown
+      Path 1/1 shown:
+        direct Cust.Modify at ws:src/D1MultiCaller.al:18:8
+

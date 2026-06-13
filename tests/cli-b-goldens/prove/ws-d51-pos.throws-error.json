@@ -1,0 +1,57 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "prove",
+  "payload": {
+    "question": "throws-error",
+    "result": {
+      "answer": "yes",
+      "evidence": [
+        {
+          "conditionality": "unconditional-on-success",
+          "confidence": "static",
+          "detail": {},
+          "evidence": {
+            "column": 8,
+            "excerpt": "error-call",
+            "file": "ws:src/Sender.Codeunit.al",
+            "line": 13,
+            "sourceKind": "source"
+          },
+          "factId": "f3a404acb14ebd93",
+          "guarantees": [],
+          "provenance": "direct",
+          "scopedGuarantees": [],
+          "transactionContext": "unknown",
+          "type": "ERROR_THROW",
+          "viaPaths": [
+            []
+          ],
+          "viaPathsTruncated": false
+        }
+      ],
+      "obligations": {
+        "analysisGaps": 0,
+        "coneTruncated": false,
+        "coverageComplete": true,
+        "openWorldRows": 0,
+        "unresolvedCallsites": 0
+      }
+    },
+    "routine": {
+      "anchor": {
+        "column": 4,
+        "file": "ws:src/Sender.Codeunit.al",
+        "line": 6,
+        "sourceKind": "source"
+      },
+      "display": "PostThenError",
+      "objectDisplay": "",
+      "stableId": "aaaabbbb-cccc-dddd-eeee-000000000d51:Codeunit:50101#f4545c36e8d4a0d57b209e7b5fa30d1ee4a266cc2379d6e3ba408699af2356ed"
+    },
+    "workspaceFingerprint": "7b850fecf8bc63d2216a6d8e134dbdee8afdd0ceb51be87ffc52197fcef36875"
+  },
+  "schemaVersion": "1.2.0"
+}

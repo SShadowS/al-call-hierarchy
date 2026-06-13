@@ -1,0 +1,26 @@
+Rendering 1 root classification.
+
+::RunSetup  [public-procedure]
+  coverage:   complete
+  writes:     TableData "11111111-0000-0000-0000-00000000d461/table/50000"
+  reads:      TableData "11111111-0000-0000-0000-00000000d461/table/50000"
+  commit:     yes
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d461/table/50000" RW
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/NormalCU.al:24:8)
+          → direct commit at ws:src/NormalCU.al:35:8
+
+    insert table "11111111-0000-0000-0000-00000000d461/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/NormalCU.al:24:8)
+          → direct Setup.Insert at ws:src/NormalCU.al:33:12
+
+    read table "11111111-0000-0000-0000-00000000d461/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/NormalCU.al:24:8)
+          → direct Setup.Get at ws:src/NormalCU.al:31:15
+

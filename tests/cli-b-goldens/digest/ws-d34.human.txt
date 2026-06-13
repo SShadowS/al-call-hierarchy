@@ -1,0 +1,29 @@
+--- TransitiveCommit ---
+  coverage: complete
+  [COMMIT] transitive
+    evidence: ws:src/Codeunit.al:47 "commit"
+    via: 1 path(s)
+
+--- DirectCommitInLoop ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:9 "commit"
+    via: 1 path(s)
+
+--- Persist ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:47 "commit"
+    via: 1 path(s)
+
+--- NestedCommit ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:21 "commit"
+    via: 1 path(s)
+
+--- CommitAfterLoop ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:40 "commit"
+    via: 1 path(s)

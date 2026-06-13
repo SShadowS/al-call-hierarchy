@@ -1,0 +1,76 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "digest",
+  "payload": {
+    "changed": {
+      "diffProvided": false,
+      "files": [
+        "src/D48Neg.Codeunit.al"
+      ]
+    },
+    "changedRootsDiagnostics": [],
+    "entries": [
+      {
+        "coverage": {
+          "reasons": [],
+          "status": "complete"
+        },
+        "effects": [
+          {
+            "conditionality": "unconditional-on-success",
+            "confidence": "static",
+            "detail": {
+              "method": "Send"
+            },
+            "evidence": {
+              "column": 8,
+              "excerpt": "Client.Send",
+              "file": "ws:src/D48Neg.Codeunit.al",
+              "line": 12,
+              "sourceKind": "source"
+            },
+            "factId": "e9c48837a1825ce3",
+            "guarantees": [],
+            "provenance": "direct",
+            "scopedGuarantees": [],
+            "transactionContext": "unknown",
+            "type": "HTTP",
+            "viaPaths": [
+              []
+            ],
+            "viaPathsTruncated": false
+          }
+        ],
+        "entryDiagnostics": [],
+        "routine": {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/D48Neg.Codeunit.al",
+            "line": 5,
+            "sourceKind": "source"
+          },
+          "display": "SendOnce",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d481:Codeunit:50000#87be6e12ef6d9ff4dbfc63ca7c99925ef35263973d450e98dcb316037967511b"
+        },
+        "unresolved": [],
+        "unresolvedTraversal": {
+          "maxDepth": 64,
+          "truncated": false,
+          "visitedRoutines": 1
+        }
+      }
+    ],
+    "summary": {
+      "rootsRequested": 1,
+      "rootsResolved": 1,
+      "totalEffects": 1,
+      "totalUnresolved": 0
+    },
+    "workspaceFingerprint": "17fbcaab4eb174ec9f7c2e3d53f24d2fc8c3bbf94cf005e47d7c9d3069575c4a"
+  },
+  "schemaVersion": "1.3.0"
+}

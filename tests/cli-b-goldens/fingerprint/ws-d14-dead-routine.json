@@ -1,0 +1,22 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 0,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 0
+    },
+    "workspaceFingerprint": "27982e562e0f7d50b80b3135bd69215672059411d7f470a27618b9037ee83d05"
+  },
+  "schemaVersion": "1.2.0"
+}

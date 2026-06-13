@@ -1,0 +1,175 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-00000000d14a",
+        "name": "D14 Dead Routine",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "LiveHelper",
+        "callsiteId": "99b2347c6aebdaf0/609585be4ad09835acbf3a4740dfde1506aa78a340562bbaf7c8be6f043fd0c2/cs0",
+        "controlContext": "top-level",
+        "endColumn": 14,
+        "endLine": 4,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "sourceFile": "ws:src/codeunit.al",
+        "startColumn": 2,
+        "startLine": 4
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "LiveHelper",
+        "callsiteId": "99b2347c6aebdaf0/609585be4ad09835acbf3a4740dfde1506aa78a340562bbaf7c8be6f043fd0c2/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "resolvedEdges": [
+          "e0ff9b5b77482a90"
+        ],
+        "status": "resolved"
+      }
+    ],
+    "capabilityFacts": [],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "723e4f43e3741610f719c8a762cdc063069d30825fb152be04fa1c85b3361aac",
+        "stableId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+        "stableId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+        "stableId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "stableId": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D14EntryPoints",
+        "DeadHelper",
+        "LiveHelper",
+        "OnRun"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-00000000d14a:Codeunit:50114",
+        "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90",
+        "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82",
+        "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "827d228b7530ced2f916f88956a9b90bbcc50087386ece5ddf03f6adc0d6c924",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [],
+    "permissionFacts": [],
+    "rootClassifications": [],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7753483aea24994460cd48f690bd81e349e60e667a799b1cffc587c66d9f9a90": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [
+      {
+        "callsiteId": "99b2347c6aebdaf0/609585be4ad09835acbf3a4740dfde1506aa78a340562bbaf7c8be6f043fd0c2/cs0",
+        "edgeId": "e0ff9b5b77482a90",
+        "from": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#9d5617297360fc8d21d4f3270b09dbb5db7318b4cfc666d6b35ae7660f3d48bc",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "99b2347c6aebdaf0/609585be4ad09835acbf3a4740dfde1506aa78a340562bbaf7c8be6f043fd0c2",
+          "range": {
+            "endColumn": 14,
+            "endLine": 4,
+            "startColumn": 2,
+            "startLine": 4
+          },
+          "sourceUnitId": "ws:src/codeunit.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d14a:Codeunit:50114#7d7107f8fc84808468c4f81939860ce3e9b1e5ceaddb4b1e74ebbc2f55898f82"
+      }
+    ],
+    "workspaceFingerprint": "27982e562e0f7d50b80b3135bd69215672059411d7f470a27618b9037ee83d05"
+  },
+  "schemaVersion": "1.1.0"
+}

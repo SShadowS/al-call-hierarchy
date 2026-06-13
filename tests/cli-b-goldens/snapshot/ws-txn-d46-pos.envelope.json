@@ -1,0 +1,784 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-00000000d460",
+        "name": "D46 Commit In Lifecycle Pos",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "DoUpgrade",
+        "callsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "controlContext": "top-level",
+        "endColumn": 19,
+        "endLine": 6,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "sourceFile": "ws:src/UpgradeCU.al",
+        "startColumn": 8,
+        "startLine": 6
+      },
+      {
+        "calleeDisplay": "DoSetup",
+        "callsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "controlContext": "top-level",
+        "endColumn": 17,
+        "endLine": 23,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "sourceFile": "ws:src/InstallCU.al",
+        "startColumn": 8,
+        "startLine": 23
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "DoSetup",
+        "callsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "resolvedEdges": [
+          "34f1962ddd9ccb35"
+        ],
+        "status": "resolved"
+      },
+      {
+        "calleeDisplay": "DoUpgrade",
+        "callsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "dispatchKind": "direct",
+        "from": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "resolvedEdges": [
+          "1b61dc105c8327a4"
+        ],
+        "status": "resolved"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "inherited",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op3"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Insert",
+          "recordVariableId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "insert",
+        "provenance": "inherited",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "read",
+        "provenance": "inherited",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op3"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Insert",
+          "recordVariableId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "insert",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "read",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "direct",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op2"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Modify",
+          "recordVariableId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "modify",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "read",
+        "provenance": "direct",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "via": "self",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0"
+      },
+      {
+        "confidence": "static",
+        "op": "commit",
+        "provenance": "inherited",
+        "resourceKind": "transaction",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op2"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Modify",
+          "recordVariableId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "modify",
+        "provenance": "inherited",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1"
+      },
+      {
+        "confidence": "static",
+        "extra": {
+          "kind": "table",
+          "opSubtype": "Get",
+          "recordVariableId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/rv/setup",
+          "tempState": {
+            "kind": "known",
+            "value": false
+          }
+        },
+        "op": "read",
+        "provenance": "inherited",
+        "resourceId": "11111111-0000-0000-0000-00000000d460/table/50000",
+        "resourceKind": "table",
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "via": "call",
+        "witnessCallsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "witnessOperationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "5fc32eedd3d254686d2659823e5de99b865e266539def5a26f0771343aa76f21",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "7dc0c6e30bdacc0c92e0e7449daea5bdcdd4c5b2aa3d53936a964ffbf7329ee6",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "visibility": "local"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "dd8f7082d83872bba3898e47ed1b8080f151786bc2a19bd62d827b7ccb5e0e28",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "Install Handler",
+        "OnInstallAppPerCompany",
+        "DoSetup",
+        "Upgrade Handler",
+        "DoUpgrade",
+        "OnUpgradePerCompany",
+        "My Setup"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50001",
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50002",
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "11111111-0000-0000-0000-00000000d460:Table:50000"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "187f42695f76a8ce428c655facbc7fb86baa8ed92777425aea4418bbecc4ae94",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [
+      {
+        "controlContext": "top-level",
+        "displayText": "Setup.Get",
+        "endColumn": 22,
+        "endLine": 13,
+        "operationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op0",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "sourceFile": "ws:src/UpgradeCU.al",
+        "startColumn": 11,
+        "startLine": 13
+      },
+      {
+        "controlContext": "conditional",
+        "displayText": "Setup.Modify",
+        "endColumn": 26,
+        "endLine": 15,
+        "operationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op1",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 1
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "sourceFile": "ws:src/UpgradeCU.al",
+        "startColumn": 12,
+        "startLine": 15
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "commit",
+        "endColumn": 16,
+        "endLine": 17,
+        "operationId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a/op2",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 2
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "sourceFile": "ws:src/UpgradeCU.al",
+        "startColumn": 8,
+        "startLine": 17
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "Setup.Get",
+        "endColumn": 26,
+        "endLine": 30,
+        "operationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op0",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "sourceFile": "ws:src/InstallCU.al",
+        "startColumn": 15,
+        "startLine": 30
+      },
+      {
+        "controlContext": "conditional",
+        "displayText": "Setup.Insert",
+        "endColumn": 26,
+        "endLine": 32,
+        "operationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op2",
+        "order": {
+          "dominatesSuccessReturn": false,
+          "frameId": 1,
+          "onSuccessPath": true,
+          "orderId": 2
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "sourceFile": "ws:src/InstallCU.al",
+        "startColumn": 12,
+        "startLine": 32
+      },
+      {
+        "controlContext": "top-level",
+        "displayText": "commit",
+        "endColumn": 16,
+        "endLine": 34,
+        "operationId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346/op3",
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 3
+        },
+        "routine": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "sourceFile": "ws:src/InstallCU.al",
+        "startColumn": 8,
+        "startLine": 34
+      }
+    ],
+    "permissionFacts": [
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "insert",
+          "witnessCallsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0"
+        },
+        "kind": "required",
+        "rights": [
+          "I"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "read",
+          "witnessCallsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0"
+        },
+        "kind": "required",
+        "rights": [
+          "R"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "insert"
+        },
+        "kind": "required",
+        "rights": [
+          "I"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "read"
+        },
+        "kind": "required",
+        "rights": [
+          "R"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "modify"
+        },
+        "kind": "required",
+        "rights": [
+          "M"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "read"
+        },
+        "kind": "required",
+        "rights": [
+          "R"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "modify",
+          "witnessCallsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0"
+        },
+        "kind": "required",
+        "rights": [
+          "M"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      },
+      {
+        "coverage": "complete",
+        "derivedFromCapability": {
+          "op": "read",
+          "witnessCallsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0"
+        },
+        "kind": "required",
+        "rights": [
+          "R"
+        ],
+        "subject": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "target": "11111111-0000-0000-0000-00000000d460:Table:50000",
+        "targetKind": "TableData"
+      }
+    ],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "install-codeunit"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d",
+          "range": {
+            "endColumn": 8,
+            "endLine": 24,
+            "startColumn": 4,
+            "startLine": 21
+          },
+          "sourceUnitId": "ws:src/InstallCU.al",
+          "syntaxKind": "trigger_declaration"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "install-codeunit"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/891fc7dddd2ae2ecaf276395a3a77ab66421d96eb8ac9732c85570a832a93346",
+          "range": {
+            "endColumn": 8,
+            "endLine": 35,
+            "startColumn": 4,
+            "startLine": 26
+          },
+          "sourceUnitId": "ws:src/InstallCU.al",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "upgrade-codeunit"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/742544f8c68d2810d9c9dfd24127da5ab0e6eadbcbd6f6621f9beb2d3bfcca1a",
+          "range": {
+            "endColumn": 8,
+            "endLine": 18,
+            "startColumn": 4,
+            "startLine": 9
+          },
+          "sourceUnitId": "ws:src/UpgradeCU.al",
+          "syntaxKind": "procedure"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "upgrade-codeunit"
+        ],
+        "routineId": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f",
+          "range": {
+            "endColumn": 8,
+            "endLine": 7,
+            "startColumn": 4,
+            "startLine": 4
+          },
+          "sourceUnitId": "ws:src/UpgradeCU.al",
+          "syntaxKind": "trigger_declaration"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true,
+          "frameId": 1,
+          "kind": "if-then",
+          "parentFrameId": 0
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        },
+        {
+          "branchAlwaysTerminates": false,
+          "branchMayFallThrough": true,
+          "frameId": 1,
+          "kind": "if-then",
+          "parentFrameId": 0
+        }
+      ],
+      "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [
+      {
+        "kind": "table",
+        "shapeFingerprint": "eb3ef01100326491b33dadf4f144427d45fd586b3ede98cca4e6b3c74abcfe73",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Table:50000"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "c704a753e408a4452820ffa52a4794b9a526cfcb43831cc4156d4fdae71f42c2",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Table:50000#1"
+      },
+      {
+        "kind": "field",
+        "shapeFingerprint": "c6d6e6c422e554c234dc411ad41fd5f57ed04e3dc94188c26601f65a9f0214b4",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Table:50000#2"
+      },
+      {
+        "kind": "key",
+        "shapeFingerprint": "95087475df4cf88c59a1ad44740ec7a7e58200e63ddcc39b2096d7142cf5fdf8",
+        "stableId": "11111111-0000-0000-0000-00000000d460:Table:50000#K0"
+      }
+    ],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [
+      {
+        "callsiteId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d/cs0",
+        "edgeId": "34f1962ddd9ccb35",
+        "from": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#28129d608bb2353d1edc8a881e6073f4f07bc1388ea6d1c4caa0b7c8850cf83d",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/fab9faa344f7180e7491d3606e58029233da35356177938a7150d65003093f5d",
+          "range": {
+            "endColumn": 17,
+            "endLine": 23,
+            "startColumn": 8,
+            "startLine": 23
+          },
+          "sourceUnitId": "ws:src/InstallCU.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d460:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+      },
+      {
+        "callsiteId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f/cs0",
+        "edgeId": "1b61dc105c8327a4",
+        "from": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "kind": "direct-call",
+        "sourceAnchor": {
+          "enclosingRoutineId": "90eaac7fb2071324/786c1ca10ce74fe39bc7a39bc942711ec88a79f6c9fcf16007a10892d7dee08f",
+          "range": {
+            "endColumn": 19,
+            "endLine": 6,
+            "startColumn": 8,
+            "startLine": 6
+          },
+          "sourceUnitId": "ws:src/UpgradeCU.al",
+          "syntaxKind": "call_expression"
+        },
+        "to": "11111111-0000-0000-0000-00000000d460:Codeunit:50002#3b39c65aba470dc136b74c8c2123651b7828037b7a1898d1d8e75339cf65056e"
+      }
+    ],
+    "workspaceFingerprint": "369c4515c708fe7831c9af975d8a55ce0e8d1baf6090a0e083e3d6d8e7f602e8"
+  },
+  "schemaVersion": "1.1.0"
+}

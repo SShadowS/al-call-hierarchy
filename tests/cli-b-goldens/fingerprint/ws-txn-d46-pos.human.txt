@@ -1,0 +1,93 @@
+Rendering 4 root classifications.
+
+::OnInstallAppPerCompany  [install-codeunit]
+  coverage:   complete
+  writes:     TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  reads:      TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  commit:     yes
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d460/table/50000" RW
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/InstallCU.al:23:8)
+          → direct commit at ws:src/InstallCU.al:34:8
+
+    insert table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/InstallCU.al:23:8)
+          → direct Setup.Insert at ws:src/InstallCU.al:32:12
+
+    read table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoSetup (via DoSetup at ws:src/InstallCU.al:23:8)
+          → direct Setup.Get at ws:src/InstallCU.al:30:15
+
+
+::DoSetup  [install-codeunit]
+  coverage:   complete
+  writes:     TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  reads:      TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  commit:     yes
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d460/table/50000" RW
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        direct commit at ws:src/InstallCU.al:34:8
+
+    insert table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        direct Setup.Insert at ws:src/InstallCU.al:32:12
+
+    read table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        direct Setup.Get at ws:src/InstallCU.al:30:15
+
+
+::DoUpgrade  [upgrade-codeunit]
+  coverage:   complete
+  reads:      TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  commit:     yes
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d460/table/50000" MR
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        direct commit at ws:src/UpgradeCU.al:17:8
+
+    modify table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        direct Setup.Modify at ws:src/UpgradeCU.al:15:12
+
+    read table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        direct Setup.Get at ws:src/UpgradeCU.al:13:11
+
+
+::OnUpgradePerCompany  [upgrade-codeunit]
+  coverage:   complete
+  reads:      TableData "11111111-0000-0000-0000-00000000d460/table/50000"
+  commit:     yes
+  permissions:
+    TableData "11111111-0000-0000-0000-00000000d460/table/50000" MR
+
+  witnesses:
+    commit transaction — 1 path shown
+      Path 1/1 shown:
+        DoUpgrade (via DoUpgrade at ws:src/UpgradeCU.al:6:8)
+          → direct commit at ws:src/UpgradeCU.al:17:8
+
+    modify table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoUpgrade (via DoUpgrade at ws:src/UpgradeCU.al:6:8)
+          → direct Setup.Modify at ws:src/UpgradeCU.al:15:12
+
+    read table "11111111-0000-0000-0000-00000000d460/table/50000" — 1 path shown
+      Path 1/1 shown:
+        DoUpgrade (via DoUpgrade at ws:src/UpgradeCU.al:6:8)
+          → direct Setup.Get at ws:src/UpgradeCU.al:13:11
+

@@ -1,0 +1,35 @@
+--- SendOne ---
+  coverage: complete
+  [HTTP] direct
+    evidence: ws:src/D48Pos.Codeunit.al:14 "Client.Send"
+    detail: method=Send
+    via: 1 path(s)
+
+--- ProcessAll ---
+  coverage: complete
+  [HTTP] transitive
+    evidence: ws:src/D48Pos.Codeunit.al:14 "Client.Send"
+    detail: method=Send
+    via: 1 path(s)
+
+--- SendOne ---
+  coverage: complete
+  [HTTP] transitive
+    evidence: ws:src/D48Pos.Codeunit.al:14 "Client.Send"
+    detail: method=Send
+    via: 1 path(s)
+
+--- DoSendOnce ---
+  coverage: complete
+  [HTTP] transitive
+    evidence: ws:src/D48Pos.Codeunit.al:14 "Client.Send"
+    detail: method=Send
+    via: 1 path(s)
+
+--- ExportAll ---
+  coverage: complete
+  [FILE] direct
+    evidence: ws:src/D48Pos.Codeunit.al:72 "F.WriteAllText"
+    detail: fileOp=write-blob
+    via: 1 path(s)
+  unresolved: 1 callsite(s)

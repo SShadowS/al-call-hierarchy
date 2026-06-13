@@ -1,0 +1,227 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d461/table/50000",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "3273277716591b94",
+                    "op": "insert",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d461/table/50000",
+                    "resourceKind": "table",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 12,
+                          "excerpt": "Setup.Insert",
+                          "file": "ws:src/NormalCU.al",
+                          "line": 33,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "fe1e8919dd325793/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op2"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 8,
+                                "file": "ws:src/NormalCU.al",
+                                "line": 24,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "DoSetup",
+                              "callsiteId": "fe1e8919dd325793/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "RunSetup",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+                              "kind": "call",
+                              "toDisplay": "DoSetup",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "53f16cdaf4cd9d88",
+                    "op": "read",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d461/table/50000",
+                    "resourceKind": "table",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 15,
+                          "excerpt": "Setup.Get",
+                          "file": "ws:src/NormalCU.al",
+                          "line": 31,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "fe1e8919dd325793/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 8,
+                                "file": "ws:src/NormalCU.al",
+                                "line": 24,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "DoSetup",
+                              "callsiteId": "fe1e8919dd325793/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "RunSetup",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+                              "kind": "call",
+                              "toDisplay": "DoSetup",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d461/table/50000",
+                "ops": [
+                  "insert",
+                  "read"
+                ]
+              }
+            ]
+          },
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "transaction",
+            "resources": [
+              {
+                "display": "<unknown>",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "978fd1d0ea2be706",
+                    "op": "commit",
+                    "provenance": "inherited",
+                    "resourceKind": "transaction",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "commit",
+                          "file": "ws:src/NormalCU.al",
+                          "line": 35,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "fe1e8919dd325793/1eb9f4ab2c84095b8b812d7412755d2dce9707e54a87d63626459383ead69ada/op3"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 8,
+                                "file": "ws:src/NormalCU.al",
+                                "line": 24,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "DoSetup",
+                              "callsiteId": "fe1e8919dd325793/3305a7339de83bb9cf50ad4ac8601b68eefca9f043048fa3050f85eda96362a3/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "RunSetup",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b",
+                              "kind": "call",
+                              "toDisplay": "DoSetup",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#3aa4ce9cdcf2404292c9b5a110fac303298356eb61d22f471e7ac135ca96f2fb"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "ops": [
+                  "commit"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "yes",
+          "witnessFactId": "978fd1d0ea2be706"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "RW",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d461/table/50000",
+            "targetId": "11111111-0000-0000-0000-00000000d461/table/50000",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "RunSetup",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d461:Codeunit:50001#b8669e55319108c890634c4a59a65673f0a99a138ff874f926b31d5f202b118b"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 1,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 1
+    },
+    "workspaceFingerprint": "153dd1f50142677bb6b39ef22a0e7e2e23f75e2a3c9f1a1a81e883dd47ae93a7"
+  },
+  "schemaVersion": "1.2.0"
+}

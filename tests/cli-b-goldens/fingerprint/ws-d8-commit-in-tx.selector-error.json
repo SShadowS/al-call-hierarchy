@@ -1,0 +1,37 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-detect",
+      "message": "d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [],
+    "diagnostics": [
+      {
+        "detail": "triedForms=stable-routine-id,full-display,two-segment,one-segment,object-qualified",
+        "kind": "selector-unresolved",
+        "selector": "THIS_ROUTINE_DOES_NOT_EXIST_FOR_ERROR_TEST"
+      }
+    ],
+    "filters": {
+      "includeInherited": true,
+      "routines": [
+        "THIS_ROUTINE_DOES_NOT_EXIST_FOR_ERROR_TEST"
+      ],
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 0,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 2
+    },
+    "workspaceFingerprint": "422fd5d79e0d95f73a850372a04ff8ed07ccc5ee82deecc2ee2bcf44aa4ef31f"
+  },
+  "schemaVersion": "1.2.0"
+}

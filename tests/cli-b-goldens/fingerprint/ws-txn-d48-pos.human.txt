@@ -1,0 +1,44 @@
+Rendering 4 root classifications.
+
+::SendOne  [public-procedure]
+  coverage:   complete
+  http:       "<unknown>"
+
+  witnesses:
+    send http — 1 path shown
+      Path 1/1 shown:
+        call Client.Send at ws:src/D48Pos.Codeunit.al:14:8
+
+
+::ProcessAll  [public-procedure]
+  coverage:   complete
+  http:       "<unknown>"
+
+  witnesses:
+    send http — 1 path shown
+      Path 1/1 shown:
+        SendOne (via SendOne at ws:src/D48Pos.Codeunit.al:31:12)
+          → SendOne (via Codeunit "D48 Sender".Sender.SendOne at ws:src/D48Pos.Codeunit.al:39:8)
+            → call Client.Send at ws:src/D48Pos.Codeunit.al:14:8
+
+
+::DoSendOnce  [public-procedure]
+  coverage:   complete
+  http:       "<unknown>"
+
+  witnesses:
+    send http — 1 path shown
+      Path 1/1 shown:
+        SendOne (via Codeunit "D48 Sender".Sender.SendOne at ws:src/D48Pos.Codeunit.al:53:8)
+          → call Client.Send at ws:src/D48Pos.Codeunit.al:14:8
+
+
+::ExportAll  [public-procedure]
+  coverage:   complete
+  file:       "line"
+
+  witnesses:
+    write-blob file — 1 path shown
+      Path 1/1 shown:
+        call F.WriteAllText at ws:src/D48Pos.Codeunit.al:72:12
+

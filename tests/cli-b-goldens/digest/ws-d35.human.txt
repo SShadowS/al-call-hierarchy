@@ -1,0 +1,30 @@
+--- OnBeforePrintSafe ---
+  coverage: complete
+  [UI_MESSAGE] direct
+    evidence: ws:src/Codeunit.al:20 "Message"
+    via: 1 path(s)
+  unresolved: 1 callsite(s)
+
+--- OnAfterPostDirect ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:6 "commit"
+    via: 1 path(s)
+
+--- PersistAudit ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:31 "commit"
+    via: 1 path(s)
+
+--- NonSubscriberCommit ---
+  coverage: complete
+  [COMMIT] direct
+    evidence: ws:src/Codeunit.al:26 "commit"
+    via: 1 path(s)
+
+--- OnAfterValidateTransitive ---
+  coverage: complete
+  [COMMIT] transitive
+    evidence: ws:src/Codeunit.al:31 "commit"
+    via: 1 path(s)

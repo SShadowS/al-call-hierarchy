@@ -1,0 +1,484 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "fingerprint-query",
+  "payload": {
+    "blocks": [
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "38b928eb7ae54574",
+                    "op": "modify",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.Modify",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 18,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 12,
+                                "file": "ws:src/D1MultiCaller.al",
+                                "line": 34,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "ModifyHelper",
+                              "callsiteId": "225874ed4a5f49e9/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "CallerB",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf",
+                              "kind": "call",
+                              "toDisplay": "ModifyHelper",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "34f6c782a40f4222",
+                    "op": "read",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.FindSet",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 32,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/583c83f41408d2e6a9c293168053e3b847fe55fbb008063ac72053f0f769ec8d/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "ops": [
+                  "modify",
+                  "read"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "MR",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "CallerB",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf"
+        }
+      },
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "f6bd73950b13f668",
+                    "op": "modify",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.Modify",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 18,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 12,
+                                "file": "ws:src/D1MultiCaller.al",
+                                "line": 42,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "ModifyHelper",
+                              "callsiteId": "225874ed4a5f49e9/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "CallerC",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c",
+                              "kind": "call",
+                              "toDisplay": "ModifyHelper",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "8452ef43694dea30",
+                    "op": "read",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.FindSet",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 40,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/7a09251a2ee2dae7f94f959d6604b253bdd46d48055008e095a6f1371d07e030/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "ops": [
+                  "modify",
+                  "read"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "MR",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "CallerC",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c"
+        }
+      },
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "0e9ddc4f2e939554",
+                    "op": "modify",
+                    "provenance": "inherited",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "call",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.Modify",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 18,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": [
+                            {
+                              "anchor": {
+                                "column": 12,
+                                "file": "ws:src/D1MultiCaller.al",
+                                "line": 26,
+                                "sourceKind": "source"
+                              },
+                              "calleeDisplay": "ModifyHelper",
+                              "callsiteId": "225874ed4a5f49e9/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/cs0",
+                              "edgeKind": "direct-call",
+                              "fromDisplay": "CallerA",
+                              "fromRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
+                              "kind": "call",
+                              "toDisplay": "ModifyHelper",
+                              "toRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  },
+                  {
+                    "confidence": "static",
+                    "factId": "ea86fa46382b2a12",
+                    "op": "read",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.FindSet",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 24,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "ops": [
+                  "modify",
+                  "read"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "MR",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "CallerA",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c"
+        }
+      },
+      {
+        "classificationSource": "ast",
+        "coverage": {
+          "directStatus": "complete",
+          "inheritedStatus": "complete",
+          "reasons": [],
+          "status": "complete",
+          "unknownTargets": []
+        },
+        "dispatch": {
+          "resolved": [],
+          "unresolved": []
+        },
+        "families": [
+          {
+            "coneCoverage": "complete",
+            "resourceKind": "table",
+            "resources": [
+              {
+                "display": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "facts": [
+                  {
+                    "confidence": "static",
+                    "factId": "4c33e6ea8c15dc02",
+                    "op": "modify",
+                    "provenance": "direct",
+                    "resourceId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                    "resourceKind": "table",
+                    "via": "self",
+                    "witness": {
+                      "diagnostics": [],
+                      "evidence": {
+                        "anchor": {
+                          "column": 8,
+                          "excerpt": "Cust.Modify",
+                          "file": "ws:src/D1MultiCaller.al",
+                          "line": 18,
+                          "sourceKind": "source"
+                        },
+                        "operationId": "225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0"
+                      },
+                      "incomplete": false,
+                      "paths": [
+                        {
+                          "hops": []
+                        }
+                      ],
+                      "truncated": false
+                    }
+                  }
+                ],
+                "id": "11111111-0000-0000-0000-00000000d01a/table/50101",
+                "ops": [
+                  "modify"
+                ]
+              }
+            ]
+          }
+        ],
+        "mayCommit": {
+          "presence": "no"
+        },
+        "requiredPermissions": [
+          {
+            "coverage": "complete",
+            "rights": "M",
+            "targetDisplay": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetId": "11111111-0000-0000-0000-00000000d01a/table/50101",
+            "targetKind": "table"
+          }
+        ],
+        "rootKinds": [
+          "public-procedure"
+        ],
+        "routine": {
+          "display": "ModifyHelper",
+          "objectDisplay": "",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "filters": {
+      "includeInherited": true,
+      "witnessLimit": 3
+    },
+    "summary": {
+      "renderedBlocks": 4,
+      "rootsConfigIgnored": false,
+      "totalClassifications": 4
+    },
+    "workspaceFingerprint": "7b29099315fe12775912a7c35a4f9c6e730f9fcb4c52790b789fa0629ba09d01"
+  },
+  "schemaVersion": "1.2.0"
+}

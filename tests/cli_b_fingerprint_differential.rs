@@ -74,21 +74,36 @@ const SHARD_FIXTURE: &str = "ws-d8-commit-in-tx";
 const ERROR_FIXTURE: &str = "ws-d8-commit-in-tx";
 const ERROR_SELECTOR: &str = "THIS_ROUTINE_DOES_NOT_EXIST_FOR_ERROR_TEST";
 
-fn al_sem_dir() -> PathBuf {
-    std::env::var("AL_SEM_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(r"U:\Git\al-sem"))
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// In-repo fixtures (Rust-owned; al-sem byte-parity retired — see CLAUDE.md).
 fn fixtures_dir() -> PathBuf {
-    al_sem_dir().join("test").join("fixtures")
+    repo_root().join("tests").join("r0-corpus")
 }
 
+/// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    al_sem_dir()
-        .join("scripts")
+    repo_root()
+        .join("tests")
         .join("cli-b-goldens")
         .join("fingerprint")
+}
+
+/// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
+/// return true so the caller skips the byte-compare. al-sem byte-parity retired.
+fn regen_golden(golden_path: &std::path::Path, got: &[u8]) -> bool {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+        return false;
+    }
+    if let Some(parent) = golden_path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", parent.display()));
+    }
+    std::fs::write(golden_path, got)
+        .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+    true
 }
 
 fn fixture_dir(fixture: &str) -> PathBuf {
@@ -147,6 +162,9 @@ fn cbor_matches_goldens() {
         let (tree, _, _) = compose_full_for(fixture);
         let got = serialize_cbor(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor"));
+        if regen_golden(&golden_path, &got) {
+            continue;
+        }
         let want = std::fs::read(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         if let Some(off) = first_diff(&got, &want) {
@@ -165,6 +183,9 @@ fn cbor_gz_matches_goldens() {
         let (tree, _, _) = compose_full_for(fixture);
         let got = serialize_cbor_gz(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor.gz"));
+        if regen_golden(&golden_path, &got) {
+            continue;
+        }
         let want = std::fs::read(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         if let Some(off) = first_diff(&got, &want) {
@@ -208,6 +229,9 @@ fn query_json_matches_goldens() {
             _ => panic!("{fixture}: expected Text from json query"),
         };
         let golden_path = goldens_dir().join(format!("{fixture}.json"));
+        if regen_golden(&golden_path, got.as_bytes()) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         assert_eq!(
@@ -248,6 +272,9 @@ fn human_compact_matches_goldens() {
             _ => panic!("{fixture}: expected Text from human query"),
         };
         let golden_path = goldens_dir().join(format!("{fixture}.human.txt"));
+        if regen_golden(&golden_path, got.as_bytes()) {
+            continue;
+        }
         let want = std::fs::read_to_string(&golden_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
         assert_eq!(
@@ -287,6 +314,9 @@ fn witness_all_matches_golden() {
         _ => panic!("expected Text"),
     };
     let golden_path = goldens_dir().join(format!("{WITNESS_FIXTURE}.witness-all.json"));
+    if regen_golden(&golden_path, got.as_bytes()) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
     assert_eq!(
@@ -321,6 +351,9 @@ fn witness_zero_matches_golden() {
         _ => panic!("expected Text"),
     };
     let golden_path = goldens_dir().join(format!("{WITNESS_FIXTURE}.witness-0.json"));
+    if regen_golden(&golden_path, got.as_bytes()) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
     assert_eq!(
@@ -355,6 +388,9 @@ fn witness_false_matches_golden() {
         _ => panic!("expected Text"),
     };
     let golden_path = goldens_dir().join(format!("{WITNESS_FIXTURE}.witness-false.json"));
+    if regen_golden(&golden_path, got.as_bytes()) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
     assert_eq!(
@@ -394,6 +430,9 @@ fn selector_error_json_matches_golden_and_exits_2() {
         _ => panic!("expected Text for selector error json"),
     };
     let golden_path = goldens_dir().join(format!("{ERROR_FIXTURE}.selector-error.json"));
+    if regen_golden(&golden_path, got.as_bytes()) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
     assert_eq!(
@@ -432,6 +471,9 @@ fn human_full_matches_golden() {
         _ => panic!("expected Text from human-full query"),
     };
     let golden_path = goldens_dir().join(format!("{WITNESS_FIXTURE}.human-full.txt"));
+    if regen_golden(&golden_path, got.as_bytes()) {
+        return;
+    }
     let want = std::fs::read_to_string(&golden_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", golden_path.display()));
     assert_eq!(
@@ -452,6 +494,19 @@ fn shard_output_matches_goldens() {
     let shards = serialize_sharded(&tree, VERSION_OVERRIDE, false);
     // Goldens live under shards/<fixture-name>/<shard-name>.
     let shard_dir = goldens_dir().join("shards").join(SHARD_FIXTURE);
+
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let _ = std::fs::remove_dir_all(&shard_dir);
+        std::fs::create_dir_all(&shard_dir)
+            .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", shard_dir.display()));
+        for shard in &shards {
+            std::fs::write(shard_dir.join(&shard.name), &shard.bytes)
+                .unwrap_or_else(|e| panic!("regen write shard {}: {e}", shard.name));
+        }
+        drop((resolved, ws_path));
+        drop(ws);
+        return;
+    }
 
     for shard in &shards {
         let golden_path = shard_dir.join(&shard.name);
@@ -588,20 +643,5 @@ fn item5_strict_passes_on_warning_only_fixture() {
     assert!(matches!(r.output, FingerprintOutput::Text(_)));
 }
 
-// ===========================================================================
-// Refresh (ignored)
-// ===========================================================================
-
-/// Regenerate all fingerprint goldens by running the al-sem TS dump script.
-/// Run with: `cargo test -p al-call-hierarchy --test cli_b_fingerprint_differential -- refresh_goldens --ignored --nocapture`
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem = al_sem_dir();
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-fingerprint.ts"])
-        .current_dir(&al_sem)
-        .status()
-        .expect("bun run scripts/dump-fingerprint.ts");
-    assert!(status.success(), "dump-fingerprint.ts failed: {status}");
-}
+// Rust-owned goldens regenerated in-process via
+// `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_fingerprint_differential`.

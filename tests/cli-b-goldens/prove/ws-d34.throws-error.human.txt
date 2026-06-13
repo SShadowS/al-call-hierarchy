@@ -1,0 +1,4 @@
+--- DirectCommitInLoop ---
+  question: throws-error
+  answer:   no
+  obligations: all clear

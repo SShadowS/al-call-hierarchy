@@ -1,0 +1,154 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "11111111-0000-0000-0000-0000000d4703",
+        "name": "D47 ReadOnly Neg",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "94001191187e1a0c/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/cs0",
+        "controlContext": "top-level",
+        "endColumn": 53,
+        "endLine": 11,
+        "order": {
+          "dominatesSuccessReturn": true,
+          "frameId": 0,
+          "onSuccessPath": true,
+          "orderId": 0
+        },
+        "routine": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "sourceFile": "ws:src/Sender.Codeunit.al",
+        "startColumn": 8,
+        "startLine": 11
+      }
+    ],
+    "callsiteResolutions": [
+      {
+        "calleeDisplay": "Client.Get",
+        "callsiteId": "94001191187e1a0c/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/cs0",
+        "dispatchKind": "unresolved",
+        "from": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "resolvedEdges": [],
+        "status": "builtin"
+      }
+    ],
+    "capabilityFacts": [
+      {
+        "confidence": "static",
+        "extra": {
+          "bodyArgSource": {
+            "initializer": {
+              "kind": "unknown"
+            },
+            "kind": "constant-var",
+            "varName": "resp"
+          },
+          "kind": "http",
+          "method": "Get"
+        },
+        "op": "send",
+        "provenance": "direct",
+        "resourceArgSource": {
+          "kind": "literal",
+          "value": "https://example.test/ping"
+        },
+        "resourceKind": "http",
+        "subject": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "via": "self",
+        "witnessCallsiteId": "94001191187e1a0c/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29/cs0"
+      }
+    ],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "551fabfcdfcf357758c59949678871480a0b75d8e64054dff4293b4a70e3970a",
+        "stableId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "stableId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "D47 Sender",
+        "JustFetch"
+      ],
+      "stableIds": [
+        "11111111-0000-0000-0000-0000000d4703:Codeunit:50000",
+        "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "38c7c465268f2fecd5d3685689f76db7f6b6e6c181b8b93fc094fd9736e85c1a",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [],
+    "permissionFacts": [],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "public-procedure"
+        ],
+        "routineId": "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "94001191187e1a0c/955d1bcf80f156a0a3ed637837414fab84be3371d2bff24be55a639f572c0f29",
+          "range": {
+            "endColumn": 8,
+            "endLine": 12,
+            "startColumn": 4,
+            "startLine": 6
+          },
+          "sourceUnitId": "ws:src/Sender.Codeunit.al",
+          "syntaxKind": "procedure"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "11111111-0000-0000-0000-0000000d4703:Codeunit:50000#6c737101e21cd197b3b5e801d215066718f65229b241140d55cedc0d907404ba": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [],
+    "workspaceFingerprint": "9a26de0865bbcbff926a04804ba7498aecbc802ada68e2c5c834dbc7c66ddbd9"
+  },
+  "schemaVersion": "1.1.0"
+}
