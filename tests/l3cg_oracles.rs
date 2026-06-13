@@ -441,3 +441,101 @@ fn edge_sort_is_deterministic_byte_order_stable() {
         "interface impl edges sorted byte-order by `to`"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Invariant 9 (Phase 2): every `builtin` member edge's method is in the catalog,
+// and no edge is BOTH builtin and resolved (mutually exclusive resolutions).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_builtin_member_edge_method_is_in_the_catalog() {
+    use al_call_hierarchy::engine::l3::member_builtins::{
+        classify_receiver, member_builtin_disposition,
+    };
+
+    // A workspace exercising Record + framework + RecordRef intrinsics. (FieldNo /
+    // GetFilter are Record call-site intrinsics; FindSet/SetRange are L2
+    // record_operations and never reach the resolver, so we use call-site methods.)
+    let files = &[(
+        "src/main.al",
+        "table 50000 Cust { fields { field(1; \"No.\"; Code[20]) { } } keys { key(PK; \"No.\") { } } } \
+         codeunit 50100 A { procedure Go() var C: Record Cust; J: JsonObject; R: RecordRef; begin \
+         C.FieldNo(\"No.\"); C.GetFilter(\"No.\"); J.Add('k', 1); R.Open(18); end; }",
+    )];
+    let resolved = resolve_ws(files);
+    let p = resolved.project_call_graph();
+
+    let builtin_edges: Vec<_> = all_edges(&p)
+        .into_iter()
+        .filter(|e| e.resolution == "builtin")
+        .collect();
+    assert!(!builtin_edges.is_empty(), "expected builtin member edges");
+
+    // CONTRACT 1: a builtin edge is NEVER also a resolved-to-routine edge.
+    for e in all_edges(&p) {
+        if e.resolution == "builtin" {
+            assert!(
+                e.to.is_none(),
+                "a builtin edge has no resolved `to`; edge: {e:#?}"
+            );
+        }
+    }
+
+    // CONTRACT 2: every builtin method seen is a real catalog entry for some
+    // catalog-eligible receiver kind declared in the fixture's routine variables.
+    let ws = &resolved.workspace;
+    let declared_types: Vec<String> = ws
+        .routines
+        .iter()
+        .flat_map(|r| r.variables.iter().map(|v| v.declared_type.clone()))
+        .collect();
+    let catalog_kinds: Vec<_> = declared_types
+        .iter()
+        .filter_map(|d| classify_receiver(d))
+        .collect();
+    assert!(
+        !catalog_kinds.is_empty(),
+        "fixture has catalog-eligible receivers"
+    );
+    for method in ["fieldno", "getfilter", "add", "open"] {
+        let hit = catalog_kinds
+            .iter()
+            .any(|k| member_builtin_disposition(*k, method).is_some());
+        assert!(
+            hit,
+            "method {method} must be a catalog builtin for some fixture receiver kind"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Invariant 10 (Phase 2): a Record-receiver method that is a real built-in
+// classifies `builtin`, not `unknown` (the core reclassification contract).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn record_builtin_classifies_builtin_not_unknown() {
+    let files = &[(
+        "src/main.al",
+        "table 50000 Cust { fields { field(1; \"No.\"; Code[20]) { } } keys { key(PK; \"No.\") { } } } \
+         codeunit 50100 A { procedure Go() var C: Record Cust; begin C.FieldNo(\"No.\"); end; }",
+    )];
+    let p = project_ws(files);
+    let builtin: Vec<_> = all_edges(&p)
+        .into_iter()
+        .filter(|e| e.resolution == "builtin")
+        .collect();
+    assert_eq!(
+        builtin.len(),
+        1,
+        "Record.FieldNo -> exactly one builtin edge; got {:#?}",
+        all_edges(&p)
+    );
+    assert_eq!(builtin[0].dispatch_kind, "builtin");
+    assert!(
+        all_edges(&p)
+            .iter()
+            .all(|e| !(e.dispatch_kind == "method" && e.resolution == "unknown")),
+        "no Record intrinsic remains a method/unknown hole"
+    );
+}
