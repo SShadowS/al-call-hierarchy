@@ -854,7 +854,7 @@ fn main() -> ExitCode {
         use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
-        let (histogram, breakdown, framework_detail, shape_detail) =
+        let (histogram, breakdown, framework_detail, shape_detail, bare_detail) =
             match assemble_and_resolve_workspace_default(&workspace) {
                 Some(resolved) => {
                     let ws = &resolved.workspace;
@@ -862,8 +862,14 @@ fn main() -> ExitCode {
                     let no_deps: Vec<DeclaredDependency> = Vec::new();
                     let no_fetched: Vec<String> = Vec::new();
                     let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-                    let (bd, fw_det, shape_det) = unknown_breakdown(&r.edges);
-                    (Histogram::of_edges(&r.edges), bd, fw_det, shape_det)
+                    let (bd, fw_det, shape_det, bare_det) = unknown_breakdown(&r.edges);
+                    (
+                        Histogram::of_edges(&r.edges),
+                        bd,
+                        fw_det,
+                        shape_det,
+                        bare_det,
+                    )
                 }
                 None => {
                     eprintln!(
@@ -875,6 +881,7 @@ fn main() -> ExitCode {
                         std::collections::BTreeMap::new(),
                         std::collections::BTreeMap::new(),
                         std::collections::BTreeMap::new(),
+                        std::collections::BTreeMap::new(),
                     )
                 }
             };
@@ -883,6 +890,7 @@ fn main() -> ExitCode {
             "unknownTotal": histogram.unknown,
             "realUnknownRate": histogram.real_unknown_rate(),
             "byReason": breakdown,
+            "bareCallDetail": bare_detail,
             "frameworkMethodDetail": framework_detail,
             "receiverShapeDetail": shape_detail,
         });

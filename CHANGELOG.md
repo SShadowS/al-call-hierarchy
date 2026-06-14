@@ -57,6 +57,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   facts, so the result is identical.
 
 ### Added
+- **Name residual unknowns in `--l3-unknown-breakdown`** (`src/engine/l3/call_resolver.rs`,
+  `src/engine/l3/receiver_type.rs`, `src/engine/l3/resolution_class.rs`, `src/bin/aldump.rs`):
+  the `BareUnresolved` path now threads the lowercased call name onto `CallEdge::unknown_method_name`
+  so the breakdown can emit a per-name count histogram (`bareCallDetail`). Untracked-receiver
+  `other` shapes now embed the actual variable name in the shape tag
+  (`"other::<name>"` instead of a flat `"other"`) and compound-receiver `member-of-member`
+  shapes embed the receiver expression (truncated to 120 chars), so `receiverShapeDetail`
+  surfaces concrete identifiers. `unknown_breakdown` returns a 4-tuple (adding `bareCallDetail`
+  split from the framework-method detail); `aldump` emits the new field. **Purely diagnostic —
+  zero resolution/classification changes, zero golden changes.** On CDO (13,971 edges, 1,093
+  true unknowns): 188 `bare-unresolved` names are now named; all 188 are user-defined
+  application procedures (none are genuine platform globals — confirmed against the AL 18.0
+  compiler DLL's ClassDocumentationResources); the untracked-receiver `other` bucket (252
+  edges) now shows concrete names including `IsolatedStorage` (38), `Page` (50), `Report`
+  (16), `Session` (13), `NavApp` (9), `TaskScheduler` (4) — a road-map for future typed-
+  receiver static-method resolution.
+
 - **Task 6a — Implicit Rec/xRec receiver resolution** (`src/engine/l3/receiver_type.rs`):
   `infer_receiver_type` Step 2b now checks `routine.record_variables` BEFORE yielding
   `UntrackedReceiver`. For Table/Page/TableExtension/PageExtension objects, pass 3 of

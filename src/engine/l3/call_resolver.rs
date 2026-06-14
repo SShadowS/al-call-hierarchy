@@ -470,6 +470,10 @@ fn resolve_call_site(
                     } else {
                         e.dispatch_kind = DispatchKind::Unresolved;
                         e.resolution = Resolution::Unknown(UnknownReason::BareUnresolved);
+                        // DIAGNOSTIC: thread the bare call name (lowercased) so
+                        // `--l3-unknown-breakdown` can name the residual bare-unresolved
+                        // bucket and identify genuine catalog gaps.
+                        e.unknown_method_name = Some(name.to_lowercase());
                     }
                     vec![e]
                 }

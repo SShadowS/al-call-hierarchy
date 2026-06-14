@@ -280,9 +280,20 @@ pub fn infer_receiver_type(
 /// Sub-characterize a compound receiver expression for the breakdown histogram.
 /// A compound receiver is one that `simple_receiver_name` declined (contains `.`,
 /// `(`, `[`, or similar). The returned string is the shape tag stored on the edge.
+///
+/// For `member-of-member` expressions the full expression (truncated to 120 chars)
+/// is embedded as `"member-of-member::<expr>"` so `--l3-unknown-breakdown` can
+/// surface concrete receiver expressions for targeting. Other well-known shapes
+/// keep their short tag (no expression needed — they are self-explanatory).
 fn compound_receiver_shape(receiver_expr: &str) -> String {
     if receiver_expr.contains('.') {
-        "member-of-member".to_string()
+        // Embed the expression (capped) so the breakdown can show concrete samples.
+        let expr = if receiver_expr.len() > 120 {
+            &receiver_expr[..120]
+        } else {
+            receiver_expr
+        };
+        format!("member-of-member::{expr}")
     } else if receiver_expr.contains('(') {
         "call-result".to_string()
     } else if receiver_expr.contains('[') {
@@ -294,12 +305,16 @@ fn compound_receiver_shape(receiver_expr: &str) -> String {
 
 /// Sub-characterize an untracked receiver name for the breakdown histogram. The
 /// name is the simple receiver name that could not be found in `routine.variables`.
+///
+/// For the `other` bucket the receiver name is embedded as `"other::<name>"` so
+/// `--l3-unknown-breakdown` can surface concrete untracked receiver names for
+/// targeting (object globals, `CurrPage`/`CurrReport` aliases, etc.).
 fn untracked_receiver_shape(receiver_name: &str) -> String {
     match receiver_name.to_lowercase().as_str() {
         "rec" | "xrec" => "implicit-rec".to_string(),
         "currpage" => "currpage".to_string(),
         "currreport" => "currreport".to_string(),
-        _ => "other".to_string(),
+        _ => format!("other::{receiver_name}"),
     }
 }
 

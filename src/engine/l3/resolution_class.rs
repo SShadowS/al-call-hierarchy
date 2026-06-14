@@ -100,44 +100,57 @@ impl Histogram {
 /// zero — every unknown-emission site sets one). Attributes the residual
 /// real-`unknown` rate to its causes (the typed-resolution work-list).
 ///
-/// Returns a 3-tuple:
+/// Returns a 4-tuple:
 ///   0 — `byReason` histogram (keyed by `UnknownReason::label()`).
 ///   1 — `frameworkMethodDetail` (keyed by `"Kind::method_lc"` for
 ///        `FrameworkMethodNotInCatalog` edges).
 ///   2 — `receiverShapeDetail` (keyed by `"{reason_label}::{shape}"` for edges
 ///        carrying a `receiver_shape` tag — sub-characterizes `untracked-receiver`
-///        and `compound-receiver` buckets).
+///        and `compound-receiver` buckets; for `untracked-receiver::other` and
+///        `compound-receiver::member-of-member` the concrete name/expression is
+///        embedded in the key so the detail is surfaced as counts-per-expression).
+///   3 — `bareCallDetail` (keyed by lowercased bare call name for
+///        `BareUnresolved` edges — names the residual for catalog-gap analysis).
 pub fn unknown_breakdown(
     edges: &[CallEdge],
 ) -> (
     std::collections::BTreeMap<&'static str, usize>,
     std::collections::BTreeMap<String, usize>,
     std::collections::BTreeMap<String, usize>,
+    std::collections::BTreeMap<String, usize>,
 ) {
+    use super::call_resolver::UnknownReason;
     let mut m: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
     let mut fw_detail: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut shape_detail: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
+    let mut bare_detail: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for e in edges {
         if classify(e.resolution, e.dispatch_kind) != ResolutionClass::Unknown {
             continue;
         }
-        let label = e
-            .resolution
-            .unknown_reason()
-            .map(|r| r.label())
-            .unwrap_or("unattributed");
+        let reason = e.resolution.unknown_reason();
+        let label = reason.map(|r| r.label()).unwrap_or("unattributed");
         *m.entry(label).or_insert(0) += 1;
         if let Some(ref name) = e.unknown_method_name {
-            *fw_detail.entry(name.clone()).or_insert(0) += 1;
+            match reason {
+                Some(UnknownReason::BareUnresolved) => {
+                    *bare_detail.entry(name.clone()).or_insert(0) += 1;
+                }
+                _ => {
+                    // FrameworkMethodNotInCatalog and any future users.
+                    *fw_detail.entry(name.clone()).or_insert(0) += 1;
+                }
+            }
         }
         if let Some(ref shape) = e.receiver_shape {
             let key = format!("{label}::{shape}");
             *shape_detail.entry(key).or_insert(0) += 1;
         }
     }
-    (m, fw_detail, shape_detail)
+    (m, fw_detail, shape_detail, bare_detail)
 }
 
 #[cfg(test)]
@@ -267,7 +280,7 @@ mod tests {
         resolved.dispatch_kind = DispatchKind::Direct;
         edges.push(resolved);
 
-        let (bd, _detail, _shape_detail) = unknown_breakdown(&edges);
+        let (bd, _detail, _shape_detail, _bare_detail) = unknown_breakdown(&edges);
         assert_eq!(bd.get("record-table-procedure"), Some(&2));
         assert_eq!(bd.get("untracked-receiver"), Some(&1));
         // dynamic + resolved are excluded; no "unattributed".
