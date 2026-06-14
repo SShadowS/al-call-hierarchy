@@ -202,13 +202,23 @@ pub fn infer_receiver_type(
             };
         }
 
-        // Step 2c — language singletons: CurrPage / CurrReport are not declared
-        // variables but are platform-provided receivers for the current page /
-        // report instance. Intercept them here before emitting UntrackedReceiver.
+        // Step 2c — language singletons: CurrPage / CurrReport and the AL platform
+        // static-API singleton type names (IsolatedStorage, Session, NavApp,
+        // TaskScheduler, Database, Page, Report) are not declared variables but are
+        // platform-provided receivers. Intercept them here before emitting
+        // UntrackedReceiver. The variables-first check (Step 2 above) already ran,
+        // so a user variable with the same name (e.g. `var Session: Codeunit X`)
+        // correctly shadows these and reaches this point only for BARE names with
+        // no matching variable declaration.
         let receiver_name_lc = receiver_name.to_lowercase();
         let singleton_kind = match receiver_name_lc.as_str() {
-            "currpage" => Some(ReceiverBuiltinKind::PageInstance),
-            "currreport" => Some(ReceiverBuiltinKind::ReportInstance),
+            "currpage" | "page" => Some(ReceiverBuiltinKind::PageInstance),
+            "currreport" | "report" => Some(ReceiverBuiltinKind::ReportInstance),
+            "isolatedstorage" => Some(ReceiverBuiltinKind::IsolatedStorage),
+            "session" => Some(ReceiverBuiltinKind::Session),
+            "navapp" => Some(ReceiverBuiltinKind::NavApp),
+            "taskscheduler" => Some(ReceiverBuiltinKind::TaskScheduler),
+            "database" => Some(ReceiverBuiltinKind::Database),
             _ => None,
         };
         if let Some(kind) = singleton_kind {

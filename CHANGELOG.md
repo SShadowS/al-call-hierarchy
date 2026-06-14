@@ -57,6 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   facts, so the result is identical.
 
 ### Added
+- **AL singleton-type static receivers → builtins** (`src/engine/l3/member_builtins.rs`,
+  `src/engine/l3/receiver_type.rs`): `infer_receiver_type` Step 2c now intercepts the
+  AL platform singleton type names (`IsolatedStorage`, `Session`, `NavApp`,
+  `TaskScheduler`, `Database`, `Page`, `Report`) in addition to the existing
+  `CurrPage`/`CurrReport` intercepts, before emitting `UntrackedReceiver`. Five new
+  `ReceiverBuiltinKind` variants are added (`IsolatedStorage` 5 methods,
+  `Session` 19, `NavApp` 16, `TaskScheduler` 5, `Database` 29); `Page`/`Report` bare-name
+  singletons reuse the existing `PageInstance`/`ReportInstance` catalogs. Phase B's
+  existing `Framework` arm dispatches via the catalogs: catalog hit → `builtin`,
+  catalog miss → `Unknown { FrameworkMethodNotInCatalog }` (honest gap). The
+  variables-first check (Step 2) is preserved — a user variable named `Session` correctly
+  shadows the singleton. 6 new tests in `tests/l3cg_singleton_static_dispatch.rs`.
+  CDO `DocumentOutput/Cloud` (13,971 total edges): `unknown` 1,093 → 963 (−130),
+  `builtin` 5,079 → 5,209 (+130), `resolved` UNCHANGED at 7,120 (pure reclassification);
+  `realUnknownRate` 7.82% → 6.89% (−0.93 pp). Breakdown: `page` −50, `isolatedstorage`
+  −38, `report` −16, `session` −13, `navapp` −9, `taskscheduler` −4.
 - **Name residual unknowns in `--l3-unknown-breakdown`** (`src/engine/l3/call_resolver.rs`,
   `src/engine/l3/receiver_type.rs`, `src/engine/l3/resolution_class.rs`, `src/bin/aldump.rs`):
   the `BareUnresolved` path now threads the lowercased call name onto `CallEdge::unknown_method_name`

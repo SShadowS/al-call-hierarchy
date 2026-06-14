@@ -45,6 +45,21 @@ pub enum ReceiverBuiltinKind {
     /// The current report instance — `CurrReport.M()` calls inside a report
     /// trigger. Methods come from the AL compiler's `ReportInstance` catalog.
     ReportInstance,
+    /// AL platform singleton `IsolatedStorage` — static key/value store.
+    /// Source: member_builtins.json "IsolatedStorage" (5 methods).
+    IsolatedStorage,
+    /// AL platform singleton `Session` — session utilities, telemetry, bindings.
+    /// Source: member_builtins.json "Session" (19 methods).
+    Session,
+    /// AL platform singleton `NavApp` — extension/module info and resource APIs.
+    /// Source: member_builtins.json "NavApp" (16 methods).
+    NavApp,
+    /// AL platform singleton `TaskScheduler` — background task scheduling.
+    /// Source: member_builtins.json "TaskScheduler" (5 methods).
+    TaskScheduler,
+    /// AL platform singleton `Database` — low-level database utilities.
+    /// Source: member_builtins.json "Database" (29 methods).
+    Database,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -127,6 +142,11 @@ pub fn member_builtin_disposition(
         Xml => set_hit(&XML, method_lc),
         PageInstance => set_hit(&PAGE_INSTANCE, method_lc),
         ReportInstance => set_hit(&REPORT_INSTANCE, method_lc),
+        IsolatedStorage => set_hit(&ISOLATED_STORAGE, method_lc),
+        Session => set_hit(&SESSION, method_lc),
+        NavApp => set_hit(&NAVAPP, method_lc),
+        TaskScheduler => set_hit(&TASKSCHEDULER, method_lc),
+        Database => set_hit(&DATABASE, method_lc),
     }
 }
 
@@ -469,6 +489,105 @@ static REPORT_INSTANCE: phf::Set<&'static str> = phf_set! {
     "validateandpreparelayout",
     "wordlayout",
     "wordxmlpart",
+};
+
+// --- IsolatedStorage (static singleton) — 5 methods. ---
+// Source: member_builtins.json "IsolatedStorage" array, all lowercase.
+static ISOLATED_STORAGE: phf::Set<&'static str> = phf_set! {
+    "contains",
+    "delete",
+    "get",
+    "set",
+    "setencrypted",
+};
+
+// --- Session (static singleton) — 19 methods. ---
+// Source: member_builtins.json "Session" array, all lowercase.
+static SESSION: phf::Set<&'static str> = phf_set! {
+    "applicationarea",
+    "applicationidentifier",
+    "bindsubscription",
+    "currentclienttype",
+    "currentexecutionmode",
+    "defaultclienttype",
+    "enableverbosetelemetry",
+    "getcurrentmoduleexecutioncontext",
+    "getexecutioncontext",
+    "getmoduleexecutioncontext",
+    "issessionactive",
+    "logauditmessage",
+    "logmessage",
+    "logsecurityaudit",
+    "sendtracetag",
+    "setdocumentservicetoken",
+    "startsession",
+    "stopsession",
+    "unbindsubscription",
+};
+
+// --- NavApp (static singleton) — 16 methods. ---
+// Source: member_builtins.json "NavApp" array, all lowercase.
+static NAVAPP: phf::Set<&'static str> = phf_set! {
+    "deletearchivedata",
+    "getarchiverecordref",
+    "getarchiveversion",
+    "getcallercallstackmoduleinfos",
+    "getcallermoduleinfo",
+    "getcurrentmoduleinfo",
+    "getmoduleinfo",
+    "getresource",
+    "getresourceasjson",
+    "getresourceastext",
+    "isentitled",
+    "isinstalling",
+    "isunlicensed",
+    "listresources",
+    "loadpackagedata",
+    "restorearchivedata",
+};
+
+// --- TaskScheduler (static singleton) — 5 methods. ---
+// Source: member_builtins.json "TaskScheduler" array, all lowercase.
+static TASKSCHEDULER: phf::Set<&'static str> = phf_set! {
+    "cancreatetask",
+    "canceltask",
+    "createtask",
+    "settaskready",
+    "taskexists",
+};
+
+// --- Database (static singleton) — 29 methods. ---
+// Source: member_builtins.json "Database" array, all lowercase.
+static DATABASE: phf::Set<&'static str> = phf_set! {
+    "alterkey",
+    "changeuserpassword",
+    "checklicensefile",
+    "commit",
+    "companyname",
+    "copycompany",
+    "currenttransactiontype",
+    "datafileinformation",
+    "exportdata",
+    "getdefaulttableconnection",
+    "hastableconnection",
+    "importdata",
+    "isinwritetransaction",
+    "lastusedrowversion",
+    "locktimeout",
+    "locktimeoutduration",
+    "minimumactiverowversion",
+    "registertableconnection",
+    "sid",
+    "selectlatestversion",
+    "serialnumber",
+    "serviceinstanceid",
+    "sessionid",
+    "setdefaulttableconnection",
+    "setuserpassword",
+    "tenantid",
+    "unregistertableconnection",
+    "userid",
+    "usersecurityid",
 };
 
 #[cfg(test)]
