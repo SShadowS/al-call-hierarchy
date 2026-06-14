@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::digest::{
-    compute_digest_effects_with_ordering, DigestEntryResult, ProjectedEvidence,
+    compute_digest_effects_for_ordering, DigestEntryResult, ProjectedEvidence,
 };
 use crate::engine::l5::ordering_engine::ScopedGuarantee;
 
@@ -210,7 +210,7 @@ pub fn to_source_anchor(
 /// Compute the per-routine ordering facts. Keyed by `StableRoutineId`. Only routines
 /// with ≥1 resolved fact appear in the map.
 pub fn compute_ordering_facts(resolved: &L3Resolved) -> HashMap<String, OrderingFacts> {
-    let entries: Vec<DigestEntryResult> = compute_digest_effects_with_ordering(resolved);
+    let entries: Vec<DigestEntryResult> = compute_digest_effects_for_ordering(resolved);
 
     let mut out: HashMap<String, OrderingFacts> = HashMap::new();
     for entry in &entries {

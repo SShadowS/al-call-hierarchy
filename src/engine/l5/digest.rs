@@ -204,6 +204,13 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
             .or_default()
             .push(edge);
     }
+    // Pre-sort each node's out-edges by `edge_compare` ONCE here (shared across the
+    // whole analyze) instead of cloning+sorting per BFS state in
+    // `reconstruct_witness_paths`. Behavior-identical: the witness BFS expanded
+    // `out.clone().sort(edge_compare)` per state — same total order, computed once.
+    for v in outgoing_edges.values_mut() {
+        v.sort_by(|a, b| edge_compare(a, b));
+    }
 
     // factsByRoutine ← capabilityFacts; directFactsByRoutine ← provenance=="direct".
     let mut facts_by_routine: HashMap<String, Vec<&Fact>> = HashMap::new();
@@ -827,6 +834,19 @@ fn reconstruct_witness_paths(
     let mut incomplete = false;
     let mut depth_exceeded = false;
 
+    // Reachability-directed pruning. A node can lie on a witness path to `fact`
+    // ONLY if `fact` is in its (direct ∪ inherited) capability cone — capabilities
+    // propagate UP the call graph, so `facts_by_routine[N]` already encodes "F is
+    // reachable from N". Pruning any frontier edge whose target cannot reach `fact`
+    // discards the dead-end subtrees that otherwise explode the BFS on a dense
+    // call graph (the table-procedure/implicit-Rec dispatch edges densify out-
+    // degree massively). This changes NO found path — every node on a real
+    // root→terminal path carries `fact` inherited — it only stops the walk from
+    // wandering into branches from which the terminal is unreachable. Memoized
+    // per call (the same node is reached on many partial paths).
+    let mut can_reach: HashMap<&str, bool> = HashMap::new();
+    let empty_node_facts: Vec<&Fact> = Vec::new();
+
     while !queue.is_empty() && paths.len() < cap {
         let Some(state) = queue.pop_front() else {
             break;
@@ -882,19 +902,29 @@ fn reconstruct_witness_paths(
             }
             continue;
         }
-        // Expand: out.clone().sort(edgeCompare) [stable], skip visited.
-        let out = idx
+        // Expand: out-edges are PRE-SORTED by `edge_compare` at index build, skip
+        // visited. (No per-state clone+sort — see `build_fingerprint_indexes`.)
+        let sorted = idx
             .outgoing_edges
             .get(&state.routine)
-            .cloned()
-            .unwrap_or_default();
-        let mut sorted = out;
-        sorted.sort_by(|a, b| edge_compare(a, b));
-        for edge in sorted {
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        for &edge in sorted {
             let Some(to) = edge_to(edge) else {
                 continue;
             };
             if state.visited.contains(to) {
+                continue;
+            }
+            // Reachability prune: skip targets from which `fact` is unreachable.
+            let reachable = *can_reach.entry(to).or_insert_with(|| {
+                idx.facts_by_routine
+                    .get(to)
+                    .unwrap_or(&empty_node_facts)
+                    .iter()
+                    .any(|f| fact_equivalent(f, fact))
+            });
+            if !reachable {
                 continue;
             }
             let Some(hop) = edge_to_hop(edge, idx) else {
@@ -2488,6 +2518,57 @@ pub fn compute_digest_effects(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
 pub fn compute_digest_effects_with_ordering(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
     let snap = compose_snapshot(resolved);
     let roots = reportable_roots(resolved);
+    let summaries = crate::engine::return_summary::compute_return_summaries(
+        &resolved.workspace.routines,
+        Some(&resolved.workspace.objects),
+    );
+    let isolated = crate::engine::l3::event_graph::isolated_event_ids(&resolved.workspace.routines);
+    let isolated_opt = if isolated.is_empty() {
+        None
+    } else {
+        Some(&isolated)
+    };
+    digest_query(&snap, &roots, Some(&summaries), isolated_opt)
+}
+
+/// Like [`compute_digest_effects_with_ordering`], but restricted to the roots whose
+/// capability cone carries an IO/UI effect (op → `HTTP` / `FILE` / `UI_CONFIRM` /
+/// `UI_MESSAGE` / `UI_WINDOW_OPEN`). Every ordering label
+/// [`is_relevant_label`](crate::engine::l5::ordering_facts) gates on an io-occurrence
+/// of exactly one of those types, so a root with NO such effect in its cone produces
+/// ZERO ordering facts. Skipping those roots BEFORE the (expensive) per-effect witness
+/// reconstruction is behavior-IDENTICAL for `compute_ordering_facts` (which only
+/// retains non-empty fact sets) while collapsing the witness-reconstruction work from
+/// "every reportable root" down to "roots that actually do IO/UI". The general
+/// `compute_digest_effects_with_ordering` (consumed by the R4-F digest/scoped-guarantee
+/// projections) is left unfiltered so those projections are unaffected.
+pub fn compute_digest_effects_for_ordering(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
+    let snap = compose_snapshot(resolved);
+    let all_roots = reportable_roots(resolved);
+
+    // Subjects (routine ids) whose cone carries an IO/UI effect. `capability_facts`
+    // includes INHERITED facts (subject = the cone owner), so a root that reaches an
+    // IO/UI effect anywhere in its cone appears here with the original op preserved.
+    let io_ui_subjects: std::collections::HashSet<&str> = snap
+        .capability_facts
+        .iter()
+        .filter(|f| {
+            matches!(
+                map_op(&f.op),
+                Some("HTTP")
+                    | Some("FILE")
+                    | Some("UI_CONFIRM")
+                    | Some("UI_MESSAGE")
+                    | Some("UI_WINDOW_OPEN")
+            )
+        })
+        .map(|f| f.subject.as_str())
+        .collect();
+    let roots: Vec<String> = all_roots
+        .into_iter()
+        .filter(|r| io_ui_subjects.contains(r.as_str()))
+        .collect();
+
     let summaries = crate::engine::return_summary::compute_return_summaries(
         &resolved.workspace.routines,
         Some(&resolved.workspace.objects),

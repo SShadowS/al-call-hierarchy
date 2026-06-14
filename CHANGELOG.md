@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- L5 ordering/digest witness reconstruction no longer blows up on dense call graphs
+  (the Record-table-procedure + implicit-Rec dispatch edges densified out-degree, which
+  made `alsem analyze` effectively non-terminating on the CDO app — 15k+ CPU-s). Three
+  behavior-preserving fixes (all `*.l3*`/r4f/digest/cli-b goldens byte-stable): (1)
+  **reachability-directed pruning** in `reconstruct_witness_paths` — a frontier edge whose
+  target cannot reach the target fact (per the already-computed `facts_by_routine` cone)
+  is skipped, discarding the dead-end subtrees that exhausted the 25k-state budget (was
+  ~83% of calls hitting the cap → 0%); (2) out-edges **pre-sorted once** at index build
+  instead of cloned+sorted per BFS state; (3) `compute_ordering_facts` restricted to roots
+  whose cone carries an IO/UI effect (the only roots that can yield an ordering label),
+  via the new `compute_digest_effects_for_ordering` — skipped roots produce empty ordering
+  facts, so the result is identical.
+
 ### Added
 - **Task 6a — Implicit Rec/xRec receiver resolution** (`src/engine/l3/receiver_type.rs`):
   `infer_receiver_type` Step 2b now checks `routine.record_variables` BEFORE yielding
