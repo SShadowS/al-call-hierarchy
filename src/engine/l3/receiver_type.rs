@@ -202,6 +202,23 @@ pub fn infer_receiver_type(
             };
         }
 
+        // Step 2c — language singletons: CurrPage / CurrReport are not declared
+        // variables but are platform-provided receivers for the current page /
+        // report instance. Intercept them here before emitting UntrackedReceiver.
+        let receiver_name_lc = receiver_name.to_lowercase();
+        let singleton_kind = match receiver_name_lc.as_str() {
+            "currpage" => Some(ReceiverBuiltinKind::PageInstance),
+            "currreport" => Some(ReceiverBuiltinKind::ReportInstance),
+            _ => None,
+        };
+        if let Some(kind) = singleton_kind {
+            return InferredReceiver {
+                ty: ReceiverType::Framework { kind },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
+
         return InferredReceiver {
             ty: ReceiverType::Unknown {
                 reason: UnknownReason::UntrackedReceiver,

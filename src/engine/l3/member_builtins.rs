@@ -39,6 +39,12 @@ pub enum ReceiverBuiltinKind {
     List,
     Dictionary,
     Xml,
+    /// The current page instance — `CurrPage.M()` calls inside a page trigger.
+    /// Methods come from the AL compiler's `Page` instance member catalog.
+    PageInstance,
+    /// The current report instance — `CurrReport.M()` calls inside a report
+    /// trigger. Methods come from the AL compiler's `ReportInstance` catalog.
+    ReportInstance,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -119,6 +125,8 @@ pub fn member_builtin_disposition(
         List => set_hit(&LIST, method_lc),
         Dictionary => set_hit(&DICTIONARY, method_lc),
         Xml => set_hit(&XML, method_lc),
+        PageInstance => set_hit(&PAGE_INSTANCE, method_lc),
+        ReportInstance => set_hit(&REPORT_INSTANCE, method_lc),
     }
 }
 
@@ -396,6 +404,71 @@ static XML: phf::Set<&'static str> = phf_set! {
     "setname", "setpublicid", "setsystemid", "settarget",
     "standalone",
     "version",
+};
+
+// --- Page instance (CurrPage.M()) — methods on the current page object. ---
+// Source: member_builtins.json "Page" array (19 methods), all lowercase.
+static PAGE_INSTANCE: phf::Set<&'static str> = phf_set! {
+    "activate",
+    "cancelbackgroundtask",
+    "caption",
+    "close",
+    "editable",
+    "enqueuebackgroundtask",
+    "getbackgroundparameters",
+    "getrecord",
+    "lookupmode",
+    "objectid",
+    "promptmode",
+    "run",
+    "runmodal",
+    "saverecord",
+    "setbackgroundtaskresult",
+    "setrecord",
+    "setselectionfilter",
+    "settableview",
+    "update",
+};
+
+// --- Report instance (CurrReport.M()) — methods on the current report object. ---
+// Source: member_builtins.json "ReportInstance" array (36 methods), all lowercase.
+static REPORT_INSTANCE: phf::Set<&'static str> = phf_set! {
+    "break",
+    "createtotals",
+    "defaultlayout",
+    "excellayout",
+    "execute",
+    "formatregion",
+    "isreadonly",
+    "language",
+    "newpage",
+    "newpageperrecord",
+    "objectid",
+    "pageno",
+    "papersource",
+    "preview",
+    "print",
+    "printonlyifdetail",
+    "quit",
+    "rdlclayout",
+    "run",
+    "runmodal",
+    "runrequestpage",
+    "saveas",
+    "saveasexcel",
+    "saveashtml",
+    "saveaspdf",
+    "saveasword",
+    "saveasxml",
+    "settableview",
+    "showoutput",
+    "skip",
+    "targetformat",
+    "totalscausedby",
+    "userequestpage",
+    "validateandpreparelayout",
+    "wordlayout",
+    "wordxmlpart",
 };
 
 #[cfg(test)]
