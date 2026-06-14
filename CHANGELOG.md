@@ -150,6 +150,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiler types (60+ net-new entries). Pure reclassification — resolved count
   unchanged. CDO after: `framework-method-not-in-catalog` = 0, unknown 2209→2191,
   realUnknownRate 15.8%→15.7%.
+- **CurrPage / CurrReport receiver resolution → Page / Report-instance builtins**
+  (`src/engine/l3/member_builtins.rs`, `src/engine/l3/receiver_type.rs`): the two
+  AL language singletons `CurrPage` and `CurrReport` — which are not declared variables
+  but are the current page / report instance inside triggers — were classified as
+  `Unknown { UntrackedReceiver }` with receiver-shape `currpage`/`currreport`. They
+  are now intercepted in `infer_receiver_type` Step 2c (before `UntrackedReceiver` is
+  emitted) and mapped to `ReceiverType::Framework { kind: PageInstance }` /
+  `ReceiverType::Framework { kind: ReportInstance }`. Two new `ReceiverBuiltinKind`
+  variants (`PageInstance` — 19 methods; `ReportInstance` — 36 methods) are added to
+  the member-builtin catalog, sourced from `member_builtins.json` `"Page"` and
+  `"ReportInstance"` arrays. Phase B's Framework arm dispatches via the catalog: a
+  hit emits `builtin`; a miss emits `Unknown { FrameworkMethodNotInCatalog }` (an
+  honest catalog gap, not a regression). Pure reclassification — `resolved` count
+  unchanged. CDO `DocumentOutput/Cloud` after: `untracked-receiver::currpage` 319 → 0,
+  `untracked-receiver::currreport` 15 → 0, builtin 4745 → 5079 (+334), unknown
+  1427 → 1093 (−334), `realUnknownRate` 10.21% → 7.82% (−2.39 pp). Four new tests
+  in `tests/l3cg_currpage_dispatch.rs`.
 
 ### Changed
 - **Member-call resolution refactored to the ReceiverType lattice** (Phase A infer + Phase B
