@@ -146,12 +146,12 @@
   },
   "inputs": [
     {
-      "contentHash": "59e5b2faa93dd06d00c40a6b96fadd49be2569e3bd313fe2d0baa37cc7dca8b6",
+      "contentHash": "d4e727dfd11285cae629b96697588938d91c651aa9c3810ef2f06207242a7c4a",
       "kind": "app-json",
       "path": "app.json"
     },
     {
-      "contentHash": "5e3893537312b6e75ae9a9b469bc24c36ed7b9891f5ee0e6bfa2f2d48c567b56",
+      "contentHash": "e7d13a89d1c847d887069a12adda592ea766679c0d995395532760a2fe787fd3",
       "kind": "roots-config",
       "path": "roots.config.json"
     }
@@ -213,5 +213,5 @@
   "schemaFacts": [],
   "schemaVersion": 3,
   "typedEdges": [],
-  "workspaceFingerprint": "37a0814c1077c76f9f8ac81ad844302230b98ba1e215572a5cc7a9a3541c2f28"
+  "workspaceFingerprint": "c7130437b57268b1b78e934c2d4ce59887976d5d4c018c1d252e27d74cd7201c"
 }

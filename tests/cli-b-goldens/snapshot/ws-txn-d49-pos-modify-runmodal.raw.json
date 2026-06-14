@@ -32,10 +32,10 @@
     {
       "calleeDisplay": "Page.RunModal",
       "callsiteId": "f0deb5e0a238c365/e2d0ecb6bef7ddcc73934b486afe9c4529d5b67cce7d8ae8979ec62bd77cddda/cs0",
-      "dispatchKind": "method",
+      "dispatchKind": "unresolved",
       "from": "11111111-0000-0000-0000-0000000d4902:Codeunit:50000#5098a6b4ccf565e1ea2c49aaa4c34564280e943633b182038eb006d80f813721",
       "resolvedEdges": [],
-      "status": "unresolved-receiver-type"
+      "status": "builtin"
     }
   ],
   "capabilityFacts": [
@@ -154,7 +154,7 @@
   },
   "inputs": [
     {
-      "contentHash": "cd77e854469263f99ad2ac14d33fecddc3b9e9a403a85a5bde5047087f198419",
+      "contentHash": "1e4c17220707188af60ee7e5f1675a97636a5ec952bb2ac2b94c59809b9accbe",
       "kind": "app-json",
       "path": "app.json"
     }
@@ -278,5 +278,5 @@
   ],
   "schemaVersion": 3,
   "typedEdges": [],
-  "workspaceFingerprint": "c6699cf6323bea4482f8eb641cd8f8ad5f5688c22d669234161e0cb01359a0da"
+  "workspaceFingerprint": "790cd6858579d7a8f60e0e394b40a9e66331b2e0084df32949bc98132b8c8878"
 }

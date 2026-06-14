@@ -139,7 +139,7 @@
     },
     "inputs": [
       {
-        "contentHash": "eb8dccfe4d43fda2f593bd91ee24568ba43ec7babe187bd27ffd5f1bb792b2bb",
+        "contentHash": "a06725248fcdeb2566b127b127d00fc00c1f00fe13711049c77b468658fb7098",
         "kind": "app-json",
         "path": "app.json"
       }
@@ -263,7 +263,7 @@
     ],
     "snapshotSchemaVersion": 3,
     "typedEdges": [],
-    "workspaceFingerprint": "e098e48fbdfcefab8d69f8ae58dcd79175c85fe80556a3eaa5f3fd8cbac40957"
+    "workspaceFingerprint": "f5d3b823f84e804e8af4fb8b59902730cf90a01dd1d743e75e7fc3beb35fd04b"
   },
   "schemaVersion": "1.1.0"
 }
