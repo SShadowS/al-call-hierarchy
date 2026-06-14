@@ -404,6 +404,7 @@ fn multiset_is_sorted_and_preserves_duplicates_synthetically() {
         receiver_type: None,
         dispatch_meta: None,
         unknown_method_name: None,
+        receiver_shape: None,
     };
     let edges = vec![
         edge(

@@ -117,6 +117,12 @@ pub struct CallEdge {
     /// For `FrameworkMethodNotInCatalog` unknown edges: the `"Kind::method_lc"`
     /// detail string that identifies the catalog gap. `None` on all other edges.
     pub unknown_method_name: Option<String>,
+    /// DIAGNOSTIC-only receiver shape tag for `UntrackedReceiver` /
+    /// `CompoundReceiver` edges — sub-characterizes the bucket so
+    /// `--l3-unknown-breakdown` can attribute `implicit-rec`, `currpage`,
+    /// `currreport`, `member-of-member`, `call-result`, `indexed`, etc. `None` on
+    /// all other edges.
+    pub receiver_shape: Option<String>,
 }
 
 impl CallEdge {
@@ -133,6 +139,7 @@ impl CallEdge {
             receiver_type: None,
             dispatch_meta: None,
             unknown_method_name: None,
+            receiver_shape: None,
         }
     }
 }

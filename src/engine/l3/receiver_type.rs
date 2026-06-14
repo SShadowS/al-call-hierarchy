@@ -108,6 +108,11 @@ pub struct InferredReceiver {
     /// declined before a variable was found (compound / untracked receivers — the
     /// corresponding `Unknown` edges never read it).
     pub declared_type: String,
+    /// DIAGNOSTIC-only sub-characterization for `UntrackedReceiver` /
+    /// `CompoundReceiver` — used by Phase B's `Unknown` arm to stamp
+    /// `CallEdge::receiver_shape` for the `--l3-unknown-breakdown` histogram.
+    /// `None` on all other paths.
+    pub receiver_shape: Option<String>,
 }
 
 /// Everything Phase B needs that is not the receiver type or the method name. A
@@ -155,16 +160,54 @@ pub fn infer_receiver_type(
                 reason: UnknownReason::CompoundReceiver,
             },
             declared_type: String::new(),
+            receiver_shape: Some(compound_receiver_shape(receiver_expr)),
         };
     };
 
     // Step 2 — find the receiver variable (params → locals → globals).
     let Some(recv_var) = routine.variables.iter().find(|v| v.name == receiver_name) else {
+        // Step 2b — check record_variables for an implicit Rec/xRec entry that has
+        // its table_id resolved (set by record_types pass 3 for Table/Page/
+        // TableExtension/PageExtension). Only produce `Record` when table_id is
+        // Some AND the symbol table can walk it to a Table object id.
+        let receiver_name_lc = receiver_name.to_lowercase();
+        if let Some(table_object_id) = routine
+            .record_variables
+            .iter()
+            .find(|rv| rv.name.to_lowercase() == receiver_name_lc && rv.table_id.is_some())
+            .and_then(|rv| rv.table_id.as_deref())
+            .and_then(|tid| symbols.table_by_id(tid))
+            .map(|t| t.name.clone())
+            .and_then(|tname| symbols.object_by_type_name("Table", &tname))
+            .map(|obj| obj.id.clone())
+        {
+            let declared_type = format!("Record {}", {
+                // Reconstruct a human-readable declared_type from the table name
+                // resolved above; route back through the table object to get the name.
+                // We already have the object id; we can derive the name from the
+                // record_variable's table_name field (already unquoted).
+                routine
+                    .record_variables
+                    .iter()
+                    .find(|rv| rv.name.to_lowercase() == receiver_name_lc)
+                    .and_then(|rv| rv.table_name.as_deref())
+                    .unwrap_or(&receiver_name)
+            });
+            return InferredReceiver {
+                ty: ReceiverType::Record {
+                    table_object_id: Some(table_object_id),
+                },
+                declared_type,
+                receiver_shape: None,
+            };
+        }
+
         return InferredReceiver {
             ty: ReceiverType::Unknown {
                 reason: UnknownReason::UntrackedReceiver,
             },
             declared_type: String::new(),
+            receiver_shape: Some(untracked_receiver_shape(&receiver_name)),
         };
     };
     let declared_type = recv_var.declared_type.clone();
@@ -183,7 +226,11 @@ pub fn infer_receiver_type(
                 name: type_ref.name,
             },
         };
-        return InferredReceiver { ty, declared_type };
+        return InferredReceiver {
+            ty,
+            declared_type,
+            receiver_shape: None,
+        };
     }
 
     // Step 4 — builtin-catalog classification (Record / RecordRef / FieldRef /
@@ -206,7 +253,37 @@ pub fn infer_receiver_type(
         // Primitive / Variant / unrecognized declared type.
         None => ReceiverType::Primitive,
     };
-    InferredReceiver { ty, declared_type }
+    InferredReceiver {
+        ty,
+        declared_type,
+        receiver_shape: None,
+    }
+}
+
+/// Sub-characterize a compound receiver expression for the breakdown histogram.
+/// A compound receiver is one that `simple_receiver_name` declined (contains `.`,
+/// `(`, `[`, or similar). The returned string is the shape tag stored on the edge.
+fn compound_receiver_shape(receiver_expr: &str) -> String {
+    if receiver_expr.contains('.') {
+        "member-of-member".to_string()
+    } else if receiver_expr.contains('(') {
+        "call-result".to_string()
+    } else if receiver_expr.contains('[') {
+        "indexed".to_string()
+    } else {
+        "other".to_string()
+    }
+}
+
+/// Sub-characterize an untracked receiver name for the breakdown histogram. The
+/// name is the simple receiver name that could not be found in `routine.variables`.
+fn untracked_receiver_shape(receiver_name: &str) -> String {
+    match receiver_name.to_lowercase().as_str() {
+        "rec" | "xrec" => "implicit-rec".to_string(),
+        "currpage" => "currpage".to_string(),
+        "currreport" => "currreport".to_string(),
+        _ => "other".to_string(),
+    }
 }
 
 /// Resolve a `Record`-typed receiver's declared table to its workspace table
@@ -303,7 +380,13 @@ pub(crate) fn dispatch(
             UnknownReason::NonObjectReceiverType,
         ),
         ReceiverType::Unknown { reason } => {
-            unknown_method(ctx.from, ctx.callsite_id, ctx.operation_id, *reason)
+            let mut edges = unknown_method(ctx.from, ctx.callsite_id, ctx.operation_id, *reason);
+            if let Some(shape) = receiver.receiver_shape.clone() {
+                if let Some(e) = edges.first_mut() {
+                    e.receiver_shape = Some(shape);
+                }
+            }
+            edges
         }
     }
 }

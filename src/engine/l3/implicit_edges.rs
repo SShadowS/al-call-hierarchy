@@ -62,6 +62,7 @@ pub fn build_implicit_trigger_edges(
                 receiver_type: None,
                 dispatch_meta: None,
                 unknown_method_name: None,
+                receiver_shape: None,
             });
         }
     }

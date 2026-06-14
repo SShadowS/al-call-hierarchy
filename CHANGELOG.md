@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Task 6a — Implicit Rec/xRec receiver resolution** (`src/engine/l3/receiver_type.rs`):
+  `infer_receiver_type` Step 2b now checks `routine.record_variables` BEFORE yielding
+  `UntrackedReceiver`. For Table/Page/TableExtension/PageExtension objects, pass 3 of
+  `record_types::resolve_routine_record_types` sets `table_id` on the implicit `Rec`/`xRec`
+  record variable. Step 2b finds this entry (case-insensitive name match, `table_id == Some`),
+  walks it through `symbols.table_by_id` → `symbols.object_by_type_name("Table", name)`, and
+  returns `ReceiverType::Record { table_object_id: Some(..) }` so Phase B can dispatch both
+  catalog builtins (`TableCaption`, `FieldNo`, etc.) and real user table procedures. A codeunit
+  with an undeclared `Rec` (no effective own table → `table_id == None`) stays
+  `Unknown { UntrackedReceiver }` (correct: no false resolution). The previously deferred
+  `implicit_rec_table_procedure_deferred` test in `tests/l3cg_record_dispatch.rs` has been
+  promoted from "stays unknown" to "now resolves". Four new tests in
+  `tests/l3cg_implicit_rec_dispatch.rs` cover: table trigger resolves, builtin stays builtin,
+  page-via-SourceTable resolves, and codeunit stray Rec stays unknown.
+- **Task 6a — Receiver-shape sub-characterization in `--l3-unknown-breakdown`**:
+  Added `receiver_shape: Option<String>` field to `CallEdge` (DIAGNOSTIC-only, never projected
+  to golden output). `InferredReceiver` now carries `receiver_shape: Option<String>` set by
+  Phase A helpers: `compound_receiver_shape` (classifies `member-of-member` / `call-result` /
+  `indexed` / `other`) for `CompoundReceiver` edges, and `untracked_receiver_shape` (classifies
+  `implicit-rec` / `currpage` / `currreport` / `other`) for `UntrackedReceiver` edges. Phase B's
+  `Unknown` arm propagates the shape onto the emitted edge. `resolution_class::unknown_breakdown`
+  now returns a 3-tuple adding `receiverShapeDetail` (keyed by `"{reason}::{shape}"`), and
+  `aldump --l3-unknown-breakdown` exposes this as `"receiverShapeDetail"` in the JSON output.
 - **Phase 3 — Record table-procedure dispatch** (`src/engine/l3/call_resolver.rs`): member
   calls on `Record <Table>`-typed variables where the method is NOT a built-in intrinsic are
   now resolved to the table's user-defined procedure. The resolver looks up the receiver's

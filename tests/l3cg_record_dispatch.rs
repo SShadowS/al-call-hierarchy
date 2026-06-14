@@ -146,18 +146,15 @@ fn record_missing_method_stays_unknown() {
     );
 }
 
-/// Test 4: The implicit `Rec` receiver in a table trigger — Phase 3 DEFERRED.
+/// Test 4: The implicit `Rec` receiver in a table trigger — RESOLVED by Task 6a.
 ///
-/// When `Rec.CalcDiscount()` is written explicitly in a table trigger, `Rec` is
-/// the implicit record. It is registered in `routine.record_variables` (with
-/// `table_id` set by record_types pass 3) but NOT in `routine.variables`.
-/// The Phase-3 dispatch code operates in the `RecordTableProcedure` branch which
-/// is only reached AFTER Step 2 finds `recv_var` in `routine.variables`. For the
-/// implicit `Rec` receiver, Step 2 fails (UntrackedReceiver) before Phase 3 can
-/// act. Resolving this requires either (a) adding `Rec` to `routine.variables`
-/// with the correct declared type, or (b) a separate check in Step 2 for
-/// record_variables. This is deferred to the ReceiverType lattice refactor (Task 6).
-/// This test asserts the CURRENT behavior (unknown) and documents the limitation.
+/// When `Rec.CalcDiscount()` is written in a table trigger, `Rec` is the implicit
+/// record registered in `routine.record_variables` (with `table_id` set by
+/// `record_types` pass 3) but NOT in `routine.variables`. Task 6a (Step 2b) adds a
+/// check in `infer_receiver_type` that, BEFORE yielding `UntrackedReceiver`, looks
+/// up the receiver name in `record_variables`. When an entry with `table_id == Some`
+/// is found, Phase A resolves it to `ReceiverType::Record { table_object_id: Some(..) }`
+/// so Phase B can dispatch the table procedure. The previous limitation is gone.
 #[test]
 fn implicit_rec_table_procedure_deferred() {
     let tbl = r#"table 50001 Item {
@@ -174,16 +171,27 @@ fn implicit_rec_table_procedure_deferred() {
     let p = project_ws(&[("src/item.al", tbl)]);
     let edges = all_edges(&p);
 
-    // DEFERRED: implicit Rec (trigger) is not in routine.variables, so Step 2
-    // returns UntrackedReceiver before Phase-3 record dispatch can fire.
-    // Current behavior: unknown (not yet resolved).
+    // Task 6a: implicit Rec in a table trigger now resolves via Step 2b.
+    let resolved_edges: Vec<&&PCallEdge> = edges
+        .iter()
+        .filter(|e| e.resolution == "resolved" && e.dispatch_kind == "method")
+        .collect();
+    assert!(
+        !resolved_edges.is_empty(),
+        "Rec.CalcDiscount() in a table trigger must now resolve (Task 6a); got edges: {:#?}",
+        edges
+    );
+    assert!(
+        resolved_edges.iter().all(|e| e.to.is_some()),
+        "resolved implicit-Rec edge must have a `to`; edges: {:#?}",
+        resolved_edges
+    );
     let unknown_edges: Vec<&&PCallEdge> =
         edges.iter().filter(|e| e.resolution == "unknown").collect();
-    assert_eq!(
-        unknown_edges.len(),
-        1,
-        "DEFERRED: Rec.CalcDiscount() in a table trigger stays unknown (Phase-3 limitation); edges: {:#?}",
-        edges
+    assert!(
+        unknown_edges.is_empty(),
+        "no unknown edges should remain after Task 6a; unknowns: {:#?}",
+        unknown_edges
     );
 }
 

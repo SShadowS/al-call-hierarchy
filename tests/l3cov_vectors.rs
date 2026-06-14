@@ -298,6 +298,7 @@ fn multiset_duplicate_vector_preserves_dups() {
             receiver_type: None,
             dispatch_meta: None,
             unknown_method_name: None,
+            receiver_shape: None,
         })
         .collect();
 
