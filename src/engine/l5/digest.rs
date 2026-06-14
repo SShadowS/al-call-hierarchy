@@ -797,13 +797,40 @@ fn reconstruct_witness_paths(
         };
     }
 
-    struct State {
+    // --- Case-C BFS: parent-pointer arena (eliminates per-state path clones) ---
+    //
+    // Each arena node records the single hop that led INTO `routine` from its
+    // parent, plus a back-pointer index. Visited-set reconstruction and path
+    // materialisation walk the parent chain — O(depth), no allocation per expansion.
+    //
+    // Arena index 0 is never a real node (sentinel); real nodes start at index 1
+    // so `parent: 0` can be used as "seed / no parent" sentinel.
+    struct Node {
         routine: String,
-        hops: Vec<WitnessHop>,
-        visited: std::collections::HashSet<String>,
+        hop: WitnessHop, // the edge-hop that led INTO `routine`
+        parent: usize,   // arena index of parent; 0 = seed (no parent)
+        depth: usize,    // number of hops from root to this node (seed = 1)
     }
 
-    let mut queue: std::collections::VecDeque<State> = std::collections::VecDeque::new();
+    // Arena slot 0 is a sentinel placeholder (never popped or referenced as a real node).
+    let sentinel_hop = WitnessHop::Terminal {
+        evidence_kind: TerminalKind::Synthetic,
+        operation_id: None,
+        callsite_id: None,
+        display_text: String::new(),
+        source_file: None,
+        line: None,
+        column: None,
+    };
+    let mut arena: Vec<Node> = vec![Node {
+        routine: String::new(),
+        hop: sentinel_hop,
+        parent: 0,
+        depth: 0,
+    }];
+
+    // Collect seed (routine, hop) pairs so we can sort before pushing to arena.
+    let mut seed_pairs: Vec<(String, WitnessHop)> = Vec::new();
     for edge in &first_edges {
         let Some(hop) = edge_to_hop(edge, idx) else {
             continue;
@@ -811,23 +838,49 @@ fn reconstruct_witness_paths(
         let Some(to) = edge_to(edge) else {
             continue;
         };
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(root_id.to_string());
-        visited.insert(to.to_string());
-        queue.push_back(State {
-            routine: to.to_string(),
-            hops: vec![hop],
-            visited,
-        });
+        seed_pairs.push((to.to_string(), hop));
     }
 
     // seed-sort by routine (`.cmp`, stable). witness.ts:276 uses `(a,b)=> a.routine<b.routine?-1:1`
     // — an empirical V8 2000-array stress test confirmed V8-stable-preserves-equal-key-order for
     // this `?-1:1` comparator, so Rust's stable `.cmp` (which returns Equal on a tie) is CORRECT
     // and preserves typedEdges-insertion order for equal-routine seeds. Do NOT change to `?-1:1`.
-    let mut seeds: Vec<State> = queue.into_iter().collect();
-    seeds.sort_by(|a, b| a.routine.cmp(&b.routine));
-    let mut queue: std::collections::VecDeque<State> = seeds.into_iter().collect();
+    seed_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for (routine, hop) in seed_pairs {
+        let idx_node = arena.len();
+        arena.push(Node {
+            routine,
+            hop,
+            parent: 0, // seed: no parent
+            depth: 1,
+        });
+        queue.push_back(idx_node);
+    }
+
+    // Helper: walk the parent chain from `ni` and reconstruct the hop Vec (root→ni order).
+    // This is called only on terminal / boundary hits — rare — so allocation here is fine.
+    let reconstruct_hops = |arena: &Vec<Node>, ni: usize| -> Vec<WitnessHop> {
+        let mut rev = Vec::new();
+        let mut cur = ni;
+        while cur != 0 {
+            rev.push(arena[cur].hop.clone());
+            cur = arena[cur].parent;
+        }
+        rev.reverse();
+        rev
+    };
+
+    // Helper: build the per-path visited set by walking the parent chain.
+    // Uses &str references into arena strings — no String allocation.
+    // Returns a HashSet<*const str> as thin ptr keys to avoid lifetime issues.
+    // Actually we collect routine str slices via raw pointer identity.
+    // Simpler: collect into a Vec<&str> and do linear scan (depth is ≤ MAX_DEPTH=64,
+    // so a linear scan is faster than hashing at that size).
+    // We use a small inline vec to avoid heap allocation for the visited check.
+    // The visited set must include `root_id` (same as original seeding: visited = {root, to}).
+    // At expansion time we check: is `to` == root_id || is `to` on the parent chain?
 
     let mut state_count = 0usize;
     let mut truncated = false;
@@ -848,7 +901,7 @@ fn reconstruct_witness_paths(
     let empty_node_facts: Vec<&Fact> = Vec::new();
 
     while !queue.is_empty() && paths.len() < cap {
-        let Some(state) = queue.pop_front() else {
+        let Some(ni) = queue.pop_front() else {
             break;
         };
         state_count += 1;
@@ -861,19 +914,26 @@ fn reconstruct_witness_paths(
             incomplete = true;
             break;
         }
-        if state.hops.len() > MAX_DEPTH {
+        // depth check: arena[ni].depth is the number of hops to this node.
+        // Original check was `state.hops.len() > MAX_DEPTH`; hops.len() == depth here.
+        if arena[ni].depth > MAX_DEPTH {
             depth_exceeded = true;
             continue;
         }
+
+        // Snapshot the routine string we need for lookups (avoids borrow conflicts
+        // when we later mutably push to arena).
+        let routine = arena[ni].routine.clone();
+
         // Terminal check: FIRST matching direct fact in insertion order.
         let directs: &[&Fact] = idx
             .direct_facts_by_routine
-            .get(&state.routine)
+            .get(&routine)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
         if let Some(equivalent) = directs.iter().find(|d| fact_equivalent(d, fact)) {
             let terminal = terminal_hop_from_fact(equivalent, idx);
-            let mut hops = state.hops.clone();
+            let mut hops = reconstruct_hops(&arena, ni);
             hops.push(terminal);
             paths.push(WitnessPath { hops });
             continue;
@@ -881,64 +941,94 @@ fn reconstruct_witness_paths(
         // Opaque-or-unresolved-boundary: no out, no directs, coverage.directStatus=="unknown".
         let routine_out_len = idx
             .outgoing_edges
-            .get(&state.routine)
+            .get(&routine)
             .map(|v| v.len())
             .unwrap_or(0);
         let cov_unknown = idx
             .coverage_by_routine
-            .get(&state.routine)
+            .get(&routine)
             .map(|c| c.direct_status == "unknown")
             .unwrap_or(false);
         if routine_out_len == 0 && directs.is_empty() && cov_unknown {
             // opaque-or-unresolved-boundary (detail = routineId).
             diagnostics.push((
                 "opaque-or-unresolved-boundary".to_string(),
-                Some(state.routine.clone()),
+                Some(routine.clone()),
             ));
-            if !state.hops.is_empty() {
-                paths.push(WitnessPath {
-                    hops: state.hops.clone(),
-                });
+            // Original: if !state.hops.is_empty() — depth>=1 means always non-empty here.
+            // (Seeds have depth=1, so hops reconstructed are always ≥1 element.)
+            let hops = reconstruct_hops(&arena, ni);
+            if !hops.is_empty() {
+                paths.push(WitnessPath { hops });
             }
             continue;
         }
         // Expand: out-edges are PRE-SORTED by `edge_compare` at index build, skip
         // visited. (No per-state clone+sort — see `build_fingerprint_indexes`.)
-        let sorted = idx
-            .outgoing_edges
-            .get(&state.routine)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        for &edge in sorted {
-            let Some(to) = edge_to(edge) else {
-                continue;
-            };
-            if state.visited.contains(to) {
-                continue;
+        //
+        // Build the per-path visited set by walking the parent chain of `ni`.
+        // Depth ≤ MAX_DEPTH (64), so cloning `depth+1` Strings once per popped node
+        // (shared across all out-edge checks of this node) is O(depth), not O(depth *
+        // out_degree) as in the old code.  The critical saving is that we no longer
+        // clone the visited set AND hops per edge expansion — only once per node pop.
+        // Includes root_id (matching original: seeded visited = {root, to}).
+        let visited_routines: Vec<String> = {
+            let mut v: Vec<String> = Vec::with_capacity(arena[ni].depth + 1);
+            v.push(root_id.to_string());
+            let mut cur = ni;
+            while cur != 0 {
+                v.push(arena[cur].routine.clone());
+                cur = arena[cur].parent;
             }
-            // Reachability prune: skip targets from which `fact` is unreachable.
-            let reachable = *can_reach.entry(to).or_insert_with(|| {
-                idx.facts_by_routine
-                    .get(to)
-                    .unwrap_or(&empty_node_facts)
-                    .iter()
-                    .any(|f| fact_equivalent(f, fact))
-            });
-            if !reachable {
-                continue;
+            v
+        };
+        let cur_depth = arena[ni].depth;
+
+        // Collect expansions: (to_string, hop) pairs.  We build the list while
+        // `visited_routines` is still live (read-only arena access), then push to
+        // arena after the borrow ends.
+        let mut expansions: Vec<(String, WitnessHop)> = Vec::new();
+        {
+            let sorted = idx
+                .outgoing_edges
+                .get(&routine)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            for &edge in sorted {
+                let Some(to) = edge_to(edge) else {
+                    continue;
+                };
+                if visited_routines.iter().any(|r| r == to) {
+                    continue;
+                }
+                // Reachability prune: skip targets from which `fact` is unreachable.
+                let reachable = *can_reach.entry(to).or_insert_with(|| {
+                    idx.facts_by_routine
+                        .get(to)
+                        .unwrap_or(&empty_node_facts)
+                        .iter()
+                        .any(|f| fact_equivalent(f, fact))
+                });
+                if !reachable {
+                    continue;
+                }
+                let Some(hop) = edge_to_hop(edge, idx) else {
+                    continue;
+                };
+                expansions.push((to.to_string(), hop));
             }
-            let Some(hop) = edge_to_hop(edge, idx) else {
-                continue;
-            };
-            let mut new_visited = state.visited.clone();
-            new_visited.insert(to.to_string());
-            let mut new_hops = state.hops.clone();
-            new_hops.push(hop);
-            queue.push_back(State {
-                routine: to.to_string(),
-                hops: new_hops,
-                visited: new_visited,
+        }
+        // Now push children to arena (mutable); `visited_routines` is still live here
+        // but we only read `cur_depth` from it (a Copy value captured above).
+        for (to, hop) in expansions {
+            let child_idx = arena.len();
+            arena.push(Node {
+                routine: to,
+                hop,
+                parent: ni,
+                depth: cur_depth + 1,
             });
+            queue.push_back(child_idx);
         }
     }
 

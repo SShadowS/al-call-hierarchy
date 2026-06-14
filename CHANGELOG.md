@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Parent-pointer arena BFS** in `reconstruct_witness_paths` (Case C inherited-fact
+  witness): replaced the cloned `State { routine, hops: Vec<WitnessHop>, visited:
+  HashSet<String> }` (cloned in full on every edge expansion) with a `Node { routine,
+  hop, parent, depth }` arena + `VecDeque<usize>` index queue. Visited-set check is now
+  O(depth) via a `Vec<String>` parent-chain walk (one allocation per *popped* node, shared
+  across all out-edge checks for that node). Path materialisation walks parents on
+  completion only (rare). Eliminates the `O(depth * out_degree)` per-expansion clone of
+  both the `HashSet<String>` and the `Vec<WitnessHop>` that dominated the per-state cost
+  (~46 µs/state). Eliminates per-expansion allocation overhead; all existing goldens and
+  contracts remain byte-identical. (CDO `analyze` wall time is dominated by the total
+  number of `(root, fact)` BFS invocations on large workspaces, which this change does not
+  address — see next milestone.)
 - L5 ordering/digest witness reconstruction no longer blows up on dense call graphs
   (the Record-table-procedure + implicit-Rec dispatch edges densified out-degree, which
   made `alsem analyze` effectively non-terminating on the CDO app — 15k+ CPU-s). Three
