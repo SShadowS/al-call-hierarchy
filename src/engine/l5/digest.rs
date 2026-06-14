@@ -972,12 +972,12 @@ fn reconstruct_witness_paths(
         // out_degree) as in the old code.  The critical saving is that we no longer
         // clone the visited set AND hops per edge expansion — only once per node pop.
         // Includes root_id (matching original: seeded visited = {root, to}).
-        let visited_routines: Vec<String> = {
-            let mut v: Vec<String> = Vec::with_capacity(arena[ni].depth + 1);
-            v.push(root_id.to_string());
+        let visited_routines: Vec<&str> = {
+            let mut v: Vec<&str> = Vec::with_capacity(arena[ni].depth + 1);
+            v.push(root_id);
             let mut cur = ni;
             while cur != 0 {
-                v.push(arena[cur].routine.clone());
+                v.push(arena[cur].routine.as_str());
                 cur = arena[cur].parent;
             }
             v
@@ -998,7 +998,7 @@ fn reconstruct_witness_paths(
                 let Some(to) = edge_to(edge) else {
                     continue;
                 };
-                if visited_routines.iter().any(|r| r == to) {
+                if visited_routines.contains(&to) {
                     continue;
                 }
                 // Reachability prune: skip targets from which `fact` is unreachable.
@@ -2636,27 +2636,42 @@ pub fn compute_digest_effects_for_ordering(resolved: &L3Resolved) -> Vec<DigestE
     let snap = compose_snapshot(resolved);
     let all_roots = reportable_roots(resolved);
 
-    // Subjects (routine ids) whose cone carries an IO/UI effect. `capability_facts`
-    // includes INHERITED facts (subject = the cone owner), so a root that reaches an
-    // IO/UI effect anywhere in its cone appears here with the original op preserved.
-    let io_ui_subjects: std::collections::HashSet<&str> = snap
-        .capability_facts
-        .iter()
-        .filter(|f| {
-            matches!(
-                map_op(&f.op),
-                Some("HTTP")
-                    | Some("FILE")
-                    | Some("UI_CONFIRM")
-                    | Some("UI_MESSAGE")
-                    | Some("UI_WINDOW_OPEN")
-            )
-        })
-        .map(|f| f.subject.as_str())
-        .collect();
+    // Per the 5 ordering labels (`is_relevant_label`), a root can produce an ordering
+    // fact ONLY if its cone carries the label's ingredients. Re-derived from the spec
+    // §4.2 grading table: FOUR labels (WRITE_PENDING_AT_EXTERNAL_IO,
+    // EXTERNAL_IO_BEFORE_COMMIT, IO_BEFORE_ESCAPING_ERROR, EXTERNAL_IO_IN_EVENT_SUBSCRIBER_TXN)
+    // require an EXTERNAL IO (HTTP/FILE); the FIFTH (WRITE_PENDING_AT_UI) requires a
+    // window-opening UI sink (UI_*) AND a pending DB write (INSERT/MODIFY/DELETE). So a
+    // root keeps iff its cone has `external-io` OR (`ui-sink` AND `db-write`). All other
+    // roots produce EMPTY ordering facts, so skipping their (expensive) witness
+    // reconstruction is behavior-identical for `compute_ordering_facts` (which only
+    // retains non-empty fact sets). `capability_facts` includes INHERITED facts
+    // (subject = the cone owner) with the original op preserved, so cone presence is a
+    // flat lookup. A correct SUPERSET of the producing-root set (ingredient presence,
+    // not order — the engine still decides the actual order).
+    let mut ext_io: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut ui_sink: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut db_write: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for f in &snap.capability_facts {
+        match map_op(&f.op) {
+            Some("HTTP") | Some("FILE") => {
+                ext_io.insert(f.subject.as_str());
+            }
+            Some("UI_CONFIRM") | Some("UI_MESSAGE") | Some("UI_WINDOW_OPEN") => {
+                ui_sink.insert(f.subject.as_str());
+            }
+            Some("DB_INSERT") | Some("DB_MODIFY") | Some("DB_DELETE") => {
+                db_write.insert(f.subject.as_str());
+            }
+            _ => {}
+        }
+    }
     let roots: Vec<String> = all_roots
         .into_iter()
-        .filter(|r| io_ui_subjects.contains(r.as_str()))
+        .filter(|r| {
+            let r = r.as_str();
+            ext_io.contains(r) || (ui_sink.contains(r) && db_write.contains(r))
+        })
         .collect();
 
     let summaries = crate::engine::return_summary::compute_return_summaries(
