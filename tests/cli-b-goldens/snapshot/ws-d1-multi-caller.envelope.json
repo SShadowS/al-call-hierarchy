@@ -332,7 +332,7 @@
     },
     "inputs": [
       {
-        "contentHash": "f97f471b7faecf4688b35f3cd0a89330f74d51f5b1d258d0f1a60e30f56acfa7",
+        "contentHash": "c20baf6be3c233260b160aae9b9607d5d90ad7effc00e6d2a9a264c388dda396",
         "kind": "app-json",
         "path": "app.json"
       }
@@ -709,7 +709,7 @@
         "to": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
       }
     ],
-    "workspaceFingerprint": "dbf68bca89fbe66f903311dc2a3c6697f8a74c9dc4fb963129acdaf4cfed824d"
+    "workspaceFingerprint": "7b29099315fe12775912a7c35a4f9c6e730f9fcb4c52790b789fa0629ba09d01"
   },
   "schemaVersion": "1.1.0"
 }

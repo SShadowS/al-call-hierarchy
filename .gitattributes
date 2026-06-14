@@ -5,3 +5,4 @@ tests/**/*.golden.json text eol=lf
 tests/**/*.sarif text eol=lf
 tests/**/*.cbor binary
 tests/**/*.gz binary
+tests/**/*.txt text eol=lf
