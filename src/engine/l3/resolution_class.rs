@@ -99,14 +99,26 @@ impl Histogram {
 /// label. `"unattributed"` collects any `unknown` edge missing a reason (should be
 /// zero — every unknown-emission site sets one). Attributes the residual
 /// real-`unknown` rate to its causes (the typed-resolution work-list).
+///
+/// Returns a 3-tuple:
+///   0 — `byReason` histogram (keyed by `UnknownReason::label()`).
+///   1 — `frameworkMethodDetail` (keyed by `"Kind::method_lc"` for
+///        `FrameworkMethodNotInCatalog` edges).
+///   2 — `receiverShapeDetail` (keyed by `"{reason_label}::{shape}"` for edges
+///        carrying a `receiver_shape` tag — sub-characterizes `untracked-receiver`
+///        and `compound-receiver` buckets).
 pub fn unknown_breakdown(
     edges: &[CallEdge],
 ) -> (
     std::collections::BTreeMap<&'static str, usize>,
     std::collections::BTreeMap<String, usize>,
+    std::collections::BTreeMap<String, usize>,
 ) {
     let mut m: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
-    let mut detail: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut fw_detail: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    let mut shape_detail: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for e in edges {
         if classify(e.resolution, e.dispatch_kind) != ResolutionClass::Unknown {
             continue;
@@ -118,10 +130,14 @@ pub fn unknown_breakdown(
             .unwrap_or("unattributed");
         *m.entry(label).or_insert(0) += 1;
         if let Some(ref name) = e.unknown_method_name {
-            *detail.entry(name.clone()).or_insert(0) += 1;
+            *fw_detail.entry(name.clone()).or_insert(0) += 1;
+        }
+        if let Some(ref shape) = e.receiver_shape {
+            let key = format!("{label}::{shape}");
+            *shape_detail.entry(key).or_insert(0) += 1;
         }
     }
-    (m, detail)
+    (m, fw_detail, shape_detail)
 }
 
 #[cfg(test)]
@@ -251,7 +267,7 @@ mod tests {
         resolved.dispatch_kind = DispatchKind::Direct;
         edges.push(resolved);
 
-        let (bd, _detail) = unknown_breakdown(&edges);
+        let (bd, _detail, _shape_detail) = unknown_breakdown(&edges);
         assert_eq!(bd.get("record-table-procedure"), Some(&2));
         assert_eq!(bd.get("untracked-receiver"), Some(&1));
         // dynamic + resolved are excluded; no "unattributed".
