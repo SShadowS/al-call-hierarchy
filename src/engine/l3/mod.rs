@@ -24,6 +24,7 @@ pub mod implicit_edges;
 pub mod l3_workspace;
 pub mod member_builtins;
 pub mod receiver;
+pub mod receiver_type;
 pub mod record_types;
 pub mod resolution_class;
 pub mod static_arg;

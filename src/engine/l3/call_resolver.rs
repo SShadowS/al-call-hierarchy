@@ -15,10 +15,9 @@
 use super::al_builtins::global_builtin_disposition;
 use super::implicit_edges::build_implicit_trigger_edges;
 use super::l3_workspace::{L3Routine, L3Workspace};
-use super::receiver::simple_receiver_name;
+use super::receiver_type::{dispatch, infer_receiver_type, DispatchCtx};
 use super::static_arg::static_arg_type;
 use super::symbol_table::SymbolTable;
-use super::type_ref::{parse_object_type_ref, ObjectKind};
 use super::type_rel::{type_relation, TypeRelation};
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
@@ -154,7 +153,7 @@ pub struct UpgradedBinding {
 
 /// Per-callsite upgraded bindings. `upgraded` guards `upgrade_bindings` so it
 /// runs EXACTLY once per callsite (reproducing al-sem's double-upgrade guard).
-struct BindingState {
+pub(crate) struct BindingState {
     bindings: Vec<UpgradedBinding>,
 }
 
@@ -199,7 +198,7 @@ fn initial_binding_state(call_site: &PCallSite) -> BindingState {
 /// known. Sets `bindingResolution = "resolved"` + `calleeParameterIsVar` for any
 /// binding not already "non-record-arg". Returns a diagnostic on double-upgrade
 /// (and skips), reproducing al-sem's non-idempotence guard.
-fn upgrade_bindings(
+pub(crate) fn upgrade_bindings(
     state: &mut BindingState,
     callee: &L3Routine,
     callsite_id: &str,
@@ -229,7 +228,7 @@ fn upgrade_bindings(
 }
 
 /// Mark all record-arg bindings "ambiguous" (leave "non-record-arg" untouched).
-fn mark_bindings_ambiguous(state: &mut BindingState) {
+pub(crate) fn mark_bindings_ambiguous(state: &mut BindingState) {
     for b in &mut state.bindings {
         if b.binding_resolution == "non-record-arg" {
             continue;
@@ -242,7 +241,7 @@ fn mark_bindings_ambiguous(state: &mut BindingState) {
 // Arity-aware overload resolution.
 // ---------------------------------------------------------------------------
 
-enum ArityResolution<'a> {
+pub(crate) enum ArityResolution<'a> {
     Resolved(&'a L3Routine),
     NotFound,
     NoArityMatch(Vec<&'a L3Routine>),
@@ -286,7 +285,7 @@ fn disambiguate_by_arg_types<'a>(
 /// Resolve a call to `method_name` in `object_id` by name + exact arity, with
 /// arg-type disambiguation when >1 same-arity candidates. Faithful port of
 /// `resolveByNameAndArity`.
-fn resolve_by_name_and_arity<'a>(
+pub(crate) fn resolve_by_name_and_arity<'a>(
     symbols: &'a SymbolTable,
     object_id: &str,
     method_name: &str,
@@ -356,7 +355,7 @@ fn has_unfetched_declared_dependency(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-fn resolve_interface_dispatch(
+pub(crate) fn resolve_interface_dispatch(
     from: &str,
     callsite_id: &str,
     operation_id: &str,
@@ -538,259 +537,25 @@ fn resolve_call_site(
             vec![e]
         }
         PCallee::Member { receiver, method } => {
-            // Step 1 — simple receiver name.
-            let Some(receiver_name) = simple_receiver_name(receiver) else {
-                return unknown_method(
-                    from,
-                    callsite_id,
-                    operation_id,
-                    UnknownReason::CompoundReceiver,
-                );
+            // Two-phase typed resolution (the ReceiverType lattice):
+            //   Phase A — infer the receiver's type (`infer_receiver_type`).
+            //   Phase B — dispatch the method against that type (`dispatch`).
+            // The fail-closed invariant lives in the lattice: any receiver Phase A
+            // cannot positively type becomes `ReceiverType::Unknown { reason }`,
+            // which Phase B turns into an honest `unknown` edge.
+            let inferred = infer_receiver_type(receiver, routine, symbols);
+            let mut ctx = DispatchCtx {
+                from,
+                callsite_id,
+                operation_id,
+                routine,
+                call_site,
+                symbols,
+                state,
+                diagnostics,
+                unfetched_declared_dependency,
             };
-            // Step 2 — find the receiver variable (params → locals → globals).
-            let Some(recv_var) = routine.variables.iter().find(|v| v.name == receiver_name) else {
-                return unknown_method(
-                    from,
-                    callsite_id,
-                    operation_id,
-                    UnknownReason::UntrackedReceiver,
-                );
-            };
-            // Step 3 — parse the declared type into an object type reference.
-            let Some(type_ref) = parse_object_type_ref(&recv_var.declared_type) else {
-                // Phase 2: the receiver is a Record / RecordRef / FieldRef / KeyRef
-                // / framework type (none of which `parse_object_type_ref` accepts).
-                // If the method is a recognized COMPILER INTRINSIC, the edge is a
-                // platform `builtin` terminal — NOT a resolution hole. A Record
-                // method that is NOT an intrinsic (a real table procedure) stays
-                // `unknown` here; table-procedure resolution is Phase 3.
-                match super::member_builtins::classify_receiver(&recv_var.declared_type) {
-                    Some(kind) => {
-                        let method_lc = method.to_lowercase();
-                        if super::member_builtins::member_builtin_disposition(kind, &method_lc)
-                            .is_some()
-                        {
-                            // Both `Builtin` and `FlowsType` emit `builtin` in Phase 2.
-                            // (FlowsType — RecordRef Open/GetTable/SetTable — is marked in
-                            // the catalog for the §5 dynamic->static work, not yet emitted
-                            // differently.)
-                            let mut e = CallEdge::base(from, callsite_id, operation_id);
-                            e.dispatch_kind = DispatchKind::Builtin;
-                            e.resolution = Resolution::Builtin;
-                            return vec![e];
-                        }
-                        // Catalog MISS: a Record receiver's non-builtin method is a
-                        // real table procedure (Phase-3 resolvable); a framework
-                        // receiver's miss is a catalog gap — capture the detail for
-                        // the `aldump --l3-unknown-breakdown` diagnostic.
-                        if kind == super::member_builtins::ReceiverBuiltinKind::Record {
-                            // Phase 3: resolve the method as a user table procedure.
-                            // We need the TABLE OBJECT's id (L3Routine.object_id
-                            // format: `{appGuid}/Table/{number}` — capital T from
-                            // encode_object_id). L3Table.id uses lowercase `table`, so
-                            // we cannot pass table_id directly to resolve_by_name_and_arity.
-                            // Instead resolve via symbols.object_by_type_name("Table").
-                            //
-                            // Resolution order:
-                            //   (1) match receiver_name in record_variables → table_id
-                            //       → L3Table.name → object_by_type_name("Table");
-                            //   (2) fallback: parse table name directly from
-                            //       declared_type via record_table_name_of.
-                            let receiver_name_lc = receiver_name.to_lowercase();
-
-                            // Collect owned data before borrow of recv_var.declared_type.
-                            let declared_type = recv_var.declared_type.clone();
-
-                            let table_obj_id: Option<String> = {
-                                // Path 1: via record_variables resolved table_id.
-                                let via_rv = routine
-                                    .record_variables
-                                    .iter()
-                                    .find(|rv| rv.name.to_lowercase() == receiver_name_lc)
-                                    .and_then(|rv| rv.table_id.as_deref())
-                                    .and_then(|tid| symbols.table_by_id(tid))
-                                    .map(|t| t.name.clone())
-                                    .and_then(|tname| symbols.object_by_type_name("Table", &tname))
-                                    .map(|obj| obj.id.clone());
-                                if via_rv.is_some() {
-                                    via_rv
-                                } else {
-                                    // Path 2: parse table name from declared_type.
-                                    super::record_types::record_table_name_of(&declared_type)
-                                        .and_then(|tname| {
-                                            symbols.object_by_type_name("Table", &tname)
-                                        })
-                                        .map(|obj| obj.id.clone())
-                                }
-                            };
-
-                            if let Some(table_obj_id) = table_obj_id {
-                                match resolve_by_name_and_arity(
-                                    symbols,
-                                    &table_obj_id,
-                                    method,
-                                    routine,
-                                    call_site,
-                                ) {
-                                    ArityResolution::Resolved(r) => {
-                                        if let Some(d) = upgrade_bindings(state, r, callsite_id) {
-                                            diagnostics.push(d);
-                                        }
-                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                        e.to = Some(r.id.clone());
-                                        e.dispatch_kind = DispatchKind::Method;
-                                        e.resolution = Resolution::Resolved;
-                                        e.receiver_type = Some(declared_type);
-                                        return vec![e];
-                                    }
-                                    ArityResolution::NoArityMatch(candidates) => {
-                                        let ids = sorted_ids(&candidates);
-                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                        e.dispatch_kind = DispatchKind::Method;
-                                        e.resolution = Resolution::MemberNotFound;
-                                        if !ids.is_empty() {
-                                            e.candidates = Some(ids);
-                                        }
-                                        return vec![e];
-                                    }
-                                    ArityResolution::Ambiguous(candidates) => {
-                                        mark_bindings_ambiguous(state);
-                                        let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                        e.dispatch_kind = DispatchKind::Method;
-                                        e.resolution = Resolution::Ambiguous;
-                                        e.candidates = Some(sorted_ids(&candidates));
-                                        return vec![e];
-                                    }
-                                    ArityResolution::NotFound => {
-                                        // Genuinely not a table procedure — a builtin
-                                        // we lack in the catalog or a real hole. Fall
-                                        // through to unknown(RecordTableProcedure).
-                                    }
-                                }
-                            }
-                            // No table id resolvable, or method NotFound in the table
-                            // — keep the honest unknown signal.
-                            return unknown_method(
-                                from,
-                                callsite_id,
-                                operation_id,
-                                UnknownReason::RecordTableProcedure,
-                            );
-                        } else {
-                            let mut edges = unknown_method(
-                                from,
-                                callsite_id,
-                                operation_id,
-                                UnknownReason::FrameworkMethodNotInCatalog,
-                            );
-                            if let Some(e) = edges.first_mut() {
-                                e.unknown_method_name = Some(format!("{:?}::{}", kind, method_lc));
-                            }
-                            return edges;
-                        }
-                    }
-                    // Primitive / Variant / unrecognized declared type.
-                    None => {
-                        return unknown_method(
-                            from,
-                            callsite_id,
-                            operation_id,
-                            UnknownReason::NonObjectReceiverType,
-                        );
-                    }
-                }
-            };
-
-            // Step 4 — interface dispatch.
-            if type_ref.kind == ObjectKind::Interface {
-                return resolve_interface_dispatch(
-                    from,
-                    callsite_id,
-                    operation_id,
-                    &type_ref.name,
-                    method,
-                    routine,
-                    call_site,
-                    symbols,
-                    state,
-                );
-            }
-            // Step 5 — enum statics are not callable methods.
-            if type_ref.kind == ObjectKind::Enum {
-                return unknown_method(from, callsite_id, operation_id, UnknownReason::EnumStatic);
-            }
-            // Step 6 — Codeunit / Page / Report / Query / XmlPort dispatch.
-            let obj = symbols.object_by_type_name(type_ref.kind.as_str(), &type_ref.name);
-            let Some(obj) = obj else {
-                let external = ExternalTypeRef {
-                    kind: type_ref.kind.as_str().to_string(),
-                    name: type_ref.name.clone(),
-                };
-                let mut e = CallEdge::base(from, callsite_id, operation_id);
-                e.dispatch_kind = DispatchKind::Method;
-                e.external_type_ref = Some(external);
-                e.resolution = if unfetched_declared_dependency {
-                    Resolution::Opaque
-                } else {
-                    Resolution::ExternalTarget
-                };
-                return vec![e];
-            };
-
-            match resolve_by_name_and_arity(symbols, &obj.id, method, routine, call_site) {
-                ArityResolution::Resolved(r) => {
-                    if let Some(d) = upgrade_bindings(state, r, callsite_id) {
-                        diagnostics.push(d);
-                    }
-                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.to = Some(r.id.clone());
-                    e.dispatch_kind = DispatchKind::Method;
-                    e.resolution = Resolution::Resolved;
-                    e.receiver_type = Some(recv_var.declared_type.clone());
-                    vec![e]
-                }
-                ArityResolution::NotFound => {
-                    // Built-in instance `<codeunitVar>.Run([Rec])` → OnRun trigger,
-                    // when the codeunit has an OnRun and arity ≤ 1.
-                    if type_ref.kind == ObjectKind::Codeunit
-                        && method.to_lowercase() == "run"
-                        && call_site.argument_bindings.len() <= 1
-                    {
-                        if let Some(on_run) = symbols.routine_in_object(&obj.id, "OnRun") {
-                            if let Some(d) = upgrade_bindings(state, on_run, callsite_id) {
-                                diagnostics.push(d);
-                            }
-                            let mut e = CallEdge::base(from, callsite_id, operation_id);
-                            e.to = Some(on_run.id.clone());
-                            e.dispatch_kind = DispatchKind::CodeunitRun;
-                            e.resolution = Resolution::Resolved;
-                            return vec![e];
-                        }
-                    }
-                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = DispatchKind::Method;
-                    e.resolution = Resolution::MemberNotFound;
-                    vec![e]
-                }
-                ArityResolution::NoArityMatch(candidates) => {
-                    let ids = sorted_ids(&candidates);
-                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = DispatchKind::Method;
-                    e.resolution = Resolution::MemberNotFound;
-                    if !ids.is_empty() {
-                        e.candidates = Some(ids);
-                    }
-                    vec![e]
-                }
-                ArityResolution::Ambiguous(candidates) => {
-                    mark_bindings_ambiguous(state);
-                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                    e.dispatch_kind = DispatchKind::Method;
-                    e.resolution = Resolution::Ambiguous;
-                    e.candidates = Some(sorted_ids(&candidates));
-                    vec![e]
-                }
-            }
+            dispatch(&inferred, method, &mut ctx)
         }
         PCallee::Unknown => {
             let mut e = CallEdge::base(from, callsite_id, operation_id);
@@ -801,7 +566,7 @@ fn resolve_call_site(
     }
 }
 
-fn unknown_method(
+pub(crate) fn unknown_method(
     from: &str,
     callsite_id: &str,
     operation_id: &str,
@@ -814,7 +579,7 @@ fn unknown_method(
 }
 
 /// `routines.map(r => r.id).sort()` — byte-order sort of internal routine ids.
-fn sorted_ids(routines: &[&L3Routine]) -> Vec<String> {
+pub(crate) fn sorted_ids(routines: &[&L3Routine]) -> Vec<String> {
     let mut ids: Vec<String> = routines.iter().map(|r| r.id.clone()).collect();
     ids.sort();
     ids

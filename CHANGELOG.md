@@ -80,6 +80,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   realUnknownRate 15.8%→15.7%.
 
 ### Changed
+- **Member-call resolution refactored to the ReceiverType lattice** (Phase A infer + Phase B
+  dispatch) — `src/engine/l3/receiver_type.rs` (new) + `src/engine/l3/call_resolver.rs`. The
+  deeply-nested string-keyed if/else ladder in `resolve_call_site`'s `PCallee::Member` arm
+  (including the verbose surgical Record-table-procedure block) is replaced by a clean
+  two-phase typed resolver: `infer_receiver_type(receiver, routine, symbols) -> ReceiverType`
+  (a type lattice: Object / Interface / Enum / Record / RecordRef / FieldRef / KeyRef /
+  Framework / Primitive / Unknown), then `dispatch(receiver_type, method, ctx) -> Vec<CallEdge>`
+  (one match arm per variant). The surgical Record special-casing is ABSORBED into the Phase-B
+  Record arm, preserving the catalog-builtin-FIRST ordering (a Record intrinsic like `SetRange`
+  stays `builtin` even when the receiver's table is out-of-source). Strangler-Fig Phase A/B:
+  wiring only — no new inference sources. Behavior-preserving (ZERO golden changes; CDO
+  `DocumentOutput/Cloud` unchanged at resolved 7098 / builtin 4743 / unknown 1451 /
+  realUnknownRate 10.39%). New direct unit tests on `infer_receiver_type` prove each lattice
+  variant is inferred for a representative declared type.
 - L3 taxonomy refactor: replaced the stringly-typed `CallEdge.dispatch_kind: String` /
   `resolution: String` (a TS-port hangover) with strict Rust enums `DispatchKind` /
   `Resolution` (`src/engine/l3/taxonomy.rs`). `Resolution::Unknown(UnknownReason)` folds
