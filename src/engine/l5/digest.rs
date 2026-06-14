@@ -171,6 +171,13 @@ struct FingerprintIndexes<'a> {
     /// Per-subject ordered fact bucket (direct ∪ inherited, source order PRESERVED).
     facts_by_routine: HashMap<String, Vec<&'a Fact>>,
     direct_facts_by_routine: HashMap<String, Vec<&'a Fact>>,
+    /// DIRECT facts indexed by `(op, resource_kind)` — the strict prefix of
+    /// `fact_equivalent` (which REQUIRES `op` and `resource_kind` equal). The
+    /// reverse-BFS carrier seeding in `reconstruct_witness_paths` looks up only the
+    /// candidates sharing the target fact's `(op, kind)` instead of scanning EVERY
+    /// routine's direct facts per call (the previous per-call O(all-direct-facts)
+    /// hot-spot). Built once per snapshot.
+    direct_facts_by_op_kind: HashMap<(String, String), Vec<&'a Fact>>,
     coverage_by_routine: HashMap<String, &'a crate::engine::l5::snapshot::SnapshotCoverageRecord>,
     callsite_by_id: HashMap<String, &'a crate::engine::l5::snapshot::SnapshotCallsiteEvidence>,
     operation_by_id: HashMap<String, &'a crate::engine::l5::snapshot::SnapshotOperationEvidence>,
@@ -225,6 +232,7 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
     // factsByRoutine ← capabilityFacts; directFactsByRoutine ← provenance=="direct".
     let mut facts_by_routine: HashMap<String, Vec<&Fact>> = HashMap::new();
     let mut direct_facts_by_routine: HashMap<String, Vec<&Fact>> = HashMap::new();
+    let mut direct_facts_by_op_kind: HashMap<(String, String), Vec<&Fact>> = HashMap::new();
     for fact in &snap.capability_facts {
         facts_by_routine
             .entry(fact.subject.clone())
@@ -233,6 +241,10 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
         if fact.provenance == "direct" {
             direct_facts_by_routine
                 .entry(fact.subject.clone())
+                .or_default()
+                .push(fact);
+            direct_facts_by_op_kind
+                .entry((fact.op.clone(), fact.resource_kind.clone()))
                 .or_default()
                 .push(fact);
         }
@@ -279,6 +291,7 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
     FingerprintIndexes {
         stable_id_to_display,
         routine_display_by_id,
+        direct_facts_by_op_kind,
         outgoing_edges,
         incoming_edges,
         facts_by_routine,
@@ -925,11 +938,17 @@ fn reconstruct_witness_paths(
     let valid_nodes: std::collections::HashSet<&str> = {
         let mut visited: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut rev_queue: std::collections::VecDeque<&str> = std::collections::VecDeque::new();
-        // Seed: nodes that carry `fact` as a DIRECT fact.
-        for (node, directs) in &idx.direct_facts_by_routine {
-            if directs.iter().any(|d| fact_equivalent(d, fact)) {
-                if visited.insert(node.as_str()) {
-                    rev_queue.push_back(node.as_str());
+        // Seed: nodes that carry `fact` as a DIRECT fact. `fact_equivalent` REQUIRES
+        // `op` and `resource_kind` equal, so only the `(op, kind)`-bucket can hold a
+        // carrier — look up that bucket instead of scanning every routine's direct
+        // facts per call (the previous O(all-direct-facts)/call hot-spot).
+        if let Some(cands) = idx
+            .direct_facts_by_op_kind
+            .get(&(fact.op.clone(), fact.resource_kind.clone()))
+        {
+            for d in cands {
+                if fact_equivalent(d, fact) && visited.insert(d.subject.as_str()) {
+                    rev_queue.push_back(d.subject.as_str());
                 }
             }
         }
@@ -3204,6 +3223,17 @@ fn pub_idx_as_private(idx: &FingerprintIndexesPub) -> FingerprintIndexes<'_> {
             .iter()
             .map(|(k, v)| (k.clone(), v.iter().collect()))
             .collect(),
+        direct_facts_by_op_kind: {
+            let mut m: HashMap<(String, String), Vec<&Fact>> = HashMap::new();
+            for v in idx.direct_facts_by_routine.values() {
+                for f in v {
+                    m.entry((f.op.clone(), f.resource_kind.clone()))
+                        .or_default()
+                        .push(f);
+                }
+            }
+            m
+        },
         coverage_by_routine: idx
             .coverage_by_routine
             .iter()
