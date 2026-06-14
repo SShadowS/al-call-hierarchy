@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Witness reachability via reverse-BFS valid-node set** in `reconstruct_witness_paths`
+  (Case C inherited-fact BFS): the per-edge `can_reach` memoized check (which scanned
+  the full direct-∪-inherited capability cone per node, calling `fact_equivalent` ~750k
+  times per root on the CDO app) is replaced by a **one-shot reverse-BFS** computed once
+  per `reconstruct_witness_paths` call. Carrier nodes (those with a direct fact equivalent
+  to the target) are found by scanning `direct_facts_by_routine` (far fewer facts than the
+  inherited cone). A reverse-BFS from those carriers over the new `incoming_edges` index
+  (reverse of `typed_edges`, built once in `build_fingerprint_indexes`) computes
+  `valid_nodes: HashSet<&str>` — the set of nodes that can reach `fact` in the forward
+  call graph. The per-edge prune is now an O(1) `valid_nodes.contains(to)` check.
+  Correctness: `facts_by_routine[N].any(equiv fact)` ≡ "N is an ancestor-of-or-equal-to
+  some carrier in the forward graph" ≡ "N ∈ reverse-BFS from carriers" — the valid set is
+  identical. All goldens and contracts remain byte-stable. CDO `alsem analyze` wall time
+  ~20 min → < 1 min.
+- **Skip non-ordering witness reconstruction** in `compute_digest_effects_for_ordering`:
+  the ordering engine only grades `DB_INSERT / DB_MODIFY / DB_DELETE / COMMIT / HTTP /
+  FILE / UI_CONFIRM / UI_MESSAGE / UI_WINDOW_OPEN / ERROR_THROW`; for all other effect
+  types it treats effects with empty `via_paths` and `owner == routine_id` as direct
+  (empty `CallChain`). The new `ordering_witness_only: bool` parameter to `digest_query`
+  (passed `true` from `compute_digest_effects_for_ordering`, `false` from all other paths)
+  skips `reconstruct_witness_paths` for non-ordering-relevant effect types, emitting the
+  effect with empty `via_paths`. Digest shape and `scoped_guarantees` are unchanged; the
+  R4-F and CLI-B goldens remain byte-stable.
 - **Parent-pointer arena BFS** in `reconstruct_witness_paths` (Case C inherited-fact
   witness): replaced the cloned `State { routine, hops: Vec<WitnessHop>, visited:
   HashSet<String> }` (cloned in full on every edge expansion) with a `Node { routine,

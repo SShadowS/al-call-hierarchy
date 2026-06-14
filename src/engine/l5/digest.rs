@@ -161,6 +161,13 @@ struct FingerprintIndexes<'a> {
     routine_display_by_id: HashMap<String, String>,
     /// Per-from ordered edge bucket (source array order PRESERVED).
     outgoing_edges: HashMap<String, Vec<&'a SnapshotGraphEdge>>,
+    /// Reverse of `outgoing_edges`: incoming_edges[to] = list of `from` node ids that
+    /// have at least one edge pointing to `to`.  Used by the reverse-BFS reachability
+    /// precomputation in `reconstruct_witness_paths` (FIX 1 — built once per snapshot,
+    /// shared across all witness BFS calls).  Only stores `from` strings because the
+    /// BFS only needs to know which predecessor nodes to visit — the actual edges are
+    /// not needed for the reachability walk.
+    incoming_edges: HashMap<String, Vec<String>>,
     /// Per-subject ordered fact bucket (direct ∪ inherited, source order PRESERVED).
     facts_by_routine: HashMap<String, Vec<&'a Fact>>,
     direct_facts_by_routine: HashMap<String, Vec<&'a Fact>>,
@@ -197,12 +204,15 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
     }
 
     // outgoingEdges[from] ← typedEdges, ORDER PRESERVED (source array order).
+    // incomingEdges[to] ← set of `from` ids — the reverse graph, built in the same pass.
     let mut outgoing_edges: HashMap<String, Vec<&SnapshotGraphEdge>> = HashMap::new();
+    let mut incoming_edges: HashMap<String, Vec<String>> = HashMap::new();
     for edge in &snap.typed_edges {
-        outgoing_edges
-            .entry(edge_from(edge).to_string())
-            .or_default()
-            .push(edge);
+        let from = edge_from(edge).to_string();
+        outgoing_edges.entry(from.clone()).or_default().push(edge);
+        if let Some(to) = edge_to(edge) {
+            incoming_edges.entry(to.to_string()).or_default().push(from);
+        }
     }
     // Pre-sort each node's out-edges by `edge_compare` ONCE here (shared across the
     // whole analyze) instead of cloning+sorting per BFS state in
@@ -270,6 +280,7 @@ fn build_fingerprint_indexes(snap: &CapabilitySnapshot) -> FingerprintIndexes<'_
         stable_id_to_display,
         routine_display_by_id,
         outgoing_edges,
+        incoming_edges,
         facts_by_routine,
         direct_facts_by_routine,
         coverage_by_routine,
@@ -888,17 +899,52 @@ fn reconstruct_witness_paths(
     let mut depth_exceeded = false;
 
     // Reachability-directed pruning. A node can lie on a witness path to `fact`
-    // ONLY if `fact` is in its (direct ∪ inherited) capability cone — capabilities
-    // propagate UP the call graph, so `facts_by_routine[N]` already encodes "F is
-    // reachable from N". Pruning any frontier edge whose target cannot reach `fact`
-    // discards the dead-end subtrees that otherwise explode the BFS on a dense
-    // call graph (the table-procedure/implicit-Rec dispatch edges densify out-
-    // degree massively). This changes NO found path — every node on a real
-    // root→terminal path carries `fact` inherited — it only stops the walk from
-    // wandering into branches from which the terminal is unreachable. Memoized
-    // per call (the same node is reached on many partial paths).
-    let mut can_reach: HashMap<&str, bool> = HashMap::new();
-    let empty_node_facts: Vec<&Fact> = Vec::new();
+    // ONLY if `fact` is reachable from it through the forward call graph.
+    //
+    // FIX 1 — precompute a `valid_nodes` set ONCE per call via REVERSE-GRAPH BFS:
+    //
+    // Correctness: `facts_by_routine[N]` (direct ∪ inherited) contains a fact
+    // equivalent to `fact` IFF N can reach (forward) some node that carries `fact`
+    // as a DIRECT fact.  Therefore the old per-node check
+    //   `facts_by_routine[to].any(equiv fact)`
+    // is EXACTLY:
+    //   "to is an ancestor-or-equal of some carrier in the forward call graph"
+    // which is the same as:
+    //   "to is reachable in the REVERSE graph from the set of carriers".
+    //
+    // So we:
+    //   1. Scan `direct_facts_by_routine` for carrier nodes (far fewer facts than
+    //      the inherited cone — this is the only place `fact_equivalent` is called
+    //      for the prune, over DIRECT facts only).
+    //   2. Reverse-BFS from carriers over `idx.incoming_edges` (= reverse of the
+    //      same `typed_edges` the forward BFS uses).
+    //   3. Replace the per-edge `can_reach` lookup with O(1) `valid_nodes.contains`.
+    //
+    // This eliminates the `fact_equivalent` hot-spot (previously ~750 k calls/root
+    // on the CDO app) while visiting the identical set of nodes.
+    let valid_nodes: std::collections::HashSet<&str> = {
+        let mut visited: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut rev_queue: std::collections::VecDeque<&str> = std::collections::VecDeque::new();
+        // Seed: nodes that carry `fact` as a DIRECT fact.
+        for (node, directs) in &idx.direct_facts_by_routine {
+            if directs.iter().any(|d| fact_equivalent(d, fact)) {
+                if visited.insert(node.as_str()) {
+                    rev_queue.push_back(node.as_str());
+                }
+            }
+        }
+        // Reverse-BFS: walk backward through incoming_edges.
+        while let Some(cur) = rev_queue.pop_front() {
+            if let Some(preds) = idx.incoming_edges.get(cur) {
+                for pred in preds {
+                    if visited.insert(pred.as_str()) {
+                        rev_queue.push_back(pred.as_str());
+                    }
+                }
+            }
+        }
+        visited
+    };
 
     while !queue.is_empty() && paths.len() < cap {
         let Some(ni) = queue.pop_front() else {
@@ -1001,15 +1047,8 @@ fn reconstruct_witness_paths(
                 if visited_routines.contains(&to) {
                     continue;
                 }
-                // Reachability prune: skip targets from which `fact` is unreachable.
-                let reachable = *can_reach.entry(to).or_insert_with(|| {
-                    idx.facts_by_routine
-                        .get(to)
-                        .unwrap_or(&empty_node_facts)
-                        .iter()
-                        .any(|f| fact_equivalent(f, fact))
-                });
-                if !reachable {
+                // Reachability prune: skip targets not in the precomputed valid set.
+                if !valid_nodes.contains(to) {
                     continue;
                 }
                 let Some(hop) = edge_to_hop(edge, idx) else {
@@ -1965,11 +2004,22 @@ fn compute_path_conditionality(
 /// `digestQuery` (digest-query.ts) — per-root effect build. Roots in input order;
 /// entries sorted by routineId at the end. `return_summaries` + `isolated_event_ids`
 /// drive the S4 ordering engine (compute_ordering) — None for the S3-only path.
+///
+/// `ordering_witness_only`: when `true` (the ordering-only path), skip
+/// `reconstruct_witness_paths` for effect types that the ordering engine never
+/// grades.  The ordering engine only looks at: DB_INSERT, DB_MODIFY, DB_DELETE,
+/// COMMIT, HTTP, FILE, UI_CONFIRM, UI_MESSAGE, UI_WINDOW_OPEN, ERROR_THROW.
+/// Effects outside that set are still emitted (digest shape unchanged) but with
+/// empty `via_paths` — the ordering engine ignores them at line ~294 of
+/// ordering_engine.rs (`if via_paths.is_empty() { if owner != routine_id { return
+/// None; } return Some(... chain: empty ...); }`).  This eliminates ~80% of the
+/// witness-reconstruction work from `compute_digest_effects_for_ordering`.
 fn digest_query(
     snap: &CapabilitySnapshot,
     roots: &[String],
     return_summaries: Option<&HashMap<String, crate::engine::return_summary::RoutineReturnSummary>>,
     isolated_event_ids: Option<&std::collections::HashSet<String>>,
+    ordering_witness_only: bool,
 ) -> Vec<DigestEntryResult> {
     const MAX_PATHS: usize = 3;
     let idx = build_fingerprint_indexes(snap);
@@ -2037,13 +2087,42 @@ fn digest_query(
         }
         let mut effect_map: Vec<(String, AccumulatedEffect)> = Vec::new();
 
+        // Effect types the ordering engine grades (FIX 2). When `ordering_witness_only`
+        // is set we skip witness reconstruction for effect types outside this set —
+        // the ordering engine drops effects with empty via_paths whose owner != root
+        // and treats same-root effects as direct (empty CallChain). This eliminates
+        // ~80% of witness-reconstruction calls from the ordering-only digest path.
+        const ORDERING_RELEVANT: &[&str] = &[
+            "DB_INSERT",
+            "DB_MODIFY",
+            "DB_DELETE",
+            "COMMIT",
+            "HTTP",
+            "FILE",
+            "UI_CONFIRM",
+            "UI_MESSAGE",
+            "UI_WINDOW_OPEN",
+            "ERROR_THROW",
+        ];
+
         for fact in &effect_facts {
             let Some(effect_type) = effect_type_of(fact) else {
                 continue;
             };
             let detail = effect_detail_of(fact, &idx.stable_id_to_display);
 
-            let outcome = reconstruct_witness_paths(rid, fact, &idx, HARD_PATH_CAP);
+            // FIX 2: skip expensive witness reconstruction for effect types the
+            // ordering engine never grades when called from the ordering-only path.
+            let outcome = if ordering_witness_only && !ORDERING_RELEVANT.contains(&effect_type) {
+                WitnessOutcomeExt {
+                    paths: Vec::new(),
+                    truncated: false,
+                    incomplete: false,
+                    diagnostics: Vec::new(),
+                }
+            } else {
+                reconstruct_witness_paths(rid, fact, &idx, HARD_PATH_CAP)
+            };
 
             let shortest = outcome.paths.first();
             let terminal = shortest.and_then(|p| find_terminal(&p.hops));
@@ -2595,7 +2674,7 @@ impl Serialize for ProjectionSer<'_> {
 pub fn compute_digest_effects(resolved: &L3Resolved) -> Vec<DigestEntryResult> {
     let snap = compose_snapshot(resolved);
     let roots = reportable_roots(resolved);
-    digest_query(&snap, &roots, None, None)
+    digest_query(&snap, &roots, None, None, false)
 }
 
 /// Compute the per-root digest effects WITH S4 ordering (scopedGuarantees attached).
@@ -2618,7 +2697,7 @@ pub fn compute_digest_effects_with_ordering(resolved: &L3Resolved) -> Vec<Digest
     } else {
         Some(&isolated)
     };
-    digest_query(&snap, &roots, Some(&summaries), isolated_opt)
+    digest_query(&snap, &roots, Some(&summaries), isolated_opt, false)
 }
 
 /// Like [`compute_digest_effects_with_ordering`], but restricted to the roots whose
@@ -2684,7 +2763,7 @@ pub fn compute_digest_effects_for_ordering(resolved: &L3Resolved) -> Vec<DigestE
     } else {
         Some(&isolated)
     };
-    digest_query(&snap, &roots, Some(&summaries), isolated_opt)
+    digest_query(&snap, &roots, Some(&summaries), isolated_opt, true)
 }
 
 /// Compute the per-root digest effects for the CLI-B digest pipeline.
@@ -2705,7 +2784,7 @@ pub fn compute_digest_effects_cli(
         Some(&isolated)
     };
     // No routineReturnSummaries — matches TS runDigestPipeline behavior.
-    digest_query(snap, &roots, None, isolated_opt)
+    digest_query(snap, &roots, None, isolated_opt, false)
 }
 
 /// Project the R4-F digest-effects differential document, PRETTY-serialized with a
@@ -3091,6 +3170,21 @@ pub fn build_fingerprint_indexes_pub(snap: &CapabilitySnapshot) -> FingerprintIn
 /// Adapter: convert a `FingerprintIndexesPub` to a borrowed `FingerprintIndexes`
 /// usable by the internal witness BFS helpers.
 fn pub_idx_as_private(idx: &FingerprintIndexesPub) -> FingerprintIndexes<'_> {
+    // Build incoming_edges (reverse graph) from outgoing_edges — mirrors what
+    // `build_fingerprint_indexes` does from `typed_edges`.  `FingerprintIndexesPub`
+    // stores owned `SnapshotGraphEdge` values so we derive `to` from each edge.
+    let mut incoming_edges: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, edges) in &idx.outgoing_edges {
+        for edge in edges {
+            if let Some(to) = edge_to(edge) {
+                incoming_edges
+                    .entry(to.to_string())
+                    .or_default()
+                    .push(from.clone());
+            }
+        }
+    }
+
     FingerprintIndexes {
         stable_id_to_display: idx.stable_id_to_display.clone(),
         routine_display_by_id: idx.routine_display_by_id.clone(),
@@ -3099,6 +3193,7 @@ fn pub_idx_as_private(idx: &FingerprintIndexesPub) -> FingerprintIndexes<'_> {
             .iter()
             .map(|(k, v)| (k.clone(), v.iter().collect()))
             .collect(),
+        incoming_edges,
         facts_by_routine: idx
             .facts_by_routine
             .iter()
