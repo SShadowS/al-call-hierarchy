@@ -15,7 +15,7 @@
 //! pre-sorted by routine id (byte-order). R2b's overload resolution relies on
 //! this exact key + sort — locked here in R2a.
 
-use super::l3_workspace::{L3Object, L3Routine, L3Table};
+use super::l3_workspace::{L3Object, L3PageControl, L3Routine, L3Table};
 use std::collections::HashMap;
 
 /// Strip surrounding double-quotes from an interface name for case/quote-
@@ -236,6 +236,26 @@ impl SymbolTable {
     /// Look up an object by its exact internal id (`${appGuid}/${objectType}/${objectNumber}`).
     pub fn object_by_id(&self, id: &str) -> Option<&L3Object> {
         self.by_id.get(id).map(|&i| &self.objects[i])
+    }
+
+    /// Page controls visible to `CurrPage` inside `object_id` — the object's own controls,
+    /// plus (for a PageExtension) the extended base page's controls. Returns `[]` for a
+    /// non-page object or an unknown id.
+    pub fn page_controls_for(&self, object_id: &str) -> Vec<&L3PageControl> {
+        let Some(obj) = self.object_by_id(object_id) else {
+            return Vec::new();
+        };
+        let mut out: Vec<&L3PageControl> = obj.page_controls.iter().collect();
+        if obj.object_type.eq_ignore_ascii_case("pageextension") {
+            if let Some(base) = obj
+                .extends_target_name
+                .as_deref()
+                .and_then(|n| self.object_by_type_name("Page", n))
+            {
+                out.extend(base.page_controls.iter());
+            }
+        }
+        out
     }
 
     pub fn table_by_name(&self, name: &str) -> Option<&L3Table> {

@@ -1,6 +1,7 @@
 //! Page-control extraction + CurrPage.<Part> resolution (Rust-owned).
 use al_call_hierarchy::engine::deps::symbol_reference::parse_symbol_reference;
 use al_call_hierarchy::engine::l3::l3_workspace::{assemble_workspace_units, PageControlKind};
+use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
 fn page_with_part() -> &'static str {
     r#"page 50100 "My List Part" { SourceTable = "Item"; layout { area(Content) { } } }
@@ -125,4 +126,50 @@ fn native_part_control_extracted() {
         .unwrap();
     assert_eq!(lines.kind, PageControlKind::Part);
     assert_eq!(lines.target, "My List Part");
+}
+
+/// `page_controls_for` on a PageExtension returns its OWN controls PLUS the base
+/// page's controls.
+#[test]
+fn symbol_table_page_controls_for_merges_base_page() {
+    let src = r#"
+page 50200 "My Card" {
+    SourceTable = "Item";
+    layout { area(Content) { part(BasePart; "My List Part") { } } }
+}
+pageextension 50201 "My Card Ext" extends "My Card"
+{
+    layout { addlast(Content) { part(Extra; "My List Part") { } } }
+}
+"#;
+    let ws = assemble_workspace_units(&[("u".to_string(), src.to_string())], "app", "mi");
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+
+    // Find the PageExtension's object id.
+    let ext = ws
+        .objects
+        .iter()
+        .find(|o| o.name == "My Card Ext")
+        .expect("pageextension not found");
+
+    let controls = symbols.page_controls_for(&ext.id);
+
+    // Should contain the extension's own "Extra" AND the base page's "BasePart".
+    let names: Vec<&str> = controls.iter().map(|c| c.name.as_str()).collect();
+    assert!(
+        names.contains(&"Extra"),
+        "expected 'Extra' in controls, got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"BasePart"),
+        "expected 'BasePart' from base page in controls, got: {:?}",
+        names
+    );
+    assert_eq!(
+        controls.len(),
+        2,
+        "expected exactly 2 controls (1 own + 1 base), got: {:?}",
+        names
+    );
 }
