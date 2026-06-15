@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **AL platform-type builtin catalogs — non-object-receiver win** (Feature A,
+  engine-d22). The `non-object-receiver-type` unknown bucket previously included
+  member calls on AL platform value types (`Notification`, `ErrorInfo`, `Text`,
+  `RecordId`, etc.) that have real builtin method surfaces but were not wired into
+  the resolver's builtin catalog. 26 new `ReceiverBuiltinKind` variants + `phf_set!`
+  catalogs (method counts: Notification 9, ErrorInfo 18, ModuleInfo 7, RecordId 2,
+  BigText 6, SecretText 3, DataTransfer 9, SessionSettings 9, Text/Code/Label 32,
+  Date 6, DateTime 3, Time 5, Guid 3, Integer 1, Decimal 1, Boolean 1, Duration 1,
+  BigInteger 1, Byte 1, File 28, FileUpload 2, NumberSequence 7, Version 6,
+  FilterPageBuilder 11, SessionInformation 4). `classify_receiver` now also strips
+  length suffixes (`Text[1024]` → `text`, `Code[20]` → `code`). `Code` and `Label`
+  alias to the `Text` kind. Sourced from `tools/gen-al-builtins/out/member_builtins.json`.
+
 ### Changed
 - **L3 analysis scopes to one app at nested-`app.json` boundaries** (multi-app / monorepo
   support). The disk assembly (`assemble_l3_workspace_from_disk`, used by `aldump` + the

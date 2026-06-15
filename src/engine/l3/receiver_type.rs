@@ -626,12 +626,25 @@ pub(crate) fn dispatch(
         ReceiverType::FieldRef => dispatch_framework(ReceiverBuiltinKind::FieldRef, method, ctx),
         ReceiverType::KeyRef => dispatch_framework(ReceiverBuiltinKind::KeyRef, method, ctx),
         ReceiverType::Framework { kind } => dispatch_framework(*kind, method, ctx),
-        ReceiverType::Primitive => unknown_method(
-            ctx.from,
-            ctx.callsite_id,
-            ctx.operation_id,
-            UnknownReason::NonObjectReceiverType,
-        ),
+        ReceiverType::Primitive => {
+            // Tag with the declared receiver type + method so the breakdown can
+            // attribute non-object-receiver calls (e.g. `Text::contains`) — the
+            // work-list for a primitive-method builtin catalog.
+            let mut edges = unknown_method(
+                ctx.from,
+                ctx.callsite_id,
+                ctx.operation_id,
+                UnknownReason::NonObjectReceiverType,
+            );
+            if let Some(e) = edges.first_mut() {
+                e.receiver_shape = Some(format!(
+                    "{}::{}",
+                    receiver.declared_type,
+                    method.to_lowercase()
+                ));
+            }
+            edges
+        }
         ReceiverType::Dynamic => dynamic_method(ctx.from, ctx.callsite_id, ctx.operation_id),
         ReceiverType::Unknown { reason } => {
             let mut edges = unknown_method(ctx.from, ctx.callsite_id, ctx.operation_id, *reason);
@@ -1091,12 +1104,49 @@ mod tests {
 
     #[test]
     fn primitive_receiver() {
-        // A recognized primitive — no object, no catalog kind.
+        // Types with no object, no catalog kind → genuine Primitive.
+        // (Integer, Text, Code, etc. are now Feature-A catalog kinds → Framework.)
         assert_eq!(
-            infer("n", vec![var("n", "Integer")]),
+            infer("o", vec![var("o", "Option")]),
             ReceiverType::Primitive
         );
-        assert_eq!(infer("t", vec![var("t", "Text")]), ReceiverType::Primitive);
+        assert_eq!(infer("c", vec![var("c", "Char")]), ReceiverType::Primitive);
+    }
+
+    #[test]
+    fn feature_a_platform_types_are_framework() {
+        // Feature A: Integer, Text, Code, Date, etc. now have catalog kinds and
+        // must classify as Framework, not Primitive.
+        assert_eq!(
+            infer("n", vec![var("n", "Integer")]),
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::Integer,
+            }
+        );
+        assert_eq!(
+            infer("t", vec![var("t", "Text")]),
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::Text,
+            }
+        );
+        assert_eq!(
+            infer("c", vec![var("c", "Code[20]")]),
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::Text,
+            }
+        );
+        assert_eq!(
+            infer("nt", vec![var("nt", "Notification")]),
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::Notification,
+            }
+        );
+        assert_eq!(
+            infer("ri", vec![var("ri", "RecordId")]),
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::RecordId,
+            }
+        );
     }
 
     #[test]

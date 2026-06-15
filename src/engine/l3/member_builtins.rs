@@ -72,6 +72,86 @@ pub enum ReceiverBuiltinKind {
     /// Add-in methods are platform/JS calls with no in-AL target; every method
     /// classifies `builtin`.
     ControlAddIn,
+    // -----------------------------------------------------------------------
+    // AL platform VALUE types — previously classified as non-object-receiver-type
+    // unknowns. Source: member_builtins.json (Feature A, engine-d22).
+    // -----------------------------------------------------------------------
+    /// AL `Notification` — in-app notification with actions.
+    /// Source: member_builtins.json "Notification" (9 methods).
+    Notification,
+    /// AL `ErrorInfo` — structured error information record.
+    /// Source: member_builtins.json "ErrorInfo" (18 methods).
+    ErrorInfo,
+    /// AL `ModuleInfo` — extension metadata/dependency info.
+    /// Source: member_builtins.json "ModuleInfo" (7 methods).
+    ModuleInfo,
+    /// AL `RecordId` — record identity handle.
+    /// Source: member_builtins.json "RecordId" (2 methods).
+    RecordId,
+    /// AL `BigText` — large string buffer.
+    /// Source: member_builtins.json "BigText" (6 methods).
+    BigText,
+    /// AL `SecretText` — secret / credential string.
+    /// Source: member_builtins.json "SecretText" (3 methods).
+    SecretText,
+    /// AL `DataTransfer` — bulk data copy helper.
+    /// Source: member_builtins.json "DataTransfer" (9 methods).
+    DataTransfer,
+    /// AL `SessionSettings` — per-session personalization settings.
+    /// Source: member_builtins.json "SessionSettings" (9 methods).
+    SessionSettings,
+    /// AL `Text` / `Code` / `Label` string types — share the same method surface.
+    /// Source: member_builtins.json "Text" (35 methods) ∪ "Label" (17 methods),
+    /// deduplicated. `Code` has no separate JSON key; mapped here by convention.
+    Text,
+    /// AL `Date` scalar type — calendar date helpers.
+    /// Source: member_builtins.json "Date" (6 methods).
+    Date,
+    /// AL `DateTime` scalar type — combined date+time helpers.
+    /// Source: member_builtins.json "DateTime" (3 methods).
+    DateTime,
+    /// AL `Time` scalar type — time-of-day helpers.
+    /// Source: member_builtins.json "Time" (5 methods).
+    Time,
+    /// AL `Guid` — globally unique identifier helpers.
+    /// Source: member_builtins.json "Guid" (3 methods).
+    Guid,
+    /// AL `Integer` scalar — numeric helpers.
+    /// Source: member_builtins.json "Integer" (1 method).
+    Integer,
+    /// AL `Decimal` scalar — numeric helpers.
+    /// Source: member_builtins.json "Decimal" (1 method).
+    Decimal,
+    /// AL `Boolean` scalar — boolean helpers.
+    /// Source: member_builtins.json "Boolean" (1 method).
+    Boolean,
+    /// AL `Duration` scalar — duration helpers.
+    /// Source: member_builtins.json "Duration" (1 method).
+    Duration,
+    /// AL `BigInteger` scalar — big-integer helpers.
+    /// Source: member_builtins.json "BigInteger" (1 method).
+    BigInteger,
+    /// AL `Byte` scalar — byte helpers.
+    /// Source: member_builtins.json "Byte" (1 method).
+    Byte,
+    /// AL `File` — file I/O operations.
+    /// Source: member_builtins.json "File" (28 methods).
+    File,
+    /// AL `FileUpload` — uploaded-file handle.
+    /// Source: member_builtins.json "FileUpload" (2 methods).
+    FileUpload,
+    /// AL `NumberSequence` — number series helpers.
+    /// Source: member_builtins.json "NumberSequence" (7 methods).
+    NumberSequence,
+    /// AL `Version` — semantic version helpers.
+    /// Source: member_builtins.json "Version" (6 methods).
+    Version,
+    /// AL `FilterPageBuilder` — dynamic filter page construction.
+    /// Source: member_builtins.json "FilterPageBuilder" (11 methods).
+    FilterPageBuilder,
+    /// AL `SessionInformation` — runtime session telemetry.
+    /// Source: member_builtins.json "SessionInformation" (4 methods).
+    SessionInformation,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -94,11 +174,18 @@ pub fn classify_receiver(declared_type: &str) -> Option<ReceiverBuiltinKind> {
     if dt.is_empty() {
         return None;
     }
+    // Take the first whitespace-delimited token (handles "Record Customer", "List of [T]").
     let first = match dt.find(' ') {
         Some(i) => &dt[..i],
         None => dt,
     };
-    let lc = first.to_lowercase();
+    // Also strip a length suffix like `[1024]` so `Text[1024]` and `Code[20]` normalize
+    // to `text` and `code` respectively.
+    let base = match first.find('[') {
+        Some(i) => &first[..i],
+        None => first,
+    };
+    let lc = base.to_lowercase();
     Some(match lc.as_str() {
         "record" => ReceiverBuiltinKind::Record,
         "recordref" => ReceiverBuiltinKind::RecordRef,
@@ -122,6 +209,32 @@ pub fn classify_receiver(declared_type: &str) -> Option<ReceiverBuiltinKind> {
         "list" => ReceiverBuiltinKind::List,
         "dictionary" => ReceiverBuiltinKind::Dictionary,
         s if s.starts_with("xml") => ReceiverBuiltinKind::Xml,
+        // --- Feature A: AL platform value types ---
+        "notification" => ReceiverBuiltinKind::Notification,
+        "errorinfo" => ReceiverBuiltinKind::ErrorInfo,
+        "moduleinfo" => ReceiverBuiltinKind::ModuleInfo,
+        "recordid" => ReceiverBuiltinKind::RecordId,
+        "bigtext" => ReceiverBuiltinKind::BigText,
+        "secrettext" => ReceiverBuiltinKind::SecretText,
+        "datatransfer" => ReceiverBuiltinKind::DataTransfer,
+        "sessionsettings" => ReceiverBuiltinKind::SessionSettings,
+        "text" | "code" | "label" => ReceiverBuiltinKind::Text,
+        "date" => ReceiverBuiltinKind::Date,
+        "datetime" => ReceiverBuiltinKind::DateTime,
+        "time" => ReceiverBuiltinKind::Time,
+        "guid" => ReceiverBuiltinKind::Guid,
+        "integer" => ReceiverBuiltinKind::Integer,
+        "decimal" => ReceiverBuiltinKind::Decimal,
+        "boolean" => ReceiverBuiltinKind::Boolean,
+        "duration" => ReceiverBuiltinKind::Duration,
+        "biginteger" => ReceiverBuiltinKind::BigInteger,
+        "byte" => ReceiverBuiltinKind::Byte,
+        "file" => ReceiverBuiltinKind::File,
+        "fileupload" => ReceiverBuiltinKind::FileUpload,
+        "numbersequence" => ReceiverBuiltinKind::NumberSequence,
+        "version" => ReceiverBuiltinKind::Version,
+        "filterpagebuilder" => ReceiverBuiltinKind::FilterPageBuilder,
+        "sessioninformation" => ReceiverBuiltinKind::SessionInformation,
         _ => return None,
     })
 }
@@ -167,6 +280,32 @@ pub fn member_builtin_disposition(
         // add-in's JS method surface, and these are genuine platform calls, never
         // real-`unknown`.
         ControlAddIn => Some(Disposition::Builtin),
+        // --- Feature A: AL platform value types ---
+        Notification => set_hit(&NOTIFICATION, method_lc),
+        ErrorInfo => set_hit(&ERRORINFO, method_lc),
+        ModuleInfo => set_hit(&MODULEINFO, method_lc),
+        RecordId => set_hit(&RECORDID, method_lc),
+        BigText => set_hit(&BIGTEXT, method_lc),
+        SecretText => set_hit(&SECRETTEXT, method_lc),
+        DataTransfer => set_hit(&DATATRANSFER, method_lc),
+        SessionSettings => set_hit(&SESSIONSETTINGS, method_lc),
+        Text => set_hit(&TEXT, method_lc),
+        Date => set_hit(&DATE, method_lc),
+        DateTime => set_hit(&DATETIME, method_lc),
+        Time => set_hit(&TIME, method_lc),
+        Guid => set_hit(&GUID, method_lc),
+        Integer => set_hit(&INTEGER, method_lc),
+        Decimal => set_hit(&DECIMAL, method_lc),
+        Boolean => set_hit(&BOOLEAN, method_lc),
+        Duration => set_hit(&DURATION, method_lc),
+        BigInteger => set_hit(&BIGINTEGER, method_lc),
+        Byte => set_hit(&BYTE, method_lc),
+        File => set_hit(&FILE, method_lc),
+        FileUpload => set_hit(&FILEUPLOAD, method_lc),
+        NumberSequence => set_hit(&NUMBERSEQUENCE, method_lc),
+        Version => set_hit(&VERSION, method_lc),
+        FilterPageBuilder => set_hit(&FILTERPAGEBUILDER, method_lc),
+        SessionInformation => set_hit(&SESSIONINFORMATION, method_lc),
     }
 }
 
@@ -368,6 +507,8 @@ static HTTPHEADERS: phf::Set<&'static str> = phf_set! {
 };
 static HTTPCONTENT: phf::Set<&'static str> = phf_set! {
     "writefrom", "readas", "getheaders", "clear",
+    // Added from compiler JSON:
+    "issecretcontent",
 };
 
 // --- Streams ---
@@ -621,6 +762,318 @@ static MEDIA: phf::Set<&'static str> = phf_set! {
     "mediaid", "count", "item", "insert", "info",
 };
 
+// =============================================================================
+// Feature A: AL platform value-type catalogs
+// Source: tools/gen-al-builtins/out/member_builtins.json (engine-d22)
+// =============================================================================
+
+// --- Notification — 9 methods. ---
+// Source: member_builtins.json "Notification" array, all lowercase.
+static NOTIFICATION: phf::Set<&'static str> = phf_set! {
+    "addaction",
+    "getdata",
+    "hasdata",
+    "id",
+    "message",
+    "recall",
+    "scope",
+    "send",
+    "setdata",
+};
+
+// --- ErrorInfo — 18 methods. ---
+// Source: member_builtins.json "ErrorInfo" array, all lowercase.
+static ERRORINFO: phf::Set<&'static str> = phf_set! {
+    "addaction",
+    "addnavigationaction",
+    "callstack",
+    "collectible",
+    "controlname",
+    "create",
+    "customdimensions",
+    "dataclassification",
+    "detailedmessage",
+    "errortype",
+    "fieldno",
+    "message",
+    "pageno",
+    "recordid",
+    "systemid",
+    "tableid",
+    "title",
+    "verbosity",
+};
+
+// --- ModuleInfo — 7 methods. ---
+// Source: member_builtins.json "ModuleInfo" array, all lowercase.
+static MODULEINFO: phf::Set<&'static str> = phf_set! {
+    "appversion",
+    "dataversion",
+    "dependencies",
+    "id",
+    "name",
+    "packageid",
+    "publisher",
+};
+
+// --- RecordId — 2 methods. ---
+// Source: member_builtins.json "RecordId" array, all lowercase.
+static RECORDID: phf::Set<&'static str> = phf_set! {
+    "getrecord",
+    "tableno",
+};
+
+// --- BigText — 6 methods. ---
+// Source: member_builtins.json "BigText" array, all lowercase.
+static BIGTEXT: phf::Set<&'static str> = phf_set! {
+    "addtext",
+    "getsubtext",
+    "length",
+    "read",
+    "textpos",
+    "write",
+};
+
+// --- SecretText — 3 methods. ---
+// Source: member_builtins.json "SecretText" array, all lowercase.
+static SECRETTEXT: phf::Set<&'static str> = phf_set! {
+    "isempty",
+    "secretstrsubstno",
+    "unwrap",
+};
+
+// --- DataTransfer — 9 methods. ---
+// Source: member_builtins.json "DataTransfer" array, all lowercase.
+static DATATRANSFER: phf::Set<&'static str> = phf_set! {
+    "addconstantvalue",
+    "adddestinationfilter",
+    "addfieldvalue",
+    "addjoin",
+    "addsourcefilter",
+    "copyfields",
+    "copyrows",
+    "settables",
+    "updateauditfields",
+};
+
+// --- SessionSettings — 9 methods. ---
+// Source: member_builtins.json "SessionSettings" array, all lowercase.
+static SESSIONSETTINGS: phf::Set<&'static str> = phf_set! {
+    "company",
+    "init",
+    "languageid",
+    "localeid",
+    "profileappid",
+    "profileid",
+    "profilesystemscope",
+    "requestsessionupdate",
+    "timezone",
+};
+
+// --- Text / Code / Label — union of Text (35) and Label (17) methods, deduplicated.
+// `Code` has no separate JSON key and shares the same string-method surface.
+// Source: member_builtins.json "Text" + "Label" arrays, all lowercase, unioned.
+static TEXT: phf::Set<&'static str> = phf_set! {
+    // Text-specific methods (35)
+    "contains",
+    "convertstr",
+    "copystr",
+    "delchr",
+    "delstr",
+    "endswith",
+    "incstr",
+    "indexof",
+    "indexofany",
+    "insstr",
+    "lastindexof",
+    "lowercase",
+    "maxstrlen",
+    "padleft",
+    "padright",
+    "padstr",
+    "remove",
+    "replace",
+    "selectstr",
+    "split",
+    "startswith",
+    "strchecksum",
+    "strlen",
+    "strpos",
+    "strsubstno",
+    "substring",
+    "tolower",
+    "toupper",
+    "trim",
+    "trimend",
+    "trimstart",
+    "uppercase",
+    // Label-only methods not already in Text (from "Label" JSON key)
+    // (All Label methods: Contains, EndsWith, IndexOf, IndexOfAny, LastIndexOf,
+    //  PadLeft, PadRight, Remove, Replace, Split, StartsWith, Substring,
+    //  ToLower, ToUpper, Trim, TrimEnd, TrimStart — all already covered above)
+};
+
+// --- Date — 6 methods. ---
+// Source: member_builtins.json "Date" array, all lowercase.
+static DATE: phf::Set<&'static str> = phf_set! {
+    "day",
+    "dayofweek",
+    "month",
+    "totext",
+    "weekno",
+    "year",
+};
+
+// --- DateTime — 3 methods. ---
+// Source: member_builtins.json "DateTime" array, all lowercase.
+static DATETIME: phf::Set<&'static str> = phf_set! {
+    "date",
+    "time",
+    "totext",
+};
+
+// --- Time — 5 methods. ---
+// Source: member_builtins.json "Time" array, all lowercase.
+static TIME: phf::Set<&'static str> = phf_set! {
+    "hour",
+    "millisecond",
+    "minute",
+    "second",
+    "totext",
+};
+
+// --- Guid — 3 methods. ---
+// Source: member_builtins.json "Guid" array, all lowercase.
+static GUID: phf::Set<&'static str> = phf_set! {
+    "createguid",
+    "createsequentialguid",
+    "totext",
+};
+
+// --- Integer — 1 method. ---
+// Source: member_builtins.json "Integer" array, all lowercase.
+static INTEGER: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- Decimal — 1 method. ---
+// Source: member_builtins.json "Decimal" array, all lowercase.
+static DECIMAL: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- Boolean — 1 method. ---
+// Source: member_builtins.json "Boolean" array, all lowercase.
+static BOOLEAN: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- Duration — 1 method. ---
+// Source: member_builtins.json "Duration" array, all lowercase.
+static DURATION: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- BigInteger — 1 method. ---
+// Source: member_builtins.json "BigInteger" array, all lowercase.
+static BIGINTEGER: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- Byte — 1 method. ---
+// Source: member_builtins.json "Byte" array, all lowercase.
+static BYTE: phf::Set<&'static str> = phf_set! {
+    "totext",
+};
+
+// --- File — 28 methods. ---
+// Source: member_builtins.json "File" array, all lowercase.
+static FILE: phf::Set<&'static str> = phf_set! {
+    "close",
+    "copy",
+    "create",
+    "createinstream",
+    "createoutstream",
+    "createtempfile",
+    "download",
+    "downloadfromstream",
+    "erase",
+    "exists",
+    "getstamp",
+    "ispathtemporary",
+    "len",
+    "name",
+    "open",
+    "pos",
+    "read",
+    "rename",
+    "seek",
+    "setstamp",
+    "textmode",
+    "trunc",
+    "upload",
+    "uploadintostream",
+    "view",
+    "viewfromstream",
+    "write",
+    "writemode",
+};
+
+// --- FileUpload — 2 methods. ---
+// Source: member_builtins.json "FileUpload" array, all lowercase.
+static FILEUPLOAD: phf::Set<&'static str> = phf_set! {
+    "createinstream",
+    "filename",
+};
+
+// --- NumberSequence — 7 methods. ---
+// Source: member_builtins.json "NumberSequence" array, all lowercase.
+static NUMBERSEQUENCE: phf::Set<&'static str> = phf_set! {
+    "current",
+    "delete",
+    "exists",
+    "insert",
+    "next",
+    "range",
+    "restart",
+};
+
+// --- Version — 6 methods. ---
+// Source: member_builtins.json "Version" array, all lowercase.
+static VERSION: phf::Set<&'static str> = phf_set! {
+    "build",
+    "create",
+    "major",
+    "minor",
+    "revision",
+    "totext",
+};
+
+// --- FilterPageBuilder — 11 methods. ---
+// Source: member_builtins.json "FilterPageBuilder" array, all lowercase.
+static FILTERPAGEBUILDER: phf::Set<&'static str> = phf_set! {
+    "addfield",
+    "addfieldno",
+    "addrecord",
+    "addrecordref",
+    "addtable",
+    "count",
+    "getview",
+    "name",
+    "pagecaption",
+    "runmodal",
+    "setview",
+};
+
+// --- SessionInformation — 4 methods. ---
+// Source: member_builtins.json "SessionInformation" array, all lowercase.
+static SESSIONINFORMATION: phf::Set<&'static str> = phf_set! {
+    "aitokensused",
+    "callstack",
+    "sqlrowsread",
+    "sqlstatementsexecuted",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -668,8 +1121,12 @@ mod tests {
             Some(ReceiverBuiltinKind::TextBuilder)
         );
         assert_eq!(classify_receiver("Codeunit \"Sales-Post\""), None);
-        assert_eq!(classify_receiver("Integer"), None);
-        assert_eq!(classify_receiver("Text"), None);
+        // Integer, Text are now platform-type builtins (Feature A):
+        assert_eq!(
+            classify_receiver("Integer"),
+            Some(ReceiverBuiltinKind::Integer)
+        );
+        assert_eq!(classify_receiver("Text"), Some(ReceiverBuiltinKind::Text));
         assert_eq!(classify_receiver(""), None);
     }
 
@@ -747,6 +1204,271 @@ mod tests {
         assert_eq!(
             member_builtin_disposition(ReceiverBuiltinKind::OutStream, "writetext"),
             Some(Disposition::Builtin)
+        );
+    }
+
+    // --- Feature A: AL platform value-type tests ---
+
+    #[test]
+    fn platform_type_classify_receiver() {
+        assert_eq!(
+            classify_receiver("Notification"),
+            Some(ReceiverBuiltinKind::Notification)
+        );
+        assert_eq!(
+            classify_receiver("ErrorInfo"),
+            Some(ReceiverBuiltinKind::ErrorInfo)
+        );
+        assert_eq!(
+            classify_receiver("ModuleInfo"),
+            Some(ReceiverBuiltinKind::ModuleInfo)
+        );
+        assert_eq!(
+            classify_receiver("RecordId"),
+            Some(ReceiverBuiltinKind::RecordId)
+        );
+        assert_eq!(
+            classify_receiver("BigText"),
+            Some(ReceiverBuiltinKind::BigText)
+        );
+        assert_eq!(
+            classify_receiver("SecretText"),
+            Some(ReceiverBuiltinKind::SecretText)
+        );
+        assert_eq!(
+            classify_receiver("DataTransfer"),
+            Some(ReceiverBuiltinKind::DataTransfer)
+        );
+        assert_eq!(
+            classify_receiver("SessionSettings"),
+            Some(ReceiverBuiltinKind::SessionSettings)
+        );
+        assert_eq!(classify_receiver("Text"), Some(ReceiverBuiltinKind::Text));
+        assert_eq!(classify_receiver("Code"), Some(ReceiverBuiltinKind::Text));
+        assert_eq!(classify_receiver("Label"), Some(ReceiverBuiltinKind::Text));
+        assert_eq!(classify_receiver("Date"), Some(ReceiverBuiltinKind::Date));
+        assert_eq!(
+            classify_receiver("DateTime"),
+            Some(ReceiverBuiltinKind::DateTime)
+        );
+        assert_eq!(classify_receiver("Time"), Some(ReceiverBuiltinKind::Time));
+        assert_eq!(classify_receiver("Guid"), Some(ReceiverBuiltinKind::Guid));
+        assert_eq!(
+            classify_receiver("Integer"),
+            Some(ReceiverBuiltinKind::Integer)
+        );
+        assert_eq!(
+            classify_receiver("Decimal"),
+            Some(ReceiverBuiltinKind::Decimal)
+        );
+        assert_eq!(
+            classify_receiver("Boolean"),
+            Some(ReceiverBuiltinKind::Boolean)
+        );
+        assert_eq!(
+            classify_receiver("Duration"),
+            Some(ReceiverBuiltinKind::Duration)
+        );
+        assert_eq!(
+            classify_receiver("BigInteger"),
+            Some(ReceiverBuiltinKind::BigInteger)
+        );
+        assert_eq!(classify_receiver("Byte"), Some(ReceiverBuiltinKind::Byte));
+        assert_eq!(classify_receiver("File"), Some(ReceiverBuiltinKind::File));
+        assert_eq!(
+            classify_receiver("FileUpload"),
+            Some(ReceiverBuiltinKind::FileUpload)
+        );
+        assert_eq!(
+            classify_receiver("NumberSequence"),
+            Some(ReceiverBuiltinKind::NumberSequence)
+        );
+        assert_eq!(
+            classify_receiver("Version"),
+            Some(ReceiverBuiltinKind::Version)
+        );
+        assert_eq!(
+            classify_receiver("FilterPageBuilder"),
+            Some(ReceiverBuiltinKind::FilterPageBuilder)
+        );
+        assert_eq!(
+            classify_receiver("SessionInformation"),
+            Some(ReceiverBuiltinKind::SessionInformation)
+        );
+    }
+
+    #[test]
+    fn length_suffixed_types_classify_correctly() {
+        // Text[1024] → Text kind
+        assert_eq!(
+            classify_receiver("Text[1024]"),
+            Some(ReceiverBuiltinKind::Text)
+        );
+        // Code[20] → Text kind (alias)
+        assert_eq!(
+            classify_receiver("Code[20]"),
+            Some(ReceiverBuiltinKind::Text)
+        );
+        // Code[250] with trailing space shouldn't happen but is safe
+        assert_eq!(
+            classify_receiver("Code[250]"),
+            Some(ReceiverBuiltinKind::Text)
+        );
+    }
+
+    #[test]
+    fn platform_type_disposition_hits() {
+        // Notification.Send
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Notification, "send"),
+            Some(Disposition::Builtin)
+        );
+        // Notification.AddAction
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Notification, "addaction"),
+            Some(Disposition::Builtin)
+        );
+        // Text.Split
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Text, "split"),
+            Some(Disposition::Builtin)
+        );
+        // Text.Contains
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Text, "contains"),
+            Some(Disposition::Builtin)
+        );
+        // ErrorInfo.Message
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::ErrorInfo, "message"),
+            Some(Disposition::Builtin)
+        );
+        // RecordId.GetRecord
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::RecordId, "getrecord"),
+            Some(Disposition::Builtin)
+        );
+        // ModuleInfo.Publisher
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::ModuleInfo, "publisher"),
+            Some(Disposition::Builtin)
+        );
+        // BigText.AddText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::BigText, "addtext"),
+            Some(Disposition::Builtin)
+        );
+        // SecretText.Unwrap
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::SecretText, "unwrap"),
+            Some(Disposition::Builtin)
+        );
+        // DataTransfer.CopyRows
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::DataTransfer, "copyrows"),
+            Some(Disposition::Builtin)
+        );
+        // SessionSettings.Company
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::SessionSettings, "company"),
+            Some(Disposition::Builtin)
+        );
+        // Date.DayOfWeek
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Date, "dayofweek"),
+            Some(Disposition::Builtin)
+        );
+        // DateTime.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::DateTime, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Time.Hour
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Time, "hour"),
+            Some(Disposition::Builtin)
+        );
+        // Guid.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Guid, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Integer.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Integer, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Decimal.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Decimal, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Boolean.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Boolean, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Duration.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Duration, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // BigInteger.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::BigInteger, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // Byte.ToText
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Byte, "totext"),
+            Some(Disposition::Builtin)
+        );
+        // File.Open
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::File, "open"),
+            Some(Disposition::Builtin)
+        );
+        // FileUpload.FileName
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::FileUpload, "filename"),
+            Some(Disposition::Builtin)
+        );
+        // NumberSequence.Next
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::NumberSequence, "next"),
+            Some(Disposition::Builtin)
+        );
+        // Version.Major
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Version, "major"),
+            Some(Disposition::Builtin)
+        );
+        // FilterPageBuilder.RunModal
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::FilterPageBuilder, "runmodal"),
+            Some(Disposition::Builtin)
+        );
+        // SessionInformation.SqlRowsRead
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::SessionInformation, "sqlrowsread"),
+            Some(Disposition::Builtin)
+        );
+    }
+
+    #[test]
+    fn platform_type_disposition_misses() {
+        // Methods that don't exist on these types must return None
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Notification, "nonexistent"),
+            None
+        );
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::Text, "nonexistent"),
+            None
+        );
+        assert_eq!(
+            member_builtin_disposition(ReceiverBuiltinKind::RecordId, "find"),
+            None
         );
     }
 }
