@@ -104,6 +104,70 @@ pub(crate) fn discover_al_files(workspace: &Path) -> std::io::Result<Vec<AlFile>
     Ok(files)
 }
 
+/// True when `dir` directly contains an `app.json` (case-insensitive) — i.e. it is
+/// the root of a SEPARATE AL project. Used to stop discovery at nested-app
+/// boundaries.
+fn dir_has_app_json(dir: &Path) -> bool {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => entries.flatten().any(|e| {
+            e.file_name().to_string_lossy().to_lowercase() == "app.json"
+                && e.file_type().map(|t| t.is_file()).unwrap_or(false)
+        }),
+        Err(_) => false,
+    }
+}
+
+/// Like [`discover_al_files`] but scoped to ONE app: a child directory that carries
+/// its own `app.json` is a separate AL project (the AL compiler treats each
+/// `app.json` as a project root), so discovery does NOT descend into it. The
+/// `workspace` root's own `app.json` does not stop the walk (it IS this app). This
+/// lets a root app whose tree contains nested sub-apps (a monorepo / `Modules/`
+/// layout) be analyzed in isolation, and lets each nested app be analyzed by
+/// pointing at its own root. `node_modules` / `.alpackages` are still skipped.
+pub(crate) fn discover_al_files_app_scoped(workspace: &Path) -> std::io::Result<Vec<AlFile>> {
+    let mut files = Vec::new();
+    let mut stack = vec![workspace.to_path_buf()];
+    let mut is_root = true;
+    while let Some(dir) = stack.pop() {
+        // A nested app.json (anywhere but the scoped root) is a project boundary.
+        if !is_root && dir_has_app_json(&dir) {
+            continue;
+        }
+        is_root = false;
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                let dname = entry.file_name().to_string_lossy().into_owned();
+                if dname == "node_modules" || dname == ".alpackages" {
+                    continue;
+                }
+                stack.push(path);
+            } else if file_type.is_file() {
+                let is_al = path
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase() == "al")
+                    .unwrap_or(false);
+                if is_al {
+                    let rel = path.strip_prefix(workspace).unwrap_or(&path);
+                    let rel_posix = rel
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    files.push(AlFile {
+                        rel_posix,
+                        abs_path: path,
+                    });
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| a.rel_posix.cmp(&b.rel_posix));
+    Ok(files)
+}
+
 /// Read a file as UTF-8, stripping a leading UTF-8 BOM if present (matches TS).
 pub(crate) fn read_al_source(path: &Path) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;

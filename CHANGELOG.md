@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **L3 analysis scopes to one app at nested-`app.json` boundaries** (multi-app / monorepo
+  support). The disk assembly (`assemble_l3_workspace_from_disk`, used by `aldump` + the
+  cross-app stats) previously fail-closed when a workspace contained more than one `app.json`
+  anywhere in its tree — so a monorepo with a root app plus nested sub-apps (e.g. Continia
+  Document Capture: root + `Modules/Purchase Contracts/{Base,Integration}`) could not be
+  analyzed at all. New `discover_al_files_app_scoped` treats a child directory carrying its
+  own `app.json` as a SEPARATE project (the AL compiler's own semantics) and does NOT descend
+  into it, so the targeted app's source is analyzed in isolation; each nested app is analyzed
+  by pointing the workspace at its own root. The `count_app_json > 1` guard is dropped from
+  this path (a missing/id-less root `app.json` still fail-closes via `read_root_app_guid`).
+  The GATE keeps its own stricter multi-app provider check (`workspace_diagnostics`) — only
+  the analysis path is relaxed. Unblocks Document Capture (28.4k edges, source-only
+  realUnknownRate 1.83%) and its module apps.
+
 ### Fixed
 - **Quoted scalar variable names strip their quotes** (consistency with parameter and
   record-variable extraction). `extract_variables` (locals) and `extract_object_globals` keyed

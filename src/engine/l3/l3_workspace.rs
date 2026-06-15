@@ -1693,15 +1693,18 @@ pub fn assemble_l3_workspace_from_disk(
     model_instance_id: &str,
 ) -> Option<L3Workspace> {
     use crate::engine::l2::l2_workspace::{
-        count_app_json, discover_al_files, read_al_source, read_root_app_guid,
+        discover_al_files_app_scoped, read_al_source, read_root_app_guid,
     };
 
-    // Fail-closed: need a readable root app.json with a string `id`, single app.
+    // Fail-closed: need a readable root app.json with a string `id`. The single-app
+    // guard is gone — a nested `app.json` is a SEPARATE project, so discovery is
+    // scoped to THIS app (nested sub-apps are excluded). A monorepo / `Modules/`
+    // layout (root app + nested apps) thus analyzes the root app; each nested app is
+    // analyzed by pointing the workspace at its own root. (The gate keeps its own
+    // multi-app provider check in `workspace_diagnostics` — this only relaxes the L3
+    // analysis path that `aldump` / cross-app stats use.)
     let app_guid = read_root_app_guid(workspace)?;
-    if count_app_json(workspace) > 1 {
-        return None;
-    }
-    let discovered = discover_al_files(workspace).ok()?;
+    let discovered = discover_al_files_app_scoped(workspace).ok()?;
 
     // Build (relPosix, source) pairs in discovery (rel-posix-sorted) order; the
     // inline assembler re-sorts by name, which is the same total order.
