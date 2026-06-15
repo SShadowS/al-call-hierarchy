@@ -136,6 +136,9 @@
       "recordVariables": [
         {
           "name": "cust"
+        },
+        {
+          "name": "rec"
         }
       ],
       "recordOperations": [

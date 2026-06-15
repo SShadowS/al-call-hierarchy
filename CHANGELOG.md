@@ -37,6 +37,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (no `Namespaces` node → no recursion), so all existing goldens stay byte-stable.
 
 ### Changed
+- **Table procedures (not just triggers) seed the implicit `Rec`.** `implicit_base_receiver`
+  only registered the implicit current record for table/tableextension TRIGGERS, but AL exposes
+  the table's fields and procedures unqualified inside ANY of its methods. Broadened to table
+  procedures, so (a) bare record-builtin calls (`Modify()`, `SetRange()`, …) in a table
+  procedure are correctly captured as RECORD OPERATIONS on `Rec` instead of phantom
+  global-builtin call edges; (b) explicit `Rec.<proc>()` and bare field accesses resolve. CDO
+  deps-loaded: untracked-receiver 136→81, realUnknownRate 3.208% → 2.88% (266 phantom builtin
+  call edges reclassified to record operations — a more accurate call graph, not lost edges).
+  Regenerated `ws-d40` r1a/r2a goldens (the one fixture with a table procedure) — adds its
+  implicit `Rec` record variable; no call-graph/coverage/detector golden changed.
+- **Blob / Media field receivers resolve to field intrinsics.** A `Blob`/`Media`/`MediaSet`
+  table FIELD used as a member receiver — bare on the implicit `Rec` (`"File Blob".CreateInStream(...)`)
+  or as a declared `Blob` variable — now classifies the field intrinsic
+  (`CreateInStream`/`CreateOutStream`/`HasValue`/`Length`; media import/export/query) as
+  `builtin`. New `ReceiverBuiltinKind::Blob`/`Media` + catalogs; `classify_receiver` maps the
+  type names; `infer_receiver_type` resolves a bare blob/media field of the implicit Rec's
+  table.
 - **Bare calls resolve against the implicit `Rec` (SourceTable) procedures.** AL treats an
   unqualified call in page/table code as `Rec.<proc>()`, so a bare call to a SourceTable
   procedure is legal (e.g. `GetTemplateVariantCaption()` in a page bound to the table that

@@ -130,11 +130,16 @@ fn implicit_base_receiver(
     source_table_name: Option<&str>,
 ) -> Option<ImplicitReceiverFrame> {
     let obj_type_lc = object_type.to_lowercase();
-    let is_table_trigger =
-        (obj_type_lc == "table" || obj_type_lc == "tableextension") && kind == "trigger";
+    // A table / tableextension method — trigger OR procedure — operates on the
+    // implicit current record (`Rec`). AL exposes the table's fields and procedures
+    // unqualified inside ANY of its methods, not just triggers, so seed `Rec` for
+    // both (e.g. a table procedure doing `"File Blob".CreateInStream(...)` or
+    // `Rec.<field>`). Field triggers (OnValidate) report `kind == "trigger"` too.
+    let is_table_method = (obj_type_lc == "table" || obj_type_lc == "tableextension")
+        && (kind == "trigger" || kind == "procedure");
     let is_page_with_source_table = obj_type_lc == "page" && source_table_name.is_some();
     let is_page_extension = obj_type_lc == "pageextension";
-    if is_table_trigger || is_page_with_source_table || is_page_extension {
+    if is_table_method || is_page_with_source_table || is_page_extension {
         Some(ImplicitReceiverFrame {
             text: "Rec".to_string(),
             kind: "simple",

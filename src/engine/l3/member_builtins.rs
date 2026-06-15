@@ -60,6 +60,14 @@ pub enum ReceiverBuiltinKind {
     /// AL platform singleton `Database` — low-level database utilities.
     /// Source: member_builtins.json "Database" (29 methods).
     Database,
+    /// A `Blob`-typed table FIELD used as a member receiver (e.g.
+    /// `"File Blob".CreateInStream(...)`). Blob fields expose the stream-creation
+    /// intrinsics; they are not a declared variable type, so this kind is produced
+    /// from a field-type lookup, not `classify_receiver`.
+    Blob,
+    /// A `Media` / `MediaSet`-typed table FIELD used as a member receiver — the
+    /// media import/export/query intrinsics.
+    Media,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -104,6 +112,8 @@ pub fn classify_receiver(declared_type: &str) -> Option<ReceiverBuiltinKind> {
         "instream" => ReceiverBuiltinKind::InStream,
         "outstream" => ReceiverBuiltinKind::OutStream,
         "textbuilder" => ReceiverBuiltinKind::TextBuilder,
+        "blob" => ReceiverBuiltinKind::Blob,
+        "media" | "mediaset" => ReceiverBuiltinKind::Media,
         "dialog" => ReceiverBuiltinKind::Dialog,
         "list" => ReceiverBuiltinKind::List,
         "dictionary" => ReceiverBuiltinKind::Dictionary,
@@ -147,6 +157,8 @@ pub fn member_builtin_disposition(
         NavApp => set_hit(&NAVAPP, method_lc),
         TaskScheduler => set_hit(&TASKSCHEDULER, method_lc),
         Database => set_hit(&DATABASE, method_lc),
+        Blob => set_hit(&BLOB, method_lc),
+        Media => set_hit(&MEDIA, method_lc),
     }
 }
 
@@ -588,6 +600,17 @@ static DATABASE: phf::Set<&'static str> = phf_set! {
     "unregistertableconnection",
     "userid",
     "usersecurityid",
+};
+
+// --- Blob table field — the stream-creation + value intrinsics on a `Blob` field. ---
+static BLOB: phf::Set<&'static str> = phf_set! {
+    "createinstream", "createoutstream", "hasvalue", "length",
+};
+
+// --- Media / MediaSet table field — media import/export/query intrinsics. ---
+static MEDIA: phf::Set<&'static str> = phf_set! {
+    "importfile", "importstream", "exportfile", "exportstream", "hasvalue",
+    "mediaid", "count", "item", "insert", "info",
 };
 
 #[cfg(test)]

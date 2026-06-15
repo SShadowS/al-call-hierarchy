@@ -234,6 +234,20 @@ pub fn infer_receiver_type(
             };
         }
 
+        // Step 2d — a bare FIELD of the implicit `Rec` used as a member receiver
+        // (`"File Blob".CreateInStream(...)` in table/page code). A Blob / Media /
+        // MediaSet field exposes the stream + media intrinsics; resolve the implicit
+        // Rec's table and, if `receiver_name` names a blob/media-typed field, treat
+        // it as that framework receiver so Phase B classifies the intrinsic as
+        // `builtin`. Non-media fields are not callable, so they stay untracked.
+        if let Some(kind) = implicit_rec_field_builtin_kind(&receiver_name_lc, routine, symbols) {
+            return InferredReceiver {
+                ty: ReceiverType::Framework { kind },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
+
         return InferredReceiver {
             ty: ReceiverType::Unknown {
                 reason: UnknownReason::UntrackedReceiver,
@@ -291,6 +305,38 @@ pub fn infer_receiver_type(
         ty,
         declared_type,
         receiver_shape: None,
+    }
+}
+
+/// If `field_name_lc` names a `Blob` / `Media` / `MediaSet` field on the implicit
+/// `Rec`/`xRec`'s table, return the corresponding framework receiver kind — so a
+/// bare field-as-receiver member call (`"File Blob".CreateInStream(...)`) dispatches
+/// the field intrinsic as `builtin` instead of degrading to `UntrackedReceiver`. The
+/// implicit Rec's table id is resolved by `record_types` pass 3 (Table self / Page
+/// SourceTable / extension base). `None` when there is no implicit Rec, the table is
+/// out-of-source, or the field is not a media-bearing type.
+fn implicit_rec_field_builtin_kind(
+    field_name_lc: &str,
+    routine: &L3Routine,
+    symbols: &SymbolTable,
+) -> Option<ReceiverBuiltinKind> {
+    let table = routine
+        .record_variables
+        .iter()
+        .find(|rv| {
+            let n = rv.name.to_lowercase();
+            n == "rec" || n == "xrec"
+        })
+        .and_then(|rv| rv.table_id.as_deref())
+        .and_then(|tid| symbols.table_by_id(tid))?;
+    let field = table
+        .fields
+        .iter()
+        .find(|f| f.name.to_lowercase() == field_name_lc)?;
+    match field.data_type.to_lowercase().as_str() {
+        "blob" => Some(ReceiverBuiltinKind::Blob),
+        "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
+        _ => None,
     }
 }
 
