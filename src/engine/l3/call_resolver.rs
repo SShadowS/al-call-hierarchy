@@ -79,6 +79,10 @@ pub enum UnknownReason {
     /// Object-run whose target is a dynamic variable (not a static ref) -- the
     /// dispatch kind is `dynamic`; target is unknowable without runtime info.
     DynamicObjectRunTarget,
+    /// Member call on a `Variant`-typed receiver -- the held type (and the dispatch)
+    /// is RUNTIME-determined. Emitted with `dispatch_kind == Dynamic` so it classifies
+    /// `dynamic` (NOT real-`unknown`): genuinely indeterminate, not a failure.
+    DynamicReceiver,
 }
 
 impl UnknownReason {
@@ -95,6 +99,7 @@ impl UnknownReason {
             UnknownReason::CalleeUnknown => "callee-unknown",
             UnknownReason::InterfaceNoImpl => "interface-no-impl",
             UnknownReason::DynamicObjectRunTarget => "dynamic-objectrun-target",
+            UnknownReason::DynamicReceiver => "dynamic-receiver",
         }
     }
 }
@@ -586,6 +591,15 @@ pub(crate) fn unknown_method(
     let mut e = CallEdge::base(from, callsite_id, operation_id);
     e.dispatch_kind = DispatchKind::Method;
     e.resolution = Resolution::Unknown(reason);
+    vec![e]
+}
+
+/// A member call on a runtime-typed (`Variant`) receiver: `dispatch_kind == Dynamic`
+/// so it classifies `dynamic` (genuinely indeterminate), NOT real-`unknown`.
+pub(crate) fn dynamic_method(from: &str, callsite_id: &str, operation_id: &str) -> Vec<CallEdge> {
+    let mut e = CallEdge::base(from, callsite_id, operation_id);
+    e.dispatch_kind = DispatchKind::Dynamic;
+    e.resolution = Resolution::Unknown(UnknownReason::DynamicReceiver);
     vec![e]
 }
 

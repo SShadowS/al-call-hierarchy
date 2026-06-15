@@ -47,9 +47,9 @@ use super::type_ref::{parse_object_type_ref, ObjectKind};
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
-    mark_bindings_ambiguous, resolve_by_name_and_arity, resolve_interface_dispatch, sorted_ids,
-    unknown_method, upgrade_bindings, ArityResolution, BindingState, CallEdge, Diagnostic,
-    ExternalTypeRef, UnknownReason,
+    dynamic_method, mark_bindings_ambiguous, resolve_by_name_and_arity, resolve_interface_dispatch,
+    sorted_ids, unknown_method, upgrade_bindings, ArityResolution, BindingState, CallEdge,
+    Diagnostic, ExternalTypeRef, UnknownReason,
 };
 use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 
@@ -87,9 +87,14 @@ pub enum ReceiverType {
     /// A framework data type (`Json*` / `Http*` / `In`/`OutStream` / `List` /
     /// `Dictionary` / `TextBuilder` / `Dialog` / `Xml*`) — catalog-only in Phase B.
     Framework { kind: ReceiverBuiltinKind },
-    /// A primitive / Variant / unrecognized non-object, non-catalog type. Phase B
+    /// A primitive / unrecognized non-object, non-catalog type. Phase B
     /// turns it into `Unknown { NonObjectReceiverType }`.
     Primitive,
+    /// A `Variant`-typed receiver — the held type (and therefore the method
+    /// dispatch) is determined at RUNTIME. This is NOT a resolution failure; per the
+    /// honest taxonomy (spec §6) it is genuinely `dynamic`. Phase B emits a
+    /// dynamic-dispatch edge (classified `dynamic`, not real-`unknown`).
+    Dynamic,
     /// Fail-closed sink — Phase A could not positively type the receiver. Carries
     /// the attributed reason for the `aldump --l3-unknown-breakdown` diagnostic.
     Unknown { reason: UnknownReason },
@@ -277,7 +282,9 @@ pub fn infer_receiver_type(
         Some(ReceiverBuiltinKind::FieldRef) => ReceiverType::FieldRef,
         Some(ReceiverBuiltinKind::KeyRef) => ReceiverType::KeyRef,
         Some(kind) => ReceiverType::Framework { kind },
-        // Primitive / Variant / unrecognized declared type.
+        // A `Variant` receiver is genuinely runtime-typed → honest `dynamic`. Any
+        // other non-object / unrecognized type stays `Primitive` (→ unknown).
+        None if declared_type_first_token_lc(&declared_type) == "variant" => ReceiverType::Dynamic,
         None => ReceiverType::Primitive,
     };
     InferredReceiver {
@@ -370,6 +377,18 @@ fn resolve_record_table_object_id(
         .map(|obj| obj.id.clone())
 }
 
+/// The first whitespace-delimited token of a declared type, lowercased (e.g.
+/// `"Variant"` from `"Variant"`, `"variant"` from `"Variant temporary"`-style
+/// noise). Used to recognize a `Variant` receiver as runtime-typed (`dynamic`).
+fn declared_type_first_token_lc(declared_type: &str) -> String {
+    declared_type
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
+}
+
 // ---------------------------------------------------------------------------
 // Phase B — typed dispatch.
 // ---------------------------------------------------------------------------
@@ -421,6 +440,7 @@ pub(crate) fn dispatch(
             ctx.operation_id,
             UnknownReason::NonObjectReceiverType,
         ),
+        ReceiverType::Dynamic => dynamic_method(ctx.from, ctx.callsite_id, ctx.operation_id),
         ReceiverType::Unknown { reason } => {
             let mut edges = unknown_method(ctx.from, ctx.callsite_id, ctx.operation_id, *reason);
             if let Some(shape) = receiver.receiver_shape.clone() {
@@ -842,6 +862,12 @@ mod tests {
             ReceiverType::FieldRef
         );
         assert_eq!(infer("kr", vec![var("kr", "KeyRef")]), ReceiverType::KeyRef);
+    }
+
+    #[test]
+    fn variant_receiver_is_dynamic() {
+        // A Variant receiver is runtime-typed → honest `dynamic` (not unknown).
+        assert_eq!(infer("v", vec![var("v", "Variant")]), ReceiverType::Dynamic);
     }
 
     #[test]

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- L3 member dispatch: a `Variant`-typed receiver now classifies `dynamic` (spec §6
+  honest taxonomy — the held type is runtime-determined) instead of real-`unknown`.
+  `ReceiverType::Dynamic` + `dynamic_method` emit a `dispatch_kind = Dynamic` edge. CDO:
+  non-object-receiver-type 70→68, realUnknownRate 6.89%→6.88% (no new resolved edges).
+
 ### Fixed
 - **Witness reachability via reverse-BFS valid-node set** in `reconstruct_witness_paths`
   (Case C inherited-fact BFS): the per-edge `can_reach` memoized check (which scanned
