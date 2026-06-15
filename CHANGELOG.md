@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Single-hop framework-property compound receivers** (Feature C1, engine-d22).
+  A compound receiver `<fw>.<prop>.<method>()` where the base types as a
+  `Framework{kind}` and `<prop>` is a framework-returning property of that kind
+  (e.g. `HttpClient.DefaultRequestHeaders.Add('k','v')`,
+  `HttpResponseMessage.Content.ReadAs(...)`) now resolves to the property's
+  framework type and classifies the method via the builtin catalog instead of
+  degrading to a `CompoundReceiver` unknown. New `framework_property_type(kind,
+  property_lc)` in `member_builtins.rs` maps the well-known Http* property returns
+  (`HttpClient.DefaultRequestHeaders : HttpHeaders`, `Http{Request,Response}Message.{Content,Headers}`,
+  `HttpContent.Headers`); `compound_framework_property_kind` in `receiver_type.rs`
+  wires it as a single-hop compound resolver alongside the existing blob/media and
+  CurrPage-control compound paths.
 - **AL platform-type builtin catalogs — non-object-receiver win** (Feature A,
   engine-d22). The `non-object-receiver-type` unknown bucket previously included
   member calls on AL platform value types (`Notification`, `ErrorInfo`, `Text`,

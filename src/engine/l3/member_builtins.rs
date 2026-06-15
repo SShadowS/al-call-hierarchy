@@ -318,6 +318,26 @@ fn set_hit(set: &phf::Set<&'static str>, method_lc: &str) -> Option<Disposition>
     }
 }
 
+/// The framework type RETURNED by a property access on a framework receiver —
+/// `HttpClient.DefaultRequestHeaders : HttpHeaders`, `HttpResponseMessage.Content :
+/// HttpContent`, etc. Enables single-hop `<fw>.<prop>.<method>()` resolution. `None`
+/// when the (kind, property) pair is not a known framework-returning property.
+pub fn framework_property_type(
+    kind: ReceiverBuiltinKind,
+    property_lc: &str,
+) -> Option<ReceiverBuiltinKind> {
+    use ReceiverBuiltinKind::*;
+    match (kind, property_lc) {
+        (HttpClient, "defaultrequestheaders") => Some(HttpHeaders),
+        (HttpRequestMessage, "content") => Some(HttpContent),
+        (HttpRequestMessage, "headers") => Some(HttpHeaders),
+        (HttpResponseMessage, "content") => Some(HttpContent),
+        (HttpResponseMessage, "headers") => Some(HttpHeaders),
+        (HttpContent, "headers") => Some(HttpHeaders),
+        _ => None,
+    }
+}
+
 // --- Record (the largest CDO bucket). AL forbids overriding built-ins, so these
 //     never collide with user table procedures. ---
 static RECORD: phf::Set<&'static str> = phf_set! {

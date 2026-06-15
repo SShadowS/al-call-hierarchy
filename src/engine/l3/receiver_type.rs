@@ -40,7 +40,9 @@
 //! the legacy ladder for every input.
 
 use super::l3_workspace::{L3Routine, PageControlKind};
-use super::member_builtins::{classify_receiver, member_builtin_disposition, ReceiverBuiltinKind};
+use super::member_builtins::{
+    classify_receiver, framework_property_type, member_builtin_disposition, ReceiverBuiltinKind,
+};
 use super::receiver::simple_receiver_name;
 use super::symbol_table::SymbolTable;
 use super::type_ref::{parse_object_type_ref, ObjectKind};
@@ -176,6 +178,16 @@ pub fn infer_receiver_type(
         // (`DOTempBlob.Blob.CreateOutStream(...)`, `PDFDocument."File Blob".CreateInStream(...)`).
         // Resolve before declining to CompoundReceiver.
         if let Some(kind) = compound_blob_media_field_kind(receiver_expr, routine, symbols) {
+            return InferredReceiver {
+                ty: ReceiverType::Framework { kind },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
+        // Single-hop framework-property compound receiver:
+        // `HttpClient.DefaultRequestHeaders.Add(...)` etc. The base infers to a
+        // `Framework{kind}` and the property returns another framework kind.
+        if let Some(kind) = compound_framework_property_kind(receiver_expr, routine, symbols) {
             return InferredReceiver {
                 ty: ReceiverType::Framework { kind },
                 declared_type: String::new(),
@@ -391,6 +403,27 @@ fn compound_blob_media_field_kind(
         "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
         _ => None,
     }
+}
+
+/// Single-hop framework-property compound receiver: `<base>.<prop>` where `base`
+/// infers to a `Framework{kind}` (or any receiver whose type is a framework kind)
+/// and `<prop>` is a framework-returning property of that kind → the property's
+/// framework type. Splits on the LAST `.`; the base must be a SIMPLE framework
+/// receiver (its own `infer_receiver_type` must yield `Framework{..}`), so deeper
+/// chains decline here. `None` to stay CompoundReceiver.
+fn compound_framework_property_kind(
+    receiver_expr: &str,
+    routine: &L3Routine,
+    symbols: &SymbolTable,
+) -> Option<ReceiverBuiltinKind> {
+    let (base, prop) = receiver_expr.rsplit_once('.')?;
+    let prop_name = simple_receiver_name(prop)?; // lowercased, unquoted
+                                                 // Base must be a simple receiver that types as a Framework kind.
+    let base_inferred = infer_receiver_type(base, routine, symbols);
+    let ReceiverType::Framework { kind } = base_inferred.ty else {
+        return None;
+    };
+    framework_property_type(kind, &prop_name)
 }
 
 /// Resolve a `CurrPage.<Part>[.Page]` member receiver to the subpage Page object.
