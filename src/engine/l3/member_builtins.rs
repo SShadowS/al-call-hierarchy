@@ -68,6 +68,10 @@ pub enum ReceiverBuiltinKind {
     /// A `Media` / `MediaSet`-typed table FIELD used as a member receiver — the
     /// media import/export/query intrinsics.
     Media,
+    /// A page control-add-in (usercontrol) receiver — `CurrPage.<addin>.<method>()`.
+    /// Add-in methods are platform/JS calls with no in-AL target; every method
+    /// classifies `builtin`.
+    ControlAddIn,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -159,6 +163,10 @@ pub fn member_builtin_disposition(
         Database => set_hit(&DATABASE, method_lc),
         Blob => set_hit(&BLOB, method_lc),
         Media => set_hit(&MEDIA, method_lc),
+        // ANY method on a control-add-in is a builtin: we cannot enumerate an
+        // add-in's JS method surface, and these are genuine platform calls, never
+        // real-`unknown`.
+        ControlAddIn => Some(Disposition::Builtin),
     }
 }
 

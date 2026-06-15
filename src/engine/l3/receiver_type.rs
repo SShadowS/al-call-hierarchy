@@ -163,7 +163,8 @@ pub fn infer_receiver_type(
     // expressions that `simple_receiver_name` rejects, so they must be intercepted
     // BEFORE Step 1. A page Part control whose source page resolves yields an
     // `Object { kind: Page, name }` receiver so Phase B dispatches the subpage's
-    // procedures by name+arity. UserControl parts decline here (Task 7).
+    // procedures by name+arity. UserControl (control-add-in) controls yield a
+    // `Framework { ControlAddIn }` receiver so every method classifies `builtin`.
     if let Some(inferred) = currpage_control_receiver(receiver_expr, routine, symbols) {
         return inferred;
     }
@@ -412,10 +413,14 @@ fn compound_blob_media_field_kind(
 /// need. (Investigation of `dispatch_object` confirmed this, so the typed-Object
 /// approach is preferred over duplicating the Record resolution machinery here.)
 ///
+/// A `UserControl` control resolves to a `ControlAddIn` framework receiver, so
+/// every `CurrPage.<addin>.<method>()` call classifies `builtin` (a platform/JS
+/// call with no in-AL target).
+///
 /// Returns `None` (the receiver stays a `CompoundReceiver` unknown — honest) when:
 /// the expression is not a `CurrPage.` receiver; the remaining segment is still
-/// compound (a deeper chain we don't model here); the control is absent; the
-/// control is a `UserControl` (Task 7); or the subpage Page object does not resolve.
+/// compound (a deeper chain we don't model here); the control is absent; or the
+/// subpage Page object (for a Part/SystemPart) does not resolve.
 fn currpage_control_receiver(
     receiver_expr: &str,
     routine: &L3Routine,
@@ -461,8 +466,18 @@ fn currpage_control_receiver(
                 receiver_shape: None,
             })
         }
-        // UserControl resolution is Task 7 — decline so it stays CompoundReceiver.
-        PageControlKind::UserControl => None,
+        // A UserControl is a control-add-in: `CurrPage.<addin>.<method>()` is a
+        // platform/JS-side invocation with no in-AL target. Type it as the
+        // ControlAddIn framework receiver so Phase B's `dispatch_framework`
+        // classifies every method as `builtin` (the honest classification — not a
+        // resolution failure, and not runtime-typed `dynamic`).
+        PageControlKind::UserControl => Some(InferredReceiver {
+            ty: ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::ControlAddIn,
+            },
+            declared_type: String::new(),
+            receiver_shape: None,
+        }),
     }
 }
 

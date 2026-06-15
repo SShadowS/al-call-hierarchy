@@ -96,6 +96,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tag (`table-unresolved::…` vs `proc-not-found::…`) for `--l3-unknown-breakdown[-cross-app]`.
 
 ### Added
+- **`CurrPage.<UserControl>.<method>()` resolves to a control-add-in `builtin` edge.**
+  A page `usercontrol(Body; "Some AddIn")` accessed as `CurrPage.Body.SetContent(...)`
+  is a platform/JS-side control-add-in invocation with no in-AL target. Phase A's
+  `currpage_control_receiver` now types a `UserControl` control as the new
+  `ReceiverBuiltinKind::ControlAddIn` framework receiver; Phase B's `dispatch_framework`
+  classifies EVERY method on it as `builtin` (we cannot enumerate an add-in's JS method
+  surface, and these are genuine platform calls — never real-`unknown`, and not the
+  runtime-typed `dynamic` dispatch). Previously these declined to
+  `Unknown { CompoundReceiver }`. Test in `tests/l3cg_page_part_dispatch.rs`.
 - **Extension bare-call resolver**: when a bare call in a `PageExtension` /
   `TableExtension` / `ReportExtension` / `EnumExtension` is not found in the caller's own
   object, the resolver now falls back to the EXTENDS-TARGET base object's procedures before

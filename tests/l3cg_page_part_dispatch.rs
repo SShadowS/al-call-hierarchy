@@ -211,3 +211,46 @@ fn currpage_part_page_member_resolves_to_subpage_procedure() {
         edges
     );
 }
+
+fn page_with_usercontrol() -> &'static str {
+    // The page carries a `usercontrol(Body; "Some AddIn")` control-add-in and a
+    // procedure calling `CurrPage.Body.SetContent('x')`. A control-add-in method is
+    // a platform/JS call with no in-AL target, so the edge must classify `builtin`.
+    r#"page 50110 "Addin Card" {
+    SourceTable = "Item";
+    layout { area(Content) { usercontrol(Body; "Some AddIn") { } } }
+    procedure Drive() begin CurrPage.Body.SetContent('x'); end;
+}
+"#
+}
+
+/// `CurrPage.Body.SetContent('x')` where `Body` is a `usercontrol` (control add-in)
+/// must classify as a `builtin` edge — a control-add-in method is a platform/JS call
+/// with no in-AL target, not a resolution failure (`unknown`) and not `dynamic`.
+#[test]
+fn currpage_usercontrol_member_classifies_builtin() {
+    const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
+    let owned = vec![("u.al".to_string(), page_with_usercontrol().to_string())];
+    let resolved = assemble_and_resolve_default(&owned, APP_GUID);
+
+    let proj = resolved.project_call_graph();
+    let edges: Vec<_> = proj.groups.iter().flat_map(|g| g.edges.iter()).collect();
+
+    // The `Drive` routine's only member call is `CurrPage.Body.SetContent(...)`.
+    // There is exactly one builtin edge and it must carry that classification.
+    let builtin_edges: Vec<_> = edges.iter().filter(|e| e.resolution == "builtin").collect();
+
+    assert!(
+        !builtin_edges.is_empty(),
+        "CurrPage.Body.SetContent('x') must classify as a builtin edge; all edges: {:#?}",
+        edges
+    );
+
+    // And NO edge from this fixture is a CompoundReceiver `unknown` (the pre-Task-7
+    // behavior) — every edge resolved to something concrete.
+    assert!(
+        !edges.iter().any(|e| e.resolution == "unknown"),
+        "no edge should remain unknown; all edges: {:#?}",
+        edges
+    );
+}
