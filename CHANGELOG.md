@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (no `Namespaces` node → no recursion), so all existing goldens stay byte-stable.
 
 ### Changed
+- **Bare calls resolve against the implicit `Rec` (SourceTable) procedures.** AL treats an
+  unqualified call in page/table code as `Rec.<proc>()`, so a bare call to a SourceTable
+  procedure is legal (e.g. `GetTemplateVariantCaption()` in a page bound to the table that
+  defines it; `Navigate()` resolving to the base table's `Navigate`). `PCallee::Bare` now adds
+  a fallback (after own-object and extends-target, before global-builtin/`BareUnresolved`):
+  resolve the caller object's implicit table (Table self / Page `SourceTable` / extension
+  base) ∪ its TableExtensions via `resolve_by_name_and_arity_multi`. Own-object procedures are
+  still tried FIRST so they shadow a same-named table procedure. New
+  `implicit_rec_table_object_id` helper (NAME- or NUMBER-form table ref). CDO deps-loaded:
+  bare-unresolved 169→0, realUnknownRate 4.4182% → 3.208% (resolved +170). The fallback only
+  binds to a REAL name+arity match, so it cannot invent edges.
 - **Record member dispatch searches base table ∪ its TableExtensions.** A `TableExtension`
   procedure is globally callable on the base record in AL but lives under the extension's own
   object id, so `routines_in_object(base_table)` missed it (false `Unknown{RecordTableProcedure}`).

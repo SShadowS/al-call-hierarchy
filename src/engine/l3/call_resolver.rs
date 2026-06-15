@@ -532,6 +532,56 @@ fn resolve_call_site(
                             }
                         }
                     }
+                    // Fallback 1.5: implicit `Rec` — a bare call in a Page/Table to
+                    // the source record's procedure (AL resolves an unqualified call
+                    // in page/table code as `Rec.<proc>()`). Search the implicit table
+                    // UNION its TableExtensions (a TableExt proc is callable on the
+                    // base record). Own-object procedures were already tried FIRST
+                    // (above), so they correctly shadow a same-named table procedure.
+                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id) {
+                        if let Some(tbl_obj_id) = implicit_rec_table_object_id(caller_obj, symbols)
+                        {
+                            let mut ids: Vec<&str> = vec![tbl_obj_id.as_str()];
+                            if let Some(tbl_obj) = symbols.object_by_id(&tbl_obj_id) {
+                                ids.extend(symbols.table_extension_object_ids(
+                                    &tbl_obj.name,
+                                    tbl_obj.object_number,
+                                ));
+                            }
+                            match resolve_by_name_and_arity_multi(
+                                symbols, &ids, name, routine, call_site,
+                            ) {
+                                ArityResolution::Resolved(r) => {
+                                    if let Some(d) = upgrade_bindings(state, r, callsite_id) {
+                                        diagnostics.push(d);
+                                    }
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.to = Some(r.id.clone());
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::Resolved;
+                                    return vec![e];
+                                }
+                                ArityResolution::NoArityMatch(candidates) => {
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::MemberNotFound;
+                                    e.candidates = Some(sorted_ids(&candidates));
+                                    return vec![e];
+                                }
+                                ArityResolution::Ambiguous(candidates) => {
+                                    mark_bindings_ambiguous(state);
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::Ambiguous;
+                                    e.candidates = Some(sorted_ids(&candidates));
+                                    return vec![e];
+                                }
+                                ArityResolution::NotFound => {
+                                    // Fall through to global-builtin / BareUnresolved.
+                                }
+                            }
+                        }
+                    }
                     // Fallback 2: global builtins, then BareUnresolved.
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
                     if global_builtin_disposition(name).is_some() {
@@ -690,6 +740,38 @@ fn extends_base_object<'a>(
     let base_type = extension_base_type(&obj.object_type)?;
     let target_name = obj.extends_target_name.as_deref()?;
     symbols.object_by_type_name(base_type, target_name)
+}
+
+/// The `Table` OBJECT id of the implicit `Rec` for an object that has one — a Table
+/// (itself), a Page (its `SourceTable`), a TableExtension (the extended table), or a
+/// PageExtension (the base page's `SourceTable`). The table reference may be a NAME
+/// (native source) or a NUMBER (dep symbols emit the table's object number), so both
+/// are resolved. `None` for objects with no implicit record. Used so a BARE call in a
+/// Page/Table resolves against the source record's procedures — AL treats an
+/// unqualified call in page/table code as an implicit `Rec.<proc>()`.
+fn implicit_rec_table_object_id(
+    obj: &super::l3_workspace::L3Object,
+    symbols: &SymbolTable,
+) -> Option<String> {
+    let table_ref: String = match obj.object_type.as_str() {
+        "Table" => obj.name.clone(),
+        "Page" => obj.source_table_name.clone()?,
+        "TableExtension" => obj.extends_target_name.clone()?,
+        "PageExtension" => {
+            let base = symbols.object_by_type_name("Page", obj.extends_target_name.as_deref()?)?;
+            base.source_table_name.clone()?
+        }
+        _ => return None,
+    };
+    if let Ok(number) = table_ref.trim().parse::<i64>() {
+        symbols
+            .object_by_type_number("Table", number)
+            .map(|o| o.id.clone())
+    } else {
+        symbols
+            .object_by_type_name("Table", &table_ref)
+            .map(|o| o.id.clone())
+    }
 }
 
 /// `routines.map(r => r.id).sort()` — byte-order sort of internal routine ids.
