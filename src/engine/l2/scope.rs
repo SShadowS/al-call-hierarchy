@@ -13,6 +13,24 @@ use crate::engine::ids::{encode_routine_id, CanonicalRoutineKey, ParamSpec};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
+/// Every `name`-field child of a `variable_declaration` — ONE for a regular decl,
+/// MANY for a grouped multi-name decl (`A, B, C : Type;`, grammar
+/// `variable_declaration` multi-name arm). `child_by_field_name` returns only the
+/// first, silently dropping `B`/`C`; this returns them all so each declared name
+/// becomes its own variable symbol. Falls back to the first named child when the
+/// `name` field is absent (defensive; the regular/multi-name arms always set it).
+fn decl_name_nodes(var_decl: Node) -> Vec<Node> {
+    let mut cursor = var_decl.walk();
+    let names: Vec<Node> = var_decl
+        .children_by_field_name("name", &mut cursor)
+        .collect();
+    if names.is_empty() {
+        var_decl.named_child(0).into_iter().collect()
+    } else {
+        names
+    }
+}
+
 #[derive(Clone)]
 pub struct ParameterSymbol {
     pub index: u32,
@@ -166,20 +184,11 @@ pub fn extract_record_variables(
             if var_decl.kind() != "variable_declaration" {
                 continue;
             }
-            let name_node = named_children(var_decl)
-                .into_iter()
-                .find(|c| c.kind() == "identifier" || c.kind() == "quoted_identifier");
-            let type_spec_node = child_of_kind(var_decl, "type_specification");
-            let (Some(name_node), Some(type_spec_node)) = (name_node, type_spec_node) else {
+            let Some(type_spec_node) = child_of_kind(var_decl, "type_specification") else {
                 continue;
             };
             let Some(record_type_node) = child_of_kind(type_spec_node, "record_type") else {
                 continue;
-            };
-            let name = if name_node.kind() == "quoted_identifier" {
-                strip_quotes(node_text(name_node, source)).to_string()
-            } else {
-                node_text(name_node, source).to_string()
             };
             let mut table_name = None;
             if let Some(q) = child_of_kind(record_type_node, "quoted_identifier") {
@@ -190,14 +199,22 @@ pub fn extract_record_variables(
             let is_temporary = named_children(record_type_node)
                 .iter()
                 .any(|c| c.kind() == "temporary_keyword");
-            out.push(RecordVariable {
-                id: format!("{}/rv/{}", routine_id, name.to_lowercase()),
-                name,
-                table_name,
-                temp_state: ts_known(is_temporary),
-                is_parameter: false,
-                parameter_index: None,
-            });
+            // One record variable per declared name (grouped `A, B, C : Record "X"`).
+            for name_node in decl_name_nodes(var_decl) {
+                let name = if name_node.kind() == "quoted_identifier" {
+                    strip_quotes(node_text(name_node, source)).to_string()
+                } else {
+                    node_text(name_node, source).to_string()
+                };
+                out.push(RecordVariable {
+                    id: format!("{}/rv/{}", routine_id, name.to_lowercase()),
+                    name,
+                    table_name: table_name.clone(),
+                    temp_state: ts_known(is_temporary),
+                    is_parameter: false,
+                    parameter_index: None,
+                });
+            }
         }
     }
 
@@ -283,20 +300,11 @@ pub fn extract_object_global_record_vars(
             if var_decl.kind() != "variable_declaration" {
                 continue;
             }
-            let name_node = named_children(var_decl)
-                .into_iter()
-                .find(|c| c.kind() == "identifier" || c.kind() == "quoted_identifier");
-            let type_spec_node = child_of_kind(var_decl, "type_specification");
-            let (Some(name_node), Some(type_spec_node)) = (name_node, type_spec_node) else {
+            let Some(type_spec_node) = child_of_kind(var_decl, "type_specification") else {
                 continue;
             };
             let Some(record_type_node) = child_of_kind(type_spec_node, "record_type") else {
                 continue; // Not a record — skip.
-            };
-            let name = if name_node.kind() == "quoted_identifier" {
-                strip_quotes(node_text(name_node, source)).to_string()
-            } else {
-                node_text(name_node, source).to_string()
             };
             let mut table_name = None;
             if let Some(q) = child_of_kind(record_type_node, "quoted_identifier") {
@@ -307,15 +315,23 @@ pub fn extract_object_global_record_vars(
             let is_temporary = named_children(record_type_node)
                 .iter()
                 .any(|c| c.kind() == "temporary_keyword");
-            out.push(super::features::PRecordVariable {
-                id: format!("{}/grv/{}", object_id, name.to_lowercase()),
-                name,
-                table_name,
-                temp_state: ts_known(is_temporary),
-                is_parameter: false,
-                parameter_index: None,
-                scope: Some("global".to_string()),
-            });
+            // One global record var per declared name (grouped `A, B : Record "X"`).
+            for name_node in decl_name_nodes(var_decl) {
+                let name = if name_node.kind() == "quoted_identifier" {
+                    strip_quotes(node_text(name_node, source)).to_string()
+                } else {
+                    node_text(name_node, source).to_string()
+                };
+                out.push(super::features::PRecordVariable {
+                    id: format!("{}/grv/{}", object_id, name.to_lowercase()),
+                    name,
+                    table_name: table_name.clone(),
+                    temp_state: ts_known(is_temporary),
+                    is_parameter: false,
+                    parameter_index: None,
+                    scope: Some("global".to_string()),
+                });
+            }
         }
     }
     out
@@ -336,23 +352,20 @@ pub fn extract_object_globals(
             if decl.kind() != "variable_declaration" {
                 continue;
             }
-            let name_node = decl
-                .child_by_field_name("name")
-                .or_else(|| decl.named_child(0));
-            let Some(name_node) = name_node else {
-                continue;
-            };
-            let lc_name = node_text(name_node, source).to_lowercase();
             let declared_type = normalize_declared_type(decl, source);
-            out.push(PVariableSymbol {
-                name: lc_name,
-                declared_type,
-                scope: "global".to_string(),
-                is_parameter: false,
-                parameter_index: None,
-                initializer: None,
-                source_anchor: anchor_from_decl(decl, source_unit_id),
-            });
+            // One global per declared name (grouped `A, B, C : Type;`).
+            for name_node in decl_name_nodes(decl) {
+                let lc_name = node_text(name_node, source).to_lowercase();
+                out.push(PVariableSymbol {
+                    name: lc_name,
+                    declared_type: declared_type.clone(),
+                    scope: "global".to_string(),
+                    is_parameter: false,
+                    parameter_index: None,
+                    initializer: None,
+                    source_anchor: anchor_from_decl(decl, source_unit_id),
+                });
+            }
         }
     }
     out
@@ -413,36 +426,33 @@ pub fn extract_variables(
     // 2. Locals.
     let body_node = find_code_block(routine_node);
     for decl in find_variable_declarations(routine_node) {
-        let name_node = decl
-            .child_by_field_name("name")
-            .or_else(|| decl.named_child(0));
-        let Some(name_node) = name_node else {
-            continue;
-        };
-        let lc_name = node_text(name_node, source).to_lowercase();
-        if out.iter().any(|v| v.is_parameter && v.name == lc_name) {
-            continue;
-        }
         let declared_type = normalize_declared_type(decl, source);
-        let initializer = body_node.and_then(|b| extract_initializer(b, &lc_name, source));
         let sp = decl.start_position();
         let ep = decl.end_position();
-        out.push(PVariableSymbol {
-            name: lc_name,
-            declared_type,
-            scope: "local".to_string(),
-            is_parameter: false,
-            parameter_index: None,
-            initializer,
-            source_anchor: super::features::PAnchor {
-                source_unit_id: source_unit_id.to_string(),
-                start_line: sp.row as u32,
-                start_column: cols.col(sp.row, sp.column),
-                end_line: ep.row as u32,
-                end_column: cols.col(ep.row, ep.column),
-                syntax_kind: "variable_declaration".to_string(),
-            },
-        });
+        // One local per declared name (grouped `A, B, C : Type;`).
+        for name_node in decl_name_nodes(decl) {
+            let lc_name = node_text(name_node, source).to_lowercase();
+            if out.iter().any(|v| v.is_parameter && v.name == lc_name) {
+                continue;
+            }
+            let initializer = body_node.and_then(|b| extract_initializer(b, &lc_name, source));
+            out.push(PVariableSymbol {
+                name: lc_name,
+                declared_type: declared_type.clone(),
+                scope: "local".to_string(),
+                is_parameter: false,
+                parameter_index: None,
+                initializer,
+                source_anchor: super::features::PAnchor {
+                    source_unit_id: source_unit_id.to_string(),
+                    start_line: sp.row as u32,
+                    start_column: cols.col(sp.row, sp.column),
+                    end_line: ep.row as u32,
+                    end_column: cols.col(ep.row, ep.column),
+                    syntax_kind: "variable_declaration".to_string(),
+                },
+            });
+        }
     }
 
     // 3. Object globals (first-match-wins shadowing). Convert their byte cols to UTF-16.

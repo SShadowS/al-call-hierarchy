@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Grouped multi-name variable declarations capture every name.** The AL grammar's
+  `variable_declaration` multi-name arm (`A, B, C : Type;`) emits one `name` field per
+  variable, but `scope.rs` read only `child_by_field_name("name")` (the FIRST), silently
+  dropping `B`/`C` across all four extraction sites (local vars, object globals, local record
+  vars, object-global record vars). Trailing names in a group were therefore untyped →
+  `Unknown{UntrackedReceiver}` on any member call (and invisible to L5 detectors). New
+  `decl_name_nodes` helper iterates `children_by_field_name("name", …)`; each declared name
+  becomes its own symbol. CDO deps-loaded: untracked-receiver 147→136, realUnknownRate
+  4.4941% → 4.4182%. No fixture uses grouped decls, so all goldens stay byte-stable.
 - **Dependency symbols: recurse `Namespaces[]`** — the single biggest cross-app resolution
   hole. `engine::deps::symbol_reference::parse_symbol_reference` read only TOP-LEVEL object
   arrays (`Pages`, `Codeunits`, `Tables`, …). BC 24+ apps (every modern Microsoft + ISV
