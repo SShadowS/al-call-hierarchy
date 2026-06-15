@@ -127,6 +127,8 @@ pub struct ProjectedObject {
     pub extends_target_name: Option<String>,
     pub implements_interfaces: Option<Vec<String>>,
     pub inherent_commit_behavior: Option<String>,
+    /// Page controls (name, kind-string, target) forwarded from the ABI — see AbiObject.
+    pub page_controls: Vec<(String, String, String)>,
 }
 
 /// The projection result — dependency model entities.
@@ -345,6 +347,7 @@ pub fn project_abi_to_index(
             extends_target_name: o.extends_target_name.clone(),
             implements_interfaces: o.implemented_interfaces.clone(),
             inherent_commit_behavior: o.inherent_commit_behavior.clone(),
+            page_controls: o.page_controls.clone(),
         });
         for r in &o.routines {
             routines.push(abi_routine_to_routine(

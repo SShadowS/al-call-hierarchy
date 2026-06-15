@@ -54,8 +54,8 @@ use crate::engine::deps::projection::{ProjectedObject, ProjectedRoutine, Project
 // compiler-enforced on any future `PTempState` shape change). Task 6 (G7, RV-4).
 use crate::engine::l2::scope::{ts_known, ts_param_dependent};
 use crate::engine::l3::l3_workspace::{
-    assemble_l3_workspace_from_disk, resolve, L3Field, L3Object, L3Parameter, L3Resolved,
-    L3Routine, L3Table, L3Workspace,
+    assemble_l3_workspace_from_disk, resolve, L3Field, L3Object, L3PageControl, L3Parameter,
+    L3Resolved, L3Routine, L3Table, L3Workspace, PageControlKind,
 };
 
 /// The merged-input context: the assembled+resolved cross-app workspace plus the
@@ -104,7 +104,19 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
         // object-level commit behavior into each dep routine's commitBehavior.
         inherent_commit_behavior: o.inherent_commit_behavior.clone(),
         source_table_temporary: None,
-        page_controls: Vec::new(),
+        page_controls: o
+            .page_controls
+            .iter()
+            .map(|(n, k, t)| L3PageControl {
+                name: n.clone(),
+                kind: match k.as_str() {
+                    "systempart" => PageControlKind::SystemPart,
+                    "usercontrol" => PageControlKind::UserControl,
+                    _ => PageControlKind::Part,
+                },
+                target: t.clone(),
+            })
+            .collect(),
     }
 }
 
