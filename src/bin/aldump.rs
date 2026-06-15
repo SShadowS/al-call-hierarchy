@@ -46,7 +46,7 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-call-graph-stats | \
-         --l3-call-graph-stats-cross-app | --l3-unknown-breakdown | \
+         --l3-call-graph-stats-cross-app | --l3-unknown-breakdown | --l3-unknown-breakdown-cross-app | \
          --l3-event-graph | --l3-coverage | --r2.5a-merged-index | --l3-cross-app | \
          --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
@@ -64,6 +64,7 @@ fn main() -> ExitCode {
     let mut l3_call_graph_stats = false;
     let mut l3_call_graph_stats_cross_app = false;
     let mut l3_unknown_breakdown = false;
+    let mut l3_unknown_breakdown_cross_app = false;
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
     let mut r2_5a_merged_index = false;
@@ -109,6 +110,10 @@ fn main() -> ExitCode {
         }
         if arg == "--l3-unknown-breakdown" {
             l3_unknown_breakdown = true;
+            continue;
+        }
+        if arg == "--l3-unknown-breakdown-cross-app" {
+            l3_unknown_breakdown_cross_app = true;
             continue;
         }
         if arg == "--l3-event-graph" {
@@ -193,6 +198,7 @@ fn main() -> ExitCode {
         l3_call_graph_stats,
         l3_call_graph_stats_cross_app,
         l3_unknown_breakdown,
+        l3_unknown_breakdown_cross_app,
         l3_event_graph,
         l3_coverage,
         r2_5a_merged_index,
@@ -1018,6 +1024,100 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if l3_unknown_breakdown_cross_app {
+        // DEPS-LOADED, PRIMARY-SCOPED unknown breakdown — the north-star work-list.
+        // Same merged-model + primary-edge scoping as `--l3-call-graph-stats-cross-app`
+        // (deps present for resolution; metric measured over WORKSPACE call sites
+        // only), but attributes every residual TRUE-`unknown` edge to its
+        // `UnknownReason` so the real (whole-program) holes can be targeted directly
+        // rather than inferred from the source-only breakdown. Fail-closed → message
+        // + empty breakdown JSON; never throws.
+        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use std::collections::HashSet;
+
+        match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty cross-app layout at {} — \
+                     no deps loaded or workspace not buildable",
+                    workspace.display()
+                );
+                let value = serde_json::json!({
+                    "error": "no deps loaded or workspace not buildable",
+                    "depAppsLoaded": 0,
+                });
+                return match serde_json::to_string_pretty(&value) {
+                    Ok(json) => {
+                        println!("{json}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("aldump: error: failed to serialize cross-app breakdown: {e}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            Some(cross) => {
+                let ws = &cross.resolved.workspace;
+                let fetched_lc: HashSet<String> = cross
+                    .fetched_app_guids
+                    .iter()
+                    .map(|g| g.to_lowercase())
+                    .collect();
+                let dep_routine_ids: HashSet<String> = ws
+                    .routines
+                    .iter()
+                    .filter(|r| fetched_lc.contains(&r.app_guid.to_lowercase()))
+                    .map(|r| r.id.clone())
+                    .collect();
+
+                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                let declared: Vec<DeclaredDependency> = cross
+                    .declared_dep_app_guids
+                    .iter()
+                    .map(|g| DeclaredDependency {
+                        app_guid: g.clone(),
+                    })
+                    .collect();
+                let resolved = resolve_calls(ws, &symbols, &declared, &cross.fetched_app_guids);
+
+                let primary_edges: Vec<_> = resolved
+                    .edges
+                    .iter()
+                    .filter(|e| !dep_routine_ids.contains(&e.from))
+                    .cloned()
+                    .collect();
+
+                let histogram = Histogram::of_edges(&primary_edges);
+                let (breakdown, framework_detail, shape_detail, bare_detail) =
+                    unknown_breakdown(&primary_edges);
+
+                let value = serde_json::json!({
+                    "totalEdges": histogram.total,
+                    "unknownTotal": histogram.unknown,
+                    "realUnknownRate": histogram.real_unknown_rate(),
+                    "depAppsLoaded": cross.fetched_app_guids.len(),
+                    "byReason": breakdown,
+                    "bareCallDetail": bare_detail,
+                    "frameworkMethodDetail": framework_detail,
+                    "receiverShapeDetail": shape_detail,
+                });
+                return match serde_json::to_string_pretty(&value) {
+                    Ok(json) => {
+                        println!("{json}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("aldump: error: failed to serialize cross-app breakdown: {e}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+        }
     }
 
     if l3_call_graph {

@@ -171,37 +171,36 @@ pub fn infer_receiver_type(
 
     // Step 2 — find the receiver variable (params → locals → globals).
     let Some(recv_var) = routine.variables.iter().find(|v| v.name == receiver_name) else {
-        // Step 2b — check record_variables for an implicit Rec/xRec entry that has
-        // its table_id resolved (set by record_types pass 3 for Table/Page/
-        // TableExtension/PageExtension). Only produce `Record` when table_id is
-        // Some AND the symbol table can walk it to a Table object id.
+        // Step 2b — a `record_variables`-backed receiver with no declared local/
+        // param. The implicit `Rec`/`xRec` (and any object-global record var) is
+        // seeded here by L2/record_types; its mere PRESENCE proves the receiver IS
+        // a Record. It is a Record REGARDLESS of whether its table object id
+        // resolves: a cross-app / dependency SourceTable (common in extension apps
+        // like CDO) leaves `table_id` None, but Record intrinsics
+        // (Insert/Modify/SetRange/…) still classify as `builtin` in Phase B, and a
+        // genuine table procedure on an unresolved table becomes the honest
+        // `RecordTableProcedure`. Neither is an `UntrackedReceiver` inference
+        // failure — mirroring Step 4's table-id-independent decision for DECLARED
+        // record vars. Gate on entry existence, pass best-effort `table_object_id`.
         let receiver_name_lc = receiver_name.to_lowercase();
-        if let Some(table_object_id) = routine
+        if let Some(rv) = routine
             .record_variables
             .iter()
-            .find(|rv| rv.name.to_lowercase() == receiver_name_lc && rv.table_id.is_some())
-            .and_then(|rv| rv.table_id.as_deref())
-            .and_then(|tid| symbols.table_by_id(tid))
-            .map(|t| t.name.clone())
-            .and_then(|tname| symbols.object_by_type_name("Table", &tname))
-            .map(|obj| obj.id.clone())
+            .find(|rv| rv.name.to_lowercase() == receiver_name_lc)
         {
-            let declared_type = format!("Record {}", {
-                // Reconstruct a human-readable declared_type from the table name
-                // resolved above; route back through the table object to get the name.
-                // We already have the object id; we can derive the name from the
-                // record_variable's table_name field (already unquoted).
-                routine
-                    .record_variables
-                    .iter()
-                    .find(|rv| rv.name.to_lowercase() == receiver_name_lc)
-                    .and_then(|rv| rv.table_name.as_deref())
-                    .unwrap_or(&receiver_name)
-            });
+            let table_object_id = rv
+                .table_id
+                .as_deref()
+                .and_then(|tid| symbols.table_by_id(tid))
+                .map(|t| t.name.clone())
+                .and_then(|tname| symbols.object_by_type_name("Table", &tname))
+                .map(|obj| obj.id.clone());
+            let declared_type = format!(
+                "Record {}",
+                rv.table_name.as_deref().unwrap_or(&receiver_name)
+            );
             return InferredReceiver {
-                ty: ReceiverType::Record {
-                    table_object_id: Some(table_object_id),
-                },
+                ty: ReceiverType::Record { table_object_id },
                 declared_type,
                 receiver_shape: None,
             };

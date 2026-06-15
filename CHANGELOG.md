@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `extends_base_object` helper in `call_resolver.rs`. CDO cross-app (deps-loaded): unknown
   943 → 933 (−10 bare-unresolved edges now resolved); source-only: unchanged (CDO base
   pages are dep objects, only visible when `.alpackages` are loaded).
+- `aldump --l3-unknown-breakdown-cross-app <workspace>`: the DEPS-LOADED, PRIMARY-scoped
+  unknown breakdown — the north-star work-list. Same merged-model + primary-edge scoping as
+  `--l3-call-graph-stats-cross-app`, but attributes every residual TRUE-`unknown` edge to its
+  `UnknownReason` (`byReason` / `receiverShapeDetail` / `bareCallDetail` /
+  `frameworkMethodDetail`) so the real whole-program holes can be targeted directly rather
+  than inferred from the source-only breakdown. Fail-closed → message + empty breakdown.
 - `aldump --l3-call-graph-stats-cross-app <workspace>`: deps-loaded, PRIMARY-scoped
   honest-taxonomy histogram. Builds the cross-app merged model (workspace `.al` source +
   dep `.app`s under `.alpackages`), runs call resolution with the real declared/fetched dep
@@ -28,6 +34,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -18; external reclassified from unknown 558→304 with cross-app resolution active).
 
 ### Changed
+- L3 implicit-`Rec`/`xRec` receiver typing: a member call on the implicit record
+  (`Rec.X()` / `xRec.X()`) now types as `ReceiverType::Record` whenever a `record_variables`
+  entry exists for it — its mere PRESENCE proves the receiver is a Record (L2/record_types
+  seed it for the object's source record) — REGARDLESS of whether the SourceTable's object id
+  resolves. Previously Step 2b required `table_id.is_some()` AND a resolvable *source* Table
+  object, so an implicit Rec on a CROSS-APP base table (the common case in extension apps like
+  CDO: `PageExtension`/`TableExtension` over base-BC tables not present in source-only mode)
+  fell through to `Unknown{UntrackedReceiver}` — even for Record intrinsics. Now Phase B
+  decides honestly: Record builtins → `builtin`; a genuine table procedure on an unresolved
+  table → `Unknown{RecordTableProcedure}`. This mirrors Step 4's already-documented
+  table-id-independent decision for DECLARED record vars. CDO source-only: untracked-receiver
+  393→147 (−246 reclassified to the honest record-table-procedure bucket; these resolve to
+  `resolved` once `.alpackages` deps are loaded). realUnknownRate unchanged (no Rec builtins
+  among them) — a taxonomy-accuracy fix, not a rate change.
 - L3 member dispatch: a `Variant`-typed receiver now classifies `dynamic` (spec §6
   honest taxonomy — the held type is runtime-determined) instead of real-`unknown`.
   `ReceiverType::Dynamic` + `dynamic_method` emit a `dispatch_kind = Dynamic` edge. CDO:
