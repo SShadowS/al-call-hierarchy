@@ -17,6 +17,20 @@ page 50101 "My Card" {
 "#
 }
 
+// Same fixture but the member call uses NON-canonical casing
+// (`CURRPAGE.Lines.PAGE.Bar()`). AL is case-insensitive, so this must resolve
+// identically — guards the case-insensitive prefix/suffix matching in
+// `currpage_control_receiver`.
+fn page_with_part_mixed_case() -> &'static str {
+    r#"page 50100 "My List Part" { SourceTable = "Item"; layout { area(Content) { } } procedure Bar() begin end; }
+page 50101 "My Card" {
+    SourceTable = "Item";
+    layout { area(Content) { part(Lines; "My List Part") { } } }
+    procedure Foo() begin CURRPAGE.Lines.PAGE.Bar(); end;
+}
+"#
+}
+
 /// Hand-written SymbolReference.json with one Page containing a Kind-6 (Part) control
 /// and a Kind-10 (UserControl) control. Verifies that `parse_symbol_reference` populates
 /// `AbiObject.page_controls` from dep `.app` symbol data.
@@ -209,6 +223,34 @@ fn currpage_part_page_member_resolves_to_subpage_procedure() {
         "CurrPage.Lines.Page.Bar() must resolve to Bar (stable id {}); all edges: {:#?}",
         bar_stable,
         edges
+    );
+}
+
+#[test]
+fn currpage_part_resolution_is_case_insensitive() {
+    const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
+    let owned = vec![("u.al".to_string(), page_with_part_mixed_case().to_string())];
+    let resolved = assemble_and_resolve_default(&owned, APP_GUID);
+
+    let bar_stable = resolved
+        .workspace
+        .routines
+        .iter()
+        .find(|r| r.name == "Bar")
+        .expect("Bar procedure not found")
+        .stable_routine_id
+        .clone();
+
+    let proj = resolved.project_call_graph();
+    let resolved_to_bar = proj
+        .groups
+        .iter()
+        .flat_map(|g| g.edges.iter())
+        .any(|e| e.resolution == "resolved" && e.to.as_deref() == Some(bar_stable.as_str()));
+
+    assert!(
+        resolved_to_bar,
+        "CURRPAGE.Lines.PAGE.Bar() (non-canonical casing) must resolve to Bar — AL is case-insensitive"
     );
 }
 

@@ -426,16 +426,21 @@ fn currpage_control_receiver(
     routine: &L3Routine,
     symbols: &SymbolTable,
 ) -> Option<InferredReceiver> {
-    // Strip the leading `CurrPage.` / `currpage.` prefix.
-    let rest = receiver_expr
-        .strip_prefix("CurrPage.")
-        .or_else(|| receiver_expr.strip_prefix("currpage."))?;
+    // Strip the leading `CurrPage.` prefix — case-INSENSITIVELY (AL identifiers are
+    // case-insensitive, so `CURRPAGE.` / `currPage.` are equally valid, matching the
+    // `CurrReport` precedent in body_walk). `.get(..9)` is char-boundary-safe; the
+    // literal is ASCII so a match means the 9-byte window is ASCII and `[9..]` is a
+    // valid boundary.
+    let rest = match receiver_expr.get(..9) {
+        Some(p) if p.eq_ignore_ascii_case("CurrPage.") => &receiver_expr[9..],
+        _ => return None,
+    };
 
-    // Strip an OPTIONAL trailing `.Page` / `.page` (the part-instance accessor).
-    let control_segment = rest
-        .strip_suffix(".Page")
-        .or_else(|| rest.strip_suffix(".page"))
-        .unwrap_or(rest);
+    // Strip an OPTIONAL trailing `.Page` accessor — also case-insensitive.
+    let control_segment = match rest.len().checked_sub(5).and_then(|i| rest.get(i..)) {
+        Some(s) if s.eq_ignore_ascii_case(".Page") => &rest[..rest.len() - 5],
+        _ => rest,
+    };
 
     // The remaining segment must be a single (possibly quoted) control name; a
     // deeper chain (still containing `.`) is not handled here.
