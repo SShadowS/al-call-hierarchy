@@ -47,9 +47,10 @@ use super::type_ref::{parse_object_type_ref, ObjectKind};
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
-    dynamic_method, mark_bindings_ambiguous, resolve_by_name_and_arity, resolve_interface_dispatch,
-    sorted_ids, unknown_method, upgrade_bindings, ArityResolution, BindingState, CallEdge,
-    Diagnostic, ExternalTypeRef, UnknownReason,
+    dynamic_method, mark_bindings_ambiguous, resolve_by_name_and_arity,
+    resolve_by_name_and_arity_multi, resolve_interface_dispatch, sorted_ids, unknown_method,
+    upgrade_bindings, ArityResolution, BindingState, CallEdge, Diagnostic, ExternalTypeRef,
+    UnknownReason,
 };
 use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 
@@ -568,17 +569,36 @@ fn dispatch_record(
 
     // Non-builtin method: only dispatchable when the table object id resolved.
     let Some(table_object_id) = table_object_id else {
-        return unknown_method(
+        // Sub-cause TABLE-UNRESOLVED: the receiver's table object id never resolved
+        // (the table is absent from the symbol set even with deps loaded). Tag the
+        // diagnostic so `--l3-unknown-breakdown[-cross-app]` can split this from the
+        // PROC-NOT-FOUND sub-cause below — they need different fixes.
+        let mut edges = unknown_method(
             ctx.from,
             ctx.callsite_id,
             ctx.operation_id,
             UnknownReason::RecordTableProcedure,
         );
+        if let Some(e) = edges.first_mut() {
+            e.receiver_shape = Some(format!("table-unresolved::{declared_type}::{method_lc}"));
+        }
+        return edges;
     };
 
-    match resolve_by_name_and_arity(
+    // Search the base table UNION every TableExtension extending it — a
+    // TableExtension procedure (CDO's `CDOOpenEmail`, etc.) is globally callable on
+    // the base record in AL but lives under the extension's own object id, so the
+    // base table's routine set alone would miss it (NotFound → false unknown).
+    let mut search_ids: Vec<&str> = vec![table_object_id];
+    if let Some(base_obj) = ctx.symbols.object_by_id(table_object_id) {
+        search_ids.extend(
+            ctx.symbols
+                .table_extension_object_ids(&base_obj.name, base_obj.object_number),
+        );
+    }
+    match resolve_by_name_and_arity_multi(
         ctx.symbols,
-        table_object_id,
+        &search_ids,
         method,
         ctx.routine,
         ctx.call_site,
@@ -614,13 +634,20 @@ fn dispatch_record(
         }
         ArityResolution::NotFound => {
             // Genuinely not a table procedure — a builtin we lack in the catalog or
-            // a real hole. Keep the honest unknown signal.
-            unknown_method(
+            // a real hole. Keep the honest unknown signal. Sub-cause PROC-NOT-FOUND:
+            // the table object resolved but no routine of this name/arity exists on
+            // it (a missing TableExtension proc, an uncataloged builtin, or a true
+            // hole). Tagged distinctly from TABLE-UNRESOLVED above.
+            let mut edges = unknown_method(
                 ctx.from,
                 ctx.callsite_id,
                 ctx.operation_id,
                 UnknownReason::RecordTableProcedure,
-            )
+            );
+            if let Some(e) = edges.first_mut() {
+                e.receiver_shape = Some(format!("proc-not-found::{declared_type}::{method_lc}"));
+            }
+            edges
         }
     }
 }

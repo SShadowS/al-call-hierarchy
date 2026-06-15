@@ -54,6 +54,14 @@ pub struct SymbolTable {
     routines_by_object: HashMap<String, Vec<usize>>,
     routines: Vec<L3Routine>,
 
+    /// `${extends_target_lc}` → object ids of every `TableExtension` extending that
+    /// base table. The key is the raw `extends` target lowercased — a NAME (native
+    /// source) or a NUMBER string (dep symbols) — so a base table is looked up by
+    /// BOTH its name and its number. Used so a non-builtin method on a Record
+    /// resolves against procedures added by ALL extensions of its table (AL makes a
+    /// `TableExtension` procedure globally callable on the base record).
+    table_extensions_by_base: HashMap<String, Vec<String>>,
+
     /// Interface name (normalized) → codeunit implementer indices, sorted by id.
     codeunit_implementers: HashMap<String, Vec<usize>>,
     /// Interface name (normalized) → enum implementer indices, sorted by id.
@@ -133,6 +141,26 @@ impl SymbolTable {
             list.sort_by(|&a, &b| routines[a].id.cmp(&routines[b].id));
         }
 
+        // --- table-extension-by-base index ----------------------------------
+        // Every TableExtension keyed by its (lowercased) extends target — a NAME
+        // (native source) or a NUMBER string (dep symbols). A base table is queried
+        // by BOTH its name and its number, so either encoding resolves.
+        let mut table_extensions_by_base: HashMap<String, Vec<String>> = HashMap::new();
+        for o in &objects {
+            if o.object_type.eq_ignore_ascii_case("tableextension") {
+                if let Some(et) = &o.extends_target_name {
+                    table_extensions_by_base
+                        .entry(et.to_lowercase())
+                        .or_default()
+                        .push(o.id.clone());
+                }
+            }
+        }
+        for list in table_extensions_by_base.values_mut() {
+            list.sort();
+            list.dedup();
+        }
+
         // --- interface implementer indexes ----------------------------------
         let mut codeunit_implementers: HashMap<String, Vec<usize>> = HashMap::new();
         let mut enum_implementers: HashMap<String, Vec<usize>> = HashMap::new();
@@ -184,6 +212,7 @@ impl SymbolTable {
             routines_by_object_and_name,
             routines_by_object,
             routines,
+            table_extensions_by_base,
             codeunit_implementers,
             enum_implementers,
             impls_knowledge,
@@ -242,6 +271,25 @@ impl SymbolTable {
             .get(&key)
             .map(|v| v.iter().map(|&i| &self.routines[i]).collect())
             .unwrap_or_default()
+    }
+
+    /// Object ids of every `TableExtension` extending the given base table, looked
+    /// up by BOTH the table's name and its number (dep symbols encode extends
+    /// targets as numbers, native source as names). Used to union a base table's
+    /// own procedures with those added by its extensions when resolving a Record
+    /// member call — a `TableExtension` procedure is globally callable on the base
+    /// record in AL. Returns `[]` when the table has no extensions.
+    pub fn table_extension_object_ids(&self, base_name: &str, base_number: i64) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        if let Some(v) = self.table_extensions_by_base.get(&base_name.to_lowercase()) {
+            out.extend(v.iter().map(String::as_str));
+        }
+        if let Some(v) = self.table_extensions_by_base.get(&base_number.to_string()) {
+            out.extend(v.iter().map(String::as_str));
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     pub fn objects_implementing(&self, interface_name: &str) -> Vec<&L3Object> {

@@ -610,10 +610,31 @@ fn parse_key(k: &RawKey) -> AbiKey {
 
 /// Extract a typed array of `RawObject` from the top-level JSON map at `key`.
 /// Missing / wrong-typed → empty (mirrors `(raw[key] as RawObject[]) ?? []`).
+/// Collect every object array under `key` — at the top level AND recursively inside
+/// every `Namespaces[]` node. BC 24+ symbol files nest objects under namespace nodes
+/// (e.g. `Namespaces[].Microsoft.Sales.Document.Pages`); older files keep them flat
+/// at the root. Both are gathered so a modern dependency `.app` projects its FULL
+/// object set — without namespace recursion ~99% of a modern Base Application's
+/// objects (and every routine/table they carry) are silently dropped, which is the
+/// dominant cross-app resolution hole.
 fn raw_objects(map: &serde_json::Map<String, Value>, key: &str) -> Vec<RawObject> {
-    match map.get(key) {
-        Some(v) => serde_json::from_value::<Vec<RawObject>>(v.clone()).unwrap_or_default(),
-        None => Vec::new(),
+    let mut out = Vec::new();
+    collect_raw_objects(map, key, &mut out);
+    out
+}
+
+fn collect_raw_objects(map: &serde_json::Map<String, Value>, key: &str, out: &mut Vec<RawObject>) {
+    if let Some(v) = map.get(key) {
+        if let Ok(objs) = serde_json::from_value::<Vec<RawObject>>(v.clone()) {
+            out.extend(objs);
+        }
+    }
+    if let Some(Value::Array(namespaces)) = map.get("Namespaces") {
+        for ns in namespaces {
+            if let Value::Object(ns_map) = ns {
+                collect_raw_objects(ns_map, key, out);
+            }
+        }
     }
 }
 

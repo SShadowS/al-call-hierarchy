@@ -123,10 +123,11 @@ pub struct CallEdge {
     /// detail string that identifies the catalog gap. `None` on all other edges.
     pub unknown_method_name: Option<String>,
     /// DIAGNOSTIC-only receiver shape tag for `UntrackedReceiver` /
-    /// `CompoundReceiver` edges — sub-characterizes the bucket so
-    /// `--l3-unknown-breakdown` can attribute `implicit-rec`, `currpage`,
-    /// `currreport`, `member-of-member`, `call-result`, `indexed`, etc. `None` on
-    /// all other edges.
+    /// `CompoundReceiver` / `RecordTableProcedure` edges — sub-characterizes the
+    /// bucket so `--l3-unknown-breakdown` can attribute `implicit-rec`, `currpage`,
+    /// `currreport`, `member-of-member`, `call-result`, `indexed`, and (for record
+    /// table procedures) `table-unresolved::<declType>::<method>` vs
+    /// `proc-not-found::<declType>::<method>`. `None` on all other edges.
     pub receiver_shape: Option<String>,
 }
 
@@ -304,8 +305,28 @@ pub(crate) fn resolve_by_name_and_arity<'a>(
     caller: &L3Routine,
     call_site: &PCallSite,
 ) -> ArityResolution<'a> {
+    resolve_by_name_and_arity_multi(symbols, &[object_id], method_name, caller, call_site)
+}
+
+/// Like [`resolve_by_name_and_arity`] but searches a SET of object ids as one
+/// candidate pool — used for Record dispatch over a base table UNION its
+/// `TableExtension`s (a `TableExtension` procedure is globally callable on the base
+/// record). Name+arity matching, arg-type disambiguation, and the
+/// Resolved/NoArityMatch/Ambiguous/NotFound contract are identical to the
+/// single-object case; candidate lists are sorted by id downstream (`sorted_ids`),
+/// so the cross-object union order does not affect determinism.
+pub(crate) fn resolve_by_name_and_arity_multi<'a>(
+    symbols: &'a SymbolTable,
+    object_ids: &[&str],
+    method_name: &str,
+    caller: &L3Routine,
+    call_site: &PCallSite,
+) -> ArityResolution<'a> {
     let arg_count = call_site.argument_bindings.len();
-    let matches = symbols.routines_in_object_by_name(object_id, method_name);
+    let mut matches: Vec<&L3Routine> = Vec::new();
+    for oid in object_ids {
+        matches.extend(symbols.routines_in_object_by_name(oid, method_name));
+    }
     if matches.is_empty() {
         return ArityResolution::NotFound;
     }

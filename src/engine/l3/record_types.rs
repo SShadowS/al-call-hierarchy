@@ -74,6 +74,21 @@ fn strip_trailing_temporary(s: &str) -> String {
     trimmed_end.to_string()
 }
 
+/// Resolve a source-table / extends-target reference — which may be a table NAME
+/// (native AL source: `SourceTable = "Service Invoice Header"`) OR a table NUMBER
+/// (dependency `.app` symbols emit `SourceTable` / extends targets as the table's
+/// object number, e.g. `"5992"`) — to its internal `L3Table.id`. A numeric ref is
+/// routed through the `Table` object-number index to recover the table name, then
+/// to the `L3Table`. Returns `None` when nothing resolves (out-of-source table).
+fn resolve_table_ref_to_id(symbols: &SymbolTable, table_ref: &str) -> Option<String> {
+    if let Ok(number) = table_ref.trim().parse::<i64>() {
+        // Numeric (dep-symbol) form: object-number → table object → name → L3Table.
+        let obj = symbols.object_by_type_number("Table", number)?;
+        return symbols.table_by_name(&obj.name).map(|t| t.id.clone());
+    }
+    symbols.table_by_name(table_ref).map(|t| t.id.clone())
+}
+
 /// Run the 3-pass record-type resolution over one routine, mutating each record
 /// var / op's resolved `table_id` (internal TableId; the L3 dump projects it as a
 /// StableTableId). Mirrors `resolveRecordTypes`'s per-routine body EXACTLY.
@@ -158,21 +173,19 @@ pub fn resolve_routine_record_types(
     //                    extends target, then read ITS source_table_name).
     let own_table_id: Option<String> = match object {
         Some(obj) => match obj.object_type.as_str() {
-            "Table" => symbols.table_by_name(&obj.name).map(|t| t.id.clone()),
+            "Table" => resolve_table_ref_to_id(symbols, &obj.name),
             "Page" => obj
                 .source_table_name
-                .as_ref()
-                .and_then(|st| symbols.table_by_name(st))
-                .map(|t| t.id.clone()),
+                .as_deref()
+                .and_then(|st| resolve_table_ref_to_id(symbols, st)),
             "TableExtension" => obj
                 .extends_target_name
-                .as_ref()
-                .and_then(|et| symbols.table_by_name(et))
-                .map(|t| t.id.clone()),
+                .as_deref()
+                .and_then(|et| resolve_table_ref_to_id(symbols, et)),
             "PageExtension" => obj.extends_target_name.as_ref().and_then(|et| {
                 let base_page = symbols.object_by_type_name("Page", et)?;
-                let st = base_page.source_table_name.as_ref()?;
-                symbols.table_by_name(st).map(|t| t.id.clone())
+                let st = base_page.source_table_name.as_deref()?;
+                resolve_table_ref_to_id(symbols, st)
             }),
             _ => None,
         },

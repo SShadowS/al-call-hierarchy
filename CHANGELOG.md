@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Dependency symbols: recurse `Namespaces[]`** — the single biggest cross-app resolution
+  hole. `engine::deps::symbol_reference::parse_symbol_reference` read only TOP-LEVEL object
+  arrays (`Pages`, `Codeunits`, `Tables`, …). BC 24+ apps (every modern Microsoft + ISV
+  `.app`) nest objects under `Namespaces[]` nodes, so the parser dropped almost the entire
+  dependency object/routine/table set (Microsoft Base Application 28.0: top-level Pages = 10,
+  recursive = 2609 — ~99% lost). `raw_objects` now recurses every `Namespaces[]` level via
+  `collect_raw_objects`. Combined with the three resolution fixes below, drove CDO
+  deps-loaded realUnknownRate **6.6767% → 4.4941%** (unknown 933→628, resolved 7390→7952,
+  external 304→15, record-table-procedure 296→0). Flat (pre-BC24) `.app`s are unaffected
+  (no `Namespaces` node → no recursion), so all existing goldens stay byte-stable.
+
+### Changed
+- **Record member dispatch searches base table ∪ its TableExtensions.** A `TableExtension`
+  procedure is globally callable on the base record in AL but lives under the extension's own
+  object id, so `routines_in_object(base_table)` missed it (false `Unknown{RecordTableProcedure}`).
+  Added `SymbolTable::table_extension_object_ids` (TableExtensions indexed by extends-target
+  name AND number) + `resolve_by_name_and_arity_multi` (one candidate pool over a set of
+  object ids); `dispatch_record` now unions the base table with every TableExtension extending
+  it. Resolves e.g. CDO's `Rec.CDOOpenEmail()` (defined in a CDO `TableExtension` on a base
+  BC table).
+- **Numeric `SourceTable` / extends-target resolution.** Dependency `.app` symbols encode a
+  page's `SourceTable` and an extension's extends target as the table's object NUMBER (e.g.
+  `"5992"`); native AL source uses the table NAME. `record_types::resolve_table_ref_to_id`
+  resolves both forms — a numeric ref routes through `object_by_type_number("Table", n)`
+  (type-qualified) → name → `L3Table.id`. Lets a PageExtension's implicit `Rec` bind to its
+  base page's SourceTable when that base page is a dependency object.
+- L3 implicit-`Rec`/`xRec` receiver typing: a member call on the implicit record now types as
+  `ReceiverType::Record` whenever a `record_variables` entry exists for it, REGARDLESS of
+  whether its table object id resolves (a cross-app SourceTable leaves `table_id` None). Phase
+  B then decides honestly (builtin → `builtin`; table procedure on an unresolved table →
+  `RecordTableProcedure`). Mirrors the existing table-id-independent decision for declared
+  record vars. Diagnostic: `RecordTableProcedure` edges now carry a `receiver_shape` sub-cause
+  tag (`table-unresolved::…` vs `proc-not-found::…`) for `--l3-unknown-breakdown[-cross-app]`.
+
 ### Added
 - **Extension bare-call resolver**: when a bare call in a `PageExtension` /
   `TableExtension` / `ReportExtension` / `EnumExtension` is not found in the caller's own
@@ -34,20 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -18; external reclassified from unknown 558→304 with cross-app resolution active).
 
 ### Changed
-- L3 implicit-`Rec`/`xRec` receiver typing: a member call on the implicit record
-  (`Rec.X()` / `xRec.X()`) now types as `ReceiverType::Record` whenever a `record_variables`
-  entry exists for it — its mere PRESENCE proves the receiver is a Record (L2/record_types
-  seed it for the object's source record) — REGARDLESS of whether the SourceTable's object id
-  resolves. Previously Step 2b required `table_id.is_some()` AND a resolvable *source* Table
-  object, so an implicit Rec on a CROSS-APP base table (the common case in extension apps like
-  CDO: `PageExtension`/`TableExtension` over base-BC tables not present in source-only mode)
-  fell through to `Unknown{UntrackedReceiver}` — even for Record intrinsics. Now Phase B
-  decides honestly: Record builtins → `builtin`; a genuine table procedure on an unresolved
-  table → `Unknown{RecordTableProcedure}`. This mirrors Step 4's already-documented
-  table-id-independent decision for DECLARED record vars. CDO source-only: untracked-receiver
-  393→147 (−246 reclassified to the honest record-table-procedure bucket; these resolve to
-  `resolved` once `.alpackages` deps are loaded). realUnknownRate unchanged (no Rec builtins
-  among them) — a taxonomy-accuracy fix, not a rate change.
 - L3 member dispatch: a `Variant`-typed receiver now classifies `dynamic` (spec §6
   honest taxonomy — the held type is runtime-determined) instead of real-`unknown`.
   `ReceiverType::Dynamic` + `dynamic_method` emit a `dispatch_kind = Dynamic` edge. CDO:
