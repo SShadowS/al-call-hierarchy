@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Extension bare-call resolver**: when a bare call in a `PageExtension` /
+  `TableExtension` / `ReportExtension` / `EnumExtension` is not found in the caller's own
+  object, the resolver now falls back to the EXTENDS-TARGET base object's procedures before
+  emitting `Unknown{BareUnresolved}`. Order: own-object → extends-target base → global
+  builtin → `BareUnresolved`. Adds `SymbolTable::object_by_id` (exact-id index) and
+  `extends_base_object` helper in `call_resolver.rs`. CDO cross-app (deps-loaded): unknown
+  943 → 933 (−10 bare-unresolved edges now resolved); source-only: unchanged (CDO base
+  pages are dep objects, only visible when `.alpackages` are loaded).
 - `aldump --l3-call-graph-stats-cross-app <workspace>`: deps-loaded, PRIMARY-scoped
   honest-taxonomy histogram. Builds the cross-app merged model (workspace `.al` source +
   dep `.app`s under `.alpackages`), runs call resolution with the real declared/fetched dep

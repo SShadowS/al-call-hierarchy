@@ -468,6 +468,50 @@ fn resolve_call_site(
                     vec![e]
                 }
                 ArityResolution::NotFound => {
+                    // Fallback 1: if the caller is in an extension object, try the
+                    // EXTENDS-TARGET base object's procedures (e.g. a PageExtension
+                    // bare-calling a procedure defined on its base Page).
+                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id) {
+                        if let Some(base_obj) = extends_base_object(caller_obj, symbols) {
+                            match resolve_by_name_and_arity(
+                                symbols,
+                                &base_obj.id,
+                                name,
+                                routine,
+                                call_site,
+                            ) {
+                                ArityResolution::Resolved(r) => {
+                                    if let Some(d) = upgrade_bindings(state, r, callsite_id) {
+                                        diagnostics.push(d);
+                                    }
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.to = Some(r.id.clone());
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::Resolved;
+                                    return vec![e];
+                                }
+                                ArityResolution::NoArityMatch(candidates) => {
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::MemberNotFound;
+                                    e.candidates = Some(sorted_ids(&candidates));
+                                    return vec![e];
+                                }
+                                ArityResolution::Ambiguous(candidates) => {
+                                    mark_bindings_ambiguous(state);
+                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                    e.dispatch_kind = DispatchKind::Direct;
+                                    e.resolution = Resolution::Ambiguous;
+                                    e.candidates = Some(sorted_ids(&candidates));
+                                    return vec![e];
+                                }
+                                ArityResolution::NotFound => {
+                                    // Fall through to global-builtin / BareUnresolved below.
+                                }
+                            }
+                        }
+                    }
+                    // Fallback 2: global builtins, then BareUnresolved.
                     let mut e = CallEdge::base(from, callsite_id, operation_id);
                     if global_builtin_disposition(name).is_some() {
                         e.dispatch_kind = DispatchKind::Builtin;
@@ -601,6 +645,30 @@ pub(crate) fn dynamic_method(from: &str, callsite_id: &str, operation_id: &str) 
     e.dispatch_kind = DispatchKind::Dynamic;
     e.resolution = Resolution::Unknown(UnknownReason::DynamicReceiver);
     vec![e]
+}
+
+/// Map an extension object type to its corresponding base object type.
+/// Returns `None` for non-extension types.
+fn extension_base_type(object_type: &str) -> Option<&'static str> {
+    match object_type {
+        "PageExtension" => Some("Page"),
+        "TableExtension" => Some("Table"),
+        "ReportExtension" => Some("Report"),
+        "EnumExtension" => Some("Enum"),
+        _ => None,
+    }
+}
+
+/// Given an extension object, find the base object it extends in the symbol table.
+/// Returns `None` if the object is not an extension, has no extends target, or the
+/// target cannot be found in the symbol table.
+fn extends_base_object<'a>(
+    obj: &super::l3_workspace::L3Object,
+    symbols: &'a SymbolTable,
+) -> Option<&'a super::l3_workspace::L3Object> {
+    let base_type = extension_base_type(&obj.object_type)?;
+    let target_name = obj.extends_target_name.as_deref()?;
+    symbols.object_by_type_name(base_type, target_name)
 }
 
 /// `routines.map(r => r.id).sort()` — byte-order sort of internal routine ids.

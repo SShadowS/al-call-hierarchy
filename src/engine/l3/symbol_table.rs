@@ -36,6 +36,8 @@ pub struct SymbolTable {
     by_type_number: HashMap<String, usize>,
     /// `${objectType_lc}/${name_lc}` → object index.
     by_type_name: HashMap<String, usize>,
+    /// `${objectId}` → object index (exact-id lookup; LAST-wins like the others).
+    by_id: HashMap<String, usize>,
     objects: Vec<L3Object>,
 
     /// `${name_lc}` → table index.
@@ -77,6 +79,7 @@ impl SymbolTable {
         // --- object indexes (LAST-wins) -------------------------------------
         let mut by_type_number = HashMap::new();
         let mut by_type_name = HashMap::new();
+        let mut by_id: HashMap<String, usize> = HashMap::new();
         for (i, o) in objects.iter().enumerate() {
             by_type_number.insert(
                 format!("{}/{}", o.object_type.to_lowercase(), o.object_number),
@@ -86,6 +89,7 @@ impl SymbolTable {
                 format!("{}/{}", o.object_type.to_lowercase(), o.name.to_lowercase()),
                 i,
             );
+            by_id.insert(o.id.clone(), i);
         }
 
         // --- table indexes (LAST-wins, REAL over stub) ----------------------
@@ -171,6 +175,7 @@ impl SymbolTable {
         SymbolTable {
             by_type_number,
             by_type_name,
+            by_id,
             objects,
             tables_by_name,
             tables_by_id,
@@ -197,6 +202,11 @@ impl SymbolTable {
     pub fn object_by_type_name(&self, object_type: &str, name: &str) -> Option<&L3Object> {
         let key = format!("{}/{}", object_type.to_lowercase(), name.to_lowercase());
         self.by_type_name.get(&key).map(|&i| &self.objects[i])
+    }
+
+    /// Look up an object by its exact internal id (`${appGuid}/${objectType}/${objectNumber}`).
+    pub fn object_by_id(&self, id: &str) -> Option<&L3Object> {
+        self.by_id.get(id).map(|&i| &self.objects[i])
     }
 
     pub fn table_by_name(&self, name: &str) -> Option<&L3Table> {
