@@ -491,6 +491,42 @@ fn extract_extends_target_name(decl: Node, source: &str) -> Option<String> {
     None
 }
 
+/// Walk a Page / PageExtension declaration node and collect all `part_section`,
+/// `systempart_section`, and `usercontrol_section` nodes in document order.
+/// Recurses the layout tree but never descends into `code_block` nodes (routine
+/// bodies) to avoid picking up any AL that happens to contain those keywords.
+fn extract_page_controls(decl: Node, source: &str) -> Vec<L3PageControl> {
+    fn walk(n: Node, source: &str, out: &mut Vec<L3PageControl>) {
+        let kind = match n.kind() {
+            "part_section" => Some(PageControlKind::Part),
+            "systempart_section" => Some(PageControlKind::SystemPart),
+            "usercontrol_section" => Some(PageControlKind::UserControl),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            if let (Some(name_node), Some(src_node)) = (
+                n.child_by_field_name("name"),
+                n.child_by_field_name("source"),
+            ) {
+                out.push(L3PageControl {
+                    name: strip_quotes(node_text(name_node, source)).to_string(),
+                    kind,
+                    target: strip_quotes(node_text(src_node, source)).to_string(),
+                });
+            }
+        }
+        if n.kind() == "code_block" {
+            return;
+        }
+        for c in named_children(n) {
+            walk(c, source, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(decl, source, &mut out);
+    out
+}
+
 /// `extractImplementsInterfaces` — names after the `implements` keyword (unquoted),
 /// in document order. Returns `Some([])` when the object type can carry the clause
 /// but none are present. Mirrors object-indexer.ts (Codeunit / Enum / Interface).
@@ -1072,6 +1108,13 @@ fn project_file(
         } else {
             None
         };
+        // Page controls (`part`/`systempart`/`usercontrol`) — extracted from the
+        // layout tree. Used to resolve `CurrPage.<control>…` member calls (Task 6+).
+        let page_controls = if object_type == "Page" || object_type == "PageExtension" {
+            extract_page_controls(decl, source)
+        } else {
+            Vec::new()
+        };
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -1086,7 +1129,7 @@ fn project_file(
             page_type,
             inherent_commit_behavior,
             source_table_temporary,
-            page_controls: Vec::new(),
+            page_controls,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
