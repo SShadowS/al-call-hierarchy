@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `aldump --l3-call-graph-stats-cross-app <workspace>`: deps-loaded, PRIMARY-scoped
+  honest-taxonomy histogram. Builds the cross-app merged model (workspace `.al` source +
+  dep `.app`s under `.alpackages`), runs call resolution with the real declared/fetched dep
+  ledger, then scopes the histogram to **primary (workspace) edges only** — edges whose
+  `from` routine is NOT a dep routine (`dep_routine_ids = {r | r.app_guid ∈
+  fetched_app_guids}`). Same JSON shape as `--l3-call-graph-stats` plus `depAppsLoaded`.
+  This is the honest whole-program real-`unknown` rate (dep symbols present for resolution;
+  dep-internal call sites excluded from the denominator). CDO baseline (10 dep apps loaded):
+  source-only 6.88% → deps-loaded primary 6.75% (resolved 7120→7380 +260; unknown 961→943
+  -18; external reclassified from unknown 558→304 with cross-app resolution active).
+
 ### Changed
 - L3 member dispatch: a `Variant`-typed receiver now classifies `dynamic` (spec §6
   honest taxonomy — the held type is runtime-determined) instead of real-`unknown`.

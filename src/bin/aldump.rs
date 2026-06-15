@@ -46,7 +46,7 @@ const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 fn usage() -> ExitCode {
     eprintln!(
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-call-graph-stats | \
-         --l3-unknown-breakdown | \
+         --l3-call-graph-stats-cross-app | --l3-unknown-breakdown | \
          --l3-event-graph | --l3-coverage | --r2.5a-merged-index | --l3-cross-app | \
          --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
@@ -62,6 +62,7 @@ fn main() -> ExitCode {
     let mut l3_record_types = false;
     let mut l3_call_graph = false;
     let mut l3_call_graph_stats = false;
+    let mut l3_call_graph_stats_cross_app = false;
     let mut l3_unknown_breakdown = false;
     let mut l3_event_graph = false;
     let mut l3_coverage = false;
@@ -100,6 +101,10 @@ fn main() -> ExitCode {
         }
         if arg == "--l3-call-graph-stats" {
             l3_call_graph_stats = true;
+            continue;
+        }
+        if arg == "--l3-call-graph-stats-cross-app" {
+            l3_call_graph_stats_cross_app = true;
             continue;
         }
         if arg == "--l3-unknown-breakdown" {
@@ -186,6 +191,7 @@ fn main() -> ExitCode {
         l3_record_types,
         l3_call_graph,
         l3_call_graph_stats,
+        l3_call_graph_stats_cross_app,
         l3_unknown_breakdown,
         l3_event_graph,
         l3_coverage,
@@ -212,7 +218,7 @@ fn main() -> ExitCode {
     {
         eprintln!(
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-call-graph-stats / \
-             --l3-unknown-breakdown / \
+             --l3-call-graph-stats-cross-app / --l3-unknown-breakdown / \
              --l3-event-graph / --l3-coverage / --r2.5a-merged-index / --l3-cross-app / \
              --r3a1-combined-graph / --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / \
              --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries are mutually exclusive"
@@ -844,6 +850,114 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if l3_call_graph_stats_cross_app {
+        // Deps-loaded PRIMARY-SCOPED honest-taxonomy histogram (spec §6/§8): build
+        // the cross-app merged model (workspace + dep `.app`s), run call resolution
+        // with the REAL declared/fetched dep ledger, then bucket the edges whose
+        // `from` routine is a PRIMARY (workspace) routine — i.e. NOT in the dep set
+        // (same role oracle as the L5 detectors: `dep_routine_ids = {r | r.app_guid
+        // ∈ fetched_app_guids}`). This is the HONEST whole-program metric: dep
+        // symbols are present for resolution, but the rate is measured over WORKSPACE
+        // call sites only (dep-internal calls don't inflate the denominator). Emits
+        // the same JSON shape as `--l3-call-graph-stats` plus `depAppsLoaded`.
+        // If the workspace has no deps / fails to build, emits a clear message and
+        // exits cleanly (fail-closed). ADDITIVE — does not change source-only path.
+        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::resolution_class::Histogram;
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use std::collections::HashSet;
+
+        match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
+            None => {
+                eprintln!(
+                    "aldump: warning: fail-closed/empty cross-app layout at {} — \
+                     no deps loaded or workspace not buildable",
+                    workspace.display()
+                );
+                // Emit an informative JSON rather than silently exiting.
+                let value = serde_json::json!({
+                    "error": "no deps loaded or workspace not buildable",
+                    "depAppsLoaded": 0,
+                });
+                return match serde_json::to_string_pretty(&value) {
+                    Ok(json) => {
+                        println!("{json}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("aldump: error: failed to serialize cross-app stats: {e}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            Some(cross) => {
+                let ws = &cross.resolved.workspace;
+
+                // Build dep_routine_ids: routines whose app_guid ∈ fetched_app_guids
+                // (lowercased). This is the same oracle the L4/L5 cross-app paths use
+                // (capability_cone.rs:2426-2431, detector_context.rs, etc.). A routine
+                // NOT in this set is PRIMARY (workspace-owned).
+                let fetched_lc: HashSet<String> = cross
+                    .fetched_app_guids
+                    .iter()
+                    .map(|g| g.to_lowercase())
+                    .collect();
+                let dep_routine_ids: HashSet<String> = ws
+                    .routines
+                    .iter()
+                    .filter(|r| fetched_lc.contains(&r.app_guid.to_lowercase()))
+                    .map(|r| r.id.clone())
+                    .collect();
+
+                // Resolve calls over the MERGED model with the real dep ledger.
+                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                let declared: Vec<DeclaredDependency> = cross
+                    .declared_dep_app_guids
+                    .iter()
+                    .map(|g| DeclaredDependency {
+                        app_guid: g.clone(),
+                    })
+                    .collect();
+                let resolved = resolve_calls(ws, &symbols, &declared, &cross.fetched_app_guids);
+
+                // Scope to PRIMARY edges only — exclude any edge whose `from` routine
+                // is a dep routine (dep-internal calls don't count toward the metric).
+                let primary_edges: Vec<_> = resolved
+                    .edges
+                    .iter()
+                    .filter(|e| !dep_routine_ids.contains(&e.from))
+                    .collect();
+
+                let histogram =
+                    Histogram::of_edges(&primary_edges.into_iter().cloned().collect::<Vec<_>>());
+
+                let mut value = serde_json::to_value(&histogram).unwrap_or(serde_json::json!({}));
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert(
+                        "realUnknownRate".to_string(),
+                        serde_json::json!(histogram.real_unknown_rate()),
+                    );
+                    obj.insert(
+                        "depAppsLoaded".to_string(),
+                        serde_json::json!(cross.fetched_app_guids.len()),
+                    );
+                }
+                return match serde_json::to_string_pretty(&value) {
+                    Ok(json) => {
+                        println!("{json}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "aldump: error: failed to serialize cross-app call-graph stats: {e}"
+                        );
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+        }
     }
 
     if l3_unknown_breakdown {
