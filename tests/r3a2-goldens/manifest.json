@@ -31,17 +31,17 @@
       "inherited": 55
     },
     "recursiveCycleRoutines": 13,
-    "unresolvedCallRoutines": 32,
+    "unresolvedCallRoutines": 30,
     "opaqueCalleeUncertainties": 2,
     "uncertaintyKinds": {
       "ambiguous-overload": 4,
-      "dynamic-dispatch": 4,
+      "dynamic-dispatch": 6,
       "external-target": 4,
       "interface-open-world": 4,
       "member-not-found": 1,
       "opaque-callee": 2,
       "parse-incomplete": 1,
-      "unresolved-call": 17
+      "unresolved-call": 13
     },
     "parameterRolesWithCrossCallExitEffect": 44,
     "recursiveSccCount": 3,
