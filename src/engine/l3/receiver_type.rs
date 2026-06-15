@@ -194,6 +194,16 @@ pub fn infer_receiver_type(
                 receiver_shape: None,
             };
         }
+        // Single-hop call-result compound receiver: `Func().Method(...)` where
+        // `Func` is a BARE own-object/global procedure with a KNOWN return type
+        // that classifies to an Object / Record / Framework receiver. The method
+        // then dispatches on that return type via the normal Phase-B path. This
+        // runs AFTER the framework-property / blob-media checks so they take
+        // precedence, and DECLINES (stays CompoundReceiver) on ANY uncertainty —
+        // a wrong return-type guess is a false resolution that masks a real hole.
+        if let Some(inferred) = compound_call_result_receiver(receiver_expr, routine, symbols) {
+            return inferred;
+        }
         return InferredReceiver {
             ty: ReceiverType::Unknown {
                 reason: UnknownReason::CompoundReceiver,
@@ -424,6 +434,139 @@ fn compound_framework_property_kind(
         return None;
     };
     framework_property_type(kind, &prop_name)
+}
+
+/// Single-hop call-result compound receiver: `Func().Method(...)`. When `Func` is
+/// a BARE call (no `.` before the `(` — i.e. not `a.b().M()` and not `Obj.Func()`)
+/// to an own-object procedure with a KNOWN return type that classifies to an
+/// Object / Record / Framework receiver, return that receiver type so Phase B
+/// dispatches `Method` on it.
+///
+/// PRECISION CONTRACT (the whole point of this helper): a WRONG return-type guess
+/// is a FALSE resolution that masks a real hole — strictly worse than leaving the
+/// receiver `Unknown { CompoundReceiver }`. So we DECLINE (`None`) on ANY
+/// uncertainty:
+///   * the receiver is not exactly a bare `<Name>(...)` call — anything with a `.`
+///     before the call (`Obj.Func()`, `a.b().M()`) is declined (a different shape);
+///   * `<Name>` does not resolve to EXACTLY ONE same-name routine in the caller's
+///     object (overloaded / absent / a global-only name) — declined, mirroring
+///     `infer_call_expr_return_type`'s single-match precision gate;
+///   * the routine has no declared return type — declined;
+///   * the return type classifies to a primitive scalar / `Variant` / an
+///     unparseable type — declined (only Object / Record / framework-reference
+///     return types are accepted, never a value type whose method dispatch would
+///     be a guess).
+///
+/// We resolve `<Name>` by NAME within `routine.object_id` (the same own-object
+/// pool the `PCallee::Bare` path tries FIRST), requiring a unique match. We do NOT
+/// recurse into `infer_receiver_type` — `<Name>(...)` is a bare call, not a chained
+/// base — so there is no recursion concern.
+fn compound_call_result_receiver(
+    receiver_expr: &str,
+    routine: &L3Routine,
+    symbols: &SymbolTable,
+) -> Option<InferredReceiver> {
+    let expr = receiver_expr.trim();
+    // Must contain a call `(`; the bare name is the text before the FIRST `(`.
+    let paren_idx = expr.find('(')?;
+    let name = expr[..paren_idx].trim();
+    // BARE call only: no `.` anywhere in the name portion (excludes `Obj.Func()`
+    // and `a.b().M()` — those are member-of-member shapes handled / declined
+    // elsewhere). An empty name is not a call result.
+    if name.is_empty() || name.contains('.') {
+        return None;
+    }
+    // The name must be a single (possibly quoted) identifier — reuse the receiver
+    // parser to reject anything with embedded whitespace / brackets / quotes-around
+    // a compound. `simple_receiver_name` lowercases; lookups are case-insensitive.
+    let name = simple_receiver_name(name)?;
+
+    // Resolve `<Name>` to EXACTLY ONE same-name routine in the caller's own object
+    // (the bare-call primary pool). >1 (overload) or 0 (absent / global-only) ⇒
+    // decline: we cannot be CERTAIN of the return type.
+    let matches = symbols.routines_in_object_by_name(&routine.object_id, &name);
+    if matches.len() != 1 {
+        return None;
+    }
+    let return_type = matches[0].return_type.as_deref()?.trim();
+    if return_type.is_empty() {
+        return None;
+    }
+
+    // Classify the return type EXACTLY as `infer_receiver_type` classifies a
+    // declared variable type (Step 3 object-type-ref → Step 4 builtin catalog), so
+    // a call-result receiver types identically to a `var x: <ReturnType>` receiver.
+    if let Some(type_ref) = parse_object_type_ref(return_type) {
+        // Interface / Enum return types are not a positive method-dispatch target
+        // here (Enum statics are not callable; Interface fan-out off a transient
+        // call result is beyond this narrow hop) — decline both, accept only the
+        // concrete object kinds.
+        let ty = match type_ref.kind {
+            ObjectKind::Interface | ObjectKind::Enum => return None,
+            kind => ReceiverType::Object {
+                kind,
+                name: type_ref.name,
+            },
+        };
+        return Some(InferredReceiver {
+            ty,
+            declared_type: return_type.to_string(),
+            receiver_shape: None,
+        });
+    }
+
+    // Builtin-catalog classification. Record / RecordRef / FieldRef / KeyRef / a
+    // framework data type are accepted; a primitive scalar, `Variant`, or an
+    // unrecognized type is DECLINED (no false resolution — the method dispatch on a
+    // scalar return would be a guess).
+    let kind = classify_receiver(return_type)?;
+    let ty = match kind {
+        ReceiverBuiltinKind::Record => {
+            // The transient record's table object id is not recoverable from a bare
+            // return-type string (no record variable backs it), so pass `None`. A
+            // Record receiver is ALWAYS `Record`: the catalog-builtin check in Phase
+            // B is table-independent (`SetRange`/`FindSet`/… stay `builtin`), and a
+            // NON-builtin method on this table-less Record degrades to the honest
+            // `Unknown { RecordTableProcedure }` — never a false resolution.
+            ReceiverType::Record {
+                table_object_id: None,
+            }
+        }
+        ReceiverBuiltinKind::RecordRef => ReceiverType::RecordRef,
+        ReceiverBuiltinKind::FieldRef => ReceiverType::FieldRef,
+        ReceiverBuiltinKind::KeyRef => ReceiverType::KeyRef,
+        other if is_primitive_scalar_kind(other) => return None,
+        other => ReceiverType::Framework { kind: other },
+    };
+    Some(InferredReceiver {
+        ty,
+        declared_type: return_type.to_string(),
+        receiver_shape: None,
+    })
+}
+
+/// True for the AL platform VALUE-scalar kinds (`Text`/`Code`/`Integer`/`Date`/…)
+/// — the Feature-A catalog kinds that, while they DO carry a small builtin method
+/// set, are PRIMITIVE return values whose method dispatch off a transient call
+/// result we DECLINE to type (precision: a scalar return is not a positive
+/// receiver-typing signal — leave it the honest `compound-receiver::call-result`).
+/// The reference / framework kinds (Json*/Http*/streams/List/Dictionary/Xml/…) are
+/// NOT scalars and are accepted.
+fn is_primitive_scalar_kind(kind: ReceiverBuiltinKind) -> bool {
+    use ReceiverBuiltinKind::*;
+    matches!(
+        kind,
+        Text | Date
+            | DateTime
+            | Time
+            | Guid
+            | Integer
+            | Decimal
+            | Boolean
+            | Duration
+            | BigInteger
+            | Byte
+    )
 }
 
 /// Resolve a `CurrPage.<Part>[.Page]` member receiver to the subpage Page object.
@@ -1222,5 +1365,172 @@ mod tests {
                 table_object_id: Some("obj/Table/18".to_string()),
             }
         );
+    }
+
+    // --- Feature C2: single-hop call-result compound receiver ---
+
+    /// A named routine in object `obj` (the caller's `object_id`) with a given
+    /// return type, so `routines_in_object_by_name` finds it for the call-result
+    /// helper. `params` controls the parameter count (unused by C2's single-match
+    /// gate, but kept realistic).
+    fn callee_routine(name: &str, return_type: Option<&str>) -> L3Routine {
+        let mut r = routine_with(Vec::new(), Vec::new());
+        r.id = format!("obj/{name}");
+        r.object_id = "obj".to_string();
+        r.name = name.to_string();
+        r.return_type = return_type.map(|s| s.to_string());
+        r
+    }
+
+    /// Build a symbol table whose object `obj` owns the given callee routines, plus
+    /// the calling `R` routine, so the C2 helper can resolve a bare `<Name>()` to a
+    /// unique own-object routine and read its return type.
+    fn symbols_with_callees(callees: Vec<L3Routine>) -> SymbolTable {
+        let object = L3Object {
+            id: "obj".to_string(),
+            app_guid: "app".to_string(),
+            object_type: "Codeunit".to_string(),
+            object_number: 50100,
+            name: "C".to_string(),
+            source_table_name: None,
+            extends_target_name: None,
+            implements_interfaces: Some(Vec::new()),
+            object_subtype: None,
+            page_type: None,
+            inherent_commit_behavior: None,
+            source_table_temporary: None,
+            page_controls: Vec::new(),
+        };
+        SymbolTable::build(&[object], &[], &callees)
+    }
+
+    #[test]
+    fn call_result_framework_return_types_as_framework() {
+        // `GetClient()` returns `HttpClient` → `HttpClient.Get` dispatch target.
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        let inferred = infer_receiver_type("GetClient()", &routine, &symbols);
+        assert_eq!(
+            inferred.ty,
+            ReceiverType::Framework {
+                kind: ReceiverBuiltinKind::HttpClient,
+            }
+        );
+        assert_eq!(inferred.declared_type, "HttpClient");
+    }
+
+    #[test]
+    fn call_result_object_return_types_as_object() {
+        // `MakeCu()` returns `Codeunit "Sales-Post"` → Object dispatch.
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine(
+            "MakeCu",
+            Some("Codeunit \"Sales-Post\""),
+        )]);
+        let inferred = infer_receiver_type("MakeCu()", &routine, &symbols);
+        assert_eq!(
+            inferred.ty,
+            ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name: "Sales-Post".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn call_result_record_return_types_as_record_none() {
+        // A `Record Customer` return → Record with no recoverable table id (None).
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("GetRec", Some("Record Customer"))]);
+        let inferred = infer_receiver_type("GetRec()", &routine, &symbols);
+        assert_eq!(
+            inferred.ty,
+            ReceiverType::Record {
+                table_object_id: None,
+            }
+        );
+    }
+
+    #[test]
+    fn call_result_primitive_return_declines() {
+        // A `Text` return is a primitive scalar → DECLINE → stays CompoundReceiver.
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("GetText", Some("Text"))]);
+        let inferred = infer_receiver_type("GetText()", &routine, &symbols);
+        assert_eq!(
+            inferred.ty,
+            ReceiverType::Unknown {
+                reason: UnknownReason::CompoundReceiver,
+            }
+        );
+        assert_eq!(
+            inferred.receiver_shape.as_deref(),
+            Some("call-result"),
+            "primitive-return call result must stay the honest call-result unknown"
+        );
+    }
+
+    #[test]
+    fn call_result_no_return_type_declines() {
+        // A void procedure (no return type) → DECLINE.
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("DoThing", None)]);
+        assert_eq!(
+            infer_receiver_type("DoThing()", &routine, &symbols).ty,
+            ReceiverType::Unknown {
+                reason: UnknownReason::CompoundReceiver,
+            }
+        );
+    }
+
+    #[test]
+    fn call_result_overloaded_callee_declines() {
+        // Two same-name routines (overloads) → not a UNIQUE match → DECLINE (we
+        // cannot be certain which return type applies).
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![
+            callee_routine("Make", Some("HttpClient")),
+            callee_routine("Make", Some("JsonObject")),
+        ]);
+        assert_eq!(
+            infer_receiver_type("Make()", &routine, &symbols).ty,
+            ReceiverType::Unknown {
+                reason: UnknownReason::CompoundReceiver,
+            }
+        );
+    }
+
+    #[test]
+    fn call_result_unknown_callee_declines() {
+        // The bare name is not an own-object routine → DECLINE.
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        assert_eq!(
+            infer_receiver_type("Nonexistent()", &routine, &symbols).ty,
+            ReceiverType::Unknown {
+                reason: UnknownReason::CompoundReceiver,
+            }
+        );
+    }
+
+    #[test]
+    fn call_result_qualified_call_declines() {
+        // `Obj.Make()` has a `.` before the call — NOT a bare call result; the C2
+        // helper must decline (it is a member-of-member shape, handled elsewhere).
+        let routine = routine_with(Vec::new(), Vec::new());
+        let symbols = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        let inferred = infer_receiver_type("Obj.Make()", &routine, &symbols);
+        // `.`-bearing → member-of-member shape, never call-result.
+        assert_eq!(
+            inferred.ty,
+            ReceiverType::Unknown {
+                reason: UnknownReason::CompoundReceiver,
+            }
+        );
+        assert!(inferred
+            .receiver_shape
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("member-of-member"));
     }
 }

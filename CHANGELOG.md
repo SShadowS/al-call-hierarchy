@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Single-hop call-result compound receivers** (Feature C2, engine-d22). A
+  compound receiver `Func().Method(...)` — a member call ON THE RESULT of a bare
+  own-object procedure with a KNOWN return type — now types the receiver as that
+  return type and dispatches the method on it, instead of degrading to a
+  `compound-receiver::call-result` unknown. `compound_call_result_receiver` in
+  `receiver_type.rs` parses the bare `<Name>` (text before the first `(`, declining
+  any `.`-bearing / non-bare form), resolves it to EXACTLY ONE same-name routine in
+  the caller's object (mirroring `infer_call_expr_return_type`'s single-match
+  precision gate; overloaded / absent / global-only names decline), reads its
+  `return_type`, and classifies it via `parse_object_type_ref` (Object kinds) /
+  `classify_receiver` (Record / framework kinds). PRECISION-FIRST: it DECLINES on
+  ANY uncertainty — no return type, an Interface/Enum return, a primitive scalar /
+  `Variant` / unparseable return — so a wrong return-type guess never masks a real
+  hole. Example win: `HelperRec(Customer).FindSet()` (where `HelperRec(): Record
+  Customer`) now classifies the `FindSet` as a Record `builtin`.
 - **Single-hop framework-property compound receivers** (Feature C1, engine-d22).
   A compound receiver `<fw>.<prop>.<method>()` where the base types as a
   `Framework{kind}` and `<prop>` is a framework-returning property of that kind
