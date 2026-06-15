@@ -161,6 +161,17 @@ pub fn infer_receiver_type(
 ) -> InferredReceiver {
     // Step 1 — simple receiver name.
     let Some(receiver_name) = simple_receiver_name(receiver_expr) else {
+        // Member-of-member: `<recvar>.<field>` where the field is a Blob / Media /
+        // MediaSet field of the record's table exposes the field intrinsics
+        // (`DOTempBlob.Blob.CreateOutStream(...)`, `PDFDocument."File Blob".CreateInStream(...)`).
+        // Resolve before declining to CompoundReceiver.
+        if let Some(kind) = compound_blob_media_field_kind(receiver_expr, routine, symbols) {
+            return InferredReceiver {
+                ty: ReceiverType::Framework { kind },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
         return InferredReceiver {
             ty: ReceiverType::Unknown {
                 reason: UnknownReason::CompoundReceiver,
@@ -333,6 +344,38 @@ fn implicit_rec_field_builtin_kind(
         .fields
         .iter()
         .find(|f| f.name.to_lowercase() == field_name_lc)?;
+    match field.data_type.to_lowercase().as_str() {
+        "blob" => Some(ReceiverBuiltinKind::Blob),
+        "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
+        _ => None,
+    }
+}
+
+/// Member-of-member blob/media resolution: for a receiver `<base>.<field>` where
+/// `base` is a simple record receiver (a record var/param/global or the implicit
+/// `Rec`/`xRec`) and `field` is a `Blob` / `Media` / `MediaSet` field of `base`'s
+/// table, return the field-intrinsic framework kind. Splits on the LAST `.` so a
+/// deeper chain (`CurrPage.Part.Page`) declines here (its `base` is itself compound
+/// and `simple_receiver_name` rejects it). `None` when `base` is not a resolvable
+/// record, the field is absent, or the field is not media-bearing.
+fn compound_blob_media_field_kind(
+    receiver_expr: &str,
+    routine: &L3Routine,
+    symbols: &SymbolTable,
+) -> Option<ReceiverBuiltinKind> {
+    let (base, member) = receiver_expr.rsplit_once('.')?;
+    let base_name = simple_receiver_name(base)?;
+    let member_name = simple_receiver_name(member)?;
+    let table = routine
+        .record_variables
+        .iter()
+        .find(|rv| rv.name.to_lowercase() == base_name)
+        .and_then(|rv| rv.table_id.as_deref())
+        .and_then(|tid| symbols.table_by_id(tid))?;
+    let field = table
+        .fields
+        .iter()
+        .find(|f| f.name.to_lowercase() == member_name)?;
     match field.data_type.to_lowercase().as_str() {
         "blob" => Some(ReceiverBuiltinKind::Blob),
         "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),

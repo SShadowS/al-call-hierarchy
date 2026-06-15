@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (no `Namespaces` node → no recursion), so all existing goldens stay byte-stable.
 
 ### Changed
+- **Member-of-member Blob/Media field receivers resolve.** A compound receiver
+  `<recvar>.<field>` where `field` is a `Blob`/`Media`/`MediaSet` field of the record's table
+  (`DOTempBlob.Blob.CreateOutStream(...)`, `PDFDocument."File Blob".CreateInStream(...)`) now
+  classifies the field intrinsic as `builtin` instead of `Unknown{CompoundReceiver}`.
+  `infer_receiver_type` splits on the LAST `.`, resolves the base record's table, and looks up
+  the field — reusing the Blob/Media catalogs. Deeper chains (`CurrPage.<Part>.Page`) still
+  decline (the base is itself compound). CDO deps-loaded: compound-receiver 243→170,
+  realUnknownRate 2.88% → 2.34%.
 - **Table procedures (not just triggers) seed the implicit `Rec`.** `implicit_base_receiver`
   only registered the implicit current record for table/tableextension TRIGGERS, but AL exposes
   the table's fields and procedures unqualified inside ANY of its methods. Broadened to table
