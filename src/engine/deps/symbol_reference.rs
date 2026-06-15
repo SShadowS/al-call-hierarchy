@@ -100,6 +100,9 @@ pub struct AbiObject {
     pub implemented_interfaces: Option<Vec<String>>,
     /// Canonical lower-case member: "ignore" | "error" | "allow".
     pub inherent_commit_behavior: Option<String>,
+    /// Page controls (name, kind, target). kind ∈ {"part","usercontrol"}.
+    /// target = subpage Page NUMBER (string) for parts, control-add-in NAME for usercontrols.
+    pub page_controls: Vec<(String, String, String)>,
 }
 
 /// An ABI table — physical table layout.
@@ -209,6 +212,26 @@ struct RawKey {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct RawRelatedId {
+    #[serde(rename = "Id")]
+    id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RawControl {
+    #[serde(rename = "Kind")]
+    kind: Option<i64>,
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "RelatedPagePartId")]
+    related_page_part_id: Option<RawRelatedId>,
+    #[serde(rename = "RelatedControlAddIn")]
+    related_control_addin: Option<String>,
+    #[serde(rename = "Controls")]
+    controls: Option<Vec<RawControl>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct RawObject {
     #[serde(rename = "Id")]
     id: Option<i64>,
@@ -226,6 +249,8 @@ struct RawObject {
     target_object: Option<String>,
     #[serde(rename = "ImplementedInterfaces")]
     implemented_interfaces: Option<Vec<String>>,
+    #[serde(rename = "Controls")]
+    controls: Option<Vec<RawControl>>,
 }
 
 // --- Helpers (mirror the TS module-level functions) -------------------------
@@ -608,6 +633,30 @@ fn parse_key(k: &RawKey) -> AbiKey {
     }
 }
 
+/// Recursively walk a page's control tree and collect Kind-6 (Part) and Kind-10
+/// (UserControl) entries into `out` as `(name, kind_str, target)` tuples.
+fn collect_page_controls(controls: &[RawControl], out: &mut Vec<(String, String, String)>) {
+    for c in controls {
+        let name = c.name.clone().unwrap_or_default();
+        match c.kind {
+            Some(6) => {
+                if let Some(id) = c.related_page_part_id.as_ref().and_then(|r| r.id) {
+                    out.push((name, "part".into(), id.to_string()));
+                }
+            }
+            Some(10) => {
+                if let Some(addin) = &c.related_control_addin {
+                    out.push((name, "usercontrol".into(), addin.clone()));
+                }
+            }
+            _ => {}
+        }
+        if let Some(sub) = &c.controls {
+            collect_page_controls(sub, out);
+        }
+    }
+}
+
 /// Extract a typed array of `RawObject` from the top-level JSON map at `key`.
 /// Missing / wrong-typed → empty (mirrors `(raw[key] as RawObject[]) ?? []`).
 /// Collect every object array under `key` — at the top level AND recursively inside
@@ -696,6 +745,11 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                 if let Some(st) = raw_object_property(&o.properties, "SourceTable") {
                     abi_object.source_table_name = Some(unquote_abi_name(&st));
                 }
+                let mut page_controls: Vec<(String, String, String)> = Vec::new();
+                if let Some(controls) = &o.controls {
+                    collect_page_controls(controls, &mut page_controls);
+                }
+                abi_object.page_controls = page_controls;
             }
             if let Some(ifaces) = &o.implemented_interfaces {
                 abi_object.implemented_interfaces =
