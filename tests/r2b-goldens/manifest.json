@@ -25,7 +25,7 @@
     "objectRunResolved": 4,
     "interfaceMultiEdge": 2,
     "interfaceEdges": 6,
-    "dynamicUnknown": 3,
+    "dynamicUnknown": 5,
     "builtin": 80,
     "implicitTrigger": 6,
     "unresolvedUnknown": 4,
