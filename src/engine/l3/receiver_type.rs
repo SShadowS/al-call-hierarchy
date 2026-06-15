@@ -39,7 +39,7 @@
 //! This is a behavior-preserving refactor — it produces byte-identical edges to
 //! the legacy ladder for every input.
 
-use super::l3_workspace::L3Routine;
+use super::l3_workspace::{L3Routine, PageControlKind};
 use super::member_builtins::{classify_receiver, member_builtin_disposition, ReceiverBuiltinKind};
 use super::receiver::simple_receiver_name;
 use super::symbol_table::SymbolTable;
@@ -159,6 +159,15 @@ pub fn infer_receiver_type(
     routine: &L3Routine,
     symbols: &SymbolTable,
 ) -> InferredReceiver {
+    // Step 0 — `CurrPage.<Part>[.Page]` member receiver. These are COMPOUND
+    // expressions that `simple_receiver_name` rejects, so they must be intercepted
+    // BEFORE Step 1. A page Part control whose source page resolves yields an
+    // `Object { kind: Page, name }` receiver so Phase B dispatches the subpage's
+    // procedures by name+arity. UserControl parts decline here (Task 7).
+    if let Some(inferred) = currpage_control_receiver(receiver_expr, routine, symbols) {
+        return inferred;
+    }
+
     // Step 1 — simple receiver name.
     let Some(receiver_name) = simple_receiver_name(receiver_expr) else {
         // Member-of-member: `<recvar>.<field>` where the field is a Blob / Media /
@@ -380,6 +389,80 @@ fn compound_blob_media_field_kind(
         "blob" => Some(ReceiverBuiltinKind::Blob),
         "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
         _ => None,
+    }
+}
+
+/// Resolve a `CurrPage.<Part>[.Page]` member receiver to the subpage Page object.
+///
+/// A page Part control (`part(Lines; "My List Part")`) is accessed from page code
+/// both as `CurrPage.Lines.Page.<method>()` and `CurrPage.Lines.<method>()`; the
+/// `.Page` member yields the subpage's *page instance*, whose user procedures are
+/// called by name. We strip the leading `CurrPage.` prefix and the OPTIONAL trailing
+/// `.Page`, extract the control name, look it up in the controls visible to the
+/// enclosing page (`page_controls_for`, which merges a PageExtension's base-page
+/// controls), and — for a `Part` / `SystemPart` — resolve its source Page object.
+///
+/// We return `ReceiverType::Object { kind: Page, name }` (carrying the resolved
+/// page's NAME so `object_by_type_name` re-finds it in Phase B). This is sound
+/// because `dispatch` → `dispatch_object` for `ObjectKind::Page` runs
+/// `resolve_by_name_and_arity` against the page object id and emits a `Resolved`
+/// edge to the matched procedure — the Codeunit `.Run`→`OnRun` special case is
+/// gated on `kind == ObjectKind::Codeunit`, so a Page receiver is NEVER treated as
+/// an object-run; it is a plain procedure-by-name+arity lookup, exactly what we
+/// need. (Investigation of `dispatch_object` confirmed this, so the typed-Object
+/// approach is preferred over duplicating the Record resolution machinery here.)
+///
+/// Returns `None` (the receiver stays a `CompoundReceiver` unknown — honest) when:
+/// the expression is not a `CurrPage.` receiver; the remaining segment is still
+/// compound (a deeper chain we don't model here); the control is absent; the
+/// control is a `UserControl` (Task 7); or the subpage Page object does not resolve.
+fn currpage_control_receiver(
+    receiver_expr: &str,
+    routine: &L3Routine,
+    symbols: &SymbolTable,
+) -> Option<InferredReceiver> {
+    // Strip the leading `CurrPage.` / `currpage.` prefix.
+    let rest = receiver_expr
+        .strip_prefix("CurrPage.")
+        .or_else(|| receiver_expr.strip_prefix("currpage."))?;
+
+    // Strip an OPTIONAL trailing `.Page` / `.page` (the part-instance accessor).
+    let control_segment = rest
+        .strip_suffix(".Page")
+        .or_else(|| rest.strip_suffix(".page"))
+        .unwrap_or(rest);
+
+    // The remaining segment must be a single (possibly quoted) control name; a
+    // deeper chain (still containing `.`) is not handled here.
+    if control_segment.contains('.') {
+        return None;
+    }
+    let control_name = simple_receiver_name(control_segment)?;
+    let control_name_lc = control_name.to_lowercase();
+
+    let control = symbols
+        .page_controls_for(&routine.object_id)
+        .into_iter()
+        .find(|c| c.name.to_lowercase() == control_name_lc)?;
+
+    match control.kind {
+        PageControlKind::Part | PageControlKind::SystemPart => {
+            // The subpage is identified by NUMBER (dep symbols) or NAME (native).
+            let page_obj = match control.target.parse::<i64>() {
+                Ok(n) => symbols.object_by_type_number("Page", n),
+                Err(_) => symbols.object_by_type_name("Page", &control.target),
+            }?;
+            Some(InferredReceiver {
+                ty: ReceiverType::Object {
+                    kind: ObjectKind::Page,
+                    name: page_obj.name.clone(),
+                },
+                declared_type: format!("Page {}", page_obj.name),
+                receiver_shape: None,
+            })
+        }
+        // UserControl resolution is Task 7 — decline so it stays CompoundReceiver.
+        PageControlKind::UserControl => None,
     }
 }
 

@@ -1,16 +1,19 @@
 //! Page-control extraction + CurrPage.<Part> resolution (Rust-owned).
 use al_call_hierarchy::engine::deps::symbol_reference::parse_symbol_reference;
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_workspace_units, PageControlKind};
+use al_call_hierarchy::engine::l3::l3_workspace::{
+    assemble_and_resolve_default, assemble_workspace_units, PageControlKind,
+};
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
 fn page_with_part() -> &'static str {
-    r#"page 50100 "My List Part" { SourceTable = "Item"; layout { area(Content) { } } }
+    // The part "Lines" sources page 50100 "My List Part", which carries the `Bar`
+    // procedure that `Foo`'s `CurrPage.Lines.Page.Bar()` callsite must resolve to.
+    r#"page 50100 "My List Part" { SourceTable = "Item"; layout { area(Content) { } } procedure Bar() begin end; }
 page 50101 "My Card" {
     SourceTable = "Item";
     layout { area(Content) { part(Lines; "My List Part") { } } }
     procedure Foo() begin CurrPage.Lines.Page.Bar(); end;
 }
-page 50102 "X" { procedure Bar() begin end; }
 "#
 }
 
@@ -171,5 +174,40 @@ pageextension 50201 "My Card Ext" extends "My Card"
         2,
         "expected exactly 2 controls (1 own + 1 base), got: {:?}",
         names
+    );
+}
+
+/// `CurrPage.Lines.Page.Bar()` inside page 50101 "My Card" must RESOLVE to the
+/// `Bar` procedure on page 50100 "My List Part" (the part's source page), as a
+/// `Resolved` edge — not a `CompoundReceiver` unknown.
+#[test]
+fn currpage_part_page_member_resolves_to_subpage_procedure() {
+    const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
+    let owned = vec![("u.al".to_string(), page_with_part().to_string())];
+    let resolved = assemble_and_resolve_default(&owned, APP_GUID);
+
+    // Bar's internal routine id (object 50100 "My List Part").
+    let bar = resolved
+        .workspace
+        .routines
+        .iter()
+        .find(|r| r.name == "Bar")
+        .expect("Bar procedure not found in workspace routines");
+    let bar_stable = bar.stable_routine_id.clone();
+
+    let proj = resolved.project_call_graph();
+    let edges: Vec<_> = proj.groups.iter().flat_map(|g| g.edges.iter()).collect();
+
+    // Find the edge originating from Foo's CurrPage.Lines.Page.Bar() callsite.
+    let resolved_to_bar: Vec<_> = edges
+        .iter()
+        .filter(|e| e.resolution == "resolved" && e.to.as_deref() == Some(bar_stable.as_str()))
+        .collect();
+
+    assert!(
+        !resolved_to_bar.is_empty(),
+        "CurrPage.Lines.Page.Bar() must resolve to Bar (stable id {}); all edges: {:#?}",
+        bar_stable,
+        edges
     );
 }
