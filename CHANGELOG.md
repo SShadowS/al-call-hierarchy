@@ -96,6 +96,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tag (`table-unresolved::…` vs `proc-not-found::…`) for `--l3-unknown-breakdown[-cross-app]`.
 
 ### Added
+- **Page-control resolution — `CurrPage.<control>…` member calls.** New `L3Object.page_controls`
+  (`L3PageControl { name, kind: Part/SystemPart/UserControl, target }`), populated from BOTH the
+  native AL layout (tree-sitter `part_section`/`systempart_section`/`usercontrol_section`) and
+  dependency `.app` symbols (`Controls[]` integer `Kind`: 6=Part → subpage page NUMBER via
+  `RelatedPagePartId.Id`, 10=UserControl → add-in name via `RelatedControlAddIn`; recursed through
+  nested controls). `SymbolTable::page_controls_for(object_id)` merges a PageExtension's own
+  controls with its base page's. At resolution, `currpage_control_receiver` (a "Step 0" in
+  `infer_receiver_type`) resolves:
+  - `CurrPage.<Part>.Page.<m>()` / `CurrPage.<Part>.<m>()` → the subpage **Page object's** procedure
+    (subpage found by NAME in native source, NUMBER in dep symbols; Phase B dispatches the Page
+    receiver's method by name+arity — object-run is Codeunit-gated, so this is a plain procedure
+    lookup).
+  - `CurrPage.<UserControl>.<m>()` → a control-add-in `builtin` edge (below).
+  CDO deps-loaded: compound-receiver 170→62, realUnknownRate **2.336% → 1.548%** (resolved +63,
+  builtin +37; total edges unchanged). No fixture exercises page controls, so all goldens stay
+  byte-stable.
 - **`CurrPage.<UserControl>.<method>()` resolves to a control-add-in `builtin` edge.**
   A page `usercontrol(Body; "Some AddIn")` accessed as `CurrPage.Body.SetContent(...)`
   is a platform/JS-side control-add-in invocation with no in-AL target. Phase A's
