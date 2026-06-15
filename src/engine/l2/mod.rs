@@ -149,6 +149,27 @@ fn implicit_base_receiver(
     }
 }
 
+/// For a routine nested inside a report `dataitem(Name; "Source Table")`, return
+/// the dataitem's SOURCE TABLE name (the `table_name` field), already unquoted.
+/// A report has MULTIPLE dataitems, each over a DIFFERENT table, so the implicit
+/// `Rec` of a dataitem trigger is typed per-dataitem — not by a single object-level
+/// own-table. We therefore read it directly from the ENCLOSING `report_dataitem`
+/// (the innermost one, for nested dataitems) by walking up the parse tree.
+///
+/// Returns `None` when the routine is not inside a dataitem (e.g. a report-level
+/// procedure or a `OnInitReport`/`OnPreReport` trigger on the report itself).
+fn report_dataitem_source_table(routine: Node, source: &str) -> Option<String> {
+    let mut node = routine.parent();
+    while let Some(n) = node {
+        if n.kind() == "report_dataitem" {
+            let table_node = n.child_by_field_name("table_name")?;
+            return Some(strip_quotes(node_text(table_node, source)).to_string());
+        }
+        node = n.parent();
+    }
+    None
+}
+
 /// Read a simple object property value (e.g. SourceTable) for implicit-Rec seeding.
 fn read_object_property(decl: Node, name: &str, source: &str) -> Option<String> {
     fn find<'a>(n: Node<'a>, name_lc: &str, source: &str) -> Option<Node<'a>> {
@@ -213,17 +234,35 @@ pub fn project_routine_features(
 
     let body = find_code_block(routine);
     let mut record_variables = extract_record_variables(routine, &routine_id, &parameters, source);
+    // A report dataitem trigger (OnAfterGetRecord / OnPreDataItem / OnPostDataItem,
+    // OnAfterImportRecord, …) operates on an implicit `Rec` typed to ITS dataitem's
+    // SOURCE TABLE. Unlike the object-level own-table path below, a report has
+    // MULTIPLE dataitems each over a DIFFERENT table, so there is no single
+    // object-level own-table to backfill from in `record_types` pass-3. We instead
+    // read the enclosing `report_dataitem`'s source table HERE and seed the `Rec`
+    // var WITH that `table_name` — `record_types` pass-1 (declared-record-var
+    // resolution) then backfills its `table_id` by name, exactly as for a declared
+    // record var. Skipped when a declared `Rec` already exists (never shadow it).
+    let dataitem_table = if object_type == "Report" || object_type == "ReportExtension" {
+        report_dataitem_source_table(routine, source).filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
     // d22 FN fix: register the IMPLICIT `Rec` of a table-trigger / page (SourceTable)
     // / page-extension routine as a record variable so `Rec.<field>` reads are
-    // captured as field accesses (gated on `record_var_names`). The table is NOT
-    // resolved here — `table_name` is left None and L3 `record_types` pass-3 fills
-    // the var's `table_id` from the EFFECTIVE OWN TABLE (Table → self, Page →
-    // SourceTable, TableExt → extends target, PageExt → base page's SourceTable),
-    // the single source of truth that already resolves the implicit-Rec OPS. Setting
-    // a name here (e.g. the object name) would wrongly hijack a tableextension's Rec
-    // to the extension object instead of the extended base table. Skipped when a
-    // declared `Rec` already exists (never shadow it).
-    if implicit_base_receiver(object_type, kind, source_table_name).is_some()
+    // captured as field accesses (gated on `record_var_names`). For table/page/ext
+    // the table is NOT resolved here — `table_name` is left None and L3
+    // `record_types` pass-3 fills the var's `table_id` from the EFFECTIVE OWN TABLE
+    // (Table → self, Page → SourceTable, TableExt → extends target, PageExt → base
+    // page's SourceTable), the single source of truth that already resolves the
+    // implicit-Rec OPS. Setting a name there (e.g. the object name) would wrongly
+    // hijack a tableextension's Rec to the extension object instead of the extended
+    // base table. For a report DATAITEM the table varies per dataitem, so we DO set
+    // `table_name` (to the dataitem's source table) and let pass-1 resolve it.
+    // Skipped when a declared `Rec` already exists (never shadow it).
+    if (implicit_base_receiver(object_type, kind, source_table_name).is_some()
+        || dataitem_table.is_some())
         && !record_variables
             .iter()
             .any(|v| v.name.eq_ignore_ascii_case("Rec"))
@@ -231,7 +270,7 @@ pub fn project_routine_features(
         record_variables.push(scope::RecordVariable {
             id: format!("{routine_id}/rv/rec"),
             name: "Rec".to_string(),
-            table_name: None,
+            table_name: dataitem_table.clone(),
             temp_state: scope::ts_known(false),
             is_parameter: false,
             parameter_index: None,
@@ -252,7 +291,13 @@ pub fn project_routine_features(
     );
     let variable_types_by_name = build_variable_type_index(&variables);
 
-    let base_recv = implicit_base_receiver(object_type, kind, source_table_name);
+    let base_recv = implicit_base_receiver(object_type, kind, source_table_name).or_else(|| {
+        // Report dataitem trigger: the implicit receiver is the dataitem's `Rec`.
+        dataitem_table.as_ref().map(|_| ImplicitReceiverFrame {
+            text: "Rec".to_string(),
+            kind: "simple",
+        })
+    });
 
     let features = if let Some(body) = body {
         extract_body_features(
