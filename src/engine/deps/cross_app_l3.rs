@@ -104,6 +104,7 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
         // object-level commit behavior into each dep routine's commitBehavior.
         inherent_commit_behavior: o.inherent_commit_behavior.clone(),
         source_table_temporary: None,
+        page_controls: Vec::new(),
     }
 }
 

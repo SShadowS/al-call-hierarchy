@@ -82,6 +82,28 @@ pub struct L3Object {
     /// is NOT Serialize-derived into any gate surface, so this never touches a
     /// golden. Populated by later tasks (Task 5).
     pub source_table_temporary: Option<bool>,
+    /// Page / PageExtension layout controls (`part`/`systempart`/`usercontrol`) — used
+    /// to resolve `CurrPage.<control>…` member calls. Empty for non-page objects.
+    pub page_controls: Vec<L3PageControl>,
+}
+
+/// A page layout control relevant to member resolution: a `part`/`systempart`
+/// (subpage) or a `usercontrol` (control add-in). `name` is the control name used in
+/// `CurrPage.<name>`. `target` is the subpage Page reference (NAME from native source,
+/// NUMBER string from dep symbols) for `Part`/`SystemPart`, or the control-add-in name
+/// for `UserControl`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3PageControl {
+    pub name: String,
+    pub kind: PageControlKind,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageControlKind {
+    Part,
+    SystemPart,
+    UserControl,
 }
 
 /// A workspace field (the L3-relevant subset of al-sem's `Field`).
@@ -1064,6 +1086,7 @@ fn project_file(
             page_type,
             inherent_commit_behavior,
             source_table_temporary,
+            page_controls: Vec::new(),
         });
 
         if object_type == "Table" || object_type == "TableExtension" {

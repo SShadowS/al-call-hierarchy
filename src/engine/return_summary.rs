@@ -951,6 +951,7 @@ mod tests {
             page_type: None,
             inherent_commit_behavior: inherent_commit_behavior.map(str::to_string),
             source_table_temporary: None,
+            page_controls: Vec::new(),
         }
     }
 
