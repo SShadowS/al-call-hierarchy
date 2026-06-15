@@ -31,6 +31,20 @@ fn decl_name_nodes(var_decl: Node) -> Vec<Node> {
     }
 }
 
+/// The declared name of a `name`-field node, lowercased, with surrounding quotes
+/// stripped for a `quoted_identifier`. This matches `simple_receiver_name` (which
+/// returns the INNER, unquoted name) and the record-variable extraction, so a quoted
+/// scalar variable `"File Blob"` is keyed by `file blob` and a member call
+/// `"File Blob".M()` finds it — otherwise the receiver lookup misses and the call
+/// degrades to `Unknown{UntrackedReceiver}`.
+fn decl_name_lc(name_node: Node, source: &str) -> String {
+    if name_node.kind() == "quoted_identifier" {
+        strip_quotes(node_text(name_node, source)).to_lowercase()
+    } else {
+        node_text(name_node, source).to_lowercase()
+    }
+}
+
 #[derive(Clone)]
 pub struct ParameterSymbol {
     pub index: u32,
@@ -355,7 +369,7 @@ pub fn extract_object_globals(
             let declared_type = normalize_declared_type(decl, source);
             // One global per declared name (grouped `A, B, C : Type;`).
             for name_node in decl_name_nodes(decl) {
-                let lc_name = node_text(name_node, source).to_lowercase();
+                let lc_name = decl_name_lc(name_node, source);
                 out.push(PVariableSymbol {
                     name: lc_name,
                     declared_type: declared_type.clone(),
@@ -431,7 +445,7 @@ pub fn extract_variables(
         let ep = decl.end_position();
         // One local per declared name (grouped `A, B, C : Type;`).
         for name_node in decl_name_nodes(decl) {
-            let lc_name = node_text(name_node, source).to_lowercase();
+            let lc_name = decl_name_lc(name_node, source);
             if out.iter().any(|v| v.is_parameter && v.name == lc_name) {
                 continue;
             }

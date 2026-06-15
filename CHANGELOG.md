@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Quoted scalar variable names strip their quotes** (consistency with parameter and
+  record-variable extraction). `extract_variables` (locals) and `extract_object_globals` keyed
+  a `quoted_identifier` variable by its raw text INCLUDING quotes (`"file blob"`), but
+  `simple_receiver_name` returns the inner unquoted name (`file blob`), so a member call on a
+  quoted scalar variable `"My Var".M()` missed the variable lookup → `Unknown{UntrackedReceiver}`.
+  New `decl_name_lc` helper strips quotes on both scalar sites, matching the param/record-var
+  treatment. (No metric change on CDO — its residual untracked names are Blob FIELDS, not
+  quoted variables — but removes the latent asymmetry.)
 - **Grouped multi-name variable declarations capture every name.** The AL grammar's
   `variable_declaration` multi-name arm (`A, B, C : Type;`) emits one `name` field per
   variable, but `scope.rs` read only `child_by_field_name("name")` (the FIRST), silently
