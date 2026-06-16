@@ -591,6 +591,32 @@ fn compound_call_result_receiver(
     if name.is_empty() || name.contains('.') {
         return None;
     }
+    // The matched arg-list must be the WHOLE expression — `<Name>(...)` and nothing
+    // after its close paren. Balance-walk from the first `(` to its matching `)`; if
+    // that `)` is not the final char, this is `<Name>(...).<tail>` (`Func().Field`,
+    // `Func().Method()`) — a member/call chain whose TRUE receiver is `<tail>`, not
+    // `<Name>`'s return type. Typing it as `<Name>`'s return is a false resolution
+    // that drops `<tail>`; decline (a different, member-of-member shape). Arg lists
+    // legitimately contain `.`/nested `()` (`Func(a.b)`, `Func(G(x))`) — the balance
+    // walk accepts those because the matched `)` is still the final char.
+    let mut depth: i32 = 0;
+    let mut matched_end = None;
+    for (i, b) in expr.bytes().enumerate().skip(paren_idx) {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    matched_end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if matched_end? != expr.len() - 1 {
+        return None;
+    }
     // The name must be a single (possibly quoted) identifier — reuse the receiver
     // parser to reject anything with embedded whitespace / brackets / quotes-around
     // a compound. `simple_receiver_name` lowercases; lookups are case-insensitive.
@@ -787,9 +813,19 @@ fn currpage_control_receiver(
 /// keep their short tag (no expression needed — they are self-explanatory).
 fn compound_receiver_shape(receiver_expr: &str) -> String {
     if receiver_expr.contains('.') {
-        // Embed the expression (capped) so the breakdown can show concrete samples.
+        // Embed the expression (capped at 120 BYTES) so the breakdown can show
+        // concrete samples. Floor to a UTF-8 char boundary ≤120 — a raw `[..120]`
+        // byte slice panics when byte 120 lands inside a multi-byte char, and AL
+        // quoted identifiers legally contain non-ASCII (localized BC field/object
+        // names). The engine must never panic, even on this diagnostic path.
         let expr = if receiver_expr.len() > 120 {
-            &receiver_expr[..120]
+            let end = receiver_expr
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 120)
+                .last()
+                .unwrap_or(0);
+            &receiver_expr[..end]
         } else {
             receiver_expr
         };
@@ -1751,5 +1787,31 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .starts_with("member-of-member"));
+    }
+
+    #[test]
+    fn call_result_with_trailing_member_declines() {
+        // `Make().Field` / `Make().Other()` — a `.` AFTER the call's close paren. The
+        // TRUE receiver of the outer call is `<tail>`, NOT `Make`'s return type, so
+        // the C2 helper must DECLINE (typing it as `Make`'s return drops `<tail>` — a
+        // false resolution). Regression for the missing after-`)` validation.
+        let symbols = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        for expr in ["Make().Field", "Make().Other()", "Make().Content.Add"] {
+            let routine = routine_with(Vec::new(), Vec::new());
+            assert_eq!(
+                infer_receiver_type(expr, &routine, &symbols).ty,
+                ReceiverType::Unknown {
+                    reason: UnknownReason::CompoundReceiver,
+                },
+                "{expr} must decline (trailing member after call result)"
+            );
+        }
+        // Sanity: a bare `Make()` with an arg containing `.`/nested `()` STILL
+        // resolves — the balance walk accepts args, only rejects a trailing chain.
+        let routine = routine_with(Vec::new(), Vec::new());
+        assert!(matches!(
+            infer_receiver_type("Make(a.b, G(x))", &routine, &symbols).ty,
+            ReceiverType::Framework { .. }
+        ));
     }
 }

@@ -247,12 +247,12 @@ pub fn extract_record_variables(
         }
     }
 
-    // Local variable declarations.
+    // Local variable declarations — descend through `#if`/`#else` preprocessor
+    // wrappers (`var_section_declarations`), mirroring the object-global extractors,
+    // so a `#if`-guarded LOCAL record var (`#if BC24 Cust: Record Customer #else …`)
+    // is captured into `record_variables` (else its record-operation linkage drops).
     if let Some(var_section) = child_of_kind(proc_node, "var_section") {
-        for var_decl in named_children(var_section) {
-            if var_decl.kind() != "variable_declaration" {
-                continue;
-            }
+        for var_decl in var_section_declarations(var_section) {
             let Some(type_spec_node) = child_of_kind(var_decl, "type_specification") else {
                 continue;
             };

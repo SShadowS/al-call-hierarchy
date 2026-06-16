@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Cloud-review remediation (engine-d22 branch review).** Three findings fixed:
+  - `compound_call_result_receiver` validated text before the call's `(` but not after its `)`,
+    so `GetCustomer().Name` (receiver of `GetCustomer().Name.Trim()`) was mis-typed as
+    `GetCustomer`'s return type, silently dropping the trailing `.Name` — a false resolution.
+    Now balance-walks from the first `(` to its matching `)` and declines unless that `)` is the
+    final char (accepts arg-list dots/nesting like `Func(a.b, G(x))`; rejects `Func().Field` /
+    `Func().Other()`). Regression test added.
+  - `compound_receiver_shape` truncated the diagnostic tag with a raw `[..120]` byte slice, which
+    panics when byte 120 is not a UTF-8 char boundary (localized AL identifiers are non-ASCII).
+    Now floors to a char boundary — honors the "engine never panics" contract.
+  - `extract_record_variables` (local record vars) still scanned only direct `var_section`
+    children, so a `#if`-guarded local record var was missed while the object-global paths
+    (fixed earlier) were not. Now uses `var_section_declarations`, mirroring them.
 - **Preprocessor-guarded object globals are now extracted.** A global variable declared inside a
   `#if`/`#else` block in a var section — `var #if BC24 NoSeriesMgt: Codeunit "No. Series" #else
   NoSeriesMgt: Codeunit NoSeriesManagement #endif` (ubiquitous in BC version-compat code) — was
