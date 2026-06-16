@@ -193,11 +193,12 @@ pub fn infer_receiver_type(
                 receiver_shape: None,
             };
         }
-        // Member-of-member: `<recvar>.<field>` where the field is a Blob / Media /
-        // MediaSet field of the record's table exposes the field intrinsics
-        // (`DOTempBlob.Blob.CreateOutStream(...)`, `PDFDocument."File Blob".CreateInStream(...)`).
-        // Resolve before declining to CompoundReceiver.
-        if let Some(kind) = compound_blob_media_field_kind(receiver_expr, routine, symbols) {
+        // Member-of-member: `<recvar>.<field>` where `field` is a method-bearing field
+        // of the record's table — Blob/Media stream+media intrinsics
+        // (`DOTempBlob.Blob.CreateOutStream(...)`), Enum/Option value methods
+        // (`Rec."eSeal Service".Ordinals()`), or Text/Code methods
+        // (`Rec."Additional Information".Contains(...)`). Resolve before declining.
+        if let Some(kind) = compound_field_receiver_kind(receiver_expr, routine, symbols) {
             return InferredReceiver {
                 ty: ReceiverType::Framework { kind },
                 declared_type: String::new(),
@@ -411,21 +412,37 @@ fn implicit_rec_field_builtin_kind(
         .fields
         .iter()
         .find(|f| f.name.to_lowercase() == field_name_lc)?;
-    match field.data_type.to_lowercase().as_str() {
+    field_receiver_kind(&field.data_type)
+}
+
+/// The framework receiver kind of a table FIELD used as a member receiver, keyed by
+/// the field's data type. Blob/Media expose stream/media intrinsics; Enum/Option
+/// expose the enum-value methods; Text/Code expose the Text method surface
+/// (`"Endpoint URL".Trim()`, `Rec."Additional Information".Contains(...)`). First
+/// whitespace/`[`-delimited token matching handles native `type_specification` text
+/// (`Blob`, `Enum "X"`, `Text[250]`) and dep-ABI `format_type` output (`Enum "Sub"`).
+/// `None` for non-method-bearing field types (the receiver stays compound/untracked).
+fn field_receiver_kind(data_type: &str) -> Option<ReceiverBuiltinKind> {
+    let dt_lc = data_type.to_lowercase();
+    let first = dt_lc.split([' ', '[']).next().unwrap_or("");
+    match first {
         "blob" => Some(ReceiverBuiltinKind::Blob),
         "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
+        "enum" | "option" => Some(ReceiverBuiltinKind::Enum),
+        "text" | "code" => Some(ReceiverBuiltinKind::Text),
         _ => None,
     }
 }
 
-/// Member-of-member blob/media resolution: for a receiver `<base>.<field>` where
-/// `base` is a simple record receiver (a record var/param/global or the implicit
-/// `Rec`/`xRec`) and `field` is a `Blob` / `Media` / `MediaSet` field of `base`'s
-/// table, return the field-intrinsic framework kind. Splits on the LAST `.` so a
-/// deeper chain (`CurrPage.Part.Page`) declines here (its `base` is itself compound
-/// and `simple_receiver_name` rejects it). `None` when `base` is not a resolvable
-/// record, the field is absent, or the field is not media-bearing.
-fn compound_blob_media_field_kind(
+/// Member-of-member field resolution: for a receiver `<base>.<field>` where `base`
+/// is a simple record receiver (a record var/param/global or the implicit
+/// `Rec`/`xRec`) and `field` is a method-bearing field of `base`'s table, return the
+/// field's framework receiver kind (Blob/Media/Enum/Option/Text/Code — see
+/// [`field_receiver_kind`]). Splits on the LAST `.` so a deeper chain
+/// (`CurrPage.Part.Page`) declines here (its `base` is itself compound and
+/// `simple_receiver_name` rejects it). `None` when `base` is not a resolvable record,
+/// the field is absent, or the field type bears no member methods.
+fn compound_field_receiver_kind(
     receiver_expr: &str,
     routine: &L3Routine,
     symbols: &SymbolTable,
@@ -443,19 +460,7 @@ fn compound_blob_media_field_kind(
         .fields
         .iter()
         .find(|f| f.name.to_lowercase() == member_name)?;
-    // First whitespace/`[`-delimited token of the field's data type. Native fields
-    // store the `type_specification` text (`Blob`, `Enum "X"`, `Option`); dep fields
-    // store `format_type` output (`Enum "Subtype"`). First-token matching covers both.
-    let dt_lc = field.data_type.to_lowercase();
-    let first = dt_lc.split([' ', '[']).next().unwrap_or("");
-    match first {
-        "blob" => Some(ReceiverBuiltinKind::Blob),
-        "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
-        // An Enum / Option field used as a member receiver
-        // (`Rec."eSeal Service".Ordinals()`, `Line."Mail Importance".AsInteger()`).
-        "enum" | "option" => Some(ReceiverBuiltinKind::Enum),
-        _ => None,
-    }
+    field_receiver_kind(&field.data_type)
 }
 
 /// Single-hop framework chain compound receiver: `<base>.<prop>` where `base`

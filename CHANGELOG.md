@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Text/Code table fields resolve as Text receivers; field-kind resolution unified.** A
+  Text/Code-typed table field used as a member receiver — `"Azure Blob Private Endpoint URL".Trim()`
+  (implicit Rec), `CollectedErrors."Additional Information".Contains(...)` (declared record) —
+  now types as `Framework{Text}` so its Text methods classify `builtin`. The field-type→kind
+  mapping (blob/media/enum/option/text/code) is now a single shared `field_receiver_kind` helper
+  used by BOTH the declared-record (`compound_field_receiver_kind`, renamed from
+  `compound_blob_media_field_kind`) and implicit-Rec (`implicit_rec_field_builtin_kind`) paths,
+  so they can no longer drift. CDO deps-loaded: compound-receiver 4→3, untracked-receiver 3→2,
+  realUnknownRate 0.058% → 0.044%.
 - **`Enum::"X"` static-type receivers.** `Enum::"CDO Module Type".Ordinals()` / `.Names()` —
   a static enum TYPE reference via the generic `Enum::` qualifier — now types as `Framework{Enum}`
   so its static methods classify `builtin` via the EnumType catalog (and `Ordinals`/`Names` chain
