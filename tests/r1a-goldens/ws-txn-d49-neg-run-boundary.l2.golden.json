@@ -457,7 +457,18 @@
         "recordOperations": [],
         "callSites": [],
         "fieldAccesses": [],
-        "recordVariables": [],
+        "recordVariables": [
+          {
+            "id": "r0/ef1485736f12f6b1d78c150b877e6368e5292282fcd778fddd7bb21740cd080f/rv/rec",
+            "name": "Rec",
+            "tableName": "D49 Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
         "nestingDepth": 0,
         "hasBranching": false,
         "unreachableStatements": [],

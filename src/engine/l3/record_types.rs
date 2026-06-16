@@ -105,8 +105,11 @@ pub fn resolve_routine_record_types(
         // intentionally last-wins — record_variables has no name duplicates at this layer (Task 3 global-promotion must preserve this invariant)
         var_index_by_name.insert(variable.name.to_lowercase(), i);
         if let Some(table_name) = &variable.table_name {
-            if let Some(table) = symbols.table_by_name(table_name) {
-                variable.table_id = Some(table.id.clone());
+            // `resolve_table_ref_to_id` accepts a NAME or a NUMBER — a synthetic
+            // implicit `Rec` seeded from a codeunit `TableNo = <number>` carries the
+            // number string, which `table_by_name` alone could not resolve.
+            if let Some(tid) = resolve_table_ref_to_id(symbols, table_name) {
+                variable.table_id = Some(tid);
             }
         }
     }

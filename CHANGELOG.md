@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Codeunit `TableNo` seeds an implicit `Rec`.** A codeunit with a `TableNo` property runs
+  against an implicit `Rec` of that table (its `OnRun(var Rec)` parameter; `Rec` is exposed
+  unqualified inside the codeunit), so `Rec.<proc>()` / `Rec.<field>` in such a codeunit now
+  resolve instead of falling to `Unknown{UntrackedReceiver}`. `TableNo` is read in the routine
+  projection (NAME or NUMBER) and set as the seeded `Rec`'s `table_name`; `record_types` pass-1
+  now resolves either form via `resolve_table_ref_to_id`. CDO untracked-receiver 81→57,
+  realUnknownRate 0.898% → 0.723%; DC untracked 153→85, 1.71% → 1.49% (DC has many TableNo
+  processing codeunits).
+
 ### Added
 - **Framework method/property return chains** — extends the single-hop framework-property
   compound resolver to framework METHOD calls that return a framework type:

@@ -248,6 +248,21 @@ pub fn project_routine_features(
     } else {
         None
     };
+    // A codeunit with a `TableNo` property runs against an implicit `Rec` of that
+    // table (its `OnRun(var Rec)` parameter; AL exposes `Rec` unqualified inside the
+    // codeunit). `TableNo` is a table NAME or NUMBER — set directly as the seeded
+    // Rec's `table_name`; `record_types` pass-1 resolves either form.
+    let codeunit_tableno = if object_type == "Codeunit" {
+        read_object_property(decl, "TableNo", source)
+            .map(|s| strip_quotes(&s).to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+    // The per-routine implicit-`Rec` table NAME/NUMBER, when it must be set directly
+    // (report dataitem or codeunit TableNo); `None` for the object-level cases that
+    // `record_types` pass-3 backfills from the own-table.
+    let direct_rec_table = dataitem_table.clone().or_else(|| codeunit_tableno.clone());
 
     // d22 FN fix: register the IMPLICIT `Rec` of a table-trigger / page (SourceTable)
     // / page-extension routine as a record variable so `Rec.<field>` reads are
@@ -262,7 +277,7 @@ pub fn project_routine_features(
     // `table_name` (to the dataitem's source table) and let pass-1 resolve it.
     // Skipped when a declared `Rec` already exists (never shadow it).
     if (implicit_base_receiver(object_type, kind, source_table_name).is_some()
-        || dataitem_table.is_some())
+        || direct_rec_table.is_some())
         && !record_variables
             .iter()
             .any(|v| v.name.eq_ignore_ascii_case("Rec"))
@@ -270,7 +285,7 @@ pub fn project_routine_features(
         record_variables.push(scope::RecordVariable {
             id: format!("{routine_id}/rv/rec"),
             name: "Rec".to_string(),
-            table_name: dataitem_table.clone(),
+            table_name: direct_rec_table.clone(),
             temp_state: scope::ts_known(false),
             is_parameter: false,
             parameter_index: None,
@@ -292,8 +307,9 @@ pub fn project_routine_features(
     let variable_types_by_name = build_variable_type_index(&variables);
 
     let base_recv = implicit_base_receiver(object_type, kind, source_table_name).or_else(|| {
-        // Report dataitem trigger: the implicit receiver is the dataitem's `Rec`.
-        dataitem_table.as_ref().map(|_| ImplicitReceiverFrame {
+        // Report dataitem trigger / codeunit `TableNo` — the implicit receiver is the
+        // routine's `Rec` (the dataitem's record / the codeunit's TableNo record).
+        direct_rec_table.as_ref().map(|_| ImplicitReceiverFrame {
             text: "Rec".to_string(),
             kind: "simple",
         })
