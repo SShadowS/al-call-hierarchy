@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`Enum::"X"` static-type receivers.** `Enum::"CDO Module Type".Ordinals()` / `.Names()` —
+  a static enum TYPE reference via the generic `Enum::` qualifier — now types as `Framework{Enum}`
+  so its static methods classify `builtin` via the EnumType catalog (and `Ordinals`/`Names` chain
+  to List). Only the literal `Enum::` form matches; a value reference `SomeEnum::Value` is left
+  untouched. CDO deps-loaded: compound-receiver 6→4, realUnknownRate 0.073% → 0.058%.
 - **`System` pseudo-singleton receiver.** `System.GetCollectedErrors()`, `System.Today()`, and
   the other qualified forms of AL's global runtime functions now classify `builtin` via a new
   `System` framework singleton (75-method catalog from the compiler `System` surface), wired
