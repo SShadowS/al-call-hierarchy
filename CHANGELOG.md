@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`Text`/`Code`/`Label` static receivers + `this.<member>` self-qualifier.** Two Phase-A
+  receiver-typing additions: (1) the static-type-receiver interception (previously Xml-only) now
+  also covers `Text`/`Code`/`Label`, so `Text.CopyStr(...)` and the other Text data-type static
+  methods classify `builtin` via the Text catalog when no variable shadows the bare type name;
+  (2) a `this.<member>` receiver (the AL self-instance qualifier) strips the `this.` prefix and
+  re-infers on the remainder, so `this.DialogWindow.Open()` resolves via the `DialogWindow`
+  object global (Dialog). CDO deps-loaded: compound-receiver 8→6, untracked-receiver 9→5,
+  realUnknownRate 0.131% → 0.088%.
 - **`ControlAddIn`-typed variables resolve as control-add-in receivers.** A variable or
   parameter declared `ControlAddIn "X"` (e.g. `HTMLEditor: ControlAddIn "CDO.Editor"`,
   `editorAddIn: ControlAddIn "CDO.Editor"`) now classifies as the `ControlAddIn` framework

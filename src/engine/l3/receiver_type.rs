@@ -174,6 +174,14 @@ pub fn infer_receiver_type(
 
     // Step 1 — simple receiver name.
     let Some(receiver_name) = simple_receiver_name(receiver_expr) else {
+        // `this.<member>` — `this` is the current object instance, so `this.X` is
+        // equivalent to the bare `X` (an object global / field / method in scope).
+        // Strip the `this.` prefix and re-infer on the remainder so e.g.
+        // `this.DialogWindow.Open()` resolves via the `DialogWindow` global (Dialog).
+        // `this` itself is never a declared variable, so this cannot mis-shadow.
+        if let Some(rest) = strip_this_prefix(receiver_expr) {
+            return infer_receiver_type(rest, routine, symbols);
+        }
         // Member-of-member: `<recvar>.<field>` where the field is a Blob / Media /
         // MediaSet field of the record's table exposes the field intrinsics
         // (`DOTempBlob.Blob.CreateOutStream(...)`, `PDFDocument."File Blob".CreateInStream(...)`).
@@ -278,18 +286,15 @@ pub fn infer_receiver_type(
             };
         }
 
-        // Step 2c-bis — an AL Xml framework TYPE NAME used as a STATIC receiver
-        // (`XmlElement.Create(...)`, `XmlDocument.ReadFrom(...)`,
-        // `XmlDeclaration.Create(...)`). With no declared variable of that name, the
-        // bare identifier IS the framework type used statically; type it as
-        // Framework{Xml} so Phase B classifies the static factory/utility method via
-        // the shared Xml builtin catalog. EXCLUDES `XmlPort` (an AL object type). A
-        // real variable of the same name shadows this (Step 2 ran first).
-        if xml_static_framework_type(&receiver_name_lc) {
+        // Step 2c-bis — an AL framework/value TYPE NAME used as a STATIC receiver
+        // (`XmlElement.Create(...)`, `XmlDocument.ReadFrom(...)`, `Text.CopyStr(...)`).
+        // With no declared variable of that name, the bare identifier IS the type used
+        // statically; type it as the corresponding framework kind so Phase B
+        // classifies the static method via that type's builtin catalog. A real
+        // variable of the same name shadows this (Step 2 ran first).
+        if let Some(kind) = static_framework_type_kind(&receiver_name_lc) {
             return InferredReceiver {
-                ty: ReceiverType::Framework {
-                    kind: ReceiverBuiltinKind::Xml,
-                },
+                ty: ReceiverType::Framework { kind },
                 declared_type: String::new(),
                 receiver_shape: None,
             };
@@ -749,27 +754,45 @@ fn compound_receiver_shape(receiver_expr: &str) -> String {
 /// For the `other` bucket the receiver name is embedded as `"other::<name>"` so
 /// `--l3-unknown-breakdown` can surface concrete untracked receiver names for
 /// targeting (object globals, `CurrPage`/`CurrReport` aliases, etc.).
-/// AL Xml framework TYPE NAMES that expose STATIC factory/utility methods invoked
-/// on the type itself (`XmlElement.Create(...)`, `XmlDocument.ReadFrom(...)`,
-/// `XmlDeclaration.Create(...)`, `XmlText.Create(...)`). When such a name appears as
-/// a bare receiver with no declared variable, it is the framework type used
-/// statically → `Framework{Xml}`. EXCLUDES `XmlPort` (an AL OBJECT type with its own
-/// `.Run`/`.Import`/`.Export` dispatch, not a framework value type).
-fn xml_static_framework_type(name_lc: &str) -> bool {
-    matches!(
-        name_lc,
+/// An AL framework/value TYPE NAME used as a STATIC receiver — `XmlElement.Create(...)`,
+/// `XmlDocument.ReadFrom(...)`, `Text.CopyStr(...)`. When such a name appears as a bare
+/// receiver with NO declared variable shadowing it (Step 2 ran first), the identifier
+/// IS the type used statically; return its catalog kind so Phase B classifies the
+/// static method via that type's builtin catalog. Restricted to an explicit set of
+/// types that genuinely expose static methods — EXCLUDES `XmlPort` (an AL OBJECT type)
+/// and container/ref types (`Record`/`RecordRef`/`List`/...) that are never invoked
+/// statically, so a non-static receiver of the same name is never mis-typed.
+/// If `expr` is `this.<rest>` (the AL self-instance qualifier, case-insensitive),
+/// return `<rest>`. `this.X` is equivalent to the bare `X` for receiver typing — it
+/// names an object global / field / method in scope. `None` when `expr` is not
+/// `this`-qualified.
+fn strip_this_prefix(expr: &str) -> Option<&str> {
+    let (base, rest) = expr.split_once('.')?;
+    if base.trim().eq_ignore_ascii_case("this") && !rest.is_empty() {
+        Some(rest.trim())
+    } else {
+        None
+    }
+}
+
+fn static_framework_type_kind(name_lc: &str) -> Option<ReceiverBuiltinKind> {
+    match name_lc {
         "xmldocument"
-            | "xmlelement"
-            | "xmlattribute"
-            | "xmltext"
-            | "xmlcomment"
-            | "xmlcdata"
-            | "xmldeclaration"
-            | "xmlprocessinginstruction"
-            | "xmlnode"
-            | "xmlnamespacemanager"
-            | "xmldocumenttype"
-    )
+        | "xmlelement"
+        | "xmlattribute"
+        | "xmltext"
+        | "xmlcomment"
+        | "xmlcdata"
+        | "xmldeclaration"
+        | "xmlprocessinginstruction"
+        | "xmlnode"
+        | "xmlnamespacemanager"
+        | "xmldocumenttype" => Some(ReceiverBuiltinKind::Xml),
+        // `Text.CopyStr(...)`, `Text.StrLen(...)`, etc. — the Text data type's static
+        // methods share the Text/Label builtin catalog. (`Code`/`Label` likewise.)
+        "text" | "code" | "label" => Some(ReceiverBuiltinKind::Text),
+        _ => None,
+    }
 }
 
 fn untracked_receiver_shape(receiver_name: &str) -> String {
