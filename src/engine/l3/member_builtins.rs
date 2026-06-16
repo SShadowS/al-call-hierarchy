@@ -440,9 +440,12 @@ pub fn framework_method_return_type(
             Some(Xml)
         }
         // Enum / Option value — `Names()` and `Ordinals()` return a List (of Text /
-        // Integer respectively), so `Rec."eSeal Service".Ordinals().Count()` resolves.
+        // Integer respectively), so `Rec."eSeal Service".Ordinals().Count()` resolves;
+        // `AsInteger()` returns Integer, so `Enum::"X"::Value.AsInteger().ToText()`
+        // chains through to the Integer catalog.
         (Enum, "names") => Some(List),
         (Enum, "ordinals") => Some(List),
+        (Enum, "asinteger") => Some(Integer),
         // RecordRef / KeyRef navigation.
         (RecordRef, "field") => Some(FieldRef),
         (RecordRef, "fieldindex") => Some(FieldRef),

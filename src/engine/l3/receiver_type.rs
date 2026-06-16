@@ -182,11 +182,11 @@ pub fn infer_receiver_type(
         if let Some(rest) = strip_this_prefix(receiver_expr) {
             return infer_receiver_type(rest, routine, symbols);
         }
-        // `Enum::"X".Ordinals()` / `.Names()` — a static enum TYPE reference. Its
-        // static methods are enum-type builtins (EnumType catalog), so type it as
-        // Framework{Enum}. Only the literal `Enum::` qualifier (the generic enum-type
-        // form) matches — a value reference `SomeEnum::Value` does not.
-        if let Some(ty) = enum_static_type_receiver(receiver_expr) {
+        // An enum/option VALUE or static enum TYPE reference (the `::` operator):
+        // `Enum::"X".Ordinals()`, `Rec."Document Type"::Order.AsInteger()`,
+        // `Enum::"X"::Value.AsInteger()`. All type as Framework{Enum}; object-ID refs
+        // (`Codeunit::"X"`) are excluded inside the helper.
+        if let Some(ty) = enum_receiver(receiver_expr) {
             return InferredReceiver {
                 ty,
                 declared_type: String::new(),
@@ -803,21 +803,37 @@ fn compound_receiver_shape(receiver_expr: &str) -> String {
 /// return `<rest>`. `this.X` is equivalent to the bare `X` for receiver typing — it
 /// names an object global / field / method in scope. `None` when `expr` is not
 /// `this`-qualified.
-/// `Enum::"X"` / `Enum::Identifier` — a static enum TYPE reference (the generic
-/// `Enum::` qualifier, case-insensitive). Its static methods (`Ordinals()`,
-/// `Names()`, `FromInteger()`) are enum-type builtins, so type it as
-/// `Framework{Enum}` (the EnumType catalog; `Ordinals`/`Names` chain to List).
-/// `None` for anything else — notably a VALUE reference `SomeEnum::Value`, whose
-/// head is the enum's own name, not the literal `Enum` keyword.
-fn enum_static_type_receiver(receiver_expr: &str) -> Option<ReceiverType> {
-    let (head, _name) = receiver_expr.split_once("::")?;
-    if head.trim().eq_ignore_ascii_case("enum") {
-        Some(ReceiverType::Framework {
-            kind: ReceiverBuiltinKind::Enum,
-        })
-    } else {
-        None
+/// An enum/option VALUE or static enum TYPE reference used as a receiver — the `::`
+/// member-access operator. Covers `Enum::"X"` / `Enum::"X"::Value` (static type +
+/// value), `Rec."Document Type"::Order` (a record's option/enum FIELD value), and
+/// `"My Enum"::Value`. All evaluate to an enum value/type, so type them as
+/// `Framework{Enum}` and `.AsInteger()`/`.Ordinals()`/`.Names()` resolve via the
+/// EnumType catalog.
+///
+/// `::` is ALSO the object-ID operator (`Codeunit::"X"`, `Page::"X"`, `Database::"X"`,
+/// …) which yields an Integer, NOT an enum — those heads are excluded so a stray
+/// `Codeunit::"X".M()` is not mis-typed. `None` when the expression has no `::`.
+fn enum_receiver(receiver_expr: &str) -> Option<ReceiverType> {
+    // The keyword before the FIRST `::` decides the operator's meaning.
+    let (head, _rest) = receiver_expr.split_once("::")?;
+    let head_lc = head.trim().to_lowercase();
+    if matches!(
+        head_lc.as_str(),
+        "codeunit"
+            | "page"
+            | "report"
+            | "query"
+            | "xmlport"
+            | "database"
+            | "interface"
+            | "enumextension"
+    ) {
+        // Object-ID reference → Integer, not an enum value.
+        return None;
     }
+    Some(ReceiverType::Framework {
+        kind: ReceiverBuiltinKind::Enum,
+    })
 }
 
 fn strip_this_prefix(expr: &str) -> Option<&str> {

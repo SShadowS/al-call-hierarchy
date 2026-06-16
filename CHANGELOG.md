@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enum/option VALUE references (`::`) resolve as enum receivers.** An enum member-access
+  expression used as a receiver — `Rec."Document Type"::Order.AsInteger()`,
+  `Enum::"CDC Translate To Type"::Item.AsInteger().ToText()`, `EMailLog."Linked to Table"::Customer.AsInteger()`
+  — now types as `Framework{Enum}` so `.AsInteger()`/`.Ordinals()`/`.Names()` classify `builtin`.
+  The `enum_receiver` helper (generalized from the prior `Enum::`-only handler) covers the
+  static-type, type-value, and field-value forms; object-ID `::` refs (`Codeunit::"X"`,
+  `Page::"X"`, …) are excluded (they yield Integer, not enum). `framework_method_return_type`
+  now maps Enum `AsInteger` → Integer so the `.AsInteger().ToText()` chain resolves. Big win on
+  document-type-heavy code: **DC deps-loaded realUnknownRate 1.00% → 0.36% (unknown 330→118)**;
+  CDO 0.037% → 0.029%.
 - **Enum type NAME as a static receiver.** A bare/quoted identifier that names an Enum object,
   used as a receiver — `"CDO Send on Posting".FromInteger(x)`, `MyEnum.Names()` — now types as
   `Framework{Enum}` (resolved via a symbol-table `object_by_type_name("Enum", …)` lookup), so its
