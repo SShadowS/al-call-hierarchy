@@ -170,6 +170,43 @@ fn report_dataitem_source_table(routine: Node, source: &str) -> Option<String> {
     None
 }
 
+/// Collect every report `dataitem(Name; "Source Table")` declared anywhere in the
+/// object (including nested dataitems) as `(dataitem name, source table)` pairs,
+/// both unquoted. AL lets you reference a dataitem BY NAME as a record variable
+/// typed to its source table — e.g. report code doing `"Sales Header Filter".GetView()`
+/// where `"Sales Header Filter"` is the NAME of `dataitem("Sales Header Filter";
+/// "Sales Header")`. The dataitem name is in scope across ALL of the report's
+/// routines (report-level procedures + sibling dataitem triggers), so we seed each
+/// as a record variable in every routine and let `record_types` pass-1 resolve the
+/// `table_id` from the source-table name. Distinct from the per-dataitem implicit
+/// `Rec` of a dataitem trigger (which `report_dataitem_source_table` handles).
+fn report_dataitem_record_vars(decl: Node, source: &str) -> Vec<(String, String)> {
+    fn walk(n: Node, source: &str, out: &mut Vec<(String, String)>) {
+        if n.kind() == "report_dataitem" {
+            if let (Some(name_node), Some(table_node)) = (
+                n.child_by_field_name("name"),
+                n.child_by_field_name("table_name"),
+            ) {
+                let name = strip_quotes(node_text(name_node, source)).to_string();
+                let table = strip_quotes(node_text(table_node, source)).to_string();
+                if !name.is_empty() && !table.is_empty() {
+                    out.push((name, table));
+                }
+            }
+        }
+        // Don't descend into routine bodies — dataitems live in the dataset section.
+        if n.kind() == "code_block" {
+            return;
+        }
+        for c in named_children(n) {
+            walk(c, source, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(decl, source, &mut out);
+    out
+}
+
 /// Read a simple object property value (e.g. SourceTable) for implicit-Rec seeding.
 fn read_object_property(decl: Node, name: &str, source: &str) -> Option<String> {
     fn find<'a>(n: Node<'a>, name_lc: &str, source: &str) -> Option<Node<'a>> {
@@ -290,6 +327,31 @@ pub fn project_routine_features(
             is_parameter: false,
             parameter_index: None,
         });
+    }
+    // Seed each report dataitem NAME as a record variable typed to its source
+    // table, visible across ALL of the report's routines (the dataitem names are in
+    // scope in report-level procedures + sibling dataitem triggers). AL lets you
+    // reference a dataitem by name as a record — e.g. `"Sales Header Filter".GetView()`
+    // for `dataitem("Sales Header Filter"; "Sales Header")`. `record_types` pass-1
+    // resolves the `table_id` from `table_name`. Never shadow a declared var, the
+    // implicit `Rec`, or a duplicate dataitem name already seeded.
+    if object_type == "Report" || object_type == "ReportExtension" {
+        for (di_name, di_table) in report_dataitem_record_vars(decl, source) {
+            if record_variables
+                .iter()
+                .any(|v| v.name.eq_ignore_ascii_case(&di_name))
+            {
+                continue;
+            }
+            record_variables.push(scope::RecordVariable {
+                id: format!("{routine_id}/rv/dataitem/{di_name}"),
+                name: di_name,
+                table_name: Some(di_table),
+                temp_state: scope::ts_known(false),
+                is_parameter: false,
+                parameter_index: None,
+            });
+        }
     }
     let record_var_names: HashSet<String> = record_variables
         .iter()

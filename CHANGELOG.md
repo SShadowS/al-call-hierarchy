@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Report dataitem names resolve as record variables.** AL lets you reference a report
+  `dataitem(Name; "Source Table")` BY NAME as a record typed to its source table — e.g.
+  `"Sales Header Filter".GetView()` / `.GetFilters()` / `.SetRange(...)` for
+  `dataitem("Sales Header Filter"; "Sales Header")`. The dataitem name is in scope across ALL
+  of the report's routines (report-level procedures + sibling dataitem triggers), so the routine
+  projection now seeds EVERY dataitem's name as a record variable typed to its source table
+  (`record_types` pass-1 resolves the `table_id` by name). Distinct from the per-dataitem
+  implicit `Rec` of a dataitem trigger. Member calls on dataitem-named records now classify
+  `builtin` instead of `Unknown{UntrackedReceiver}`. CDO deps-loaded: untracked-receiver 57→28,
+  realUnknownRate 0.723% → 0.511%.
+
 ### Changed
 - **Codeunit `TableNo` seeds an implicit `Rec`.** A codeunit with a `TableNo` property runs
   against an implicit `Rec` of that table (its `OnRun(var Rec)` parameter; `Rec` is exposed
