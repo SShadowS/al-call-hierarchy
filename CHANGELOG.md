@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enum type NAME as a static receiver.** A bare/quoted identifier that names an Enum object,
+  used as a receiver — `"CDO Send on Posting".FromInteger(x)`, `MyEnum.Names()` — now types as
+  `Framework{Enum}` (resolved via a symbol-table `object_by_type_name("Enum", …)` lookup), so its
+  static methods classify `builtin`. A real variable of the same name shadows it. CDO deps-loaded:
+  untracked-receiver 2→1, realUnknownRate 0.044% → 0.037%.
 - **Text/Code table fields resolve as Text receivers; field-kind resolution unified.** A
   Text/Code-typed table field used as a member receiver — `"Azure Blob Private Endpoint URL".Trim()`
   (implicit Rec), `CollectedErrors."Additional Information".Contains(...)` (declared record) —

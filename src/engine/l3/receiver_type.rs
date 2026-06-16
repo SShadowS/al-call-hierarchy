@@ -313,6 +313,26 @@ pub fn infer_receiver_type(
             };
         }
 
+        // Step 2c-ter — an ENUM TYPE NAME used as a static receiver:
+        // `"CDO Send on Posting".FromInteger(x)`, `MyEnum.Names()`. With no variable of
+        // that name, a bare identifier that names an Enum OBJECT is the enum type used
+        // statically; type it as Framework{Enum} so its static methods
+        // (FromInteger/Names/Ordinals) classify `builtin` via the EnumType catalog. A
+        // real variable shadows this (Step 2 ran first). Note: an enum's own-name VALUE
+        // reference `MyEnum::Value` is a different (compound) shape handled elsewhere.
+        if symbols
+            .object_by_type_name("Enum", &receiver_name_lc)
+            .is_some()
+        {
+            return InferredReceiver {
+                ty: ReceiverType::Framework {
+                    kind: ReceiverBuiltinKind::Enum,
+                },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
+
         // Step 2d — a bare FIELD of the implicit `Rec` used as a member receiver
         // (`"File Blob".CreateInStream(...)` in table/page code). A Blob / Media /
         // MediaSet field exposes the stream + media intrinsics; resolve the implicit
