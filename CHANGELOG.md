@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Quoted identifiers containing `(`/`[`/`.` parse as simple receiver names.**
+  `simple_receiver_name` rejected any quoted identifier whose inner text contained `(` or `[`,
+  misclassifying common BC field/var receivers like `"Request Page (xml)"`, `"Amount (LCY)"`,
+  `"A.B"` as compound `call-result` expressions — so `"Request Page (xml)".CreateOutStream(...)`
+  and friends fell to `Unknown{CompoundReceiver}`. Those characters are LEGAL inside an AL quoted
+  identifier; only an embedded `"` (e.g. `"A"."B"`) signals a real compound. Now resolves the
+  member call on the quoted field (Blob/stream intrinsics, etc.). CDO deps-loaded:
+  compound-receiver 17→8, realUnknownRate 0.241% → 0.175%.
 - **Compound framework chains accept RecordRef/FieldRef/KeyRef bases.** The single-hop
   framework-chain resolver (`compound_framework_property_kind`) only matched a
   `Framework{kind}` base, so `RecRef.Field(n).SetRange(...)` and `SourceRecRef.KeyIndex(1).M()`

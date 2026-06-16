@@ -72,8 +72,14 @@ pub fn simple_receiver_name(receiver_text: &str) -> Option<String> {
             return None;
         }
         let inner = &trimmed[1..trimmed.len() - 1];
-        // A quoted identifier containing compound-expression chars is malformed.
-        if inner.contains('(') || inner.contains('[') {
+        // `(`, `[`, `.`, and spaces are LEGAL characters inside an AL quoted
+        // identifier (`"Request Page (xml)"`, `"Amount (LCY)"`, `"A.B"`), so they must
+        // NOT be rejected — doing so misclassifies a quoted field/var receiver as a
+        // compound `call-result` and drops `"Request Page (xml)".CreateOutStream(...)`
+        // to Unknown. An embedded `"` is the only real signal of a COMPOUND expression
+        // (`"A"."B"`); reject only that. (`"A".M()` is already rejected by the
+        // `ends_with('"')` guard above.)
+        if inner.contains('"') {
             return None;
         }
         return Some(inner.to_lowercase());
@@ -91,4 +97,39 @@ pub fn simple_receiver_name(receiver_text: &str) -> Option<String> {
     }
 
     Some(trimmed.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::simple_receiver_name;
+
+    #[test]
+    fn quoted_identifier_with_parens_is_a_simple_name() {
+        // AL quoted identifiers legally contain `(`, `[`, `.`, and spaces — these are
+        // name characters, not compound-expression syntax. A quoted field/var receiver
+        // like `"Request Page (xml)"` must parse as ONE simple name so its member call
+        // (`.CreateOutStream(...)`) resolves, not degrade to a `call-result` compound.
+        assert_eq!(
+            simple_receiver_name("\"Request Page (xml)\""),
+            Some("request page (xml)".to_string())
+        );
+        assert_eq!(
+            simple_receiver_name("\"Amount (LCY)\""),
+            Some("amount (lcy)".to_string())
+        );
+        assert_eq!(simple_receiver_name("\"A.B\""), Some("a.b".to_string()));
+        assert_eq!(
+            simple_receiver_name("\"My Var\""),
+            Some("my var".to_string())
+        );
+    }
+
+    #[test]
+    fn compound_and_unquoted_call_results_still_decline() {
+        // A real call result and member access must STILL decline (compound shapes).
+        assert_eq!(simple_receiver_name("Foo()"), None);
+        assert_eq!(simple_receiver_name("\"A\".M()"), None);
+        // Two quoted segments (`"A"."B"`) — the embedded `"` signals a compound.
+        assert_eq!(simple_receiver_name("\"A\".\"B\""), None);
+    }
 }
