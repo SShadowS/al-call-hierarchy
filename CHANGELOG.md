@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Xml framework type names resolve as static receivers.** `XmlElement.Create(...)`,
+  `XmlDocument.ReadFrom(...)`, `XmlDeclaration.Create(...)`, `XmlText.Create(...)` invoke STATIC
+  factory/utility methods on the framework type itself. When the bare type name has no declared
+  variable shadowing it, Phase A now types it as `Framework{Xml}` (an explicit allow-list of Xml
+  value types — EXCLUDES `XmlPort`, an AL object type), so Phase B classifies the static method
+  via the shared Xml builtin catalog. `framework_method_return_type` also maps the Xml `Create*`
+  factories → Xml, so chained `XmlElement.Create(Name).AsXmlNode()` resolves. CDO deps-loaded:
+  untracked-receiver 17→9, compound-receiver 35→31, realUnknownRate 0.431% → 0.343%.
 - **Named return values are tracked as in-scope variables.** A procedure with a NAMED return
   value — `procedure CreateDefaulteDocsSendCode() SendCode: Record "CDO Send Code"` — exposes
   that name as a usable variable inside the body (`SendCode.Insert()`, `SendCode.GetX()`). The

@@ -374,6 +374,26 @@ pub fn framework_method_return_type(
         {
             Some(Xml)
         }
+        // Xml* STATIC factory methods — `XmlElement.Create(...)`,
+        // `XmlDeclaration.Create(...)`, etc. each return an Xml node (the shared Xml
+        // kind), so a chained `XmlElement.Create(Name).AsXmlNode()` resolves. These
+        // factories deterministically return an Xml type.
+        (Xml, m)
+            if matches!(
+                m,
+                "create"
+                    | "createelement"
+                    | "createattribute"
+                    | "createtext"
+                    | "createcomment"
+                    | "createcdata"
+                    | "createdeclaration"
+                    | "createprocessinginstruction"
+                    | "createnamespacedeclaration"
+            ) =>
+        {
+            Some(Xml)
+        }
         // RecordRef / KeyRef navigation.
         (RecordRef, "field") => Some(FieldRef),
         (RecordRef, "fieldindex") => Some(FieldRef),

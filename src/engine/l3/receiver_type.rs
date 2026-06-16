@@ -278,6 +278,23 @@ pub fn infer_receiver_type(
             };
         }
 
+        // Step 2c-bis — an AL Xml framework TYPE NAME used as a STATIC receiver
+        // (`XmlElement.Create(...)`, `XmlDocument.ReadFrom(...)`,
+        // `XmlDeclaration.Create(...)`). With no declared variable of that name, the
+        // bare identifier IS the framework type used statically; type it as
+        // Framework{Xml} so Phase B classifies the static factory/utility method via
+        // the shared Xml builtin catalog. EXCLUDES `XmlPort` (an AL object type). A
+        // real variable of the same name shadows this (Step 2 ran first).
+        if xml_static_framework_type(&receiver_name_lc) {
+            return InferredReceiver {
+                ty: ReceiverType::Framework {
+                    kind: ReceiverBuiltinKind::Xml,
+                },
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
+
         // Step 2d — a bare FIELD of the implicit `Rec` used as a member receiver
         // (`"File Blob".CreateInStream(...)` in table/page code). A Blob / Media /
         // MediaSet field exposes the stream + media intrinsics; resolve the implicit
@@ -709,6 +726,29 @@ fn compound_receiver_shape(receiver_expr: &str) -> String {
 /// For the `other` bucket the receiver name is embedded as `"other::<name>"` so
 /// `--l3-unknown-breakdown` can surface concrete untracked receiver names for
 /// targeting (object globals, `CurrPage`/`CurrReport` aliases, etc.).
+/// AL Xml framework TYPE NAMES that expose STATIC factory/utility methods invoked
+/// on the type itself (`XmlElement.Create(...)`, `XmlDocument.ReadFrom(...)`,
+/// `XmlDeclaration.Create(...)`, `XmlText.Create(...)`). When such a name appears as
+/// a bare receiver with no declared variable, it is the framework type used
+/// statically → `Framework{Xml}`. EXCLUDES `XmlPort` (an AL OBJECT type with its own
+/// `.Run`/`.Import`/`.Export` dispatch, not a framework value type).
+fn xml_static_framework_type(name_lc: &str) -> bool {
+    matches!(
+        name_lc,
+        "xmldocument"
+            | "xmlelement"
+            | "xmlattribute"
+            | "xmltext"
+            | "xmlcomment"
+            | "xmlcdata"
+            | "xmldeclaration"
+            | "xmlprocessinginstruction"
+            | "xmlnode"
+            | "xmlnamespacemanager"
+            | "xmldocumenttype"
+    )
+}
+
 fn untracked_receiver_shape(receiver_name: &str) -> String {
     match receiver_name.to_lowercase().as_str() {
         "rec" | "xrec" => "implicit-rec".to_string(),
