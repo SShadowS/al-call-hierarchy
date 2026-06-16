@@ -45,6 +45,33 @@ fn decl_name_lc(name_node: Node, source: &str) -> String {
     }
 }
 
+/// A procedure's NAMED return value (`procedure F() Name: Type`) as
+/// `(name, name_node, return_type type_specification node)`. AL exposes the named
+/// return value as a usable local variable inside the body — e.g.
+/// `SendCode.Insert()` where `SendCode` is the named return of
+/// `procedure CreateDefaulteDocsSendCode() SendCode: Record "CDO Send Code"`.
+/// Grammar: `_procedure_named_return` sets `field('return_value')` and inlines
+/// `_procedure_return_specification` which sets `field('return_type')`, so both are
+/// direct fields of the routine node; a plain (unnamed) return has `return_type`
+/// but no `return_value`. `None` for triggers, unnamed returns, and no-return
+/// routines.
+fn named_return_value<'a>(
+    routine_node: Node<'a>,
+    source: &str,
+) -> Option<(String, Node<'a>, Node<'a>)> {
+    let name_node = routine_node.child_by_field_name("return_value")?;
+    let type_node = routine_node.child_by_field_name("return_type")?;
+    let name = if name_node.kind() == "quoted_identifier" {
+        strip_quotes(node_text(name_node, source)).to_string()
+    } else {
+        node_text(name_node, source).to_string()
+    };
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, name_node, type_node))
+}
+
 #[derive(Clone)]
 pub struct ParameterSymbol {
     pub index: u32,
@@ -224,6 +251,34 @@ pub fn extract_record_variables(
                     id: format!("{}/rv/{}", routine_id, name.to_lowercase()),
                     name,
                     table_name: table_name.clone(),
+                    temp_state: ts_known(is_temporary),
+                    is_parameter: false,
+                    parameter_index: None,
+                });
+            }
+        }
+    }
+
+    // Named return value typed as a Record — a usable record var in the body
+    // (`procedure X() SendCode: Record "CDO Send Code"` → `SendCode.Insert()`).
+    if let Some((name, _name_node, type_node)) = named_return_value(proc_node, source) {
+        if let Some(record_type_node) = child_of_kind(type_node, "record_type") {
+            let lc = name.to_lowercase();
+            if !out.iter().any(|rv| rv.name.to_lowercase() == lc) {
+                let table_name =
+                    if let Some(q) = child_of_kind(record_type_node, "quoted_identifier") {
+                        Some(strip_quotes(node_text(q, source)).to_string())
+                    } else {
+                        child_of_kind(record_type_node, "identifier")
+                            .map(|id| node_text(id, source).to_string())
+                    };
+                let is_temporary = named_children(record_type_node)
+                    .iter()
+                    .any(|c| c.kind() == "temporary_keyword");
+                out.push(RecordVariable {
+                    id: format!("{}/rv/{}", routine_id, lc),
+                    name,
+                    table_name,
                     temp_state: ts_known(is_temporary),
                     is_parameter: false,
                     parameter_index: None,
@@ -464,6 +519,34 @@ pub fn extract_variables(
                     end_line: ep.row as u32,
                     end_column: cols.col(ep.row, ep.column),
                     syntax_kind: "variable_declaration".to_string(),
+                },
+            });
+        }
+    }
+
+    // 2b. Named return value — a usable local variable in the body, of ANY type
+    // (`procedure X() Result: Codeunit Y` → `Result.Method()`, record returns →
+    // their intrinsics). Mirrors a local declaration; skipped if a param/local of the
+    // same name already shadows it.
+    if let Some((name, name_node, type_node)) = named_return_value(routine_node, source) {
+        let lc_name = name.to_lowercase();
+        if !out.iter().any(|v| v.name == lc_name) {
+            let sp = name_node.start_position();
+            let ep = type_node.end_position();
+            out.push(PVariableSymbol {
+                name: lc_name,
+                declared_type: canonicalize_type_text(node_text(type_node, source)),
+                scope: "local".to_string(),
+                is_parameter: false,
+                parameter_index: None,
+                initializer: None,
+                source_anchor: super::features::PAnchor {
+                    source_unit_id: source_unit_id.to_string(),
+                    start_line: sp.row as u32,
+                    start_column: cols.col(sp.row, sp.column),
+                    end_line: ep.row as u32,
+                    end_column: cols.col(ep.row, ep.column),
+                    syntax_kind: "return_value".to_string(),
                 },
             });
         }

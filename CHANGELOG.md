@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Named return values are tracked as in-scope variables.** A procedure with a NAMED return
+  value — `procedure CreateDefaulteDocsSendCode() SendCode: Record "CDO Send Code"` — exposes
+  that name as a usable variable inside the body (`SendCode.Insert()`, `SendCode.GetX()`). The
+  routine scope projection now seeds the named return as a record variable (when record-typed)
+  AND a general scalar variable (any type: `Codeunit`/`Interface`/framework), mirroring a local
+  declaration. Member calls on a named return now resolve instead of falling to
+  `Unknown{UntrackedReceiver}`. CDO deps-loaded: untracked-receiver 28→17, realUnknownRate
+  0.511% → 0.431%.
+- **`ALDUMP_DEBUG_UNKNOWN` diagnostic** — `--l3-unknown-breakdown-cross-app` now honors the
+  `ALDUMP_DEBUG_UNKNOWN` env var (set to `1` for all, or a substring to filter by receiver
+  shape) to dump each residual unknown edge's owning object/routine + receiver shape + method
+  to stderr. The work-list tool for locating the exact source behind each breakdown bucket.
 - **Report dataitem names resolve as record variables.** AL lets you reference a report
   `dataitem(Name; "Source Table")` BY NAME as a record typed to its source table — e.g.
   `"Sales Header Filter".GetView()` / `.GetFilters()` / `.SetRange(...)` for
