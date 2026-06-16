@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Preprocessor-guarded object globals are now extracted.** A global variable declared inside a
+  `#if`/`#else` block in a var section — `var #if BC24 NoSeriesMgt: Codeunit "No. Series" #else
+  NoSeriesMgt: Codeunit NoSeriesManagement #endif` (ubiquitous in BC version-compat code) — was
+  invisible to both object-global extractors (scalar + record), which only scanned direct
+  `var_section` children and skipped the `preproc_conditional_var` wrapper. Every member call on
+  such a global (`NoSeriesMgt.GetNextNo(...)`) degraded to `Unknown{UntrackedReceiver}`. A new
+  `var_section_declarations` helper descends through the preprocessor wrappers; same-name branches
+  are de-duplicated first-wins (mutually exclusive at compile time). DC deps-loaded:
+  realUnknownRate 0.304% → 0.252% (unknown 100→83).
+
 ### Added
 - **`Version`/`File` static receivers + `CompanyProperty`/`SessionInformation` singletons.**
   `Version.Create(...)` and `File.Exists(...)`/`File.Open(...)` now resolve via the static-type

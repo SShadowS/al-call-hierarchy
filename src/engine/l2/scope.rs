@@ -114,6 +114,34 @@ pub(crate) fn ts_param_dependent(index: u32) -> PTempState {
     }
 }
 
+/// All `variable_declaration` nodes inside a `var_section`, INCLUDING those nested
+/// in `#if`/`#else` preprocessor blocks (`preproc_conditional_var`). BC version-compat
+/// code commonly guards a global's type per build — e.g.
+/// `#if BC24 NoSeriesMgt: Codeunit "No. Series" #else NoSeriesMgt: Codeunit NoSeriesManagement #endif`.
+/// Without descending into the preproc wrapper, such a global is invisible and every
+/// `NoSeriesMgt.M()` degrades to `Unknown{UntrackedReceiver}`. Branches are mutually
+/// exclusive at compile time, so a name declared in multiple branches is de-duplicated
+/// first-wins by the callers.
+fn var_section_declarations(var_section: Node) -> Vec<Node> {
+    fn walk<'a>(n: Node<'a>, out: &mut Vec<Node<'a>>) {
+        if n.kind() == "variable_declaration" {
+            out.push(n);
+            return;
+        }
+        // Descend through the preprocessor wrapper nodes (preproc_conditional_var,
+        // preproc_if/else/endif) to reach branch declarations. A var_section contains
+        // no code blocks, so an unconstrained child walk is safe here.
+        for c in named_children(n) {
+            walk(c, out);
+        }
+    }
+    let mut out = Vec::new();
+    for c in named_children(var_section) {
+        walk(c, &mut out);
+    }
+    out
+}
+
 /// `extractParameters` — ParameterSymbol[] from a routine's parameter_list.
 pub fn extract_parameters(proc_node: Node, source: &str) -> Vec<ParameterSymbol> {
     let mut parameters = Vec::new();
@@ -361,14 +389,12 @@ pub fn extract_object_global_record_vars(
     source: &str,
 ) -> Vec<super::features::PRecordVariable> {
     let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for child in named_children(object_node) {
         if child.kind() != "var_section" {
             continue;
         }
-        for var_decl in named_children(child) {
-            if var_decl.kind() != "variable_declaration" {
-                continue;
-            }
+        for var_decl in var_section_declarations(child) {
             let Some(type_spec_node) = child_of_kind(var_decl, "type_specification") else {
                 continue;
             };
@@ -391,6 +417,10 @@ pub fn extract_object_global_record_vars(
                 } else {
                     node_text(name_node, source).to_string()
                 };
+                // First-wins across `#if`/`#else` branches that declare the same name.
+                if !seen.insert(name.to_lowercase()) {
+                    continue;
+                }
                 out.push(super::features::PRecordVariable {
                     id: format!("{}/grv/{}", object_id, name.to_lowercase()),
                     name,
@@ -413,18 +443,20 @@ pub fn extract_object_globals(
     source: &str,
 ) -> Vec<PVariableSymbol> {
     let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for child in named_children(object_node) {
         if child.kind() != "var_section" {
             continue;
         }
-        for decl in named_children(child) {
-            if decl.kind() != "variable_declaration" {
-                continue;
-            }
+        for decl in var_section_declarations(child) {
             let declared_type = normalize_declared_type(decl, source);
             // One global per declared name (grouped `A, B, C : Type;`).
             for name_node in decl_name_nodes(decl) {
                 let lc_name = decl_name_lc(name_node, source);
+                // First-wins across `#if`/`#else` branches declaring the same name.
+                if !seen.insert(lc_name.clone()) {
+                    continue;
+                }
                 out.push(PVariableSymbol {
                     name: lc_name,
                     declared_type: declared_type.clone(),
