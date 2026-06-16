@@ -426,9 +426,17 @@ fn compound_blob_media_field_kind(
         .fields
         .iter()
         .find(|f| f.name.to_lowercase() == member_name)?;
-    match field.data_type.to_lowercase().as_str() {
+    // First whitespace/`[`-delimited token of the field's data type. Native fields
+    // store the `type_specification` text (`Blob`, `Enum "X"`, `Option`); dep fields
+    // store `format_type` output (`Enum "Subtype"`). First-token matching covers both.
+    let dt_lc = field.data_type.to_lowercase();
+    let first = dt_lc.split([' ', '[']).next().unwrap_or("");
+    match first {
         "blob" => Some(ReceiverBuiltinKind::Blob),
         "media" | "mediaset" => Some(ReceiverBuiltinKind::Media),
+        // An Enum / Option field used as a member receiver
+        // (`Rec."eSeal Service".Ordinals()`, `Line."Mail Importance".AsInteger()`).
+        "enum" | "option" => Some(ReceiverBuiltinKind::Enum),
         _ => None,
     }
 }

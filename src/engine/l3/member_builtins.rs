@@ -152,6 +152,14 @@ pub enum ReceiverBuiltinKind {
     /// AL `SessionInformation` — runtime session telemetry.
     /// Source: member_builtins.json "SessionInformation" (4 methods).
     SessionInformation,
+    /// An AL `Enum` / `Option` VALUE (instance) — the method surface shared by every
+    /// enum value: `AsInteger`, `FromInteger`, `Names`, `Ordinals`. Produced for an
+    /// enum/option-typed local var and for an enum/option table FIELD used as a
+    /// member receiver (`Rec."eSeal Service".Ordinals()`,
+    /// `EMailTemplateLine."Mail Importance".AsInteger()`). Distinct from
+    /// `ReceiverType::Enum`, which is the enum TYPE used statically.
+    /// Source: member_builtins.json "EnumType" (4 methods).
+    Enum,
 }
 
 /// How a catalog-recognized member method dispatches. Phase 2 emits `builtin` for
@@ -306,8 +314,15 @@ pub fn member_builtin_disposition(
         Version => set_hit(&VERSION, method_lc),
         FilterPageBuilder => set_hit(&FILTERPAGEBUILDER, method_lc),
         SessionInformation => set_hit(&SESSIONINFORMATION, method_lc),
+        Enum => set_hit(&ENUM_VALUE, method_lc),
     }
 }
+
+// --- Enum / Option value instance — `<enumvalue>.AsInteger()` etc. ---
+// Source: member_builtins.json "EnumType" (AsInteger, FromInteger, Names, Ordinals).
+static ENUM_VALUE: phf::Set<&'static str> = phf_set! {
+    "asinteger", "frominteger", "names", "ordinals",
+};
 
 #[inline]
 fn set_hit(set: &phf::Set<&'static str>, method_lc: &str) -> Option<Disposition> {
@@ -394,6 +409,10 @@ pub fn framework_method_return_type(
         {
             Some(Xml)
         }
+        // Enum / Option value — `Names()` and `Ordinals()` return a List (of Text /
+        // Integer respectively), so `Rec."eSeal Service".Ordinals().Count()` resolves.
+        (Enum, "names") => Some(List),
+        (Enum, "ordinals") => Some(List),
         // RecordRef / KeyRef navigation.
         (RecordRef, "field") => Some(FieldRef),
         (RecordRef, "fieldindex") => Some(FieldRef),

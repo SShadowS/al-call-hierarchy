@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enum/Option table fields resolve as enum-value receivers.** An Enum/Option-typed table
+  FIELD used as a member receiver — `Rec."eSeal Service".Ordinals()`,
+  `EMailTemplateLine."Mail Importance".AsInteger()`,
+  `EMailTemplateHeader."Report Selection Usage".AsInteger()` — now types as the new
+  `Framework{Enum}` value-instance receiver (catalog `AsInteger`/`FromInteger`/`Names`/`Ordinals`
+  from the compiler `EnumType` surface). The field-of-record compound resolver, previously
+  blob/media-only, now recognizes enum/option fields via first-token data-type matching (covers
+  native `Enum "X"` and dep-ABI `format_type` output). `framework_method_return_type` maps Enum
+  `Names`/`Ordinals` → List, so the chained `Rec."eSeal Service".Ordinals().Count()` resolves.
+  CDO deps-loaded: compound-receiver 31→22, realUnknownRate 0.343% → 0.278%.
 - **Xml framework type names resolve as static receivers.** `XmlElement.Create(...)`,
   `XmlDocument.ReadFrom(...)`, `XmlDeclaration.Create(...)`, `XmlText.Create(...)` invoke STATIC
   factory/utility methods on the framework type itself. When the bare type name has no declared
