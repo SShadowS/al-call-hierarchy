@@ -1096,6 +1096,32 @@ fn main() -> ExitCode {
                 let (breakdown, framework_detail, shape_detail, bare_detail) =
                     unknown_breakdown(&primary_edges);
 
+                if std::env::var("ALDUMP_DEBUG_UNKNOWN").is_ok() {
+                    use al_call_hierarchy::engine::l3::resolution_class::{
+                        classify, ResolutionClass,
+                    };
+                    let rt_by_id: std::collections::HashMap<&str, &_> =
+                        ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
+                    let filter = std::env::var("ALDUMP_DEBUG_UNKNOWN").unwrap_or_default();
+                    for e in &primary_edges {
+                        if classify(e.resolution, e.dispatch_kind) != ResolutionClass::Unknown {
+                            continue;
+                        }
+                        let shape = e.receiver_shape.as_deref().unwrap_or("-");
+                        if !filter.is_empty() && filter != "1" && !shape.contains(&filter) {
+                            continue;
+                        }
+                        let (oname, onum, rname) = rt_by_id
+                            .get(e.from.as_str())
+                            .map(|r| (r.object_type.as_str(), r.object_number, r.name.as_str()))
+                            .unwrap_or(("?", 0, "?"));
+                        eprintln!(
+                            "UNK {oname} {onum} :: {rname} :: shape={shape} recvType={:?} method={:?} cs={}",
+                            e.receiver_type, e.unknown_method_name, e.callsite_id
+                        );
+                    }
+                }
+
                 let value = serde_json::json!({
                     "totalEdges": histogram.total,
                     "unknownTotal": histogram.unknown,
