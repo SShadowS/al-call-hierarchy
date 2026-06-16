@@ -305,6 +305,8 @@ pub fn infer_receiver_type(
             "taskscheduler" => Some(ReceiverBuiltinKind::TaskScheduler),
             "database" => Some(ReceiverBuiltinKind::Database),
             "system" => Some(ReceiverBuiltinKind::System),
+            "companyproperty" => Some(ReceiverBuiltinKind::CompanyProperty),
+            "sessioninformation" => Some(ReceiverBuiltinKind::SessionInformation),
             _ => None,
         };
         if let Some(kind) = singleton_kind {
@@ -877,6 +879,10 @@ fn static_framework_type_kind(name_lc: &str) -> Option<ReceiverBuiltinKind> {
         // `Text.CopyStr(...)`, `Text.StrLen(...)`, etc. — the Text data type's static
         // methods share the Text/Label builtin catalog. (`Code`/`Label` likewise.)
         "text" | "code" | "label" => Some(ReceiverBuiltinKind::Text),
+        // `File.Exists(...)` / `File.Open(...)`, `Version.Create(...)` — static methods
+        // on the File / Version value types (shared instance+static catalogs).
+        "file" => Some(ReceiverBuiltinKind::File),
+        "version" => Some(ReceiverBuiltinKind::Version),
         _ => None,
     }
 }

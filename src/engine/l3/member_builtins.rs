@@ -156,6 +156,9 @@ pub enum ReceiverBuiltinKind {
     /// runtime functions (`System.GetCollectedErrors()`, `System.Today()`, …).
     /// Source: member_builtins.json "System" (75 methods).
     System,
+    /// AL platform singleton `CompanyProperty` — current company metadata.
+    /// Source: member_builtins.json "CompanyProperty" (3 methods).
+    CompanyProperty,
     /// An AL `Enum` / `Option` VALUE (instance) — the method surface shared by every
     /// enum value: `AsInteger`, `FromInteger`, `Names`, `Ordinals`. Produced for an
     /// enum/option-typed local var and for an enum/option table FIELD used as a
@@ -324,8 +327,15 @@ pub fn member_builtin_disposition(
         SessionInformation => set_hit(&SESSIONINFORMATION, method_lc),
         Enum => set_hit(&ENUM_VALUE, method_lc),
         System => set_hit(&SYSTEM, method_lc),
+        CompanyProperty => set_hit(&COMPANY_PROPERTY, method_lc),
     }
 }
+
+// --- CompanyProperty singleton — `CompanyProperty.DisplayName()`. ---
+// Source: member_builtins.json "CompanyProperty" (3 methods).
+static COMPANY_PROPERTY: phf::Set<&'static str> = phf_set! {
+    "displayname", "id", "urlname",
+};
 
 // --- System pseudo-singleton — `System.<globalfn>()`. ---
 // Source: member_builtins.json "System" (75 methods).

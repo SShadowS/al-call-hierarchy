@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`Version`/`File` static receivers + `CompanyProperty`/`SessionInformation` singletons.**
+  `Version.Create(...)` and `File.Exists(...)`/`File.Open(...)` now resolve via the static-type
+  interception (File/Version value-type catalogs); `CompanyProperty.DisplayName()` and
+  `SessionInformation.*` resolve via the Step-2c singleton interception (new `CompanyProperty`
+  framework kind with its 3-method catalog; `SessionInformation` kind already existed). DC
+  deps-loaded: realUnknownRate 0.337% → 0.304% (unknown 111→100).
 - **`this.OwnMethod()` self-instance calls resolve.** A bare `this` receiver (the modern-AL
   self-instance qualifier, e.g. `this.CTSCDNUpdateeDocumentStatus(...)` in a PageExtension) now
   types as the new `ReceiverType::SelfObject` and dispatches the method among the CALLER routine's
