@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`this.OwnMethod()` self-instance calls resolve.** A bare `this` receiver (the modern-AL
+  self-instance qualifier, e.g. `this.CTSCDNUpdateeDocumentStatus(...)` in a PageExtension) now
+  types as the new `ReceiverType::SelfObject` and dispatches the method among the CALLER routine's
+  own object's procedures (by `object_id`) — so it resolves for ANY object kind, including
+  PageExtension/TableExtension that have no `ObjectKind` variant. The object-dispatch resolution
+  tail was factored into a shared `resolve_method_in_object` helper. DC deps-loaded:
+  realUnknownRate 0.36% → 0.337% (unknown 118→111).
 - **Enum/option VALUE references (`::`) resolve as enum receivers.** An enum member-access
   expression used as a receiver — `Rec."Document Type"::Order.AsInteger()`,
   `Enum::"CDC Translate To Type"::Item.AsInteger().ToText()`, `EMailLog."Linked to Table"::Customer.AsInteger()`

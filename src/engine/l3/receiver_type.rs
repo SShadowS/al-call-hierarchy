@@ -82,6 +82,11 @@ pub enum ReceiverType {
     /// `builtin`). Only a NON-builtin method on a Record with no resolvable table
     /// becomes `Unknown { RecordTableProcedure }`, decided in Phase B.
     Record { table_object_id: Option<String> },
+    /// The enclosing object instance — `this` (`this.OwnMethod()`). Phase B resolves
+    /// the method among the CALLER routine's OWN object's procedures (by its
+    /// `object_id`), so it works for ANY object kind, including PageExtension /
+    /// TableExtension that have no `ObjectKind` variant.
+    SelfObject,
     /// A `RecordRef` receiver — catalog-only in Phase B.
     RecordRef,
     /// A `FieldRef` receiver — catalog-only in Phase B.
@@ -280,6 +285,17 @@ pub fn infer_receiver_type(
         // correctly shadows these and reaches this point only for BARE names with
         // no matching variable declaration.
         let receiver_name_lc = receiver_name.to_lowercase();
+        // Bare `this` — the enclosing object instance. `this.OwnMethod()` resolves
+        // among the caller's own object's procedures (Phase B reads `ctx.routine`),
+        // so it works for any object kind. `this` is never a declared variable, so
+        // reaching here (Step 2 found no var) means it is the self-instance.
+        if receiver_name_lc == "this" {
+            return InferredReceiver {
+                ty: ReceiverType::SelfObject,
+                declared_type: String::new(),
+                receiver_shape: None,
+            };
+        }
         let singleton_kind = match receiver_name_lc.as_str() {
             "currpage" | "page" => Some(ReceiverBuiltinKind::PageInstance),
             "currreport" | "report" => Some(ReceiverBuiltinKind::ReportInstance),
@@ -946,6 +962,12 @@ pub(crate) fn dispatch(
         ReceiverType::Object { kind, name } => {
             dispatch_object(*kind, name, &receiver.declared_type, method, ctx)
         }
+        // `this.OwnMethod()` — resolve among the caller's own object's procedures.
+        ReceiverType::SelfObject => {
+            let obj_id = ctx.routine.object_id.clone();
+            let is_codeunit = ctx.routine.object_type.eq_ignore_ascii_case("codeunit");
+            resolve_method_in_object(&obj_id, is_codeunit, &receiver.declared_type, method, ctx)
+        }
         ReceiverType::Interface { name } => resolve_interface_dispatch(
             ctx.from,
             ctx.callsite_id,
@@ -1035,8 +1057,28 @@ fn dispatch_object(
         return vec![e];
     };
     let obj_id = obj.id.clone();
+    resolve_method_in_object(
+        &obj_id,
+        kind == ObjectKind::Codeunit,
+        declared_type,
+        method,
+        ctx,
+    )
+}
 
-    match resolve_by_name_and_arity(ctx.symbols, &obj_id, method, ctx.routine, ctx.call_site) {
+/// Resolve `method` among the procedures of a KNOWN object id and build the dispatch
+/// edge(s) — the shared tail of object dispatch, used by both [`dispatch_object`]
+/// (an object-typed variable) and the `SelfObject` (`this`) arm. `is_codeunit`
+/// enables the `<codeunit>.Run([Rec])` → OnRun fallback. `declared_type` is the
+/// diagnostic receiver-type tag on a resolved edge.
+fn resolve_method_in_object(
+    obj_id: &str,
+    is_codeunit: bool,
+    declared_type: &str,
+    method: &str,
+    ctx: &mut DispatchCtx,
+) -> Vec<CallEdge> {
+    match resolve_by_name_and_arity(ctx.symbols, obj_id, method, ctx.routine, ctx.call_site) {
         ArityResolution::Resolved(r) => {
             if let Some(d) = upgrade_bindings(ctx.state, r, ctx.callsite_id) {
                 ctx.diagnostics.push(d);
@@ -1051,11 +1093,11 @@ fn dispatch_object(
         ArityResolution::NotFound => {
             // Built-in instance `<codeunitVar>.Run([Rec])` → OnRun trigger, when
             // the codeunit has an OnRun and arity ≤ 1.
-            if kind == ObjectKind::Codeunit
+            if is_codeunit
                 && method.to_lowercase() == "run"
                 && ctx.call_site.argument_bindings.len() <= 1
             {
-                if let Some(on_run) = ctx.symbols.routine_in_object(&obj_id, "OnRun") {
+                if let Some(on_run) = ctx.symbols.routine_in_object(obj_id, "OnRun") {
                     if let Some(d) = upgrade_bindings(ctx.state, on_run, ctx.callsite_id) {
                         ctx.diagnostics.push(d);
                     }
