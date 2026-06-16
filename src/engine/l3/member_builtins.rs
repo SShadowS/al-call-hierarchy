@@ -243,6 +243,10 @@ pub fn classify_receiver(declared_type: &str) -> Option<ReceiverBuiltinKind> {
         "version" => ReceiverBuiltinKind::Version,
         "filterpagebuilder" => ReceiverBuiltinKind::FilterPageBuilder,
         "sessioninformation" => ReceiverBuiltinKind::SessionInformation,
+        // A variable/parameter declared `ControlAddIn "X"` — its member calls are
+        // JS-side platform invocations with no in-AL target, so EVERY method is a
+        // `builtin` (the same honest classification as a page UserControl receiver).
+        "controladdin" => ReceiverBuiltinKind::ControlAddIn,
         _ => return None,
     })
 }

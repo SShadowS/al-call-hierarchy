@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`ControlAddIn`-typed variables resolve as control-add-in receivers.** A variable or
+  parameter declared `ControlAddIn "X"` (e.g. `HTMLEditor: ControlAddIn "CDO.Editor"`,
+  `editorAddIn: ControlAddIn "CDO.Editor"`) now classifies as the `ControlAddIn` framework
+  receiver, so its member calls (`HTMLEditor.InitEditor(...)`, page-callback methods) classify
+  `builtin` — JS-side platform invocations with no in-AL target — instead of
+  `Unknown{NonObjectReceiverType}`. Same honest classification already applied to page
+  UserControl receivers. CDO deps-loaded: non-object-receiver-type 6→0, realUnknownRate
+  0.175% → 0.131%.
+
 ### Fixed
 - **Quoted identifiers containing `(`/`[`/`.` parse as simple receiver names.**
   `simple_receiver_name` rejected any quoted identifier whose inner text contained `(` or `[`,
