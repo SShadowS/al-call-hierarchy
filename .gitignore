@@ -16,3 +16,7 @@ tmpclaude-*
 # OS
 .DS_Store
 Thumbs.db
+
+# Scratch artifacts (root-level analysis output)
+/out*.sarif
+/perf_stderr.txt
