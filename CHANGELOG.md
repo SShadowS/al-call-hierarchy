@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Framework method/property return chains** — extends the single-hop framework-property
+  compound resolver to framework METHOD calls that return a framework type:
+  `JsonToken.AsValue()` → JsonValue, `XmlNode.AsXmlElement()` → Xml, `RecordRef.Field(n)` →
+  FieldRef, `ErrorInfo.CustomDimensions` → Dictionary, etc. So a chain like
+  `JTok.AsValue().AsInteger()` / `RecRef.Field(n).Value()` classifies `builtin` instead of
+  `Unknown{CompoundReceiver}`. New `framework_method_return_type` map; `compound_framework_property_kind`
+  now handles both the property and method-call form of `<prop>`. These AL framework conversions
+  are deterministic (the return type never varies), so resolution is precise. CDO deps-loaded:
+  compound-receiver 53→35, realUnknownRate 1.03% → 0.898%.
 - **Single-hop call-result compound receivers** (Feature C2, engine-d22). A
   compound receiver `Func().Method(...)` — a member call ON THE RESULT of a bare
   own-object procedure with a KNOWN return type — now types the receiver as that

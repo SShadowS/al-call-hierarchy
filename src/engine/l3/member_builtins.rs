@@ -334,6 +334,51 @@ pub fn framework_property_type(
         (HttpResponseMessage, "content") => Some(HttpContent),
         (HttpResponseMessage, "headers") => Some(HttpHeaders),
         (HttpContent, "headers") => Some(HttpHeaders),
+        (ErrorInfo, "customdimensions") => Some(Dictionary),
+        _ => None,
+    }
+}
+
+/// The framework type RETURNED by a METHOD CALL on a framework receiver —
+/// `JsonToken.AsValue() : JsonValue`, `XmlNode.AsXmlElement() : Xml(Element)`,
+/// `RecordRef.Field(n) : FieldRef`, etc. These are DETERMINISTIC AL framework
+/// conversions (the return type never varies), so the single-hop
+/// `<fw>.<method>(...).<m>()` resolution is precise. `None` when the (kind, method)
+/// pair is not a known framework-returning method.
+pub fn framework_method_return_type(
+    kind: ReceiverBuiltinKind,
+    method_lc: &str,
+) -> Option<ReceiverBuiltinKind> {
+    use ReceiverBuiltinKind::*;
+    match (kind, method_lc) {
+        // Json* conversions — `As*` always returns the corresponding Json kind.
+        (JsonToken | JsonValue | JsonObject | JsonArray, "asvalue") => Some(JsonValue),
+        (JsonToken | JsonValue | JsonObject | JsonArray, "asobject") => Some(JsonObject),
+        (JsonToken | JsonValue | JsonObject | JsonArray, "asarray") => Some(JsonArray),
+        (JsonObject | JsonArray | JsonValue, "astoken") => Some(JsonToken),
+        // Xml* conversions — `As*` returns an Xml node (single shared Xml kind).
+        (Xml, m)
+            if matches!(
+                m,
+                "asxmlelement"
+                    | "asxmlattribute"
+                    | "asxmltext"
+                    | "asxmlcomment"
+                    | "asxmlcdata"
+                    | "asxmldocument"
+                    | "asxmlnode"
+                    | "asxmldeclaration"
+                    | "asxmlprocessinginstruction"
+                    | "asxmldocumenttype"
+            ) =>
+        {
+            Some(Xml)
+        }
+        // RecordRef / KeyRef navigation.
+        (RecordRef, "field") => Some(FieldRef),
+        (RecordRef, "fieldindex") => Some(FieldRef),
+        (RecordRef, "keyindex") => Some(KeyRef),
+        (KeyRef, "fieldindex") => Some(FieldRef),
         _ => None,
     }
 }

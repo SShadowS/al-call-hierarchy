@@ -50,3 +50,39 @@ fn http_default_request_headers_add_classifies_builtin() {
         edges
     );
 }
+
+/// Method-form framework chain: `JTok.AsValue().AsInteger()` — `JTok : JsonToken`,
+/// `AsValue()` returns a `JsonValue` (deterministic framework conversion), and
+/// `.AsInteger()` is a `JsonValue` builtin. Must classify `builtin`, not
+/// CompoundReceiver unknown.
+fn codeunit_with_json_chain() -> &'static str {
+    r#"codeunit 50121 "Json Caller"
+{
+    var JTok: JsonToken;
+
+    procedure Foo()
+    begin
+        JTok.AsValue().AsInteger();
+    end;
+}
+"#
+}
+
+#[test]
+fn json_astoken_chain_classifies_builtin() {
+    const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
+    let owned = vec![("u.al".to_string(), codeunit_with_json_chain().to_string())];
+    let resolved = assemble_and_resolve_default(&owned, APP_GUID);
+    let proj = resolved.project_call_graph();
+    let edges: Vec<_> = proj.groups.iter().flat_map(|g| g.edges.iter()).collect();
+    assert!(
+        edges.iter().any(|e| e.resolution == "builtin"),
+        "JTok.AsValue().AsInteger() must classify builtin; edges: {:#?}",
+        edges
+    );
+    assert!(
+        !edges.iter().any(|e| e.resolution == "unknown"),
+        "no edge should remain unknown; edges: {:#?}",
+        edges
+    );
+}

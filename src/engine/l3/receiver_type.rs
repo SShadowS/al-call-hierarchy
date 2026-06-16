@@ -41,7 +41,8 @@
 
 use super::l3_workspace::{L3Routine, PageControlKind};
 use super::member_builtins::{
-    classify_receiver, framework_property_type, member_builtin_disposition, ReceiverBuiltinKind,
+    classify_receiver, framework_method_return_type, framework_property_type,
+    member_builtin_disposition, ReceiverBuiltinKind,
 };
 use super::receiver::simple_receiver_name;
 use super::symbol_table::SymbolTable;
@@ -415,25 +416,39 @@ fn compound_blob_media_field_kind(
     }
 }
 
-/// Single-hop framework-property compound receiver: `<base>.<prop>` where `base`
-/// infers to a `Framework{kind}` (or any receiver whose type is a framework kind)
-/// and `<prop>` is a framework-returning property of that kind → the property's
-/// framework type. Splits on the LAST `.`; the base must be a SIMPLE framework
-/// receiver (its own `infer_receiver_type` must yield `Framework{..}`), so deeper
-/// chains decline here. `None` to stay CompoundReceiver.
+/// Single-hop framework chain compound receiver: `<base>.<prop>` where `base`
+/// infers to a `Framework{kind}` and `<prop>` is EITHER a framework-returning
+/// PROPERTY (`HttpClient.DefaultRequestHeaders`, `ErrInfo.CustomDimensions`) OR a
+/// framework-returning METHOD CALL (`JToken.AsValue()`, `Node.AsXmlElement()`,
+/// `RecRef.Field(n)`) of that kind → the returned framework type. Splits on the LAST
+/// `.`; the base must itself type as a framework receiver (recursively), so the chain
+/// resolves one hop at a time and deeper chains terminate (strictly shorter base).
+/// `None` to stay CompoundReceiver. These framework conversions are DETERMINISTIC
+/// (the return type never varies), so the resolution is precise.
 fn compound_framework_property_kind(
     receiver_expr: &str,
     routine: &L3Routine,
     symbols: &SymbolTable,
 ) -> Option<ReceiverBuiltinKind> {
     let (base, prop) = receiver_expr.rsplit_once('.')?;
-    let prop_name = simple_receiver_name(prop)?; // lowercased, unquoted
-                                                 // Base must be a simple receiver that types as a Framework kind.
+    // Base must be a (recursively) framework receiver.
     let base_inferred = infer_receiver_type(base, routine, symbols);
     let ReceiverType::Framework { kind } = base_inferred.ty else {
         return None;
     };
-    framework_property_type(kind, &prop_name)
+    // `prop` is either a method call `name(...)` or a plain property `name`.
+    match prop.strip_suffix(')') {
+        Some(call) => {
+            // Method-call form — the name is everything before the first `(`.
+            let name = call.split('(').next()?.trim();
+            let method_lc = simple_receiver_name(name)?;
+            framework_method_return_type(kind, &method_lc)
+        }
+        None => {
+            let prop_name = simple_receiver_name(prop)?;
+            framework_property_type(kind, &prop_name)
+        }
+    }
 }
 
 /// Single-hop call-result compound receiver: `Func().Method(...)`. When `Func` is
