@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Compound framework chains accept RecordRef/FieldRef/KeyRef bases.** The single-hop
+  framework-chain resolver (`compound_framework_property_kind`) only matched a
+  `Framework{kind}` base, so `RecRef.Field(n).SetRange(...)` and `SourceRecRef.KeyIndex(1).M()`
+  — whose base `RecRef` infers to the DEDICATED `ReceiverType::RecordRef` variant, not
+  `Framework{RecordRef}` — fell to `Unknown{CompoundReceiver}`. A new `framework_kind_of` helper
+  maps the dedicated `RecordRef`/`FieldRef`/`KeyRef` receiver-type variants to their catalog
+  kind, so the chain resolves (`RecRef.Field(n)` → FieldRef → `SetRange`/`SetFilter` builtin).
+  CDO deps-loaded: compound-receiver 22→17, realUnknownRate 0.278% → 0.241%.
+
 ### Added
 - **Enum/Option table fields resolve as enum-value receivers.** An Enum/Option-typed table
   FIELD used as a member receiver — `Rec."eSeal Service".Ordinals()`,

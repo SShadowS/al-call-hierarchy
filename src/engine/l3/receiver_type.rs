@@ -450,17 +450,32 @@ fn compound_blob_media_field_kind(
 /// resolves one hop at a time and deeper chains terminate (strictly shorter base).
 /// `None` to stay CompoundReceiver. These framework conversions are DETERMINISTIC
 /// (the return type never varies), so the resolution is precise.
+/// The catalog framework kind of a receiver type, treating the dedicated
+/// `RecordRef`/`FieldRef`/`KeyRef` variants as their equivalent
+/// `ReceiverBuiltinKind` (they dispatch through the same catalog as
+/// `Framework{kind}`). `None` for non-framework receiver types.
+fn framework_kind_of(ty: &ReceiverType) -> Option<ReceiverBuiltinKind> {
+    match ty {
+        ReceiverType::Framework { kind } => Some(*kind),
+        ReceiverType::RecordRef => Some(ReceiverBuiltinKind::RecordRef),
+        ReceiverType::FieldRef => Some(ReceiverBuiltinKind::FieldRef),
+        ReceiverType::KeyRef => Some(ReceiverBuiltinKind::KeyRef),
+        _ => None,
+    }
+}
+
 fn compound_framework_property_kind(
     receiver_expr: &str,
     routine: &L3Routine,
     symbols: &SymbolTable,
 ) -> Option<ReceiverBuiltinKind> {
     let (base, prop) = receiver_expr.rsplit_once('.')?;
-    // Base must be a (recursively) framework receiver.
+    // Base must be a (recursively) framework receiver. RecordRef / FieldRef / KeyRef
+    // are dedicated `ReceiverType` variants (not `Framework{..}`) but ARE catalog
+    // framework kinds, so a `RecRef.Field(n).M()` / `RecRef.KeyIndex(1).M()` chain
+    // (base infers to RecordRef) must be accepted here too.
     let base_inferred = infer_receiver_type(base, routine, symbols);
-    let ReceiverType::Framework { kind } = base_inferred.ty else {
-        return None;
-    };
+    let kind = framework_kind_of(&base_inferred.ty)?;
     // `prop` is either a method call `name(...)` or a plain property `name`.
     match prop.strip_suffix(')') {
         Some(call) => {
