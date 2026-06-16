@@ -276,6 +276,7 @@ pub fn infer_receiver_type(
             "navapp" => Some(ReceiverBuiltinKind::NavApp),
             "taskscheduler" => Some(ReceiverBuiltinKind::TaskScheduler),
             "database" => Some(ReceiverBuiltinKind::Database),
+            "system" => Some(ReceiverBuiltinKind::System),
             _ => None,
         };
         if let Some(kind) = singleton_kind {

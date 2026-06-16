@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`System` pseudo-singleton receiver.** `System.GetCollectedErrors()`, `System.Today()`, and
+  the other qualified forms of AL's global runtime functions now classify `builtin` via a new
+  `System` framework singleton (75-method catalog from the compiler `System` surface), wired
+  into the Step-2c singleton interception alongside `Session`/`Database`/`NavApp`. CDO
+  deps-loaded: untracked-receiver 5→3, realUnknownRate 0.088% → 0.073%.
 - **`Text`/`Code`/`Label` static receivers + `this.<member>` self-qualifier.** Two Phase-A
   receiver-typing additions: (1) the static-type-receiver interception (previously Xml-only) now
   also covers `Text`/`Code`/`Label`, so `Text.CopyStr(...)` and the other Text data-type static

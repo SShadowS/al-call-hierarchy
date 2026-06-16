@@ -152,6 +152,10 @@ pub enum ReceiverBuiltinKind {
     /// AL `SessionInformation` — runtime session telemetry.
     /// Source: member_builtins.json "SessionInformation" (4 methods).
     SessionInformation,
+    /// AL platform pseudo-singleton `System` — the qualified form of the global
+    /// runtime functions (`System.GetCollectedErrors()`, `System.Today()`, …).
+    /// Source: member_builtins.json "System" (75 methods).
+    System,
     /// An AL `Enum` / `Option` VALUE (instance) — the method surface shared by every
     /// enum value: `AsInteger`, `FromInteger`, `Names`, `Ordinals`. Produced for an
     /// enum/option-typed local var and for an enum/option table FIELD used as a
@@ -319,8 +323,30 @@ pub fn member_builtin_disposition(
         FilterPageBuilder => set_hit(&FILTERPAGEBUILDER, method_lc),
         SessionInformation => set_hit(&SESSIONINFORMATION, method_lc),
         Enum => set_hit(&ENUM_VALUE, method_lc),
+        System => set_hit(&SYSTEM, method_lc),
     }
 }
+
+// --- System pseudo-singleton — `System.<globalfn>()`. ---
+// Source: member_builtins.json "System" (75 methods).
+static SYSTEM: phf::Set<&'static str> = phf_set! {
+    "abs", "applicationpath", "arraylen", "calcdate", "canloadtype",
+    "captionclasstranslate", "clear", "clearall", "clearcollectederrors",
+    "clearlasterror", "closingdate", "codecoverageinclude", "codecoverageload",
+    "codecoveragelog", "codecoveragerefresh", "compressarray", "copyarray",
+    "copystream", "createdatetime", "createencryptionkey", "createguid",
+    "currentdatetime", "date2dmy", "date2dwy", "dati2variant", "decrypt",
+    "deleteencryptionkey", "dmy2date", "dt2date", "dt2time", "dwy2date", "encrypt",
+    "encryptionenabled", "encryptionkeyexists", "evaluate", "exportencryptionkey",
+    "exportobjects", "format", "getcollectederrors", "getdocumenturl",
+    "getdotnettype", "getlasterrorcallstack", "getlasterrorcode",
+    "getlasterrorobject", "getlasterrortext", "geturl", "globallanguage",
+    "guiallowed", "hascollectederrors", "hyperlink", "importencryptionkey",
+    "importobjects", "importstreamwithurlaccess", "iscollectingerrors", "isnull",
+    "isnullguid", "isservicetier", "normaldate", "power", "random", "randomize",
+    "round", "rounddatetime", "sleep", "temporarypath", "time", "today",
+    "variant2date", "variant2time", "windowslanguage", "workdate",
+};
 
 // --- Enum / Option value instance — `<enumvalue>.AsInteger()` etc. ---
 // Source: member_builtins.json "EnumType" (AsInteger, FromInteger, Names, Ordinals).
