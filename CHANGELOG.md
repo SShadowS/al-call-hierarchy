@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **tree-sitter-al bumped to v2.6.0 (`cddeb82`).** Clean upgrade from v2.5.2-shim
+  (`89b1d05`): it parses the full BC repo set (not just the base app) via new additive
+  node kinds for construct-internal preprocessor patterns (`preproc_pragma_only`,
+  `preproc_conditional_{option_members,labels,rendering}`, `analysisviews_section`,
+  `ternary_expression`, `preproc_split_if_then_begin_else_shared`). Unwrapped code parses
+  byte-identically, so engine queries needed no change. Cross-app resolution is unchanged
+  on CDO (4 unknown / 13689 = 0.029%) and resolves slightly MORE on DC (resolved
+  18791→19103, unknown flat at 83 / 0.252%). All cli-a detector findings/evidence/factIds
+  and the (source-only) workspace fingerprint are unaffected by the grammar.
+
 ### Fixed
+- **`.gitattributes`: force `eol=lf` on `tests/**/*.html` goldens.** The cli-a html
+  differential goldens are byte-compared, but `*.html` lacked the `eol=lf` rule its
+  `*.json`/`*.sarif`/`*.txt` siblings already have, so on a `core.autocrlf=true` checkout
+  they materialized as CRLF and byte-mismatched the LF engine output. Added the missing
+  rule to match the existing pattern.
 - **Cloud-review remediation (engine-d22 branch review).** Three findings fixed:
   - `compound_call_result_receiver` validated text before the call's `(` but not after its `)`,
     so `GetCustomer().Name` (receiver of `GetCustomer().Name.Trim()`) was mis-typed as

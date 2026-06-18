@@ -1,5 +1,22 @@
 # Resolution Push-to-Zero Implementation Plan (3 features)
 
+> **✅ COMPLETE (2026-06-16).** All three features (A platform-type catalogs, B report-dataitem
+> implicit `Rec`, C1 framework-property hop, C2 call-result hop) shipped across the engine-d22
+> commit run and recorded in `CHANGELOG.md`. Final gate measured deps-loaded cross-app
+> (against tree-sitter-al **v2.6.0** / `cddeb82`, the current pin):
+> **CDO realUnknownRate 1.55% → 0.029%** (4 unknown / 13689 edges),
+> **DC 2.10% → 0.252%** (83 unknown / 32888). The plan's targeted buckets (non-object 68,
+> untracked 81, compound 62) are eliminated; CDO residual is the genuine 4-edge floor
+> (cross-codeunit method-return chain ×2, `Dialog.Error`, an overloaded self-call).
+>
+> **Grammar note (2026-06-17):** v2.6.0 (`cddeb82`) is a clean upgrade from v2.5.2-shim
+> (`89b1d05`) — identical CDO resolution, DC resolves slightly MORE (resolved 18791→19103),
+> and it parses the full repo set, not just BC base app. (A transient pre-release WIP commit
+> `a9dc044` had regressed CDO to 0.63%, but it never shipped; v2.6.0 final is clean.) Adopting
+> v2.6.0 surfaced a pre-existing, grammar-independent test bug: cli-a differential html
+> goldens lacked an `eol=lf` `.gitattributes` rule, so `core.autocrlf=true` checked them out
+> as CRLF and the LF-emitting engine byte-mismatched — fixed by adding the rule.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Drive the deps-loaded real-unknown edge rate further toward zero by closing the three largest remaining buckets, validated against CDO (clean dep closure) — `non-object-receiver-type`, `compound-receiver` (single-hop subset), and report-dataitem `untracked-receiver`.
