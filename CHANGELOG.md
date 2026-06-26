@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the (source-only) workspace fingerprint are unaffected by the grammar.
 
 ### Fixed
+- **Implicitly-invoked procedures no longer flagged `unused-procedure`**
+  ([al-lsp-for-agents#20](https://github.com/SShadowS/al-lsp-for-agents/issues/20)).
+  Local procedures were always tagged `DefinitionKind::Procedure` and the
+  `[EventSubscriber]` attribute was parsed into a separate list that never
+  updated the definition's kind, so the unused-procedure exclusion was dead code
+  for workspace subscribers. Subscribers are now reconciled to
+  `DefinitionKind::EventSubscriber`, and an audit-surfaced class of related false
+  positives is excluded too: `[Test]` methods, test handlers (`[ConfirmHandler]`,
+  `[MessageHandler]`, `[PageHandler]`, ...), and public event publishers
+  (`[IntegrationEvent]`/`[BusinessEvent]`, whose subscribers live in downstream
+  apps that aren't loaded). `[InternalEvent]` publishers stay flagged when
+  orphaned — they can only be subscribed within the same app, so an unused one is
+  genuine dead code. Tracked per file in a new `implicitly_invoked` set cleared in
+  `remove_file` alongside the definitions. Validated on real Document Output
+  source: removes 21 false-positive public event publishers in one app while
+  still flagging real dead procedures.
 - **`.gitattributes`: force `eol=lf` on `tests/**/*.md` goldens.** The gate PR-summary
   (`*.prsummary.md`) and r0 goldens are byte-compared, but `*.md` lacked the `eol=lf` rule
   its `*.json`/`*.sarif`/`*.txt`/`*.html` siblings already have, so on a
