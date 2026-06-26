@@ -97,6 +97,27 @@ This project uses the V2 tree-sitter-al grammar. Key differences from V1:
 - **Unified `property` node**: Individual `*_property` nodes replaced by a single `property` node with `name: (property_name)` and `value:` fields
 - **`preproc_split_codeunit_declaration` renamed**: now `preproc_split_declaration`
 
+## tree-sitter-al grammar migrations
+
+The grammar is now **v3** (the project builds against `tree-sitter-al` `main`,
+checked out unpinned by CI — `cargo test` runs against whatever HEAD is). v3 added
+wrapper nodes that broke the v2 assumptions above.
+
+- **Recursive AST walks survive a grammar bump; flat direct-child iterations break.**
+  v3 wraps contents in nodes between a container and its children: `code_block.body`
+  → `statement_block` (holds the statements), object/field/action bodies →
+  `declaration_body`, report dataitem body → `report_body`, case branches →
+  `case_body`, `var_section.body` → `var_body`. Any `named_children(x)` reading
+  statements/properties/members directly must descend the wrapper.
+  - Statements: use `node_util::block_statements` (flattens `statement_block`
+    inline, preserving trailing trivia).
+  - Object/field properties: `decl.child_by_field_name("body")` then iterate.
+  - A member-trigger's parent is now a `*_body` wrapper, not the named member.
+- **Validate a migration with the al-sem differential goldens** (`cargo test`):
+  zero divergences = behaviour-preserving. The goldens are the al-sem **TS
+  reference** output, not Rust's — they are the source of truth.
+- Dump a real tree with `tree-sitter parse <file.al>` from `tree-sitter-al/`.
+
 ## Adding New AL Constructs
 
 1. Update tree-sitter queries in `language.rs` (DEFINITIONS, CALLS, EVENT_SUBSCRIBERS, VARIABLES)
