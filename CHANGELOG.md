@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-06-26
+## [0.9.2] - 2026-06-26
+
+The tree-sitter-al v3 compliance work. (v0.9.1 was tagged mid-migration; its
+release was correctly blocked by the new test gate before publishing any
+binaries, so this is the first published v3-compliant build.)
 
 ### Fixed
 - **Enriched-hover field/action property extraction broken against tree-sitter-al
