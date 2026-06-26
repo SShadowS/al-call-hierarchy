@@ -123,6 +123,17 @@ pub mod queries {
     (#eq? @attr.name "InternalEvent"))) @attr.item
 "#;
 
+    /// Query to find every attribute on a procedure, capturing the attribute
+    /// name. Used to detect framework-invoked procedures ([Test], [*Handler])
+    /// whose adjacent procedure must be excluded from unused-procedure
+    /// diagnostics. The adjacent procedure is resolved in Rust, like the
+    /// publisher/subscriber queries above.
+    pub const ATTRIBUTED_PROCEDURES: &str = r#"
+(attribute_item
+  attribute: (attribute_content
+    name: (identifier) @attr.name)) @attr.item
+"#;
+
     /// Query to find variable declarations
     pub const VARIABLES: &str = r#"
 ; Capture all variable declarations - we'll extract name and type manually

@@ -163,19 +163,71 @@ impl Indexer {
         // Register the object
         graph.register_object(object_name, object_type);
 
+        // Names of procedures carrying an [EventSubscriber] attribute. The
+        // parser captures the attribute in a separate pass (parsed.event_subscribers)
+        // and tags every procedure definition as DefinitionKind::Procedure, so we
+        // reconcile here: a subscriber is invoked implicitly by the event
+        // publisher and must be classified as EventSubscriber. Otherwise it would
+        // be reported as an unused procedure (issue #20).
+        let subscriber_names: std::collections::HashSet<&str> = parsed
+            .event_subscribers
+            .iter()
+            .map(|s| s.subscriber_name.as_str())
+            .collect();
+
         // Add definitions
         for def in parsed.definitions {
             let name_sym = graph.intern(&def.name);
+            let kind = if def.kind == DefinitionKind::Procedure
+                && subscriber_names.contains(def.name.as_str())
+            {
+                DefinitionKind::EventSubscriber
+            } else {
+                def.kind
+            };
             graph.add_definition(Definition {
                 file: shared_path.clone(),
                 range: def.range,
                 object_type,
                 object_name,
                 name: name_sym,
-                kind: def.kind,
+                kind,
                 complexity: def.complexity,
                 parameter_count: def.parameter_count,
             });
+        }
+
+        // Mark framework-invoked procedures so they are excluded from
+        // unused-procedure diagnostics (issue #20): the test methods/handlers
+        // collected by the parser. EventSubscriber procedures are excluded via
+        // DefinitionKind above.
+        for name in &parsed.implicitly_invoked {
+            let proc = graph.intern(name);
+            graph.mark_implicitly_invoked(QualifiedName {
+                object: object_name,
+                procedure: proc,
+            });
+        }
+
+        // [IntegrationEvent]/[BusinessEvent] are PUBLIC extension points whose
+        // real subscribers are typically downstream apps that depend on this
+        // one — and those are never loaded here (a dependency is upstream; a
+        // single-app workspace ships only upstream .alpackages). Flagging them
+        // would be noise, so exclude them. [InternalEvent] is the exception:
+        // it can only be subscribed within the SAME app, so its subscribers are
+        // always in the indexed source — an orphan InternalEvent is genuinely
+        // dead code and stays in the unused check (issue #20).
+        for pub_def in &parsed.event_publishers {
+            if matches!(
+                pub_def.kind,
+                EventPublisherKind::IntegrationEvent | EventPublisherKind::BusinessEvent
+            ) {
+                let proc = graph.intern(&pub_def.name);
+                graph.mark_implicitly_invoked(QualifiedName {
+                    object: object_name,
+                    procedure: proc,
+                });
+            }
         }
 
         // Add variable bindings for type resolution
@@ -866,6 +918,239 @@ codeunit 50100 "Test"
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_event_subscriber_not_flagged_unused() {
+        // Regression test for issue #20: a procedure carrying the
+        // [EventSubscriber] attribute is invoked implicitly by the event
+        // publisher, so it must never appear in get_unused_procedures even
+        // though nothing calls it directly.
+        let dir = TempDir::new().unwrap();
+        create_al_file(
+            dir.path(),
+            "publisher.al",
+            r#"codeunit 50100 "Publisher"
+{
+    procedure OnBeforePost()
+    begin
+    end;
+}"#,
+        );
+        create_al_file(
+            dir.path(),
+            "subscriber.al",
+            r#"codeunit 50101 "Subscriber"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnBeforePost', '', false, false)]
+    local procedure HandleOnBeforePost()
+    begin
+    end;
+}"#,
+        );
+
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+
+        let graph = indexer.graph();
+
+        // Sanity: the subscription was actually detected, otherwise the test
+        // would pass for the wrong reason.
+        let pub_obj = graph.get_symbol("Publisher").expect("Publisher indexed");
+        let pub_event = graph.get_symbol("OnBeforePost").expect("event indexed");
+        let pub_qname = QualifiedName {
+            object: pub_obj,
+            procedure: pub_event,
+        };
+        assert!(
+            !graph.get_event_subscribers(&pub_qname).is_empty(),
+            "subscription must be detected for the test to be meaningful"
+        );
+
+        // The subscriber procedure must not be reported as unused.
+        let handler = graph.get_symbol("HandleOnBeforePost").expect("handler indexed");
+        let unused = graph.get_unused_procedures();
+        assert!(
+            !unused.iter().any(|(q, _)| q.procedure == handler),
+            "EventSubscriber procedure must not be flagged unused-procedure"
+        );
+    }
+
+    /// Helper: index one AL file, return the names reported as unused procedures.
+    fn unused_names_for(content: &str) -> Vec<String> {
+        let dir = TempDir::new().unwrap();
+        create_al_file(dir.path(), "probe.al", content);
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let graph = indexer.graph();
+        graph
+            .get_unused_procedures()
+            .iter()
+            .filter_map(|(q, _)| graph.resolve(q.procedure).map(|s| s.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_test_method_not_flagged_unused() {
+        // [Test] procedures are run by the test runner, never called directly.
+        let unused = unused_names_for(
+            r#"codeunit 50200 "Tests"
+{
+    Subtype = Test;
+
+    [Test]
+    procedure MyTest()
+    begin
+    end;
+
+    procedure PlainUnused()
+    begin
+    end;
+}"#,
+        );
+        assert!(
+            !unused.contains(&"MyTest".to_string()),
+            "[Test] procedure must not be flagged unused; got {unused:?}"
+        );
+        // Guard against over-exclusion: a plain helper is still unused.
+        assert!(unused.contains(&"PlainUnused".to_string()));
+    }
+
+    #[test]
+    fn test_test_handler_not_flagged_unused() {
+        // Test handler procedures are invoked by the test framework.
+        let unused = unused_names_for(
+            r#"codeunit 50201 "Handlers"
+{
+    [ConfirmHandler]
+    procedure MyConfirm(Question: Text; var Reply: Boolean)
+    begin
+    end;
+
+    [MessageHandler]
+    procedure MyMessage(Msg: Text)
+    begin
+    end;
+
+    [PageHandler]
+    procedure MyPage(var SomePage: TestPage "Item Card")
+    begin
+    end;
+
+    procedure PlainUnused()
+    begin
+    end;
+}"#,
+        );
+        for h in ["MyConfirm", "MyMessage", "MyPage"] {
+            assert!(
+                !unused.contains(&h.to_string()),
+                "{h} handler must not be flagged unused; got {unused:?}"
+            );
+        }
+        assert!(unused.contains(&"PlainUnused".to_string()));
+    }
+
+    #[test]
+    fn test_public_event_publishers_not_flagged() {
+        // [IntegrationEvent]/[BusinessEvent] are public extension points whose
+        // subscribers live downstream (apps depending on this one) and are not
+        // loaded in a typical single-app workspace. Flagging them is noise.
+        let unused = unused_names_for(
+            r#"codeunit 50202 "Publisher"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterIntegration()
+    begin
+    end;
+
+    [BusinessEvent(false)]
+    procedure OnAfterBusiness()
+    begin
+    end;
+}"#,
+        );
+        for p in ["OnAfterIntegration", "OnAfterBusiness"] {
+            assert!(
+                !unused.contains(&p.to_string()),
+                "{p} public event publisher must not be flagged; got {unused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_orphan_internal_event_is_flagged() {
+        // [InternalEvent] can only be subscribed within the same app, so its
+        // subscribers are always in the indexed source. An orphan one (no
+        // subscriber, no raise) is genuine dead code and SHOULD be flagged.
+        let unused = unused_names_for(
+            r#"codeunit 50205 "Publisher"
+{
+    [InternalEvent(false)]
+    procedure OnNobodyListens()
+    begin
+    end;
+}"#,
+        );
+        assert!(
+            unused.contains(&"OnNobodyListens".to_string()),
+            "orphan internal event should be flagged; got {unused:?}"
+        );
+    }
+
+    #[test]
+    fn test_subscribed_or_raised_internal_event_not_flagged() {
+        // An InternalEvent that has a subscriber or is raised must NOT be
+        // flagged. get_incoming_call_count counts both raises and subscriptions.
+        let dir = TempDir::new().unwrap();
+        create_al_file(
+            dir.path(),
+            "pub.al",
+            r#"codeunit 50203 "Publisher"
+{
+    [InternalEvent(false)]
+    procedure OnSubscribed()
+    begin
+    end;
+
+    [InternalEvent(false)]
+    procedure OnRaised()
+    begin
+    end;
+
+    procedure Raise()
+    begin
+        OnRaised();
+    end;
+}"#,
+        );
+        create_al_file(
+            dir.path(),
+            "sub.al",
+            r#"codeunit 50204 "Subscriber"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'OnSubscribed', '', false, false)]
+    local procedure HandleOnSubscribed()
+    begin
+    end;
+}"#,
+        );
+        let mut indexer = Indexer::new();
+        indexer.index_directory(dir.path()).unwrap();
+        let graph = indexer.graph();
+        let unused: Vec<String> = graph
+            .get_unused_procedures()
+            .iter()
+            .filter_map(|(q, _)| graph.resolve(q.procedure).map(|s| s.to_string()))
+            .collect();
+        assert!(
+            !unused.contains(&"OnSubscribed".to_string()),
+            "internal event with a subscriber must not be flagged; got {unused:?}"
+        );
+        assert!(
+            !unused.contains(&"OnRaised".to_string()),
+            "raised internal event must not be flagged; got {unused:?}"
+        );
     }
 
     #[test]

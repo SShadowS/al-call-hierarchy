@@ -3,7 +3,7 @@
 use lsp_types::Range;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -334,6 +334,14 @@ pub struct CallGraph {
     /// Used to overlay event-kind tagging on AL LSP's documentSymbol response
     /// for local files. Invalidated/repopulated by the file watcher.
     local_event_publishers: HashMap<SharedPath, Vec<LocalEventPublisher>>,
+
+    /// Procedures that are invoked implicitly by a framework rather than by a
+    /// direct call, so they must never be reported as unused (issue #20):
+    /// event publishers ([IntegrationEvent]/[BusinessEvent]/[InternalEvent]),
+    /// test methods ([Test]) and test handlers ([ConfirmHandler], ...).
+    /// EventSubscriber procedures are excluded separately via DefinitionKind.
+    /// Entries are cleared per-file in remove_file alongside the definitions.
+    implicitly_invoked: HashSet<QualifiedName>,
 }
 
 /// An event publisher procedure detected in a workspace .al file.
@@ -386,7 +394,15 @@ impl CallGraph {
             file_event_subscriptions: HashMap::new(),
             dependency_objects: HashMap::new(),
             local_event_publishers: HashMap::new(),
+            implicitly_invoked: HashSet::new(),
         }
+    }
+
+    /// Mark a procedure as implicitly invoked by a framework (event publisher,
+    /// test method, or test handler) so it is excluded from unused-procedure
+    /// diagnostics. Cleared per-file by remove_file.
+    pub fn mark_implicitly_invoked(&mut self, qname: QualifiedName) {
+        self.implicitly_invoked.insert(qname);
     }
 
     /// Replace the event publisher list for a file (called once per parse).
@@ -798,6 +814,7 @@ impl CallGraph {
                 self.definitions.remove(&qname);
                 self.incoming_calls.remove(&qname);
                 self.outgoing_calls.remove(&qname);
+                self.implicitly_invoked.remove(&qname);
             }
         }
 
@@ -911,13 +928,18 @@ impl CallGraph {
     }
 
     /// Get all unused procedures (procedures with no incoming calls)
-    /// Excludes triggers and event subscribers since they are called implicitly
+    /// Excludes triggers and event subscribers (by DefinitionKind), plus
+    /// procedures invoked implicitly by a framework — event publishers, test
+    /// methods and test handlers (tracked in implicitly_invoked) — since none
+    /// of these are reached through a direct call (issue #20).
     pub fn get_unused_procedures(&self) -> Vec<(&QualifiedName, &Definition)> {
         self.definitions
             .iter()
             .filter(|(qname, def)| {
                 // Only check procedures (not triggers or event subscribers)
                 def.kind == DefinitionKind::Procedure &&
+                // Skip framework-invoked procedures (publishers/tests/handlers)
+                !self.implicitly_invoked.contains(qname) &&
                 // Check if there are no incoming calls
                 self.get_incoming_call_count(qname) == 0
             })

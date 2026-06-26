@@ -27,6 +27,11 @@ pub struct ParsedFile {
     pub event_subscribers: Vec<ParsedEventSubscriber>,
     /// All event publishers (procedures with [IntegrationEvent]/[BusinessEvent]/[InternalEvent])
     pub event_publishers: Vec<ParsedEventPublisher>,
+    /// Names of procedures invoked implicitly by a framework rather than by a
+    /// direct call: test methods ([Test]) and test handlers ([ConfirmHandler],
+    /// [MessageHandler], ...). Used to suppress unused-procedure diagnostics.
+    /// (Event publishers/subscribers are tracked in their own fields.)
+    pub implicitly_invoked: Vec<String>,
 }
 
 /// A parsed procedure/trigger definition
@@ -128,6 +133,7 @@ pub struct AlParser {
     variables_query: Query,
     event_subscribers_query: Query,
     event_publishers_query: Query,
+    attributed_procedures_query: Query,
 }
 
 impl AlParser {
@@ -154,6 +160,10 @@ impl AlParser {
         let event_publishers_query = Query::new(&lang, language::queries::EVENT_PUBLISHERS)
             .context("Failed to compile event publishers query")?;
 
+        let attributed_procedures_query =
+            Query::new(&lang, language::queries::ATTRIBUTED_PROCEDURES)
+                .context("Failed to compile attributed procedures query")?;
+
         Ok(Self {
             parser,
             definitions_query,
@@ -161,6 +171,7 @@ impl AlParser {
             variables_query,
             event_subscribers_query,
             event_publishers_query,
+            attributed_procedures_query,
         })
     }
 
@@ -199,6 +210,9 @@ impl AlParser {
 
         // Extract event publishers ([IntegrationEvent]/[BusinessEvent]/[InternalEvent])
         self.extract_event_publishers(&root, source, &mut result);
+
+        // Extract framework-invoked procedures ([Test], [*Handler])
+        self.extract_framework_invoked(&root, source, &mut result);
 
         Ok(result)
     }
@@ -499,6 +513,56 @@ impl AlParser {
         }
     }
 
+    /// Collect names of procedures decorated with a framework-invocation
+    /// attribute (test methods and test handlers). These are called by the
+    /// test runner / framework, never directly, so the unused-procedure
+    /// diagnostic must skip them (issue #20). Reuses the generic attribute
+    /// query (same one that finds event publishers).
+    fn extract_framework_invoked(&self, root: &Node, source: &str, result: &mut ParsedFile) {
+        let mut cursor = QueryCursor::new();
+        let source_bytes = source.as_bytes();
+        let mut matches = cursor.matches(&self.attributed_procedures_query, *root, source_bytes);
+
+        while let Some(m) = matches.next() {
+            let mut attr_name: Option<String> = None;
+            let mut attr_node: Option<Node> = None;
+            for capture in m.captures {
+                let node = capture.node;
+                let cname =
+                    &self.attributed_procedures_query.capture_names()[capture.index as usize];
+                match cname.as_ref() {
+                    "attr.name" => attr_name = Some(node_text(&node, source).to_string()),
+                    "attr.item" => attr_node = Some(node),
+                    _ => {}
+                }
+            }
+            let (Some(name), Some(attr)) = (attr_name, attr_node) else {
+                continue;
+            };
+            if !is_framework_invocation_attribute(&name) {
+                continue;
+            }
+
+            // Walk forward siblings to the procedure this attribute decorates,
+            // skipping any other attribute_items in between.
+            let mut next = attr.next_sibling();
+            while let Some(sib) = next {
+                if sib.kind() == "procedure" {
+                    if let Some(name_node) = sib.child_by_field_name("name") {
+                        result
+                            .implicitly_invoked
+                            .push(clean_name(node_text(&name_node, source)));
+                    }
+                    break;
+                }
+                if sib.kind() != "attribute_item" {
+                    break;
+                }
+                next = sib.next_sibling();
+            }
+        }
+    }
+
     /// Pull the published-procedure details out of a `procedure` AST node.
     /// Returns None when the node lacks a usable name.
     fn parse_publisher_procedure(
@@ -523,6 +587,29 @@ impl AlParser {
             signature,
         })
     }
+}
+
+/// True for AL attributes whose procedure is invoked by a framework (the test
+/// runner or test framework) rather than by an explicit call, so the procedure
+/// must not be reported as unused. AL attribute names are case-insensitive.
+/// Event publishers/subscribers are handled separately and are not listed here.
+fn is_framework_invocation_attribute(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "test"
+            | "confirmhandler"
+            | "messagehandler"
+            | "pagehandler"
+            | "modalpagehandler"
+            | "reporthandler"
+            | "requestpagehandler"
+            | "sendnotificationhandler"
+            | "recallnotificationhandler"
+            | "sessionsettingshandler"
+            | "strmenuhandler"
+            | "filterpagehandler"
+            | "hyperlinkhandler"
+    )
 }
 
 /// Find the byte offset (relative to the start of `text`) where a procedure
