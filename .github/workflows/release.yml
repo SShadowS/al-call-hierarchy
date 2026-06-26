@@ -32,7 +32,10 @@ jobs:
       - name: Test
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: cargo test --release --all-targets
+        # Debug build: validates the same logic against the grammar far faster
+        # than --release. The shipped binaries are still built in release by the
+        # build jobs below; this gate only needs the tests to pass.
+        run: cargo test --all-targets
 
   build-windows:
     needs: test
