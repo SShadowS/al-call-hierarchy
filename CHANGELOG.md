@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-26
+
 ### Changed
 - **tree-sitter-al bumped to v2.6.0 (`cddeb82`).** Clean upgrade from v2.5.2-shim
   (`89b1d05`): it parses the full BC repo set (not just the base app) via new additive
