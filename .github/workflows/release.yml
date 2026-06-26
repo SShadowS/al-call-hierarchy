@@ -11,7 +11,31 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Gate: the release must not proceed if the test suite fails against the
+  # tree-sitter-al grammar it is built with. Both build jobs depend on this, so
+  # no binary is produced (and no release created) unless tests pass.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout al-call-hierarchy
+        uses: actions/checkout@v4
+
+      - name: Checkout tree-sitter-al
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/tree-sitter-al
+          path: tree-sitter-al
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: cargo test --release --all-targets
+
   build-windows:
+    needs: test
     runs-on: windows-latest
     steps:
       - name: Checkout al-call-hierarchy
@@ -38,6 +62,7 @@ jobs:
           path: target/release/al-call-hierarchy.exe
 
   build-linux:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout al-call-hierarchy

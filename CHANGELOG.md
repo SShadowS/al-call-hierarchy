@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-06-26
+
+### Fixed
+- **Enriched-hover field/action property extraction broken against tree-sitter-al
+  v3.** v0.9.0 was built by CI against the grammar repo's default branch, which had
+  advanced to v3.0.0+ where a declaration's properties/triggers are wrapped in a
+  `body` field (a `declaration_body` node) instead of being direct children.
+  `extract_all_properties` only iterated direct children, so `al-call-hierarchy/fieldProperties`
+  and `al-call-hierarchy/actionProperties` (the enriched-hover backend) returned no
+  properties. It now descends into the `body` field when present, with a fallback
+  to direct children for older grammars.
+- **`object_body` node rename.** tree-sitter-al v3 renamed `object_body` to
+  `declaration_body`; the L3 workspace name-walk now accepts both so it still stops
+  at the declaration body boundary.
+
+### Changed
+- **Grammar compliance with tree-sitter-al v3.0.1.** Source now builds and passes
+  the full test suite against the v3 grammar (the `tree-sitter-al` submodule is
+  updated to v3.0.1). CI builds against the grammar's default branch, so this keeps
+  the source compliant with the latest parser.
+
+### CI
+- **Release pipeline now runs the test suite as a prerequisite.** `release.yml`
+  gained a `test` job (`cargo test --release --all-targets`) that both build jobs
+  depend on, so a tag whose tests fail against the grammar produces no binaries and
+  no GitHub release. This closes the gap that let v0.9.0 ship the broken hover.
+
 ## [0.9.0] - 2026-06-26
 
 ### Changed

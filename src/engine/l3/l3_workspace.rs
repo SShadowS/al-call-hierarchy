@@ -557,8 +557,9 @@ fn extract_implements_interfaces(decl: Node, source: &str) -> Vec<String> {
         match kind {
             "quoted_identifier" => out.push(strip_quotes(node_text(child, source)).to_string()),
             "identifier" => out.push(node_text(child, source).to_string()),
-            // Stop at the body brace / first non-name child.
-            "object_body" | "code_block" => break,
+            // Stop at the body brace / first non-name child. tree-sitter-al v3
+            // renamed `object_body` to `declaration_body`; accept both.
+            "object_body" | "declaration_body" | "code_block" => break,
             _ => {}
         }
     }

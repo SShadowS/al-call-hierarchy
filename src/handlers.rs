@@ -648,7 +648,15 @@ fn extract_all_properties(
         }
     }
 
-    let mut cursor = decl_node.walk();
+    // tree-sitter-al v3 wraps a declaration's properties/triggers in a
+    // `body` field (a `declaration_body` node) instead of leaving them as
+    // direct children. Descend into it when present; fall back to iterating
+    // the declaration's own children for older grammars.
+    let container = decl_node
+        .child_by_field_name("body")
+        .unwrap_or_else(|| *decl_node);
+
+    let mut cursor = container.walk();
     if !cursor.goto_first_child() {
         return result;
     }
