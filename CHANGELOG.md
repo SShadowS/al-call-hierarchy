@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.2] - 2026-06-26
+## [0.9.3] - 2026-06-26
 
-The tree-sitter-al v3 compliance work. (v0.9.1 was tagged mid-migration; its
-release was correctly blocked by the new test gate before publishing any
-binaries, so this is the first published v3-compliant build.)
+The tree-sitter-al v3 compliance work. (v0.9.1 and v0.9.2 were tagged during the
+migration; the new release test gate correctly blocked both before publishing
+any binaries — v0.9.1 on the engine port, v0.9.2 on a CI-only test-harness gap —
+so this is the first published v3-compliant build.)
 
 ### Fixed
+- **cli-b diff differential tests are CI-safe.** They byte-compare against
+  goldens in the sibling al-sem repo (`AL_SEM_DIR`, default `U:\Git\al-sem`) and
+  previously panicked when that checkout was absent. They now skip when the
+  goldens are not present — matching `al2dump_smoke` — so the release test gate
+  (which has no al-sem) passes while dev machines still run them as the safety net.
 - **Enriched-hover field/action property extraction broken against tree-sitter-al
   v3.** v0.9.0 was built by CI against the grammar repo's default branch, which had
   advanced to v3.0.0+ where a declaration's properties/triggers are wrapped in a

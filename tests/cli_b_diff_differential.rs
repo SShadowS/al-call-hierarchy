@@ -44,6 +44,27 @@ fn snapshots_dir() -> PathBuf {
     goldens_dir().join("snapshots")
 }
 
+/// The cli-b diff goldens live in the sibling al-sem repo (or `AL_SEM_DIR`).
+/// When that checkout is absent — e.g. the CI test gate, which has no al-sem —
+/// these byte-differential tests skip rather than fail, matching `al2dump_smoke`.
+/// On a dev machine with al-sem they run as the safety net.
+fn cli_b_goldens_available() -> bool {
+    snapshots_dir().is_dir()
+}
+
+/// Early-return skip for the golden-dependent tests when al-sem is absent.
+macro_rules! skip_if_no_cli_b_goldens {
+    () => {
+        if !cli_b_goldens_available() {
+            eprintln!(
+                "skipping: al-sem cli-b goldens not found at {}",
+                goldens_dir().display()
+            );
+            return;
+        }
+    };
+}
+
 fn load_snap(name: &str) -> CborValue {
     let path = snapshots_dir().join(name);
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -100,6 +121,7 @@ fn run_engine(
 
 #[test]
 fn diff_pairs_human_json_sarif_byte_match() {
+    skip_if_no_cli_b_goldens!();
     let empty: Vec<CborValue> = Vec::new();
     for pair in PAIRS {
         let old = load_snap(&format!("{pair}-old.snap.json"));
@@ -131,6 +153,7 @@ fn diff_pairs_human_json_sarif_byte_match() {
 
 #[test]
 fn diff_rename_variant_from_overlay_byte_match() {
+    skip_if_no_cli_b_goldens!();
     // The rename pair's snapshots aren't committed (the dump composes them from the
     // ws-diff-rename fixture). Reanalyze both sides via the ws-mode path and apply
     // the committed overlay, then byte-compare rename.renamed.json.
@@ -193,6 +216,7 @@ fn compose_ws(dir: &std::path::Path) -> CborValue {
 
 #[test]
 fn diff_strict_coverage_json_and_exit_byte_match() {
+    skip_if_no_cli_b_goldens!();
     let old = load_snap("coverage-strict-old.snap.json");
     let new = load_snap("coverage-strict-new.snap.json");
 
@@ -246,6 +270,7 @@ fn diff_strict_coverage_json_and_exit_byte_match() {
 
 #[test]
 fn diff_strict_exit_via_cli_orchestrator() {
+    skip_if_no_cli_b_goldens!();
     // Drive the full CLI orchestrator (run_diff) so the exit-gate wiring is covered.
     let old_path = snapshots_dir().join("coverage-strict-old.snap.json");
     let new_path = snapshots_dir().join("coverage-strict-new.snap.json");
@@ -312,6 +337,7 @@ fn diff_app_input_rejected() {
 
 #[test]
 fn diff_ws_mode_stderr_note_byte_match() {
+    skip_if_no_cli_b_goldens!();
     // The ws-mode stderr note must be byte-exact. Drive run_diff over the two
     // fixture directories and compare its first stderr line to the golden.
     let fixture = al_sem_dir()
@@ -366,6 +392,7 @@ fn diff_ws_mode_stderr_note_byte_match() {
 /// data (the committed inputs are JSON, so CBOR is otherwise corpus-invisible).
 #[test]
 fn cbor_and_gz_roundtrip_drives_identical_diff() {
+    skip_if_no_cli_b_goldens!();
     use al_call_hierarchy::engine::l5::snapshot_full::{serialize_cbor, serialize_cbor_gz};
 
     let empty: Vec<CborValue> = Vec::new();
