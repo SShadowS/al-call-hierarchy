@@ -7,3 +7,4 @@ tests/**/*.html text eol=lf
 tests/**/*.cbor binary
 tests/**/*.gz binary
 tests/**/*.txt text eol=lf
+tests/**/*.md text eol=lf

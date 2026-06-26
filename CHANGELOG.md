@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the (source-only) workspace fingerprint are unaffected by the grammar.
 
 ### Fixed
+- **`.gitattributes`: force `eol=lf` on `tests/**/*.md` goldens.** The gate PR-summary
+  (`*.prsummary.md`) and r0 goldens are byte-compared, but `*.md` lacked the `eol=lf` rule
+  its `*.json`/`*.sarif`/`*.txt`/`*.html` siblings already have, so on a
+  `core.autocrlf=true` checkout they materialized as CRLF and byte-mismatched the LF engine
+  output (`gate_prsummary_differential`, `gate_suppress_baseline_differential`). Added the
+  missing rule to match the existing pattern.
 - **`.gitattributes`: force `eol=lf` on `tests/**/*.html` goldens.** The cli-a html
   differential goldens are byte-compared, but `*.html` lacked the `eol=lf` rule its
   `*.json`/`*.sarif`/`*.txt` siblings already have, so on a `core.autocrlf=true` checkout
