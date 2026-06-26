@@ -7,7 +7,7 @@
 //! ordered conditionLeaves only).
 
 use super::features::{PCFNNode, PConditionGuard};
-use super::node_util::{child_of_kind, named_children, node_text, Utf16Cols};
+use super::node_util::{block_statements, child_of_kind, named_children, node_text, Utf16Cols};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -49,10 +49,10 @@ impl<'a> CfnCtx<'a> {
         )
     }
 
-    /// Build the root block CFN for a code_block.
+    /// Build the root block CFN for a code_block (or a bare statement_block).
     pub fn build_block(&self, block_node: Node) -> PCFNNode {
         let mut children = Vec::new();
-        for child in named_children(block_node) {
+        for child in block_statements(block_node) {
             let t = child.kind();
             if t == "begin_keyword" || t == "end_keyword" {
                 continue;
@@ -68,7 +68,7 @@ impl<'a> CfnCtx<'a> {
     }
 
     fn build_branch_body(&self, node_in: Node) -> PCFNNode {
-        if node_in.kind() == "code_block" {
+        if node_in.kind() == "code_block" || node_in.kind() == "statement_block" {
             return self.build_block(node_in);
         }
         let stmt = self.build_statement(node_in);
@@ -255,6 +255,13 @@ impl<'a> CfnCtx<'a> {
     fn build_statement_inner(&self, node_in: Node) -> Option<PCFNNode> {
         let t = node_in.kind();
 
+        // tree-sitter-al v3 wraps a code_block's statements in a `statement_block`
+        // (and a bare nested begin/end is a `code_block`). Treat either as a block
+        // so its inner statements are walked rather than collapsed to one "other".
+        if t == "code_block" || t == "statement_block" {
+            return Some(self.build_block(node_in));
+        }
+
         if t == "if_statement" {
             let then_branch = node_in.child_by_field_name("then_branch");
             let else_branch = node_in.child_by_field_name("else_branch");
@@ -279,7 +286,15 @@ impl<'a> CfnCtx<'a> {
 
         if t == "case_statement" {
             let mut branch_cfns = Vec::new();
-            for child in named_children(node_in) {
+            // tree-sitter-al v3 wraps the `case_branch`es in a `case_body` (the
+            // `body` field); the `case_else_branch` stays a direct child of the
+            // case_statement. Pre-v3 left all branches as direct children.
+            let mut branch_nodes: Vec<Node> = Vec::new();
+            if let Some(body) = node_in.child_by_field_name("body") {
+                branch_nodes.extend(named_children(body));
+            }
+            branch_nodes.extend(named_children(node_in));
+            for child in branch_nodes {
                 if child.kind() == "case_branch" || child.kind() == "case_else_branch" {
                     if let Some(cfn) = self.build_case_branch(child) {
                         branch_cfns.push(cfn);
@@ -342,6 +357,11 @@ impl<'a> CfnCtx<'a> {
             let condition_node = node_in.child_by_field_name("condition");
             let condition_start = condition_node.map(|c| c.start_byte());
             let mut body_children = Vec::new();
+            // Iterate the repeat's children up to the `until` condition, skipping
+            // the keywords. tree-sitter-al v3 wraps the body statements in a
+            // `statement_block` (the `body` field) — flatten it inline so trailing
+            // trivia (e.g. a comment between the body and `until`) is preserved in
+            // source order, matching the pre-v3 flat layout.
             for child in named_children(node_in) {
                 let ct = child.kind();
                 if ct == "until_keyword" || ct == "repeat_keyword" {
@@ -350,7 +370,13 @@ impl<'a> CfnCtx<'a> {
                 if Some(child.start_byte()) == condition_start {
                     break;
                 }
-                if let Some(cfn) = self.build_statement(child) {
+                if ct == "statement_block" {
+                    for stmt in named_children(child) {
+                        if let Some(cfn) = self.build_statement(stmt) {
+                            body_children.push(cfn);
+                        }
+                    }
+                } else if let Some(cfn) = self.build_statement(child) {
                     body_children.push(cfn);
                 }
             }

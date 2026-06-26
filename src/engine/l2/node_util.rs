@@ -16,6 +16,41 @@ pub fn named_children<'a>(node: Node<'a>) -> Vec<Node<'a>> {
     (0..n).filter_map(|i| node.named_child(i)).collect()
 }
 
+/// The statement nodes of a block, transparently descending tree-sitter-al v3's
+/// `statement_block` wrapper. In v3 a `code_block`'s statements live under its
+/// `body` field (a `statement_block`) rather than as direct children, and a
+/// `repeat`/`while`/etc. body may itself be a `statement_block`. This returns the
+/// actual statements for either layout:
+///   - `code_block` with a `body` statement_block -> the statement_block's children
+///   - a bare `statement_block`                  -> its children
+///   - anything else (incl. pre-v3 flat code_block) -> its named children
+///
+/// Use this anywhere statements of a block are iterated, instead of
+/// `named_children(code_block)`, so the walk is correct across grammar versions.
+pub fn block_statements<'a>(block_node: Node<'a>) -> Vec<Node<'a>> {
+    if block_node.kind() == "code_block" {
+        // v3 layout: a code_block holds [begin_keyword, statement_block(<stmts>),
+        // <trailing trivia e.g. comments>, end_keyword]. Flatten the
+        // statement_block inline so callers see the statements in source order
+        // ALONGSIDE any trailing trivia that sits directly under the code_block —
+        // matching the pre-v3 flat layout where everything was a direct child.
+        let mut flattened = Vec::new();
+        let mut saw_statement_block = false;
+        for child in named_children(block_node) {
+            if child.kind() == "statement_block" {
+                saw_statement_block = true;
+                flattened.extend(named_children(child));
+            } else {
+                flattened.push(child);
+            }
+        }
+        if saw_statement_block {
+            return flattened;
+        }
+    }
+    named_children(block_node)
+}
+
 /// Source text of a node (UTF-8 byte slice).
 pub fn node_text<'a>(node: Node, source: &'a str) -> &'a str {
     &source[node.byte_range()]

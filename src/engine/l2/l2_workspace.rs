@@ -247,7 +247,12 @@ fn extract_object_name(decl: Node, source: &str) -> String {
 /// object-indexer.ts (DIRECT children only — never descends).
 fn read_object_property(decl: Node, property_name: &str, source: &str) -> Option<String> {
     let want = property_name.to_lowercase();
-    for child in named_children(decl) {
+    // tree-sitter-al v3 wraps the object body in a `declaration_body` (the
+    // `body` field), so object-level properties (Subtype, SourceTable, ...) are
+    // no longer direct children of the declaration. Look inside the body when
+    // present; fall back to the declaration for older grammars.
+    let container = decl.child_by_field_name("body").unwrap_or(decl);
+    for child in named_children(container) {
         if child.kind() != "property" {
             continue;
         }

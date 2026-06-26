@@ -390,7 +390,10 @@ pub fn extract_object_global_record_vars(
 ) -> Vec<super::features::PRecordVariable> {
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for child in named_children(object_node) {
+    // tree-sitter-al v3 nests object-global var sections inside the object's
+    // `declaration_body` (the `body` field) rather than as direct children.
+    let body = object_node.child_by_field_name("body").unwrap_or(object_node);
+    for child in named_children(body) {
         if child.kind() != "var_section" {
             continue;
         }
@@ -444,7 +447,10 @@ pub fn extract_object_globals(
 ) -> Vec<PVariableSymbol> {
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for child in named_children(object_node) {
+    // tree-sitter-al v3 nests object-global var sections inside the object's
+    // `declaration_body` (the `body` field) rather than as direct children.
+    let body = object_node.child_by_field_name("body").unwrap_or(object_node);
+    for child in named_children(body) {
         if child.kind() != "var_section" {
             continue;
         }

@@ -22,7 +22,9 @@ use super::extension_fields::merge_extension_fields;
 use super::record_types::resolve_routine_record_types;
 use super::symbol_table::SymbolTable;
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
-use crate::engine::l2::node_util::{named_children, node_text, strip_quotes, Utf16Cols};
+use crate::engine::l2::node_util::{
+    block_statements, named_children, node_text, strip_quotes, Utf16Cols,
+};
 use crate::engine::l2::scope;
 use crate::engine::l2::{
     extract_object_number, project_routine_features, routine_normalized_signature_hash, IdentityCtx,
@@ -453,7 +455,11 @@ fn extract_object_name(decl: Node, source: &str) -> String {
 /// (case-insensitive); returns the raw `value` field text. Never descends.
 fn read_object_property(decl: Node, property_name: &str, source: &str) -> Option<String> {
     let want = property_name.to_lowercase();
-    for child in named_children(decl) {
+    // tree-sitter-al v3 wraps the object body in a `declaration_body` (the
+    // `body` field); object-level properties are no longer direct children of
+    // the declaration. Look inside the body when present.
+    let container = decl.child_by_field_name("body").unwrap_or(decl);
+    for child in named_children(container) {
         if child.kind() != "property" {
             continue;
         }
@@ -582,7 +588,10 @@ fn classify_field(field_node: Node, source: &str) -> (String, String, bool) {
         }
     }
     let mut field_class = "Normal".to_string();
-    for child in named_children(field_node) {
+    // tree-sitter-al v3 wraps a field's properties in a `declaration_body` (the
+    // `body` field); they are no longer direct children of the field_declaration.
+    let prop_container = field_node.child_by_field_name("body").unwrap_or(field_node);
+    for child in named_children(prop_container) {
         if child.kind() != "property" {
             continue;
         }
@@ -879,7 +888,7 @@ fn is_temporary_error_guard(node: Node, source: &str) -> Option<String> {
         return Some(receiver);
     }
     if then_branch.kind() == "code_block" {
-        let statements: Vec<Node> = named_children(then_branch)
+        let statements: Vec<Node> = block_statements(then_branch)
             .into_iter()
             .filter(|c| !is_statement_trivia(c.kind()))
             .collect();
@@ -913,7 +922,7 @@ fn table_has_temp_contract_guard(decl: Node, source: &str) -> bool {
         let Some(body) = crate::engine::l2::find_code_block(routine) else {
             continue;
         };
-        for statement in named_children(body) {
+        for statement in block_statements(body) {
             if is_statement_trivia(statement.kind()) {
                 continue;
             }
@@ -935,7 +944,7 @@ fn entry_temp_guard_receiver_of(
     source: &str,
 ) -> Option<String> {
     let body = crate::engine::l2::find_code_block(routine)?;
-    let first_statement = named_children(body)
+    let first_statement = block_statements(body)
         .into_iter()
         .find(|c| !is_statement_trivia(c.kind()))?;
     let receiver = is_temporary_error_guard(first_statement, source)?;
@@ -1011,7 +1020,22 @@ fn unescape_al_identifier(inner: &str) -> String {
 /// non-member parent → `None`. `actionref_declaration` uses `promoted_name` (no `name`)
 /// → `None`. The name is `strip_quotes`'d then `unescape_al_identifier`'d (RE-4).
 fn enclosing_member_of<'a>(parent: Option<Node<'a>>, source: &str) -> Option<(String, Node<'a>)> {
-    let p = parent?;
+    let mut p = parent?;
+    // tree-sitter-al v3 wraps a member's triggers in a body node whose kind ends
+    // in `_body` (declaration_body for a table/page field's OnValidate or an
+    // action's OnAction; report_body for a report dataitem's OnAfterGetRecord;
+    // query_body for a query element; ...). The body carries no `name`, so the
+    // trigger's direct parent is not the named member — step up to the member
+    // (the body's parent). Object-level bodies (codeunit/table/page/report) have
+    // no enclosing MEMBER, so an OnRun/OnOpenPage/etc. trigger stays `None`,
+    // matching the pre-v3 behaviour where its parent was the unnamed object body.
+    if p.child_by_field_name("name").is_none() && p.kind().ends_with("_body") {
+        let grandparent = p.parent()?;
+        if scope::object_type_for(grandparent.kind()).is_some() {
+            return None;
+        }
+        p = grandparent;
+    }
     let name_node = p.child_by_field_name("name")?;
     let raw = node_text(name_node, source);
     Some((unescape_al_identifier(strip_quotes(raw)), p))

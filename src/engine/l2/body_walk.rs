@@ -23,7 +23,7 @@ use super::features::{
     PFieldAccess, PLoop, POperationSite, PRecordOperation, PTempState, PUnreachableStatement,
     PVarAssignment,
 };
-use super::node_util::{child_of_kind, named_children, node_text, Utf16Cols};
+use super::node_util::{block_statements, child_of_kind, named_children, node_text, Utf16Cols};
 use super::record_op::{record_op_type, FIELD_ARGS_OPS};
 use super::scope::{ParameterSymbol, RecordVariable};
 use std::collections::{HashMap, HashSet};
@@ -263,8 +263,10 @@ fn unconditional_exit_kind(node: Node, source: &str) -> Option<&'static str> {
 }
 
 /// Pure-statement parents (a member_expression child here IS a statement).
+/// tree-sitter-al v3 nests a code_block's statements in a `statement_block`, so a
+/// statement-position member_expression's parent is the statement_block.
 fn is_pure_statement_parent(parent_type: &str) -> bool {
-    parent_type == "code_block"
+    parent_type == "code_block" || parent_type == "statement_block"
 }
 
 /// Statement-position field names per parent type.
@@ -785,7 +787,7 @@ pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
     // already excluded structurally: an `if … then exit(x)` sibling is an
     // `if_statement` node, which `unconditional_exit_kind` never classifies.
     if node_type == "code_block" {
-        let stmts: Vec<Node> = named_children(node)
+        let stmts: Vec<Node> = block_statements(node)
             .into_iter()
             .filter(|c| {
                 !matches!(

@@ -312,6 +312,19 @@ pub fn classify_object_run_result_consumed(node: Node, parent: Option<Node>) -> 
     if pt == "asserterror_statement" {
         return true;
     }
+    // tree-sitter-al v3 nests a code_block's statements in a `statement_block`
+    // (code_block.body), so a bare call statement's parent is the statement_block,
+    // not the code_block. Mirror the code_block branch: a bare statement does not
+    // consume the result. The asserterror nuance is one level higher now
+    // (asserterror -> code_block -> statement_block).
+    if pt == "statement_block" {
+        let asserterror_wrapped = parent
+            .parent()
+            .and_then(|cb| cb.parent())
+            .map(|p| p.kind())
+            == Some("asserterror_statement");
+        return asserterror_wrapped;
+    }
     if pt == "code_block" && parent.parent().map(|p| p.kind()) == Some("asserterror_statement") {
         return true;
     }

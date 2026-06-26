@@ -21,6 +21,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`object_body` node rename.** tree-sitter-al v3 renamed `object_body` to
   `declaration_body`; the L3 workspace name-walk now accepts both so it still stops
   at the declaration body boundary.
+- **Full L2/L3 traversal port to the v3 node shapes.** v3 inserts wrapper nodes
+  that broke every flat (direct-child) traversal while recursive walks kept
+  working. All affected sites now descend the wrappers, restoring byte-identical
+  L2/L3 projections (the R0/R1a differential goldens pass with zero divergences):
+  - **statements** — a `code_block`'s statements (and a `repeat`/case-branch body)
+    are nested in a `statement_block`. A shared `block_statements` helper flattens
+    it inline (preserving trailing trivia order). Fixes the L5 transaction
+    detectors that reported **zero** candidates (d40 transitive-load, d46
+    commit-in-lifecycle, d47 io-unsafe-txn, d49 uncommitted-write-before-ui, d51
+    retry-side-effect), the CFN `statementTree`, unreachable-statement detection,
+    and the temp-table guard scan.
+  - **case branches** — wrapped in a `case_body`; the CFN builder now reads
+    branches from it (the `case_else_branch` stays a direct child).
+  - **object properties** — `Subtype`/`SourceTable`/`FieldClass` live under
+    `declaration_body`; object-property and field-class reads descend it.
+  - **object-global var sections** — nested in `declaration_body`; global record
+    variable extraction descends it.
+  - **statement-position calls** — a parenless method call's parent is now the
+    `statement_block`; `is_pure_statement_parent` accepts it, so calls like
+    `Customer.SetRecFilter;` and `with`-receiver `Modify` are no longer mis-read as
+    field accesses / dropped.
+  - **object-run result-consumed** — a bare call statement's parent is the
+    `statement_block`; classified as not-consumed like the old `code_block` case.
+  - **member-trigger enclosing member** — a field/action/dataitem trigger's parent
+    is now a `*_body` wrapper (declaration_body / report_body / ...); resolution
+    steps up through it to the named member, while object-level triggers (OnRun)
+    stay member-less.
 
 ### Changed
 - **Grammar compliance with tree-sitter-al v3.0.1.** Source now builds and passes
