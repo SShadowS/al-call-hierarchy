@@ -622,6 +622,10 @@ fn project_file(
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
+            // Well-formed routines use the owned IR; routines with a parse error fall
+            // back to the legacy walk (the IR's ERROR-recovery differs on malformed
+            // code — the sole known divergence). A structural byte-position miss also
+            // falls back (should not occur for IR-modelled objects).
             let ir_match = if parse_incomplete {
                 None
             } else {
