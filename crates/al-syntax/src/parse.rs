@@ -34,4 +34,32 @@ mod tests {
         let f = parse("codeunit 50000 Foo\n{\n    procedure Bar(  @@@ \n");
         assert_eq!(f.parse_status, ParseStatus::Recovered);
     }
+
+    #[test]
+    fn lowers_outer_structure() {
+        use crate::ir::{ObjectKind, RoutineKind};
+        let src = "codeunit 50000 Foo\n{\n    var\n        G: Integer;\n    \
+                   procedure Bar(var X: Integer; Y: Code[20]): Boolean\n    var\n        \
+                   L: Text;\n    begin\n    end;\n\n    trigger OnRun()\n    begin\n    end;\n}\n";
+        let f = parse(src);
+        assert_eq!(f.parse_status, ParseStatus::Clean);
+        assert_eq!(f.objects.len(), 1);
+        let o = &f.objects[0];
+        assert_eq!(o.kind, ObjectKind::Codeunit);
+        assert_eq!(o.id, Some(50000));
+        assert_eq!(o.name, "Foo");
+        assert_eq!(o.globals.len(), 1, "object global G");
+        assert_eq!(o.globals[0].name, "G");
+        assert_eq!(o.routines.len(), 2, "Bar + OnRun");
+        let bar = o.routines.iter().find(|r| r.name == "Bar").expect("Bar");
+        assert_eq!(bar.kind, RoutineKind::Procedure);
+        assert_eq!(bar.params.len(), 2);
+        assert!(bar.params[0].by_ref, "var X");
+        assert!(!bar.params[1].by_ref, "Y");
+        assert_eq!(bar.return_type.as_deref(), Some("Boolean"));
+        assert_eq!(bar.locals.len(), 1);
+        assert_eq!(bar.locals[0].name, "L");
+        let onrun = o.routines.iter().find(|r| r.name == "OnRun").expect("OnRun");
+        assert_eq!(onrun.kind, RoutineKind::Trigger);
+    }
 }
