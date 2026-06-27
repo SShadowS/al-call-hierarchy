@@ -386,12 +386,10 @@ fn lower_case_body(
 ) -> (Vec<CaseBranch>, Option<BlockId>) {
     let mut branches = Vec::new();
     let mut else_block = None;
-    let Some(body) = case_node.field(FieldName::Body) else {
-        return (branches, else_block);
-    };
-    for child in body.named_children() {
-        match child.kind() {
-            RawKind::CaseBranch => {
+    // Branches live under the `case_body`; each `case_branch` has a `body` field.
+    if let Some(body) = case_node.field(FieldName::Body) {
+        for child in body.named_children() {
+            if child.kind() == RawKind::CaseBranch {
                 let patterns = child
                     .children_by_field(FieldName::Pattern)
                     .into_iter()
@@ -400,11 +398,16 @@ fn lower_case_body(
                 let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
                 branches.push(CaseBranch { patterns, body, origin: origin_of(child) });
             }
-            RawKind::CaseElseBranch => {
-                else_block = Some(lower_branch_field(child, FieldName::Body, ir, issues, source));
-            }
-            _ => {}
         }
+    }
+    // The `case_else_branch` is a DIRECT child of the case_statement (not under
+    // case_body) and holds its statements as direct children (no `body` field).
+    if let Some(else_node) = case_node
+        .named_children()
+        .into_iter()
+        .find(|c| c.kind() == RawKind::CaseElseBranch)
+    {
+        else_block = Some(lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source));
     }
     (branches, else_block)
 }

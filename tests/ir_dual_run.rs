@@ -34,6 +34,25 @@ fn ir_routines(source: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// IR callee method/function names: for each `Call`, the function expr's name
+/// (`Identifier` / `Member.member`). Mirrors legacy CALLS `@call.simple` /
+/// `@call.method`.
+fn ir_call_methods(source: &str) -> Vec<String> {
+    use al_syntax::ir::ExprKind;
+    let f = al_syntax::parse(source);
+    let mut out = Vec::new();
+    for e in f.ir.iter_exprs() {
+        if let ExprKind::Call { function, .. } = &e.kind {
+            match &f.ir.expr(*function).kind {
+                ExprKind::Identifier(n) | ExprKind::QuotedIdentifier(n) => out.push(norm(n)),
+                ExprKind::Member { member, .. } => out.push(norm(member)),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
 fn collect_al_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
@@ -94,5 +113,54 @@ fn routine_inventory_parity() {
     }
 
     // Hard parity gate: the IR routine inventory must match legacy on every file.
+    assert_eq!(matching, total, "{} files diverge — see report above", divergences.len());
+}
+
+#[test]
+fn call_inventory_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_call_methods;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let files = collect_al_files(&root);
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divergences: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+
+    for f in &files {
+        let Ok(source) = std::fs::read_to_string(f) else { continue };
+        total += 1;
+        let mut legacy: Vec<String> = legacy_call_methods(&source).iter().map(|n| norm(n)).collect();
+        let mut ir = ir_call_methods(&source);
+        legacy.sort();
+        ir.sort();
+        if legacy == ir {
+            matching += 1;
+        } else {
+            // report multiset difference
+            let lset: BTreeSet<_> = legacy.iter().cloned().collect();
+            let iset: BTreeSet<_> = ir.iter().cloned().collect();
+            let rel = f.strip_prefix(&root).unwrap_or(f).display().to_string();
+            divergences.push((
+                rel,
+                lset.difference(&iset).cloned().collect(),
+                iset.difference(&lset).cloned().collect(),
+            ));
+        }
+    }
+
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!(
+        "\n=== IR dual-run: call inventory ===\n{matching}/{total} files match ({pct:.1}%), {} diverge",
+        divergences.len()
+    );
+    for (file, only_legacy, only_ir) in divergences.iter().take(25) {
+        eprintln!("  {file}\n    legacy-only: {only_legacy:?}\n    ir-only:     {only_ir:?}");
+    }
+    if divergences.len() > 25 {
+        eprintln!("  ... {} more", divergences.len() - 25);
+    }
+    // Hard parity gate: IR call inventory must match legacy on every file.
     assert_eq!(matching, total, "{} files diverge — see report above", divergences.len());
 }

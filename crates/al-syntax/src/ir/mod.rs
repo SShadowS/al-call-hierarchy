@@ -101,6 +101,10 @@ impl Ir {
         &self.blocks[id.index()]
     }
 
+    pub fn iter_exprs(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter()
+    }
+
     pub fn expr_count(&self) -> usize {
         self.exprs.len()
     }
