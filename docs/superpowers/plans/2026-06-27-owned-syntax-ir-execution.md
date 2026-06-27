@@ -144,3 +144,10 @@ pin; ADOPT after Phase 1 broad parity, then bump+revalidate via this dual-run ha
 - [ ] After Phase 0 (codegen + IR types shape) — review the generated-vocab + IR taxonomy.
 - [ ] After Phase 1a/1b (lowerer + dual-run harness) — review parity methodology + first diffs.
 - [ ] Before Phase 5 seal — final review of the boundary + deletion of legacy path.
+
+## Grammar fixes ADOPTED (2026-06-27, commit 6701f21)
+tree-sitter-al #1 (named in/is/as expressions) + #2 (case_else body field) made on branch
+`owned-ir-grammar-fixes` (a6128d0, local-only) and adopted before Phase 2. Removed the field
+bleed; regen vocab (386 kinds), class_of loudness gate fired + classified, lower fallback recurses.
+Validated behaviour-preserving: full suite 1353/0/15 + dual-run 5x100%; complexity 8→9 was a fix.
+Proves the seam makes grammar bumps cheap+gated. (Push grammar branch to github before CI.)
