@@ -10,7 +10,8 @@
 //! subsequent increments, which thread the full `Ctx` scope inputs.
 
 use super::features::{
-    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PFieldAccess, PLoop, PVarAssignment,
+    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PFieldAccess, PLoop,
+    PUnreachableStatement, PVarAssignment,
 };
 use super::node_util::Utf16Cols;
 use super::record_op::record_op_type;
@@ -52,6 +53,7 @@ pub struct IrSpine {
     pub var_assignments: Vec<PVarAssignment>,
     pub condition_references: Vec<PConditionReference>,
     pub identifier_references: Vec<String>,
+    pub unreachable_statements: Vec<PUnreachableStatement>,
 }
 
 /// Per-routine record-receiver scope, mirroring the harness `ir_op_trace` setup
@@ -137,6 +139,8 @@ struct SpineCtx<'a> {
     var_assignments: Vec<PVarAssignment>,
     condition_references: Vec<PConditionReference>,
     identifier_ref_set: HashSet<String>,
+    unreachable_statements: Vec<PUnreachableStatement>,
+    unreachable_index: u32,
 }
 
 impl<'a> SpineCtx<'a> {
@@ -262,6 +266,36 @@ impl<'a> SpineCtx<'a> {
     }
 
     fn walk_block(&mut self, bid: BlockId) {
+        // Block-scoped unreachable scan (legacy runs per code_block, pre-order):
+        // the FIRST statement that is an unconditional exit makes its immediate
+        // next sibling unreachable. Comments/keywords are not IR statements, so the
+        // block's Stmt items already match legacy's filtered `block_statements`.
+        let stmts: Vec<al_syntax::ir::StmtId> = self
+            .file
+            .ir
+            .block(bid)
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                BlockItem::Stmt(s) => Some(*s),
+                BlockItem::Preproc(_) => None,
+            })
+            .collect();
+        for i in 0..stmts.len().saturating_sub(1) {
+            if let Some(exit_kind) = self.unconditional_exit_kind(stmts[i]) {
+                let exit_anchor = self.anchor(&self.file.ir.stmt(stmts[i]).origin);
+                let unreachable_anchor = self.anchor(&self.file.ir.stmt(stmts[i + 1]).origin);
+                self.unreachable_statements.push(PUnreachableStatement {
+                    id: format!("{}/u{}", self.routine_id, self.unreachable_index),
+                    exit_kind: exit_kind.to_string(),
+                    exit_anchor,
+                    unreachable_anchor,
+                });
+                self.unreachable_index += 1;
+                break;
+            }
+        }
+
         for item in &self.file.ir.block(bid).items {
             match item {
                 BlockItem::Stmt(s) => self.walk_stmt(*s),
@@ -271,6 +305,36 @@ impl<'a> SpineCtx<'a> {
                     }
                 }
             }
+        }
+    }
+
+    /// Legacy `unconditional_exit_kind` over an IR statement: an `exit`/`break`, an
+    /// `Error(...)` call, or `CurrReport.Quit(...)`. Conditional exits are
+    /// `if`-statements, never classified here (structural, as in legacy).
+    fn unconditional_exit_kind(&self, sid: al_syntax::ir::StmtId) -> Option<&'static str> {
+        use ExprKind::*;
+        match &self.file.ir.stmt(sid).kind {
+            StmtKind::Exit(_) => Some("exit"),
+            StmtKind::Break => Some("break"),
+            StmtKind::Call(e) => {
+                let Call { function, .. } = &self.file.ir.expr(*e).kind else {
+                    return None;
+                };
+                match &self.file.ir.expr(*function).kind {
+                    Identifier(m) if m.eq_ignore_ascii_case("error") => Some("error"),
+                    Member { object, member, .. } => {
+                        let obj_is = matches!(&self.file.ir.expr(*object).kind,
+                            Identifier(o) | QuotedIdentifier(o) if o.eq_ignore_ascii_case("currreport"));
+                        if obj_is && member.eq_ignore_ascii_case("quit") {
+                            Some("currreport-quit")
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 
@@ -573,6 +637,8 @@ pub fn walk_spine(
         var_assignments: Vec::new(),
         condition_references: Vec::new(),
         identifier_ref_set: HashSet::new(),
+        unreachable_statements: Vec::new(),
+        unreachable_index: 0,
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
@@ -607,6 +673,7 @@ pub fn walk_spine(
         var_assignments,
         condition_references,
         identifier_references,
+        unreachable_statements: ctx.unreachable_statements,
     }
 }
 
@@ -934,6 +1001,7 @@ pub struct IrPartialFeatures {
     pub var_assignments: Vec<PVarAssignment>,
     pub condition_references: Vec<PConditionReference>,
     pub identifier_references: Vec<String>,
+    pub unreachable_statements: Vec<PUnreachableStatement>,
 }
 
 /// Build the validated slice of `PFeatures` from the owned IR for one routine.
@@ -972,5 +1040,6 @@ pub fn routine_features_partial(
         var_assignments: spine.var_assignments,
         condition_references: spine.condition_references,
         identifier_references: spine.identifier_references,
+        unreachable_statements: spine.unreachable_statements,
     }
 }

@@ -2092,6 +2092,7 @@ fn engine_ir_walk_statement_tree_parity() {
     let mut va_match = 0usize;
     let mut cr_match = 0usize;
     let mut id_match = 0usize;
+    let mut un_match = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
 
     // Loop ids carry the routine-id hash on the legacy side; normalize to sequence
@@ -2215,15 +2216,44 @@ fn engine_ir_walk_statement_tree_parity() {
             if lf.identifier_references == ir.identifier_references {
                 id_match += 1;
             }
+            // unreachable_statements: id carries the routine hash; compare
+            // (id_num, exit_kind, exit_anchor, unreachable_anchor).
+            let un_key = |u: &al_call_hierarchy::engine::l2::features::PUnreachableStatement| {
+                (
+                    id_num(&u.id),
+                    u.exit_kind.clone(),
+                    u.exit_anchor.clone(),
+                    u.unreachable_anchor.clone(),
+                )
+            };
+            let l_un: Vec<_> = lf.unreachable_statements.iter().map(un_key).collect();
+            let i_un: Vec<_> = ir.unreachable_statements.iter().map(un_key).collect();
+            if l_un == i_un {
+                un_match += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln} [unreachable]"),
+                    format!("legacy={l_un:?}\n    ir={i_un:?}"),
+                ));
+            }
         }
     }
     eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
     eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  nesting_depth {nd_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
-    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  identifier_references {id_match}/{total} (measured)");
+    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  unreachable {un_match}/{total}  identifier_references {id_match}/{total} (measured)");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
     assert!(total > 0);
+    assert_eq!(
+        un_match, total,
+        "engine ir_walk unreachable_statements divergences"
+    );
     assert_eq!(nd_match, total, "engine ir_walk nesting_depth divergences");
     assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
     assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");
