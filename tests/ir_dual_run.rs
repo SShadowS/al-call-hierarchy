@@ -157,6 +157,68 @@ fn stmt_branches(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId) -> bool 
     }
 }
 
+/// IR max loop-nesting depth of a block (loops by containment; if/case transparent).
+fn block_loop_nesting(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, depth: u32) -> u32 {
+    use al_syntax::ir::BlockItem;
+    let mut m = 0;
+    for item in &f.ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(sid) => m = m.max(stmt_loop_nesting(f, *sid, depth)),
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    m = m.max(block_loop_nesting(f, *b, depth));
+                }
+            }
+        }
+    }
+    m
+}
+
+fn stmt_loop_nesting(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, depth: u32) -> u32 {
+    use al_syntax::ir::StmtKind::*;
+    match &f.ir.stmt(sid).kind {
+        While { body, .. } | Repeat { body, .. } | For { body, .. } | Foreach { body, .. } => {
+            let d = depth + 1;
+            d.max(block_loop_nesting(f, *body, d))
+        }
+        If { then_block, else_block, .. } => {
+            let a = block_loop_nesting(f, *then_block, depth);
+            let b = else_block.map(|e| block_loop_nesting(f, e, depth)).unwrap_or(0);
+            a.max(b)
+        }
+        Case { branches, else_block, .. } => {
+            let mut m = 0;
+            for br in branches {
+                m = m.max(block_loop_nesting(f, br.body, depth));
+            }
+            if let Some(e) = else_block {
+                m = m.max(block_loop_nesting(f, *e, depth));
+            }
+            m
+        }
+        Try { body, catch_block } => {
+            let a = block_loop_nesting(f, *body, depth);
+            let b = catch_block.map(|c| block_loop_nesting(f, c, depth)).unwrap_or(0);
+            a.max(b)
+        }
+        With { body, .. } | AssertError(body) | Block(body) => block_loop_nesting(f, *body, depth),
+        _ => 0,
+    }
+}
+
+/// IR per-routine `name=nesting_depth` pairs (mirrors PFeatures.nesting_depth).
+fn ir_nesting_pairs(source: &str) -> Vec<String> {
+    let f = al_syntax::parse(source);
+    let mut out = Vec::new();
+    for o in &f.objects {
+        for r in &o.routines {
+            let d = r.body.map(|b| block_loop_nesting(&f, b, 0)).unwrap_or(0);
+            out.push(format!("{}={}", r.name, d));
+        }
+    }
+    out
+}
+
 /// IR: names of routines whose body contains branching (mirrors PFeatures.has_branching).
 fn ir_branching_routines(source: &str) -> Vec<String> {
     let f = al_syntax::parse(source);
@@ -377,4 +439,18 @@ fn has_branching_parity() {
     let (matching, total) = run_parity("has_branching (real L2)", legacy, ir_branching_routines);
     assert!(total > 0);
     assert_eq!(matching, total, "has_branching divergences (see report)");
+}
+
+#[test]
+fn nesting_depth_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let legacy = |src: &str| -> Vec<String> {
+        legacy_l2_features(src)
+            .into_iter()
+            .map(|(n, f)| format!("{}={}", n, f.nesting_depth))
+            .collect()
+    };
+    let (matching, total) = run_parity("nesting_depth (real L2)", legacy, ir_nesting_pairs);
+    assert!(total > 0);
+    assert_eq!(matching, total, "nesting_depth divergences (see report)");
 }
