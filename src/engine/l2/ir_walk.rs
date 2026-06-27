@@ -720,6 +720,11 @@ impl<'a> SpineCtx<'a> {
         let e = self.file.ir.expr(eid);
         if let Call { function, args } = &e.kind {
             let (function, args) = (*function, args.clone());
+            // A parenless call (`Rec.Find;`) was normalized from a member/identifier/
+            // subscript, so its origin kind is NOT `call_expression`. Legacy harvests
+            // identifier-refs from a call's function subtree ONLY for real (parens)
+            // call_expressions; a parenless call's receiver is not counted.
+            let is_parens_call = e.origin.kind_text == "call_expression";
             let fe = self.file.ir.expr(function);
             // Record-op classification + (op_type, receiver text) for the emit.
             let record_op: Option<(&'static str, String)> = match &fe.kind {
@@ -872,7 +877,12 @@ impl<'a> SpineCtx<'a> {
             match &self.file.ir.expr(function).kind {
                 Member { object, .. } => {
                     let object = *object;
-                    self.walk_expr(object);
+                    // Walk the receiver for a parens call (legacy harvests its
+                    // identifier-refs), or when it is itself a chained call (legacy
+                    // `chained_receiver_descent` visits the inner call regardless).
+                    if is_parens_call || matches!(self.file.ir.expr(object).kind, Call { .. }) {
+                        self.walk_expr(object);
+                    }
                 }
                 Identifier(_) | QuotedIdentifier(_) => {}
                 _ => self.walk_expr(function),
@@ -918,6 +928,9 @@ impl<'a> SpineCtx<'a> {
                         let object = *object;
                         self.walk_expr(object);
                     }
+                    // A bare-identifier enum TYPE name (`DataScope::Company`) is NOT a
+                    // value ref — legacy excludes the enum_type field identifier.
+                    Identifier(_) | QuotedIdentifier(_) => {}
                     _ => self.walk_expr(enum_type),
                 }
             }
