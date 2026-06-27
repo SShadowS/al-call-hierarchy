@@ -6,3 +6,4 @@
 //! grammar details never leave this crate; consumers see only the IR.
 
 pub mod language;
+pub mod raw;

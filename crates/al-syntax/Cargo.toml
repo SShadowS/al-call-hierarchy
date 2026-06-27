@@ -10,3 +10,4 @@ tree-sitter = "0.26"
 
 [build-dependencies]
 cc = "1"
+sha2 = "0.10"

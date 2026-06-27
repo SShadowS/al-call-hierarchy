@@ -68,9 +68,16 @@ NEW code now at a fraction of the churn:
 - **`shape.rs`**: required/optional facts → `required_field()` debug-asserts (§3.3).
 - **Generator** = bespoke `xtask` using `serde_json` + `quote!`; output checked in + hash-guarded.
 
-- [ ] `xtask gen-syntax` → `al-syntax/src/raw/generated/{kind,field,nodes,shape}.rs` + hash.
-- [ ] `schema/kind_policy.rs` exhaustive `class_of` + coverage test; `ir/` types; `lower/` skeleton;
-  `parse.rs`. Unit tests (panic-on-unknown, coverage, typed accessors).
+- [x] **0a** — `xtask gen-syntax` generates `al-syntax/src/raw/generated/{raw_kind,field,mod}.rs`
+  (383 named `RawKind` + `Error`, 73 `FieldName`, `from_raw` panics on unknown, `GRAMMAR_NODE_TYPES_HASH`).
+  Hash sidecar + al-syntax `build.rs` guard (grammar swap → build fails). `--check` drift guard.
+  al-syntax vocabulary unit tests pass. Workspace green/unchanged (pending confirm).
+- [ ] **0b** — `schema/kind_policy.rs`: exhaustive `class_of(RawKind)->Class`
+  (Semantic/Transparent/Trivia/Recovery/Ignored) + generated coverage test asserting exhaustiveness.
+- [ ] **0c** — typed CST wrappers (`nodes.rs`) + `shape.rs` (required/optional field facts;
+  `required_field()` debug-assert).
+- [ ] **0d** — `ir/` types (Origin + Stmt/Expr taxonomy incl. try/asserterror/foreach/case_else),
+  `lower/` skeleton, `parse.rs`. ← **reviewer checkpoint here** (IR taxonomy + class_of design).
 - [ ] Boundary scanner in CI, monotonic-decrease, seeded from real grep.
 
 ## Phase 1 — Lowerer to parity (1a–1d, dual-run; parse-once/fork-same-Tree)

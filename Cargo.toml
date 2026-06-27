@@ -12,7 +12,7 @@ repository = "https://github.com/SShadowS/al-call-hierarchy"
 # grammar; this crate keeps a direct `tree-sitter` dep ONLY for the legacy CST walk
 # (`tree_sitter::Node` in engine::l2/l3), to be dropped at Phase 5.
 [workspace]
-members = ["crates/al-syntax"]
+members = ["crates/al-syntax", "crates/xtask"]
 
 [dependencies]
 # The grammar boundary crate (FFI + Phase 0+ generated raw layer / lowerer / IR).

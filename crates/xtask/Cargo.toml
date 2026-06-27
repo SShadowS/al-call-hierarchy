@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Workspace automation. `gen-syntax`: generate al-syntax raw vocabulary from the pinned tree-sitter-al node-types.json."
+
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"

@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 /// Compile the tree-sitter-al grammar C into this crate. `al-syntax` is the ONLY
@@ -9,6 +10,28 @@ fn main() {
         std::env::var("TREE_SITTER_AL_PATH").unwrap_or_else(|_| "../../tree-sitter-al".to_string()),
     );
     let src_dir = tree_sitter_al.join("src");
+
+    // GRAMMAR HASH GUARD: the generated raw vocabulary (RawKind/FieldName) was
+    // produced from a specific node-types.json; assert the grammar being compiled
+    // matches it, so a silent grammar swap/bump fails the build instead of
+    // producing a vocabulary that disagrees with the parser. Sidecar is written by
+    // `cargo run -p xtask -- gen-syntax`.
+    let node_types = src_dir.join("node-types.json");
+    let sidecar = PathBuf::from("src/raw/generated/node-types.sha256");
+    if let (Ok(bytes), Ok(expected)) = (std::fs::read(&node_types), std::fs::read_to_string(&sidecar))
+    {
+        let actual = hex(&Sha256::digest(&bytes));
+        let expected = expected.trim();
+        if actual != expected {
+            panic!(
+                "al-syntax: node-types.json hash mismatch.\n  grammar:   {actual}\n  generated: {expected}\n\
+                 The pinned grammar changed but the generated vocabulary did not. Regenerate:\n  \
+                 cargo run -p xtask -- gen-syntax"
+            );
+        }
+        println!("cargo:rerun-if-changed={}", node_types.display());
+        println!("cargo:rerun-if-changed={}", sidecar.display());
+    }
 
     let mut build = cc::Build::new();
     build
@@ -29,4 +52,12 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", src_dir.display());
     println!("cargo:rerun-if-env-changed=TREE_SITTER_AL_PATH");
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
