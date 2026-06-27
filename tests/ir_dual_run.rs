@@ -291,6 +291,11 @@ struct Trace {
     cs_loops: Vec<Vec<u32>>,
     cur_loops: Vec<u32>,
     loop_ctr: u32,
+    // under-asserterror context: snapshotted per op / per call (true iff inside an
+    // `asserterror` body). `assert_depth` is the working nesting counter.
+    op_under: Vec<bool>,
+    cs_under: Vec<bool>,
+    assert_depth: u32,
 }
 
 /// collect_idents over a condition expr: identifiers + member NAMES (plain
@@ -602,7 +607,11 @@ fn rec_walk_stmt(
                 b!(*c);
             }
         }
-        AssertError(body) => b!(*body),
+        AssertError(body) => {
+            out.assert_depth += 1;
+            b!(*body);
+            out.assert_depth -= 1;
+        }
         Exit(x) => {
             if let Some(x) = x {
                 e!(*x);
@@ -661,12 +670,14 @@ fn rec_walk_expr(
                 out.op_idx.insert(eid, out.ops.len() as u32);
             }
             out.op_loops.push(out.cur_loops.clone());
+            out.op_under.push(out.assert_depth > 0);
             out.ops.push(anchor.clone());
         }
         // call site: everything that isn't a record-op or a commit (Error IS a call site).
         if !is_record_op && !is_commit {
             out.cs_idx.insert(eid, out.calls.len() as u32);
             out.cs_loops.push(out.cur_loops.clone());
+            out.cs_under.push(out.assert_depth > 0);
             out.calls.push(anchor);
         }
         // Recurse the callee. A member-call RECEIVER is a value ref (counted); the
@@ -1853,6 +1864,79 @@ fn statement_tree_measure() {
     assert_eq!(
         matching_stripped, total,
         "statement_tree structural divergences (see report)"
+    );
+}
+
+/// L2 cutover — under_asserterror per op and per call site (Some(true) iff inside
+/// an `asserterror` body, else None).
+#[test]
+fn under_asserterror_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let mut lop: Vec<(u32, Option<bool>)> = lf
+                .operation_sites
+                .iter()
+                .map(|o| (id_num(&o.id), o.under_asserterror))
+                .collect();
+            lop.sort_by_key(|(n, _)| *n);
+            let l_op: Vec<Option<bool>> = lop.into_iter().map(|(_, u)| u).collect();
+            let mut lcs: Vec<(u32, Option<bool>)> = lf
+                .call_sites
+                .iter()
+                .map(|c| (id_num(&c.id), c.under_asserterror))
+                .collect();
+            lcs.sort_by_key(|(n, _)| *n);
+            let l_cs: Vec<Option<bool>> = lcs.into_iter().map(|(_, u)| u).collect();
+            // IR bool → Some(true)/None (legacy never emits Some(false)).
+            let i_op: Vec<Option<bool>> =
+                itrace.op_under.iter().map(|&u| u.then_some(true)).collect();
+            let i_cs: Vec<Option<bool>> =
+                itrace.cs_under.iter().map(|&u| u.then_some(true)).collect();
+            if l_op == i_op && l_cs == i_cs {
+                matching += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln}"),
+                    format!("op {l_op:?} vs {i_op:?}; cs {l_cs:?} vs {i_cs:?}"),
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== L2 cutover: under_asserterror ===\n{matching}/{total} routines match ({pct:.1}%)"
+    );
+    for (a, b) in divs.iter().take(10) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    assert_eq!(
+        matching, total,
+        "under_asserterror divergences (see report)"
     );
 }
 
