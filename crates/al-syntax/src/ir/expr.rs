@@ -13,8 +13,9 @@ pub struct Expr {
 pub enum ExprKind {
     Identifier(String),
     QuotedIdentifier(String),
-    /// `object.member`
-    Member { object: ExprId, member: String },
+    /// `object.member`. `member_origin` is the member identifier node's provenance
+    /// (its name is `member`, raw with quotes) — needed for reference anchors.
+    Member { object: ExprId, member: String, member_origin: Origin },
     /// `function(args...)`
     Call { function: ExprId, args: Vec<ExprId> },
     /// `base[index]` (subscript)

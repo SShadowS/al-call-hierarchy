@@ -247,6 +247,37 @@ struct Trace {
     idents: BTreeSet<String>,
     // (lhs_name, rhs_literal, anchor) per assignment — mirrors PVarAssignment.
     assigns: Vec<(String, Option<String>, String)>,
+    // (identifier, condition_kind, ref_anchor, stmt_anchor) — PConditionReference.
+    conds: Vec<(String, String, String, String)>,
+}
+
+/// collect_idents over a condition expr: identifiers + member NAMES (plain
+/// identifier only), NOT recursing a member's object. Mirrors legacy collect_idents.
+fn collect_cond_idents(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, kind: &str, stmt: &str, out: &mut Trace) {
+    use al_syntax::ir::ExprKind::*;
+    let e = f.ir.expr(eid);
+    match &e.kind {
+        Identifier(name) if e.origin.kind_text == "identifier" => {
+            out.conds.push((name.to_ascii_lowercase(), kind.to_string(), format!("{}:{}", e.origin.start.row, e.origin.start.column), stmt.to_string()));
+        }
+        Member { member, member_origin, .. } => {
+            if member_origin.kind_text == "identifier" {
+                out.conds.push((member.to_ascii_lowercase(), kind.to_string(), format!("{}:{}", member_origin.start.row, member_origin.start.column), stmt.to_string()));
+            }
+            // does NOT recurse into the object.
+        }
+        Call { function, args } => {
+            collect_cond_idents(f, *function, kind, stmt, out);
+            for a in args { collect_cond_idents(f, *a, kind, stmt, out); }
+        }
+        Binary { lhs, rhs, .. } => { collect_cond_idents(f, *lhs, kind, stmt, out); collect_cond_idents(f, *rhs, kind, stmt, out); }
+        Unary { operand, .. } => collect_cond_idents(f, *operand, kind, stmt, out),
+        Parenthesized(x) => collect_cond_idents(f, *x, kind, stmt, out),
+        Index { base, index } => { collect_cond_idents(f, *base, kind, stmt, out); collect_cond_idents(f, *index, kind, stmt, out); }
+        QualifiedEnum { enum_type, .. } => collect_cond_idents(f, *enum_type, kind, stmt, out),
+        RangeExpr { start, end } => { collect_cond_idents(f, *start, kind, stmt, out); collect_cond_idents(f, *end, kind, stmt, out); }
+        _ => {}
+    }
 }
 
 /// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
@@ -310,6 +341,7 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
     macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, frvars, implicit, out) }; }
     macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, frvars, implicit, out) }; }
     let st = f.ir.stmt(sid);
+    let sa = format!("{}:{}", st.origin.start.row, st.origin.start.column);
     match &st.kind {
         Assignment { target, value } => {
             // PVarAssignment: lhs base name (identifier or member name), optional
@@ -334,9 +366,9 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
             e!(*target); e!(*value);
         }
         Call(x) => e!(*x),
-        If { cond, then_block, else_block } => { e!(*cond); b!(*then_block); if let Some(x)=else_block { b!(*x); } }
-        While { cond, body } => { e!(*cond); b!(*body); }
-        Repeat { body, until } => { b!(*body); e!(*until); }
+        If { cond, then_block, else_block } => { collect_cond_idents(f, *cond, "if", &sa, out); e!(*cond); b!(*then_block); if let Some(x)=else_block { b!(*x); } }
+        While { cond, body } => { collect_cond_idents(f, *cond, "while", &sa, out); e!(*cond); b!(*body); }
+        Repeat { body, until } => { collect_cond_idents(f, *until, "repeat-until", &sa, out); b!(*body); e!(*until); }
         For { var, from, to, body, .. } => { e!(*var); e!(*from); e!(*to); b!(*body); }
         Foreach { var, iterable, body } => { e!(*var); e!(*iterable); b!(*body); }
         With { receiver, body } => {
@@ -350,7 +382,7 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
             b!(*body);
             implicit.pop();
         }
-        Case { scrutinee, branches, else_block } => { e!(*scrutinee); for br in branches { for p in &br.patterns { e!(*p); } b!(br.body); } if let Some(x)=else_block { b!(*x); } }
+        Case { scrutinee, branches, else_block } => { collect_cond_idents(f, *scrutinee, "case", &sa, out); e!(*scrutinee); for br in branches { for p in &br.patterns { e!(*p); } b!(br.body); } if let Some(x)=else_block { b!(*x); } }
         Try { body, catch_block } => { b!(*body); if let Some(c)=catch_block { b!(*c); } }
         AssertError(body) => b!(*body),
         Exit(x) => { if let Some(x)=x { e!(*x); } }
@@ -367,7 +399,7 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
         let fe = f.ir.expr(*function);
         let is_record_op = match &fe.kind {
             // explicit receiver: X.Method() where X is a record var.
-            Member { object, member } => {
+            Member { object, member, .. } => {
                 let recv = match &f.ir.expr(*object).kind { Identifier(x) | QuotedIdentifier(x) => Some(x.to_ascii_lowercase()), _ => None };
                 recv.map(|r| rvars.contains(&r)).unwrap_or(false) && record_op_type(&member.to_ascii_lowercase()).is_some()
             }
@@ -775,6 +807,53 @@ fn var_assignment_measure() {
     }
     assert!(total > 0);
     assert_eq!(matching, total, "var_assignment divergences (see report)");
+}
+
+/// L2 cutover — condition_references (idents in if/while/until/case conditions).
+#[test]
+fn condition_ref_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let mut l: Vec<(String, String, String, String)> = lf
+                .condition_references
+                .iter()
+                .map(|c| (
+                    c.identifier.clone(),
+                    c.condition_kind.clone(),
+                    format!("{}:{}", c.reference_anchor.start_line, c.reference_anchor.start_column),
+                    format!("{}:{}", c.statement_anchor.start_line, c.statement_anchor.start_column),
+                ))
+                .collect();
+            let mut i = itrace.conds.clone();
+            l.sort();
+            i.sort();
+            if l == i {
+                matching += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((format!("{rel} :: {ln}"), format!("legacy={l:?} ir={i:?}")));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: condition_references ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (a, b) in divs.iter().take(10) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "condition_reference divergences (see report)");
 }
 
 /// L2 cutover — identifier_references (deduped/sorted value-ref identifiers).
