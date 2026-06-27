@@ -235,12 +235,18 @@ fn ir_branching_routines(source: &str) -> Vec<String> {
     out
 }
 
-// ---- L2 cutover: record-op ordered trace (spine step 1) ----
+// ---- L2 cutover: ordered op/callsite trace (spine) ----
 
-/// Record-op anchors per routine, in IR DFS visit order (pre-order at the call).
-/// `row:col` of each `X.Method()` where X is a Record var and Method is a record
-/// builtin. Mirrors legacy record_operations order.
-fn ir_record_op_trace(source: &str) -> Vec<(String, Vec<String>)> {
+/// Per-routine ordered traces: `ops` = record-ops + commit/error (the op0..opN
+/// sequence), `calls` = call sites (everything else), both in IR DFS visit order.
+#[derive(Default)]
+struct Trace {
+    ops: Vec<String>,
+    calls: Vec<String>,
+}
+
+/// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
+fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
     use al_syntax::ir::VarDecl;
     let f = al_syntax::parse(source);
     let is_rec = |v: &VarDecl| v.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false);
@@ -258,19 +264,19 @@ fn ir_record_op_trace(source: &str) -> Vec<(String, Vec<String>)> {
             let mut rvars = globals.clone();
             rvars.extend(r.params.iter().filter(|p| p.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false)).map(|p| p.name.to_ascii_lowercase()));
             rvars.extend(r.locals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()));
-            let mut anchors = Vec::new();
+            let mut trace = Trace::default();
             // implicit-receiver stack: top = is-current-implicit-receiver-a-record.
             let mut implicit = vec![table_method];
             if let Some(b) = r.body {
-                rec_walk_block(&f, b, &rvars, &mut implicit, &mut anchors);
+                rec_walk_block(&f, b, &rvars, &mut implicit, &mut trace);
             }
-            out.push((r.name.clone(), anchors));
+            out.push((r.name.clone(), trace));
         }
     }
     out
 }
 
-fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_syntax::ir::BlockItem;
     for item in &f.ir.block(bid).items {
         match item {
@@ -280,7 +286,7 @@ fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars:
     }
 }
 
-fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_syntax::ir::{ExprKind, StmtKind::*};
     macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, implicit, out) }; }
     macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, implicit, out) }; }
@@ -312,7 +318,7 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
     }
 }
 
-fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_call_hierarchy::engine::l2::record_op::record_op_type;
     use al_syntax::ir::ExprKind::*;
     let e = f.ir.expr(eid);
@@ -330,13 +336,18 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
             }
             _ => false,
         };
-        // operation sites: bare Commit() / Error() (function = identifier).
-        let is_operation = matches!(&fe.kind, Identifier(m) | QuotedIdentifier(m) if {
-            let l = m.to_ascii_lowercase();
-            l == "commit" || l == "error"
-        });
-        if is_record_op || is_operation {
-            out.push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
+        // Commit() = operation only; Error() = operation AND a call site (legacy
+        // pushes both). Both detected as a bare identifier function.
+        let fname = match &fe.kind { Identifier(m) | QuotedIdentifier(m) => Some(m.to_ascii_lowercase()), _ => None };
+        let is_commit = fname.as_deref() == Some("commit");
+        let is_error = fname.as_deref() == Some("error");
+        let anchor = format!("{}:{}", e.origin.start.row, e.origin.start.column);
+        if is_record_op || is_commit || is_error {
+            out.ops.push(anchor.clone());
+        }
+        // call site: everything that isn't a record-op or a commit (Error IS a call site).
+        if !is_record_op && !is_commit {
+            out.calls.push(anchor);
         }
         rec_walk_expr(f, *function, rvars, implicit, out);
         for a in args { rec_walk_expr(f, *a, rvars, implicit, out); }
@@ -580,9 +591,10 @@ fn record_op_trace_measure() {
     for fpath in collect_al_files(&root) {
         let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
         let legacy = legacy_l2_features(&src);
-        let ir = ir_record_op_trace(&src);
-        for ((ln, lf), (_in, ianchors)) in legacy.iter().zip(ir.iter()) {
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
             total += 1;
+            let ianchors = &itrace.ops;
             // operation_sites is the COMPLETE unified op list: every record_operation
             // mirrors into operation_sites (kind "record-op"/"lock") with the same
             // op_id, plus genuine commit/error-call ops. So this alone is the op0..opN
@@ -610,6 +622,50 @@ fn record_op_trace_measure() {
     assert!(total > 0);
     // Hard gate: record-op classification + visit order match the real engine L2.
     assert_eq!(matching, total, "record-op trace divergences (see report)");
+}
+
+/// L2 cutover — call-site ORDER trace measurement. Per routine, compares the
+/// ordered call-site anchors (IR DFS vs legacy call_sites in cs-id order).
+#[test]
+fn callsite_trace_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let cs_num = |id: &str| -> u32 { id.rsplit("cs").next().and_then(|s| s.parse().ok()).unwrap_or(u32::MAX) };
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let mut cs: Vec<(u32, String)> = lf
+                .call_sites
+                .iter()
+                .map(|c| (cs_num(&c.id), format!("{}:{}", c.source_anchor.start_line, c.source_anchor.start_column)))
+                .collect();
+            cs.sort_by_key(|(n, _)| *n);
+            let lanchors: Vec<String> = cs.into_iter().map(|(_, a)| a).collect();
+            if lanchors == itrace.calls {
+                matching += 1;
+            } else if divs.len() < 20 {
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((rel, ln.clone(), lanchors, itrace.calls.clone()));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: call-site order trace ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (file, routine, l, i) in divs.iter().take(12) {
+        eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "call-site trace divergences (see report)");
 }
 
 #[test]
