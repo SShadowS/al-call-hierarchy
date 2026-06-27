@@ -248,10 +248,10 @@ fn ir_record_op_trace(source: &str) -> Vec<(String, Vec<String>)> {
     for o in &f.objects {
         let mut globals: std::collections::HashSet<String> =
             o.globals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()).collect();
-        // explicit Rec on a table method is a record receiver
-        if matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension) {
-            globals.insert("rec".to_string());
-        }
+        // `Rec`/`xRec` are record receivers by name convention (classify.rs:277),
+        // regardless of object type.
+        globals.insert("rec".to_string());
+        globals.insert("xrec".to_string());
         // A table/tableext method (procedure OR trigger) has an implicit record `Rec`.
         let table_method = matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension);
         for r in &o.routines {
@@ -598,6 +598,8 @@ fn record_op_trace_measure() {
         eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
     }
     assert!(total > 0);
+    // Hard gate: record-op classification + visit order match the real engine L2.
+    assert_eq!(matching, total, "record-op trace divergences (see report)");
 }
 
 #[test]
