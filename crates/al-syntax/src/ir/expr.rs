@@ -15,22 +15,45 @@ pub enum ExprKind {
     QuotedIdentifier(String),
     /// `object.member`. `member_origin` is the member identifier node's provenance
     /// (its name is `member`, raw with quotes) — needed for reference anchors.
-    Member { object: ExprId, member: String, member_origin: Origin },
+    Member {
+        object: ExprId,
+        member: String,
+        member_origin: Origin,
+    },
     /// `function(args...)`
-    Call { function: ExprId, args: Vec<ExprId> },
+    Call {
+        function: ExprId,
+        args: Vec<ExprId>,
+    },
     /// `base[index]` (subscript)
-    Index { base: ExprId, index: ExprId },
+    Index {
+        base: ExprId,
+        index: ExprId,
+    },
     Literal(Literal),
-    Unary { op: UnaryOp, operand: ExprId },
-    Binary { op: BinaryOp, lhs: ExprId, rhs: ExprId },
+    Unary {
+        op: UnaryOp,
+        operand: ExprId,
+    },
+    Binary {
+        op: BinaryOp,
+        lhs: ExprId,
+        rhs: ExprId,
+    },
     Parenthesized(ExprId),
     /// `Enum::Value` — `enum_type` is lowered (it can be a `member_expression`
     /// like `Rec.Status::Open`), `value` is the member text.
-    QualifiedEnum { enum_type: ExprId, value: String },
+    QualifiedEnum {
+        enum_type: ExprId,
+        value: String,
+    },
     /// `Database::"Customer"` and similar object references.
     DatabaseReference(String),
     /// `a..b`
-    RangeExpr { start: ExprId, end: ExprId },
+    RangeExpr {
+        start: ExprId,
+        end: ExprId,
+    },
     /// A syntactically present expression the lowerer does not yet model. The kind
     /// is preserved via `Origin.kind_text`; a `SyntaxIssue` is recorded.
     Unknown,

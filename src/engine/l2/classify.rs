@@ -318,10 +318,7 @@ pub fn classify_object_run_result_consumed(node: Node, parent: Option<Node>) -> 
     // consume the result. The asserterror nuance is one level higher now
     // (asserterror -> code_block -> statement_block).
     if pt == "statement_block" {
-        let asserterror_wrapped = parent
-            .parent()
-            .and_then(|cb| cb.parent())
-            .map(|p| p.kind())
+        let asserterror_wrapped = parent.parent().and_then(|cb| cb.parent()).map(|p| p.kind())
             == Some("asserterror_statement");
         return asserterror_wrapped;
     }

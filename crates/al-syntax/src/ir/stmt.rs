@@ -34,18 +34,51 @@ pub struct Stmt {
 }
 
 pub enum StmtKind {
-    Assignment { target: ExprId, value: ExprId },
+    Assignment {
+        target: ExprId,
+        value: ExprId,
+    },
     /// A call in statement position (`Foo();` / `Rec.SetRange(...);`).
     Call(ExprId),
-    If { cond: ExprId, then_block: BlockId, else_block: Option<BlockId> },
-    Case { scrutinee: ExprId, branches: Vec<CaseBranch>, else_block: Option<BlockId> },
-    While { cond: ExprId, body: BlockId },
-    Repeat { body: BlockId, until: ExprId },
-    For { var: ExprId, from: ExprId, to: ExprId, down: bool, body: BlockId },
-    Foreach { var: ExprId, iterable: ExprId, body: BlockId },
-    With { receiver: ExprId, body: BlockId },
+    If {
+        cond: ExprId,
+        then_block: BlockId,
+        else_block: Option<BlockId>,
+    },
+    Case {
+        scrutinee: ExprId,
+        branches: Vec<CaseBranch>,
+        else_block: Option<BlockId>,
+    },
+    While {
+        cond: ExprId,
+        body: BlockId,
+    },
+    Repeat {
+        body: BlockId,
+        until: ExprId,
+    },
+    For {
+        var: ExprId,
+        from: ExprId,
+        to: ExprId,
+        down: bool,
+        body: BlockId,
+    },
+    Foreach {
+        var: ExprId,
+        iterable: ExprId,
+        body: BlockId,
+    },
+    With {
+        receiver: ExprId,
+        body: BlockId,
+    },
     /// `if guard then ...` recovery aside; normal `try` maps here. Sets has_branching.
-    Try { body: BlockId, catch_block: Option<BlockId> },
+    Try {
+        body: BlockId,
+        catch_block: Option<BlockId>,
+    },
     /// `asserterror <stmt/block>` — establishes the under-asserterror context that
     /// flows to descendant call sites (legacy `under_asserterror`).
     AssertError(BlockId),
