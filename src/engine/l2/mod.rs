@@ -109,7 +109,7 @@ fn loop_strictly_contains(outer: &features::PLoop, inner: &features::PLoop) -> b
     starts_before && ends_after
 }
 
-fn compute_nesting_depth(loops: &[features::PLoop]) -> u32 {
+pub(crate) fn compute_nesting_depth(loops: &[features::PLoop]) -> u32 {
     let mut max_depth = 0;
     for loop_ in loops {
         let enclosing = loops

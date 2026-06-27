@@ -928,6 +928,7 @@ impl<'a> IrCfn<'a> {
 pub struct IrPartialFeatures {
     pub statement_tree: Option<PCFNNode>,
     pub has_branching: bool,
+    pub nesting_depth: u32,
     pub loops: Vec<PLoop>,
     pub field_accesses: Vec<PFieldAccess>,
     pub var_assignments: Vec<PVarAssignment>,
@@ -961,9 +962,11 @@ pub fn routine_features_partial(
         };
         cfn.build_block(b)
     });
+    let nesting_depth = super::compute_nesting_depth(&spine.loops);
     IrPartialFeatures {
         statement_tree,
         has_branching: spine.has_branching,
+        nesting_depth,
         loops: spine.loops,
         field_accesses: spine.field_accesses,
         var_assignments: spine.var_assignments,

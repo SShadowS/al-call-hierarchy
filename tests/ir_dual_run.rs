@@ -2086,6 +2086,7 @@ fn engine_ir_walk_statement_tree_parity() {
     let mut total = 0usize;
     let mut st_match = 0usize;
     let mut hb_match = 0usize;
+    let mut nd_match = 0usize;
     let mut loop_match = 0usize;
     let mut fa_match = 0usize;
     let mut va_match = 0usize;
@@ -2118,6 +2119,9 @@ fn engine_ir_walk_statement_tree_parity() {
             let ir = ir_walk::routine_features_partial(&file, *oi, routine, "ir", &src, "dual");
             if ir.has_branching == lf.has_branching {
                 hb_match += 1;
+            }
+            if ir.nesting_depth == lf.nesting_depth {
+                nd_match += 1;
             }
             let ltree = lf
                 .statement_tree
@@ -2214,12 +2218,13 @@ fn engine_ir_walk_statement_tree_parity() {
         }
     }
     eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
-    eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
+    eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  nesting_depth {nd_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
     eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  identifier_references {id_match}/{total} (measured)");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
     assert!(total > 0);
+    assert_eq!(nd_match, total, "engine ir_walk nesting_depth divergences");
     assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
     assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");
     assert_eq!(loop_match, total, "engine ir_walk loops divergences");
