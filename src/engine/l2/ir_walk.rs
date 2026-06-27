@@ -1421,3 +1421,194 @@ pub fn ir_record_variables(
 
     out
 }
+
+// ---- variables (PVariableSymbol: params + locals + object globals) ----
+
+/// Classify a variable initializer's RHS expression into the legacy ValueSource
+/// JSON (`classify_rhs`).
+fn ir_classify_rhs(file: &AlFile, eid: ExprId, source: &str) -> serde_json::Value {
+    use al_syntax::ir::Literal::*;
+    use serde_json::json;
+    let e = file.ir.expr(eid);
+    let text = &source[e.origin.byte.clone()];
+    match &e.kind {
+        ExprKind::Literal(Text(_)) => {
+            let v = text.trim();
+            let v = v
+                .strip_prefix('\'')
+                .and_then(|x| x.strip_suffix('\''))
+                .unwrap_or(v);
+            json!({ "kind": "literal", "value": v })
+        }
+        ExprKind::Literal(Int(_)) | ExprKind::Literal(Decimal(_)) | ExprKind::Literal(Bool(_)) => {
+            json!({ "kind": "literal", "value": text.trim() })
+        }
+        ExprKind::QualifiedEnum { enum_type, value } => {
+            let en = &source[file.ir.expr(*enum_type).origin.byte.clone()];
+            let en = en.trim().trim_matches('"');
+            json!({ "kind": "enum", "enumName": en, "member": value })
+        }
+        ExprKind::Identifier(n) if e.origin.kind_text == "identifier" => {
+            json!({ "kind": "constant-var", "varName": n.to_ascii_lowercase(), "initializer": { "kind": "unknown" } })
+        }
+        _ => json!({ "kind": "expression" }),
+    }
+}
+
+/// First assignment `var := <rhs>` to `var_lc` (bare-identifier target) in DFS order;
+/// returns the rhs ExprId.
+fn ir_first_assignment_value(file: &AlFile, bid: BlockId, var_lc: &str) -> Option<ExprId> {
+    for item in &file.ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(s) => {
+                if let Some(v) = ir_first_assignment_in_stmt(file, *s, var_lc) {
+                    return Some(v);
+                }
+            }
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    if let Some(v) = ir_first_assignment_value(file, *b, var_lc) {
+                        return Some(v);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn ir_first_assignment_in_stmt(
+    file: &AlFile,
+    sid: al_syntax::ir::StmtId,
+    var_lc: &str,
+) -> Option<ExprId> {
+    use StmtKind::*;
+    match &file.ir.stmt(sid).kind {
+        Assignment { target, value } => {
+            if matches!(&file.ir.expr(*target).kind,
+                ExprKind::Identifier(x) if x.eq_ignore_ascii_case(var_lc))
+            {
+                return Some(*value);
+            }
+            None
+        }
+        If {
+            then_block,
+            else_block,
+            ..
+        } => ir_first_assignment_value(file, *then_block, var_lc)
+            .or_else(|| else_block.and_then(|b| ir_first_assignment_value(file, b, var_lc))),
+        While { body, .. }
+        | Repeat { body, .. }
+        | For { body, .. }
+        | Foreach { body, .. }
+        | With { body, .. }
+        | AssertError(body)
+        | Block(body) => ir_first_assignment_value(file, *body, var_lc),
+        Case {
+            branches,
+            else_block,
+            ..
+        } => {
+            for br in branches {
+                if let Some(v) = ir_first_assignment_value(file, br.body, var_lc) {
+                    return Some(v);
+                }
+            }
+            else_block.and_then(|b| ir_first_assignment_value(file, b, var_lc))
+        }
+        Try { body, catch_block } => ir_first_assignment_value(file, *body, var_lc)
+            .or_else(|| catch_block.and_then(|c| ir_first_assignment_value(file, c, var_lc))),
+        _ => None,
+    }
+}
+
+/// Per-routine `variables` (`PVariableSymbol`): parameters, local var declarations
+/// (with first-assignment initializer), and object globals — first-name-wins
+/// shadowing (params/locals shadow globals). Mirrors `scope::extract_variables`.
+/// NOT yet IR-modelled (absent from this corpus): named return-value variable.
+pub fn ir_variables(
+    file: &AlFile,
+    object_idx: usize,
+    routine: &RoutineDecl,
+    source: &str,
+    source_unit_id: &str,
+) -> Vec<super::features::PVariableSymbol> {
+    use super::features::PVariableSymbol;
+    use super::scope::canonicalize_type_text;
+    let cols = Utf16Cols::new(source);
+    let anchor = |origin: &Origin, kind: &str| PAnchor {
+        source_unit_id: source_unit_id.to_string(),
+        start_line: origin.start.row,
+        start_column: cols.col(origin.start.row as usize, origin.start.column as usize),
+        end_line: origin.end.row,
+        end_column: cols.col(origin.end.row as usize, origin.end.column as usize),
+        syntax_kind: kind.to_string(),
+    };
+    let mut out: Vec<PVariableSymbol> = Vec::new();
+
+    // 1. Parameters (synthetic all-zero anchor).
+    for (i, p) in routine.params.iter().enumerate() {
+        out.push(PVariableSymbol {
+            name: p.name.to_ascii_lowercase(),
+            declared_type: canonicalize_type_text(p.ty.as_deref().unwrap_or("")),
+            scope: "parameter".to_string(),
+            is_parameter: true,
+            parameter_index: Some(i as u32),
+            initializer: None,
+            source_anchor: PAnchor {
+                source_unit_id: source_unit_id.to_string(),
+                start_line: 0,
+                start_column: 0,
+                end_line: 0,
+                end_column: 0,
+                syntax_kind: "parameter".to_string(),
+            },
+        });
+    }
+
+    // 2. Locals (declared_type "unknown" when absent; initializer = first assignment).
+    for v in &routine.locals {
+        let lc = v.name.to_ascii_lowercase();
+        if out.iter().any(|x| x.is_parameter && x.name == lc) {
+            continue;
+        }
+        let declared_type = match v.ty.as_deref() {
+            Some(t) if !t.is_empty() => canonicalize_type_text(t),
+            _ => "unknown".to_string(),
+        };
+        let initializer = routine
+            .body
+            .and_then(|b| ir_first_assignment_value(file, b, &lc))
+            .map(|val| ir_classify_rhs(file, val, source));
+        out.push(PVariableSymbol {
+            name: lc,
+            declared_type,
+            scope: "local".to_string(),
+            is_parameter: false,
+            parameter_index: None,
+            initializer,
+            source_anchor: anchor(&v.origin, "variable_declaration"),
+        });
+    }
+
+    // 3. Object globals (first-name-wins shadowing).
+    let mut emitted: HashSet<String> = out.iter().map(|v| v.name.clone()).collect();
+    for g in &file.objects[object_idx].globals {
+        let lc = g.name.to_ascii_lowercase();
+        if !emitted.insert(lc.clone()) {
+            continue;
+        }
+        out.push(PVariableSymbol {
+            name: lc,
+            declared_type: canonicalize_type_text(g.ty.as_deref().unwrap_or("")),
+            scope: "global".to_string(),
+            is_parameter: false,
+            parameter_index: None,
+            initializer: None,
+            source_anchor: anchor(&g.origin, "variable_declaration"),
+        });
+    }
+
+    out
+}

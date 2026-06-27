@@ -392,7 +392,9 @@ pub fn extract_object_global_record_vars(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     // tree-sitter-al v3 nests object-global var sections inside the object's
     // `declaration_body` (the `body` field) rather than as direct children.
-    let body = object_node.child_by_field_name("body").unwrap_or(object_node);
+    let body = object_node
+        .child_by_field_name("body")
+        .unwrap_or(object_node);
     for child in named_children(body) {
         if child.kind() != "var_section" {
             continue;
@@ -449,7 +451,9 @@ pub fn extract_object_globals(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     // tree-sitter-al v3 nests object-global var sections inside the object's
     // `declaration_body` (the `body` field) rather than as direct children.
-    let body = object_node.child_by_field_name("body").unwrap_or(object_node);
+    let body = object_node
+        .child_by_field_name("body")
+        .unwrap_or(object_node);
     for child in named_children(body) {
         if child.kind() != "var_section" {
             continue;
@@ -731,7 +735,10 @@ fn classify_rhs(rhs: Node, source: &str) -> serde_json::Value {
     {
         return json!({ "kind": "literal", "value": text.trim() });
     }
-    if t == "boolean_literal" || t == "true" || t == "false" {
+    // tree-sitter-al v3 emits a single `boolean` node (the v2 `boolean_literal` /
+    // `true` / `false` node kinds are gone) — recognize it so a `X := false` init is
+    // classified as a literal, not a generic expression.
+    if t == "boolean" || t == "boolean_literal" || t == "true" || t == "false" {
         return json!({ "kind": "literal", "value": text.trim() });
     }
     if t == "qualified_enum_value" {

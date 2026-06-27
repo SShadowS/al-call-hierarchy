@@ -2437,3 +2437,61 @@ fn engine_ir_walk_record_variables_measure() {
         "engine ir_walk record_variables divergences"
     );
 }
+
+/// PHASE-2 — engine ir_walk variables (params + locals + globals). Measured vs
+/// legacy. Surfaces routines needing further IR modelling (named return-value var).
+#[test]
+fn engine_ir_walk_variables_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let iv = ir_walk::ir_variables(&file, *oi, routine, &src, "dual");
+            if lf.variables == iv {
+                matching += 1;
+            } else if divs.len() < 25 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln}"),
+                    format!("legacy={:?}\n    ir={:?}", lf.variables, iv),
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 engine ir_walk: variables {matching}/{total} ({pct:.1}%) ===");
+    for (a, b) in divs.iter().take(12) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    // Hard gate: params + locals (with first-assignment initializer) + globals match
+    // legacy. Named return-value variable not yet IR-modelled (absent from corpus).
+    assert_eq!(matching, total, "engine ir_walk variables divergences");
+}

@@ -206,7 +206,8 @@
             "scope": "local",
             "isParameter": false,
             "initializer": {
-              "kind": "expression"
+              "kind": "literal",
+              "value": "false"
             },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/Publisher.al",

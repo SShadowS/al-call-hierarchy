@@ -497,7 +497,8 @@
             "scope": "local",
             "isParameter": false,
             "initializer": {
-              "kind": "expression"
+              "kind": "literal",
+              "value": "true"
             },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/LoopCommit.Codeunit.al",
@@ -1238,7 +1239,8 @@
             "scope": "local",
             "isParameter": false,
             "initializer": {
-              "kind": "expression"
+              "kind": "literal",
+              "value": "true"
             },
             "sourceAnchor": {
               "sourceUnitId": "ws:src/NestedCommit.Codeunit.al",
