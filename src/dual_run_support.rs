@@ -93,6 +93,52 @@ pub fn legacy_variable_names(source: &str) -> Vec<String> {
     capture_texts(source, "(variable_declaration name: (_) @vn)", &["vn"])
 }
 
+/// Legacy TEMPORARY variable names: `variable_declaration`s whose `type` subtree
+/// contains a `temporary_keyword`.
+pub fn legacy_temporary_var_names(source: &str) -> Vec<String> {
+    let lang = language::language();
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    walk_temp_vars(tree.root_node(), source, &mut out);
+    out
+}
+
+fn subtree_contains(node: tree_sitter::Node, kind: &str) -> bool {
+    if node.kind() == kind {
+        return true;
+    }
+    let mut cursor = node.walk();
+    for c in node.named_children(&mut cursor) {
+        if subtree_contains(c, kind) {
+            return true;
+        }
+    }
+    false
+}
+
+fn walk_temp_vars(node: tree_sitter::Node, source: &str, out: &mut Vec<String>) {
+    if node.kind() == "variable_declaration" {
+        if let Some(t) = node.child_by_field_name("type") {
+            if subtree_contains(t, "temporary_keyword") {
+                let mut cursor = node.walk();
+                for nm in node.children_by_field_name("name", &mut cursor) {
+                    out.push(source[nm.byte_range()].to_string());
+                }
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        walk_temp_vars(child, source, out);
+    }
+}
+
 /// Legacy routine names in a source file: every `procedure` / `trigger`
 /// definition, via the same `DEFINITIONS` query the engine uses.
 pub fn legacy_routine_names(source: &str) -> Vec<String> {

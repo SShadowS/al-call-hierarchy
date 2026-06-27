@@ -105,6 +105,19 @@ fn ir_statement_kinds(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// IR temporary-variable names (globals + locals where `temporary`).
+fn ir_temporary_var_names(source: &str) -> Vec<String> {
+    let f = al_syntax::parse(source);
+    let mut out = Vec::new();
+    for o in &f.objects {
+        out.extend(o.globals.iter().filter(|v| v.temporary).map(|v| v.name.clone()));
+        for r in &o.routines {
+            out.extend(r.locals.iter().filter(|v| v.temporary).map(|v| v.name.clone()));
+        }
+    }
+    out
+}
+
 /// Shared corpus parity runner: norm+sort both sides per file, report, return
 /// (matching, total).
 fn run_parity(
@@ -284,4 +297,12 @@ fn statement_kind_parity() {
     let (matching, total) = run_parity("statement kinds", legacy_statement_kinds, ir_statement_kinds);
     assert!(total > 0);
     assert_eq!(matching, total, "statement-kind divergences (see report)");
+}
+
+#[test]
+fn temporary_variable_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_temporary_var_names;
+    let (matching, total) = run_parity("temporary vars", legacy_temporary_var_names, ir_temporary_var_names);
+    assert!(total > 0);
+    assert_eq!(matching, total, "temporary-variable divergences (see report)");
 }

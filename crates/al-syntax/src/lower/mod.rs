@@ -205,9 +205,11 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
     for decl in body.named_children() {
         match decl.kind() {
             RawKind::VariableDeclaration => {
-                let ty = decl
-                    .field(FieldName::Type)
-                    .map(|n| n.text(source).trim().to_string());
+                let type_node = decl.field(FieldName::Type);
+                let ty = type_node.map(|n| n.text(source).trim().to_string());
+                let temporary = type_node
+                    .map(|t| contains_kind(t, RawKind::TemporaryKeyword))
+                    .unwrap_or(false);
                 let names = decl.children_by_field(FieldName::Name);
                 if names.is_empty() {
                     // single unnamed-by-field fallback: skip (no name to record)
@@ -217,7 +219,7 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
                     out.push(VarDecl {
                         name: ident_text(nm, source),
                         ty: ty.clone(),
-                        temporary: false,
+                        temporary,
                         origin: origin_of(decl),
                     });
                 }
@@ -226,14 +228,16 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
                 for c in decl.named_children() {
                     if c.kind() == RawKind::VariableDeclaration {
                         // shallow: flatten preproc-wrapped declarations (both branches)
-                        let ty = c
-                            .field(FieldName::Type)
-                            .map(|n| n.text(source).trim().to_string());
+                        let type_node = c.field(FieldName::Type);
+                        let ty = type_node.map(|n| n.text(source).trim().to_string());
+                        let temporary = type_node
+                            .map(|t| contains_kind(t, RawKind::TemporaryKeyword))
+                            .unwrap_or(false);
                         for nm in c.children_by_field(FieldName::Name) {
                             out.push(VarDecl {
                                 name: ident_text(nm, source),
                                 ty: ty.clone(),
-                                temporary: false,
+                                temporary,
                                 origin: origin_of(c),
                             });
                         }
@@ -554,6 +558,12 @@ fn unary_op(node: RawNode, source: &str) -> UnaryOp {
         "-" => UnaryOp::Neg,
         _ => UnaryOp::Plus,
     }
+}
+
+/// True if `node`'s subtree contains a node of kind `k` (used for `temporary`
+/// detection: `temporary_keyword` nested in the variable's `record_type`).
+fn contains_kind(node: RawNode, k: RawKind) -> bool {
+    node.kind() == k || node.named_children().iter().any(|c| contains_kind(*c, k))
 }
 
 /// Strip one layer of surrounding double quotes from a (quoted) identifier.
