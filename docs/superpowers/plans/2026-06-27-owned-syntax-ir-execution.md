@@ -481,3 +481,51 @@ Both reviewed `ir_walk.rs` + `l2_workspace.rs` wiring. Verdict: cutover directio
 - **report dataitem record vars + named return-value records:** not yet IR-modelled (ir_record_variables
   note) — add before declaring L3 record-type resolution fully IR-clean.
 - Reviewer continuation_ids (pal MCP): Gemini e9d74e67-…, GPT bed7c9f5-… (for follow-up).
+
+---
+
+## UPDATE 8 — Phase 2 COMPLETE: L2 emitter fully owned-IR-driven (no tree-sitter)
+
+The L2 production emitter no longer walks the tree-sitter CST. Three commits:
+
+1. **`feat(al-syntax)` 07e896b** — added `RoutineDecl.parse_incomplete` (mirrors
+   tree-sitter `has_error`), the last metadata prerequisite. Validated 591/591 vs
+   `has_error` (`engine_ir_parse_incomplete_parity`).
+2. **`refactor(l2)` 0bf0ab9** — `project_file` + `project_named_routine` now iterate
+   `al_syntax` IR objects/routines directly; `project_workspace` parses NO tree-sitter.
+   Dropped the legacy fallback entirely. `project_named_routine` lost its `tree: &Tree`
+   param (test callers updated). Added `ir_walk::ir_object_type` (ObjectKind → L2
+   type-string, replicating `object_type_for`'s skips). Deleted the now-dead legacy
+   extractors (extract_object_name/_metadata, read_object_property, return_type_text,
+   collect_routine_nodes). Reworked `engine_ir_attributes_parity` to use the RAW
+   tree-sitter oracle (project_named_routine is now IR-driven → would be tautological).
+   - **Preconditions proven** (new `tests/ir_object_set_parity.rs`): object set 404/404,
+     routine set 591/591, (type,number,name) 404/404 — IR-vs-tree-sitter by start byte.
+   - **Sole behavioral delta**: the 1 deliberately-malformed corpus fixture — IR drops a
+     stray ERROR token where tree-sitter ERROR-recovery emitted a phantom statementTree
+     `{kind:"other"}`. Rebaselined the ws-callsite-resolutions Rust-owned golden (3 lines).
+3. **`test(l2)` 656260f** — review-driven hardening + dedup (see below).
+
+### REVIEW ROUND 2 (gpt-5.5 + gemini-3.1-pro, both thinking=high)
+Both endorsed the architecture; both flagged the SAME five edge cases corpus parity
+can't see. Each was empirically probed against the IR and found correct/legacy-compatible,
+then locked as `tests/ir_robustness.rs`:
+- **malformed routines not dropped** (5 adversarial families) — IR preserves the routine
+  set and never lets a parse error swallow a following routine. (Both ranked this #1 risk.)
+- **quoted doubled-quote identifiers** — IR yields `A ""B""` (outer-strip only) == legacy
+  `strip_quotes`; stable-id hash does NOT drift. (The exact serde-skip-class trap they warned of.)
+- **extension object number** = own declaration id, never the target.
+- **ir_object_type == object_type_for** for every ObjectKind (incl. None-skips).
+- **no panic on garbage** input through parse + project_named_routine.
+Also actioned: extracted `build_proutine` (single shared per-routine path — kills the
+project_file/project_named_routine drift hazard); refreshed the stale module doc.
+DECISION (per both reviewers): do NOT reintroduce a runtime tree-sitter fallback —
+keep one semantic path; rely on test-only differential coverage. al_syntax already
+exposes `parse_status` (Clean/Recovered) + `issues` for observability.
+Reviewer continuation_ids: Gemini ed13b51c-…, GPT 1ebeb285-… .
+
+### NEXT: Phase 3 — cut L3 emitter (`src/engine/l3/l3_workspace.rs`)
+L3 still walks tree-sitter heavily (its own `project_file`, plus `collect_attributes`/
+`classify_kind`/`classify_access_modifier` and `project_routine_features` via the l2
+legacy fns). Port it onto the IR the same way (the l2 legacy fns stay as the dual_run
+oracle). Then Phase 4 (LSP front-end) + Phase 5 (seal: drop engine tree-sitter dep).
