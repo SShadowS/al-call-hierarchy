@@ -118,6 +118,61 @@ fn ir_temporary_var_names(source: &str) -> Vec<String> {
     out
 }
 
+// ---- per-routine IR traversal (for real-L2 PFeatures parity) ----
+
+fn block_branches(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId) -> bool {
+    use al_syntax::ir::BlockItem;
+    for item in &f.ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(sid) => {
+                if stmt_branches(f, *sid) {
+                    return true;
+                }
+            }
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    if block_branches(f, *b) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn stmt_branches(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId) -> bool {
+    use al_syntax::ir::StmtKind::*;
+    match &f.ir.stmt(sid).kind {
+        // legacy has_branching = if / case / try present (NOT loops).
+        If { .. } | Case { .. } | Try { .. } => true,
+        While { body, .. }
+        | Repeat { body, .. }
+        | For { body, .. }
+        | Foreach { body, .. }
+        | With { body, .. }
+        | AssertError(body)
+        | Block(body) => block_branches(f, *body),
+        _ => false,
+    }
+}
+
+/// IR: names of routines whose body contains branching (mirrors PFeatures.has_branching).
+fn ir_branching_routines(source: &str) -> Vec<String> {
+    let f = al_syntax::parse(source);
+    let mut out = Vec::new();
+    for o in &f.objects {
+        for r in &o.routines {
+            if let Some(b) = r.body {
+                if block_branches(&f, b) {
+                    out.push(r.name.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Shared corpus parity runner: norm+sort both sides per file, report, return
 /// (matching, total).
 fn run_parity(
@@ -305,4 +360,21 @@ fn temporary_variable_parity() {
     let (matching, total) = run_parity("temporary vars", legacy_temporary_var_names, ir_temporary_var_names);
     assert!(total > 0);
     assert_eq!(matching, total, "temporary-variable divergences (see report)");
+}
+
+/// First REAL-L2 PFeatures parity: has_branching, diffed against the actual engine
+/// L2 walk (not a query proxy). Proves the legacy_l2_features gate.
+#[test]
+fn has_branching_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let legacy = |src: &str| -> Vec<String> {
+        legacy_l2_features(src)
+            .into_iter()
+            .filter(|(_, f)| f.has_branching)
+            .map(|(n, _)| n)
+            .collect()
+    };
+    let (matching, total) = run_parity("has_branching (real L2)", legacy, ir_branching_routines);
+    assert!(total > 0);
+    assert_eq!(matching, total, "has_branching divergences (see report)");
 }

@@ -6,6 +6,86 @@ use crate::language;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
+/// Run the REAL legacy L2 walk per routine and return `(routine_name, PFeatures)`
+/// for every routine in the source. This is the Phase-2 dual-run gate: it exposes
+/// the actual engine `PFeatures` (call sites, ops, record ops, CFN, branching, …)
+/// so the IR re-expression can be diffed against it, not against query proxies.
+/// Minimal identity context (feature extraction is body-structural).
+pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::features::PFeatures)> {
+    use crate::engine::l2::node_util::Utf16Cols;
+    use crate::engine::l2::IdentityCtx;
+
+    let lang = language::language();
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let cols = Utf16Cols::new(source);
+    let id_ctx = IdentityCtx { app_guid: "dual", model_instance_id: "dual", source_unit_id: "dual" };
+    let mut out = Vec::new();
+
+    fn collect_routines<'t>(node: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            match child.kind() {
+                "procedure" | "trigger_declaration" => out.push(child),
+                _ => collect_routines(child, out),
+            }
+        }
+    }
+    fn walk_objects<'t>(
+        node: tree_sitter::Node<'t>,
+        source: &str,
+        cols: &Utf16Cols,
+        id_ctx: &crate::engine::l2::IdentityCtx,
+        out: &mut Vec<(String, crate::engine::l2::features::PFeatures)>,
+    ) {
+        use crate::engine::l2::scope::{extract_object_globals, object_type_for};
+        use crate::engine::l2::{extract_object_number, project_routine_features};
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            if let Some(object_type) = object_type_for(child.kind()) {
+                let object_number = extract_object_number(child, source);
+                let globals = extract_object_globals(child, id_ctx.source_unit_id, source);
+                let mut routines = Vec::new();
+                collect_routines(child, &mut routines);
+                let mut proc_names = std::collections::HashSet::new();
+                for r in &routines {
+                    if let Some(nm) = r.child_by_field_name("name") {
+                        let mut t = &source[nm.byte_range()];
+                        t = t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(t);
+                        proc_names.insert(t.to_lowercase());
+                    }
+                }
+                for r in routines {
+                    // project_routine_features returns (routine_id_hash, PFeatures);
+                    // key on the routine NAME instead (extracted from the node).
+                    if let Some((_, feats)) = project_routine_features(
+                        child, r, object_type, object_number, None, &proc_names, &globals,
+                        id_ctx, source, cols,
+                    ) {
+                        let rname = r
+                            .child_by_field_name("name")
+                            .map(|nm| {
+                                let t = &source[nm.byte_range()];
+                                t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(t).to_string()
+                            })
+                            .unwrap_or_default();
+                        out.push((rname, feats));
+                    }
+                }
+            } else {
+                walk_objects(child, source, cols, id_ctx, out);
+            }
+        }
+    }
+    walk_objects(tree.root_node(), source, &cols, &id_ctx, &mut out);
+    out
+}
+
 /// Legacy callee method/function names in a source file, via the engine's `CALLS`
 /// query: `@call.simple` (`Foo()`) + `@call.method` (`Rec.SetRange()`).
 pub fn legacy_call_methods(source: &str) -> Vec<String> {
