@@ -28,6 +28,15 @@ pub struct ObjectProperty {
     pub origin: Origin,
 }
 
+/// A parsed routine attribute (`[EventSubscriber(ObjectType::Codeunit, …)]`).
+/// `name` is the raw attribute name; `raw` the full `attribute_item` text; `args`
+/// the lowered argument exprs (the engine projects each to kind/text/value/…).
+pub struct AttributeIr {
+    pub name: String,
+    pub raw: String,
+    pub args: Vec<super::ExprId>,
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ObjectKind {
     Codeunit,
@@ -62,6 +71,10 @@ pub struct RoutineDecl {
     /// routine — e.g. "eventsubscriber", "tryfunction", "integrationevent". Drives
     /// routine-kind classification + control-context guards.
     pub attributes: Vec<String>,
+    /// Full parsed attributes (name + raw text + lowered argument exprs), in source
+    /// order — for the L2 `attributes` / `attributesParsed` envelope. The engine
+    /// renders each arg via its expression-info projection.
+    pub attributes_parsed: Vec<AttributeIr>,
     /// Access modifier keyword (lowercased: "local"/"internal"/"protected"), or None
     /// for a public procedure / a trigger. Mirrors the `modifier` field.
     pub access_modifier: Option<String>,

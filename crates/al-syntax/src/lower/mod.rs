@@ -102,10 +102,10 @@ fn lower_object(
     // Routines: every procedure/trigger anywhere in the object subtree (incl. field
     // /action triggers nested in sections, and both #if/#else branches).
     let mut routine_nodes = Vec::new();
-    collect_routines(node, source, &mut routine_nodes);
+    collect_routines(node, &mut routine_nodes);
     let routines = routine_nodes
         .into_iter()
-        .map(|(r, attrs)| lower_routine(r, attrs, source, ir, issues))
+        .map(|(r, attr_items)| lower_routine(r, attr_items, source, ir, issues))
         .collect();
 
     // Object globals: var_sections under the declaration_body (not inside routines).
@@ -157,36 +157,20 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
 /// we do not descend into a routine once found. `attribute_item` nodes are SIBLINGS
 /// preceding the routine (grammar v2+); accumulate their names (lowercased) and
 /// attach to the next routine, resetting on any other node.
-fn collect_routines<'t>(
-    node: RawNode<'t>,
-    source: &str,
-    out: &mut Vec<(RawNode<'t>, Vec<String>)>,
-) {
-    let mut pending: Vec<String> = Vec::new();
+fn collect_routines<'t>(node: RawNode<'t>, out: &mut Vec<(RawNode<'t>, Vec<RawNode<'t>>)>) {
+    let mut pending: Vec<RawNode<'t>> = Vec::new();
     for child in node.named_children() {
         match child.kind() {
-            RawKind::AttributeItem => {
-                if let Some(name) = attribute_name(child, source) {
-                    pending.push(name);
-                }
-            }
+            RawKind::AttributeItem => pending.push(child),
             RawKind::Procedure | RawKind::TriggerDeclaration => {
                 out.push((child, std::mem::take(&mut pending)));
             }
             _ => {
                 pending.clear();
-                collect_routines(child, source, out);
+                collect_routines(child, out);
             }
         }
     }
-}
-
-/// The lowercased name of an `attribute_item` (`attribute → attribute_content →
-/// name: identifier`), e.g. "eventsubscriber" / "tryfunction".
-fn attribute_name(item: RawNode, source: &str) -> Option<String> {
-    let content = item.field(FieldName::Attribute)?;
-    let name = content.field(FieldName::Name)?;
-    Some(name.text(source).trim().to_ascii_lowercase())
 }
 
 /// Collect object-level var declarations, descending preproc wrappers (both
@@ -203,9 +187,9 @@ fn collect_globals(node: RawNode, source: &str, out: &mut Vec<VarDecl>) {
     }
 }
 
-fn lower_routine(
-    node: RawNode,
-    attributes: Vec<String>,
+fn lower_routine<'t>(
+    node: RawNode<'t>,
+    attr_items: Vec<RawNode<'t>>,
     source: &str,
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
@@ -215,6 +199,36 @@ fn lower_routine(
     } else {
         RoutineKind::Procedure
     };
+
+    // Attributes: lowercased names (for classify_kind / control-context guards) +
+    // the full parsed form (name + raw text + lowered argument exprs).
+    let mut attributes: Vec<String> = Vec::new();
+    let mut attributes_parsed: Vec<crate::ir::AttributeIr> = Vec::new();
+    for item in attr_items {
+        let Some(content) = item.field(FieldName::Attribute) else {
+            continue;
+        };
+        let Some(name_node) = content.field(FieldName::Name) else {
+            continue;
+        };
+        let raw_name = name_node.text(source).trim().to_string();
+        attributes.push(raw_name.to_ascii_lowercase());
+        let mut args = Vec::new();
+        if let Some(args_node) = content.field(FieldName::Arguments) {
+            for list in args_node.named_children() {
+                if list.kind() == RawKind::AttributeArgumentList {
+                    for arg in list.named_children() {
+                        args.push(lower_expr(arg, ir, issues, source));
+                    }
+                }
+            }
+        }
+        attributes_parsed.push(crate::ir::AttributeIr {
+            name: raw_name,
+            raw: item.text(source).to_string(),
+            args,
+        });
+    }
     let name = node
         .field(FieldName::Name)
         .map(|n| ident_text(n, source))
@@ -263,6 +277,7 @@ fn lower_routine(
         return_type,
         locals,
         attributes,
+        attributes_parsed,
         access_modifier,
         body,
         origin: origin_of(node),
