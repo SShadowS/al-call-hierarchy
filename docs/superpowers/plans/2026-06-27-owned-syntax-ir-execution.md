@@ -283,3 +283,38 @@ Phase 5 (seal). The structural heart of L2 (op-order + CFN) is DONE; the rich fi
 ### Follow-up (cutover-time, not blocking): legacy cfn.rs has no `comment` skip in build_block, so it
 emits inert `other` nodes for trailing/inline comments. When the IR becomes the engine these vanish;
 verify operation_order/control_context output is unchanged (it keys on op/cs leaves only, so it is).
+
+## L2 CUTOVER — Layer-5: context fields + the architectural boundary (commits 9bce9e4, 752f647)
+- **loop_stack + loops table** 100% (HARD GATE) — monotonic loop counter assigns each loop its
+  sequence number at the loop node (DFS-discovery order = legacy `{routine}/loop{N}`), pushed so the
+  loop's own condition/bounds + body see it; snapshot per op + per call site. loops-table size also
+  gated.
+- **under_asserterror** 100% (HARD GATE) — asserterror-nesting counter; Some(true) inside an
+  asserterror body else None (legacy never emits Some(false)).
+
+### THE BOUNDARY (established empirically): the test-harness trace re-port has done its job. It
+validated, at 100% vs the REAL engine over 591 routines, the entire **structural + contextual spine**
+of L2: op/cs visit order, record-op classification, the full CFN statement_tree skeleton, field
+accesses, var assignments, condition refs, loop_stack/loops, under_asserterror (+ has_branching,
+nesting_depth; identifier_references 99%). These needed only the IR + light scope (rvars/frvars/
+implicit-bool).
+
+The REMAINING rich PFeatures fields — **callee classification (PCallee), callee_text, argument_texts/
+argument_infos/argument_bindings, temp_state, result_consumed/object_run_return_used** — are tightly
+coupled to the full `Ctx` scope inputs (`source`, `variable_types_by_name`, `object_procedure_names`,
+`enclosing_parameters`, `enclosing_record_variables`, and the implicit-receiver frame TEXT, not just
+its is-record bool). Re-porting them into `tests/ir_dual_run.rs` would mean duplicating the engine's
+entire scope-context assembly — wasteful and NOT the cutover's end state.
+
+### NEXT (the cut itself): build engine-side `project_routine_features_ir(object, routine_ir, …Ctx
+inputs) -> PFeatures` that walks the OWNED IR with the SAME scope `Ctx` the legacy `body_walk`
+receives (the L2 driver already assembles these for every routine). Reuses, largely unchanged:
+  - `classify.rs` (callee/expression-info) — adapt to read IR exprs + `Origin.byte` for raw text
+    (the IR preserves exact byte spans, so callee_text/receiver/argument raw text are lossless).
+  - `cfn.rs` → emit a real `PCFNNode` from the IR (the NCfn port proves the shape; swap NCfn→PCFNNode).
+  - `operation_order.rs` + `control_context.rs` — run UNCHANGED on the IR-built `PCFNNode` (they key
+    on op/cs leaves; statement_tree structural parity guarantees identical order/control_context).
+  - `record_op.rs`, scope-frame builder — unchanged.
+Then gate full serde-`PFeatures` equality vs `legacy_l2_features`, delete `body_walk`, and the IR is
+the L2 engine. Order/control_context/scope_frames come "for free" via the reused post-passes once the
+IR emits PCFNNode + the op/cs/record lists with their anchors — all of which are now order-validated.
