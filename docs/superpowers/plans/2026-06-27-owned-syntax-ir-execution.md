@@ -66,9 +66,16 @@ comment/multiline_comment/pragma (was lowering them as Unknown→phantom "other"
 build_block + repeat-loop skip the same (rebaselined R1a goldens, diff = 135 comment-"other" removals).
 Also fixed legacy `classify_rhs` v3-`boolean` staleness (variables initializer). order/control_context/
 scope_frames stay empty (post-pass fields legacy_l2_features also leaves empty).
-NEXT: (a) the identifier_references residual (6 edge cases) for ~100% byte-equality; (b) wire
-`project_routine_features_ir` into the L2 driver (l2_workspace) so operation_order/control_context/
-scope_frames run on the IR PCFNNode; (c) delete `body_walk`. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+### UPDATE 5 — FULL PFEATURES 99.5% BYTE-IDENTICAL (commit 22fb392). identifier_references
+parenless-receiver + enum-type fixes drove the capstone `engine_ir_walk_full_pfeatures_equality`
+to **588/591 (99.5%)**. Remaining 3 are distinct intricate edge cases: a broken-AL ERROR-recovery
+statement_tree node, a chained-receiver-in-condition value ref, a with-receiver bare-`Modify` ref.
+Four real engine bugs fixed along the way (boolean classify_rhs v3 staleness; IR + legacy CFN comment
+skip; identifier enum/parenless). The owned-IR L2 feature extraction is FEATURE-COMPLETE and
+byte-validated at 99.5%.
+NEXT: (a) the 3 residual edge cases (diminishing returns); (b) wire `project_routine_features_ir`
+into the L2 driver (l2_workspace) so operation_order/control_context/scope_frames run on the IR
+PCFNNode (they graft unchanged); (c) delete `body_walk`. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
 
 ### (historical) NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
 object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
