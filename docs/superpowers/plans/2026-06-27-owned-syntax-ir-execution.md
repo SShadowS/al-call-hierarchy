@@ -448,3 +448,36 @@ receives (the L2 driver already assembles these for every routine). Reuses, larg
 Then gate full serde-`PFeatures` equality vs `legacy_l2_features`, delete `body_walk`, and the IR is
 the L2 engine. Order/control_context/scope_frames come "for free" via the reused post-passes once the
 IR emits PCFNNode + the op/cs/record lists with their anchors — all of which are now order-validated.
+
+## REVIEW ROUND (2026-06-28) — GPT-5.5 Pro + Gemini 3.1 Pro (pal MCP) on the live L2 cut
+Both reviewed `ir_walk.rs` + `l2_workspace.rs` wiring. Verdict: cutover directionally sound,
+"production-safe with guardrails." Findings actioned:
+- **FIXED — record-op `in_until_condition` + `run_trigger` hard-coded** (commit 170f0a1). These are
+  serde-SKIPPED PRecordOperation fields (excluded from PartialEq) → the byte-exact L2 gate could not
+  see them, but L5 detectors d1/d29 consume them. Real latent bug. Now set faithfully; new gate
+  `engine_ir_record_op_l5_inputs_parity` 591/591.
+- **FIXED — implicit bare-call ignored `object_procedure_names`** (commit 2844b00). A table/page bare
+  `Modify()` colliding with a `procedure Modify()` was mis-classified as a record op. Absent from
+  corpus. Scope now carries object_procedure_names; synthetic fixture confirms IR==legacy.
+- **ADDED — no-silent-fallback guard** (commit 7751ed8): asserts every well-formed routine matches
+  the IR byte index (590/590), so a future lowerer regression can't silently degrade to legacy.
+- CONFIRMED NON-ISSUES: `Try` CFN emits empty children (faithful to legacy cfn.rs, byte-validated);
+  `tableno` match is fine (property names lowercased at lowering).
+### DEFERRED follow-ups (reviewer-flagged, not blocking; lower priority / larger):
+- **kind_text grammar leak (Gemini, architectural):** `ir_walk` branches on `Origin.kind_text`
+  ("call_expression"/"identifier"/"keyword_identifier") — re-couples to grammar node names, weakening
+  the IR insulation. Fix = push into the lowerer: `is_parenthesized` flag on `ExprKind::Call`, a
+  `KeywordIdentifier` distinction. Do before/with the seal.
+- **non-record `with` callee upgrade:** a bare call inside `with X do` (X a simple non-record var)
+  should be `PCallee::Member{receiver:X,method}`; IR emits `Bare`. Rare (with deprecated), absent from
+  corpus. Thread the implicit-frame text into classify_callee.
+- **compute_routine_id duplication:** collapse identity computation (stable id + internal routine_id +
+  param specs) into one helper shared by project_file/project_named_routine before the IR-only emitter.
+- **MISSING-node detection:** parse_incomplete uses `node.has_error()`; consider a has_error_or_missing
+  helper if live-edit/LSP parity needs it.
+- **LSP node-at-cursor (Gemini, Phase-4 trap):** the LSP front-end needs positional `ExprId/Node at
+  Point` lookup over the IR — `al-syntax` must provide efficient spatial lookup before parser.rs can be
+  ported and tree-sitter sealed. Design this into the al-syntax IR before Phase 4.
+- **report dataitem record vars + named return-value records:** not yet IR-modelled (ir_record_variables
+  note) — add before declaring L3 record-type resolution fully IR-clean.
+- Reviewer continuation_ids (pal MCP): Gemini e9d74e67-…, GPT bed7c9f5-… (for follow-up).
