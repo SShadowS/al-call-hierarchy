@@ -884,6 +884,13 @@ impl<'a> SpineCtx<'a> {
                         self.walk_expr(object);
                     }
                 }
+                // A PARENLESS bare-identifier call (`Modify;`) is a standalone
+                // `identifier` node in legacy — its main visit counts it as a value
+                // ref BEFORE the record-op routing. A parens `Foo()` callee is NOT
+                // counted (the call_expression is not an identifier node).
+                Identifier(n) if !is_parens_call && fe.origin.kind_text == "identifier" => {
+                    self.identifier_ref_set.insert(n.to_ascii_lowercase());
+                }
                 Identifier(_) | QuotedIdentifier(_) => {}
                 _ => self.walk_expr(function),
             }
