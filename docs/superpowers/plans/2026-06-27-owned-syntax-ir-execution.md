@@ -82,15 +82,27 @@ NEW code now at a fraction of the churn:
   (capped at ≤5 members; larger expression/statement sets → `RawNode` fallback). Single-type →
   `Option<RawT>`/`Vec`; small multi-type → union enum; anon/large → `RawNode`. `RawNode` gained
   `children_by_field`. Committed `936383d`. al-syntax tests + workspace build green, drift clean.
-- [ ] **0b+0d (merged)** — `class_of` only matters with the lowerer that consumes it, so build it
-  WITH 0d (else dead code, no validation). **0d = the reviewer checkpoint.**
-  - `ir/`: Origin (raw_kind_text/ts_id/range/positions) + Stmt/Expr taxonomy (incl.
-    try/asserterror-context/foreach/case_else), arena ids.
-  - `schema/kind_policy.rs`: exhaustive `class_of` (no wildcard; one-time heuristic starter then
-    hand-owned: Transparent={statement_block,declaration_body,var_body,case_body,report_body},
-    Trivia={*_keyword,comments,pragma}, Recovery={Error}, rest Semantic).
-  - `lower/` skeleton + `parse.rs` → `ParsedFile{ir, issues, parse_status}`.
-  - **Reviewer checkpoint** on IR taxonomy + class_of classification BEFORE the full lowerer.
+- [x] **0b+0d (merged)** — committed `6b47bb3`. Reviewer-confirmed design (round: GPT+Gemini):
+  - `ir/`: own `Point`, `Origin{kind_text,ts_id(ephemeral),byte,start,end}`, push-only Vec arena
+    + Copy newtype ids; `AlFile→ObjectDecl→RoutineDecl→Block(Vec<BlockItem>)→Stmt/Expr`. `BlockItem`
+    has `Preproc(PreprocGroup)` holding BOTH #if/#else branches (legacy parity). Taxonomy covers
+    try/asserterror/foreach/case_else; `Unknown` preserves unmodelled nodes as data.
+  - `schema/kind_policy.rs`: exhaustive `class_of` (no wildcard) = loudness gate. `Class
+    {Trivia(86), Recovery(1), Structural(297)}`. Descent owned by per-context lowerer (not class_of).
+  - `lower/` + `parse.rs`: `parse(source)->AlFile`, status Clean/Recovered. `origin_of` helper.
+  - **PHASE 0 COMPLETE.** al-syntax: 6 tests green; workspace green; drift-guarded.
+
+---
+
+## Phase 1 — Lowerer to parity (THE BIG LIFT; 1a–1d, dual-run)
+Per-construct lowering of the full AL surface + the parse-once/fork-same-Tree dual-run harness
+diffing legacy-vs-IR feature streams across the corpus until zero. Resolves the flat-vs-structured
+preproc question empirically. (Spec §5 Phase 1, INV-1/2/3.)
+- [ ] **1a** lower objects→routines→decls (outer structure) + IR snapshot fixtures.
+- [ ] **1a** lower blocks→statements→expressions (the body; mirror legacy visit order).
+- [ ] **1b** dual-run harness (parse once, fork tree) + L2 feature-stream parity.
+- [ ] **1c** CFN/control/operation-order parity · **1d** L3 projection parity.
+- [ ] malformed/live-edit recovery fixtures.
 - [ ] **0d** — `ir/` types (Origin + Stmt/Expr taxonomy incl. try/asserterror/foreach/case_else),
   `lower/` skeleton, `parse.rs`. ← **reviewer checkpoint here** (IR taxonomy + class_of design).
 - [ ] Boundary scanner in CI, monotonic-decrease, seeded from real grep.
