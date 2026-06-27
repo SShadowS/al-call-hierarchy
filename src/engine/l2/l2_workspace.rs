@@ -609,7 +609,6 @@ fn project_file(
                 continue;
             }
 
-            let kind = classify_kind(routine, source);
             let body_available = find_code_block(routine).is_some();
             let parse_incomplete = routine.has_error();
 
@@ -621,6 +620,13 @@ fn project_file(
                 None
             } else {
                 ir_routine_by_byte.get(&routine.start_byte())
+            };
+
+            // kind / return type: from the IR when matched (validated via routine_id),
+            // else legacy.
+            let kind = match ir_match {
+                Some((_, r)) => crate::engine::l2::ir_walk::ir_routine_kind(r),
+                None => classify_kind(routine, source),
             };
 
             // Routine envelope metadata: from the IR when matched (validated byte-exact),
@@ -651,7 +657,10 @@ fn project_file(
                     is_var: p.is_var,
                 })
                 .collect();
-            let return_type_text = return_type_text(routine, source);
+            let return_type_text = match ir_match {
+                Some((_, r)) => r.return_type.clone(),
+                None => return_type_text(routine, source),
+            };
             let norm_hash =
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
@@ -931,7 +940,6 @@ pub fn project_named_routine(
                 continue;
             }
 
-            let kind = classify_kind(routine, source);
             let body_available = find_code_block(routine).is_some();
             let parse_incomplete = routine.has_error();
 
@@ -939,6 +947,10 @@ pub fn project_named_routine(
                 None
             } else {
                 ir_routine_by_byte.get(&routine.start_byte())
+            };
+            let kind = match ir_match {
+                Some((_, r)) => crate::engine::l2::ir_walk::ir_routine_kind(r),
+                None => classify_kind(routine, source),
             };
             let (attributes, attributes_parsed, access_modifier) =
                 if let Some((_, ir_routine)) = ir_match {
@@ -963,7 +975,10 @@ pub fn project_named_routine(
                     is_var: p.is_var,
                 })
                 .collect();
-            let return_type_text = return_type_text(routine, source);
+            let return_type_text = match ir_match {
+                Some((_, r)) => r.return_type.clone(),
+                None => return_type_text(routine, source),
+            };
             let norm_hash =
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);

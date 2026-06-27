@@ -2166,3 +2166,18 @@ pub fn ir_parameter_symbols(routine: &RoutineDecl) -> Vec<super::scope::Paramete
         })
         .collect()
 }
+
+/// Routine kind for id/classification (mirrors classify_kind): event-subscriber /
+/// event-publisher from attributes, else trigger / procedure.
+pub fn ir_routine_kind(routine: &RoutineDecl) -> &'static str {
+    let has = |n: &str| routine.attributes.iter().any(|a| a == n);
+    if has("eventsubscriber") {
+        "event-subscriber"
+    } else if has("integrationevent") || has("businessevent") {
+        "event-publisher"
+    } else if routine.kind == al_syntax::ir::RoutineKind::Trigger {
+        "trigger"
+    } else {
+        "procedure"
+    }
+}
