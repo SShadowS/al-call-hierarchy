@@ -78,6 +78,10 @@ pub struct RoutineDecl {
     /// Access modifier keyword (lowercased: "local"/"internal"/"protected"), or None
     /// for a public procedure / a trigger. Mirrors the `modifier` field.
     pub access_modifier: Option<String>,
+    /// `true` when this routine's subtree contains a parse error (tree-sitter
+    /// `has_error`). Mirrors the legacy `parseIncomplete` / drives the IR-vs-legacy
+    /// feature-extraction choice (malformed routines use legacy ERROR-recovery).
+    pub parse_incomplete: bool,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,

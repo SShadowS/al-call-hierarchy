@@ -279,6 +279,7 @@ fn lower_routine<'t>(
         attributes,
         attributes_parsed,
         access_modifier,
+        parse_incomplete: node.has_error(),
         body,
         origin: origin_of(node),
     }
