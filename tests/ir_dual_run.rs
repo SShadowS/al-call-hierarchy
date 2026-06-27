@@ -235,6 +235,120 @@ fn ir_branching_routines(source: &str) -> Vec<String> {
     out
 }
 
+// ---- L2 cutover: record-op ordered trace (spine step 1) ----
+
+/// Record-op anchors per routine, in IR DFS visit order (pre-order at the call).
+/// `row:col` of each `X.Method()` where X is a Record var and Method is a record
+/// builtin. Mirrors legacy record_operations order.
+fn ir_record_op_trace(source: &str) -> Vec<(String, Vec<String>)> {
+    use al_syntax::ir::VarDecl;
+    let f = al_syntax::parse(source);
+    let is_rec = |v: &VarDecl| v.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false);
+    let mut out = Vec::new();
+    for o in &f.objects {
+        let mut globals: std::collections::HashSet<String> =
+            o.globals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()).collect();
+        // explicit Rec on a table method is a record receiver
+        if matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension) {
+            globals.insert("rec".to_string());
+        }
+        // A table/tableext method (procedure OR trigger) has an implicit record `Rec`.
+        let table_method = matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension);
+        for r in &o.routines {
+            let mut rvars = globals.clone();
+            rvars.extend(r.params.iter().filter(|p| p.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false)).map(|p| p.name.to_ascii_lowercase()));
+            rvars.extend(r.locals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()));
+            let mut anchors = Vec::new();
+            // implicit-receiver stack: top = is-current-implicit-receiver-a-record.
+            let mut implicit = vec![table_method];
+            if let Some(b) = r.body {
+                rec_walk_block(&f, b, &rvars, &mut implicit, &mut anchors);
+            }
+            out.push((r.name.clone(), anchors));
+        }
+    }
+    out
+}
+
+fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+    use al_syntax::ir::BlockItem;
+    for item in &f.ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(s) => rec_walk_stmt(f, *s, rvars, implicit, out),
+            BlockItem::Preproc(g) => for b in &g.branches { rec_walk_block(f, *b, rvars, implicit, out); },
+        }
+    }
+}
+
+fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+    use al_syntax::ir::{ExprKind, StmtKind::*};
+    macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, implicit, out) }; }
+    macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, implicit, out) }; }
+    match &f.ir.stmt(sid).kind {
+        Assignment { target, value } => { e!(*target); e!(*value); }
+        Call(x) => e!(*x),
+        If { cond, then_block, else_block } => { e!(*cond); b!(*then_block); if let Some(x)=else_block { b!(*x); } }
+        While { cond, body } => { e!(*cond); b!(*body); }
+        Repeat { body, until } => { b!(*body); e!(*until); }
+        For { var, from, to, body, .. } => { e!(*var); e!(*from); e!(*to); b!(*body); }
+        Foreach { var, iterable, body } => { e!(*var); e!(*iterable); b!(*body); }
+        With { receiver, body } => {
+            e!(*receiver);
+            // implicit receiver of the with-body is a record iff the receiver is a record var.
+            let is_rec = match &f.ir.expr(*receiver).kind {
+                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => rvars.contains(&x.to_ascii_lowercase()),
+                _ => false,
+            };
+            implicit.push(is_rec);
+            b!(*body);
+            implicit.pop();
+        }
+        Case { scrutinee, branches, else_block } => { e!(*scrutinee); for br in branches { for p in &br.patterns { e!(*p); } b!(br.body); } if let Some(x)=else_block { b!(*x); } }
+        Try { body, catch_block } => { b!(*body); if let Some(c)=catch_block { b!(*c); } }
+        AssertError(body) => b!(*body),
+        Exit(x) => { if let Some(x)=x { e!(*x); } }
+        Block(x) => b!(*x),
+        _ => {}
+    }
+}
+
+fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Vec<String>) {
+    use al_call_hierarchy::engine::l2::record_op::record_op_type;
+    use al_syntax::ir::ExprKind::*;
+    let e = f.ir.expr(eid);
+    if let Call { function, args } = &e.kind {
+        let fe = f.ir.expr(*function);
+        let is_record_op = match &fe.kind {
+            // explicit receiver: X.Method() where X is a record var.
+            Member { object, member } => {
+                let recv = match &f.ir.expr(*object).kind { Identifier(x) | QuotedIdentifier(x) => Some(x.to_ascii_lowercase()), _ => None };
+                recv.map(|r| rvars.contains(&r)).unwrap_or(false) && record_op_type(&member.to_ascii_lowercase()).is_some()
+            }
+            // implicit receiver: bare Method() with a record implicit receiver in scope.
+            Identifier(m) | QuotedIdentifier(m) => {
+                implicit.last().copied().unwrap_or(false) && record_op_type(&m.to_ascii_lowercase()).is_some()
+            }
+            _ => false,
+        };
+        if is_record_op {
+            out.push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
+        }
+        rec_walk_expr(f, *function, rvars, implicit, out);
+        for a in args { rec_walk_expr(f, *a, rvars, implicit, out); }
+        return;
+    }
+    match &e.kind {
+        Member { object, .. } => rec_walk_expr(f, *object, rvars, implicit, out),
+        Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, implicit, out); rec_walk_expr(f, *rhs, rvars, implicit, out); }
+        Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, implicit, out),
+        Parenthesized(x) => rec_walk_expr(f, *x, rvars, implicit, out),
+        Index { base, index } => { rec_walk_expr(f, *base, rvars, implicit, out); rec_walk_expr(f, *index, rvars, implicit, out); }
+        QualifiedEnum { enum_type, .. } => rec_walk_expr(f, *enum_type, rvars, implicit, out),
+        RangeExpr { start, end } => { rec_walk_expr(f, *start, rvars, implicit, out); rec_walk_expr(f, *end, rvars, implicit, out); }
+        _ => {}
+    }
+}
+
 /// Shared corpus parity runner: norm+sort both sides per file, report, return
 /// (matching, total).
 fn run_parity(
@@ -439,6 +553,51 @@ fn has_branching_parity() {
     let (matching, total) = run_parity("has_branching (real L2)", legacy, ir_branching_routines);
     assert!(total > 0);
     assert_eq!(matching, total, "has_branching divergences (see report)");
+}
+
+/// L2 cutover spine — record-op ORDER trace measurement (not yet a hard gate).
+/// Per routine, compares the ordered sequence of record-op anchors (IR DFS vs
+/// legacy record_operations in op-id order). Surfaces the first order divergence
+/// per the reviewers' trace-first methodology.
+#[test]
+fn record_op_trace_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let op_num = |id: &str| -> u32 { id.trim_start_matches("op").parse().unwrap_or(u32::MAX) };
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_record_op_trace(&src);
+        for ((ln, lf), (_in, ianchors)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let mut ops: Vec<(u32, String)> = lf
+                .record_operations
+                .iter()
+                .map(|r| (op_num(&r.id), format!("{}:{}", r.source_anchor.start_line, r.source_anchor.start_column)))
+                .collect();
+            ops.sort_by_key(|(n, _)| *n);
+            let lanchors: Vec<String> = ops.into_iter().map(|(_, a)| a).collect();
+            if &lanchors == ianchors {
+                matching += 1;
+            } else if divs.len() < 20 {
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((rel, ln.clone(), lanchors, ianchors.clone()));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: record-op order trace ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (file, routine, l, i) in divs.iter().take(12) {
+        eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
+    }
+    assert!(total > 0);
 }
 
 #[test]
