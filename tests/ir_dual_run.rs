@@ -330,7 +330,12 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
             }
             _ => false,
         };
-        if is_record_op {
+        // operation sites: bare Commit() / Error() (function = identifier).
+        let is_operation = matches!(&fe.kind, Identifier(m) | QuotedIdentifier(m) if {
+            let l = m.to_ascii_lowercase();
+            l == "commit" || l == "error"
+        });
+        if is_record_op || is_operation {
             out.push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
         }
         rec_walk_expr(f, *function, rvars, implicit, out);
@@ -566,7 +571,8 @@ fn record_op_trace_measure() {
     if !root.is_dir() {
         return;
     }
-    let op_num = |id: &str| -> u32 { id.trim_start_matches("op").parse().unwrap_or(u32::MAX) };
+    // id is `<routine_id>/opN`; extract the trailing op number (hex routine_id has no "op").
+    let op_num = |id: &str| -> u32 { id.rsplit("op").next().and_then(|s| s.parse().ok()).unwrap_or(u32::MAX) };
     let mut total = 0usize;
     let mut matching = 0usize;
     let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
@@ -577,10 +583,14 @@ fn record_op_trace_measure() {
         let ir = ir_record_op_trace(&src);
         for ((ln, lf), (_in, ianchors)) in legacy.iter().zip(ir.iter()) {
             total += 1;
+            // operation_sites is the COMPLETE unified op list: every record_operation
+            // mirrors into operation_sites (kind "record-op"/"lock") with the same
+            // op_id, plus genuine commit/error-call ops. So this alone is the op0..opN
+            // sequence.
             let mut ops: Vec<(u32, String)> = lf
-                .record_operations
+                .operation_sites
                 .iter()
-                .map(|r| (op_num(&r.id), format!("{}:{}", r.source_anchor.start_line, r.source_anchor.start_column)))
+                .map(|o| (op_num(&o.id), format!("{}:{}", o.source_anchor.start_line, o.source_anchor.start_column)))
                 .collect();
             ops.sort_by_key(|(n, _)| *n);
             let lanchors: Vec<String> = ops.into_iter().map(|(_, a)| a).collect();
@@ -593,7 +603,7 @@ fn record_op_trace_measure() {
         }
     }
     let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
-    eprintln!("\n=== L2 cutover: record-op order trace ===\n{matching}/{total} routines match ({pct:.1}%)");
+    eprintln!("\n=== L2 cutover: op-counter trace (record-ops + commit/error) ===\n{matching}/{total} routines match ({pct:.1}%)");
     for (file, routine, l, i) in divs.iter().take(12) {
         eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
     }
