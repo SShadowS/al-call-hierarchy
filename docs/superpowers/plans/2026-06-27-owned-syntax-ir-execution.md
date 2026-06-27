@@ -257,3 +257,29 @@ full PFeatures (with loop_stack/argument_bindings/callee/control_context/temp_st
 fields, only ANCHORS validated so far) → gate full serde-equality → cut L2 over (engine consumes IR,
 delete body_walk) → Phase 3 (L3) → Phase 4 (LSP, retire queries) → Phase 5 (seal). Substantial,
 multi-session; the parity-critical heart is DONE.
+
+## L2 CUTOVER — Layer-4: condition_references + statement_tree (commits 1e8d84c, cd77243, 0d269a1)
+- **condition_references** 100% (HARD GATE) — idents in if/while/until/case conditions. Drove the
+  Member-position refinement: `ExprKind::Member` now carries `member_origin` (the member identifier
+  node's provenance) so reference_anchor is expressible. Member.member stored RAW (quotes preserved).
+- **identifier_references** 99.0% (measurement) — added DatabaseReference name handling
+  (`Database::"Customer"` → unquoted table_name is a value ref). Residual 3 routines = subtle
+  parenless/chained-receiver value-ref edge cases.
+- **statement_tree (CFN)** 591/591 STRUCTURAL parity (HARD GATE) — the most complex L2 feature. Full
+  port of cfn.rs (build_block/build_statement/harvest/guard) over the IR, op/cs leaves referenced by
+  DFS SEQUENCE NUMBER. Error renders as cs "error" leaf (never op), mirroring op_id_by_node_id. Three
+  lowerer root-cause fixes surfaced: empty `begin end` (skip statement-position keyword tokens),
+  case `else` keyword leak (same skip set), case `else begin..end` double-wrap (unwrap sole code_block
+  like a branch body). The only exact-match gap is legacy's inert comment-`other` artifact (legacy
+  build_block has no comment skip; the IR correctly omits comments — no op/cs, no order entry).
+
+### State: op/cs NUMBERING + 7 L2 FEATURES at 100% (record_ops, operation_sites, call_sites,
+field_accesses, var_assignments, condition_references, statement_tree) + identifier_references 99%.
+REMAINING: identifier_references residual → assemble full PFeatures rich fields (loop_stack,
+argument_bindings, callee shapes, control_context, temp_state) → gate full serde-PFeatures equality →
+cut L2 over (engine `project_routine_features_ir`, delete body_walk) → Phase 3 (L3) → Phase 4 (LSP) →
+Phase 5 (seal). The structural heart of L2 (op-order + CFN) is DONE; the rich fields are additive.
+
+### Follow-up (cutover-time, not blocking): legacy cfn.rs has no `comment` skip in build_block, so it
+emits inert `other` nodes for trailing/inline comments. When the IR becomes the engine these vanish;
+verify operation_order/control_context output is unchanged (it keys on op/cs leaves only, so it is).
