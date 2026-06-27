@@ -13,12 +13,24 @@ real legacy L2 walk over 591 routines in `engine_ir_walk_statement_tree_parity`:
 - **identifier_references** 585/591 (measured — known parenless/chained residual)
 Anchors built exactly as legacy `Ctx::anchor` (utf16 cols via `Utf16Cols` over the IR
 `Origin` byte column; `syntax_kind` = raw grammar kind). `Origin.byte` → lossless raw text.
-REMAINING engine fields need the full `Ctx` scope (variable_types_by_name,
-object_procedure_names, enclosing params/record-vars, implicit-frame text): **record_operations**
-(+ field_arguments/temp_state backfill), **call_sites** (callee/args/bindings), **operation_sites**,
-**variables/record_variables**, **unreachable_statements**, **nesting_depth**. Then run
-`operation_order.rs` + `control_context.rs` UNCHANGED on the IR `PCFNNode`, assemble full
-`PFeatures`, gate serde-equality, wire into the L2 driver, delete `body_walk`.
+### 9 REAL PFeatures fields now gated at 591/591 (engine ir_walk, commits …0226a1f, 0efd8b0):
+statement_tree, has_branching, nesting_depth, loops, field_accesses, var_assignments,
+condition_references, **unreachable_statements** (block-scoped exit→next-sibling) — all 591/591;
+identifier_references 585/591 (measured). These are exactly the fields that need only the IR +
+LIGHT scope (record-receiver sets). nesting_depth reuses the engine `compute_nesting_depth`
+UNCHANGED on the IR loops — first proof a post-pass grafts onto IR output cleanly.
+
+### THE SECOND BOUNDARY (object-level scope): the remaining engine fields — **record_variables,
+record_operations, call_sites, operation_sites, variables** — need the object-level scope subsystem
+the L2 driver assembles: implicit-`Rec` seeding (object-type-dependent: table self / page+pageext
+SourceTable / tableext extends-target / report dataitem source tables / codeunit `TableNo`
+property), `variable_types_by_name`, `object_procedure_names`, parameter symbols, and the
+record-var temp_state/table_name resolution. record_variables ALONE requires replicating the
+implicit-Rec + dataitem seeding (mod.rs:274-356). This is the next major build: port/reuse the
+scope assembly for the IR (it is object-structural, largely IR-expressible), produce the rich
+payloads (callee via classify.rs adapted to IR exprs + `Origin.byte`; field_arguments; bindings;
+temp_state backfill), then run `operation_order.rs` + `control_context.rs` UNCHANGED on the IR
+`PCFNNode`, assemble full `PFeatures`, gate serde-equality, wire into the driver, delete `body_walk`.
 
 ## Status legend
 `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked/needs decision
