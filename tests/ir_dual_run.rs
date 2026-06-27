@@ -2913,3 +2913,83 @@ fn engine_ir_walk_exact_id_pfeatures() {
     eprintln!("\n=== PHASE-2 IR byte-exact PFeatures (real ids, no normalization): {matching}/{total} ({pct:.1}%) ===");
     assert!(total > 0);
 }
+
+/// PHASE-3/5 prep — IR routine-envelope metadata (attributes / attributesParsed /
+/// access_modifier) matches legacy. Validates the IR is ready to drive the PRoutine
+/// envelope (toward removing tree-sitter from project_file). Measured per routine vs
+/// project_named_routine (legacy envelope; its features now come from the IR but its
+/// attributes/access_modifier are still legacy-derived).
+#[test]
+fn engine_ir_attributes_parity() {
+    use al_call_hierarchy::engine::l2::ir_walk;
+    use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let lang = al_call_hierarchy::language::language();
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<String> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&lang).is_err() {
+            continue;
+        }
+        let Some(tree) = parser.parse(&src, None) else {
+            continue;
+        };
+        let file = al_syntax::parse(&src);
+        // Per-name dedup: only compare names unique within the file (project_named_routine
+        // returns the first match).
+        let mut name_counts: std::collections::HashMap<String, usize> = Default::default();
+        for o in &file.objects {
+            for r in &o.routines {
+                *name_counts.entry(r.name.to_ascii_lowercase()).or_default() += 1;
+            }
+        }
+        for o in &file.objects {
+            for r in &o.routines {
+                if name_counts[&r.name.to_ascii_lowercase()] != 1 {
+                    continue; // ambiguous name — skip
+                }
+                let Some(legacy) = project_named_routine(&src, &r.name, "dual", "ws:test", &tree)
+                else {
+                    continue;
+                };
+                total += 1;
+                let (ir_attrs, ir_parsed) = ir_walk::ir_attributes(r, &file, &src);
+                let ok = ir_attrs == legacy.attributes
+                    && ir_parsed == legacy.attributes_parsed
+                    && r.access_modifier == legacy.access_modifier;
+                if ok {
+                    matching += 1;
+                } else if divs.len() < 12 {
+                    divs.push(format!(
+                        "{} :: {}\n    legacy attrs={:?} parsed={:?} mod={:?}\n    ir     attrs={:?} parsed={:?} mod={:?}",
+                        fpath.strip_prefix(&root).unwrap_or(&fpath).display(), r.name,
+                        legacy.attributes, legacy.attributes_parsed, legacy.access_modifier,
+                        ir_attrs, ir_parsed, r.access_modifier
+                    ));
+                }
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-3/5 IR routine-envelope metadata: {matching}/{total} ({pct:.1}%) ===");
+    for d in divs.iter().take(10) {
+        eprintln!("  {d}");
+    }
+    assert!(total > 0);
+    assert_eq!(
+        matching, total,
+        "engine ir_walk routine-envelope metadata divergences"
+    );
+}

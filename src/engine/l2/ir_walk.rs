@@ -1964,3 +1964,81 @@ pub fn ir_variables(
 
     out
 }
+
+// ---- routine envelope metadata (attributes / attributes_parsed) ----
+
+/// Faithful port of `attr_arg_from_node` over an IR expr — the attribute-argument
+/// JSON ({kind,text,[value],[qualifier],[member]}). attr_arg_kind maps unhandled
+/// kinds (decimal/unary/call/…) to "unknown" with no value parts.
+fn ir_attr_arg(file: &AlFile, eid: ExprId, source: &str) -> serde_json::Value {
+    use al_syntax::ir::Literal as L;
+    use serde_json::json;
+    let e = file.ir.expr(eid);
+    let text = source[e.origin.byte.clone()].to_string();
+    let mut obj = serde_json::Map::new();
+    let kind = match &e.kind {
+        ExprKind::Literal(L::Bool(_)) => "boolean",
+        ExprKind::Literal(L::Int(_)) => "integer",
+        ExprKind::Literal(L::Text(_)) => "string_literal",
+        ExprKind::Identifier(_) if e.origin.kind_text == "identifier" => "identifier",
+        ExprKind::QuotedIdentifier(_) => "quoted_identifier",
+        ExprKind::QualifiedEnum { .. } => "qualified_enum_value",
+        ExprKind::DatabaseReference(_) => "database_reference",
+        ExprKind::Member { .. } => "member_expression",
+        _ => "unknown",
+    };
+    obj.insert("kind".into(), json!(kind));
+    obj.insert("text".into(), json!(text));
+    let strip = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+    match kind {
+        "boolean" | "integer" | "identifier" => {
+            obj.insert("value".into(), json!(text));
+        }
+        "string_literal" | "quoted_identifier" => {
+            obj.insert("value".into(), json!(strip(&text)));
+        }
+        "qualified_enum_value" => {
+            if let ExprKind::QualifiedEnum { enum_type, value } = &e.kind {
+                let q = source[file.ir.expr(*enum_type).origin.byte.clone()].to_string();
+                let m = strip(value);
+                obj.insert("value".into(), json!(m));
+                obj.insert("qualifier".into(), json!(q));
+                obj.insert("member".into(), json!(m));
+            }
+        }
+        "database_reference" => {
+            if let ExprKind::DatabaseReference(t) = &e.kind {
+                if let Some((kw, tn)) = t.split_once("::") {
+                    let m = strip(tn);
+                    obj.insert("value".into(), json!(m));
+                    obj.insert("qualifier".into(), json!(kw.trim()));
+                    obj.insert("member".into(), json!(m));
+                }
+            }
+        }
+        _ => {}
+    }
+    serde_json::Value::Object(obj)
+}
+
+/// Routine `attributes` (raw text, document order) + `attributesParsed` JSON
+/// ({name, args, raw}) from the IR — mirrors `collect_attributes`.
+pub fn ir_attributes(
+    routine: &RoutineDecl,
+    file: &AlFile,
+    source: &str,
+) -> (Vec<String>, Vec<serde_json::Value>) {
+    use serde_json::json;
+    let mut raw = Vec::new();
+    let mut parsed = Vec::new();
+    for a in &routine.attributes_parsed {
+        raw.push(a.raw.clone());
+        let args: Vec<serde_json::Value> = a
+            .args
+            .iter()
+            .map(|&arg| ir_attr_arg(file, arg, source))
+            .collect();
+        parsed.push(json!({ "name": a.name, "args": args, "raw": a.raw }));
+    }
+    (raw, parsed)
+}
