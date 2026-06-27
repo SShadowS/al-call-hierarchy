@@ -2042,3 +2042,55 @@ pub fn ir_attributes(
     }
     (raw, parsed)
 }
+
+// ---- object metadata (subtype / pageType / sourceTable / inherentCommit) ----
+
+/// Object metadata from the IR's properties — mirrors `extract_object_metadata`.
+/// Returns (object_subtype, page_type, source_table_name, inherent_commit_behavior).
+pub fn ir_object_metadata(
+    o: &al_syntax::ir::ObjectDecl,
+    object_type: &str,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    let prop = |name: &str| {
+        o.properties
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p.value.clone())
+    };
+    let mut object_subtype = None;
+    let mut page_type = None;
+    let mut source_table_name = None;
+    let mut inherent_commit_behavior = None;
+    if object_type == "Codeunit" {
+        object_subtype = prop("subtype");
+    }
+    if object_type == "Page" || object_type == "PageExtension" {
+        page_type = prop("pagetype");
+        source_table_name = prop("sourcetable").map(|s| s.trim().trim_matches('"').to_string());
+    }
+    if object_type == "Codeunit" || object_type == "Table" || object_type == "TableExtension" {
+        if let Some(icb_raw) = prop("inherentcommitbehavior") {
+            let member = match icb_raw.rfind("::") {
+                Some(sep) => icb_raw[sep + 2..].to_lowercase(),
+                None => icb_raw.to_lowercase(),
+            };
+            inherent_commit_behavior = match member.as_str() {
+                "ignore" => Some("ignore".to_string()),
+                "error" => Some("error".to_string()),
+                "allow" => Some("allow".to_string()),
+                _ => None,
+            };
+        }
+    }
+    (
+        object_subtype,
+        page_type,
+        source_table_name,
+        inherent_commit_behavior,
+    )
+}

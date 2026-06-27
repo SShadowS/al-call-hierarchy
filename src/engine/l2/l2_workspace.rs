@@ -543,7 +543,10 @@ fn project_file(
         usize,
         (usize, &al_syntax::ir::RoutineDecl),
     > = std::collections::HashMap::new();
+    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
+        std::collections::HashMap::new();
     for (oi, o) in ir_file.objects.iter().enumerate() {
+        ir_obj_by_byte.insert(o.origin.byte.start, o);
         for r in &o.routines {
             ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
         }
@@ -559,8 +562,13 @@ fn project_file(
         let internal_object_id = encode_object_id(app_guid, object_type, object_number);
         let stable_object_id = to_stable_object_id(&internal_object_id);
 
+        // Object metadata from the IR's properties when the object is matched
+        // (byte-exact), else legacy.
         let (object_subtype, page_type, source_table_name, inherent_commit_behavior) =
-            extract_object_metadata(decl, object_type, source);
+            match ir_obj_by_byte.get(&decl.start_byte()) {
+                Some(o) => crate::engine::l2::ir_walk::ir_object_metadata(o, object_type),
+                None => extract_object_metadata(decl, object_type, source),
+            };
 
         objects.push(PObject {
             stable_object_id: stable_object_id.clone(),
@@ -864,13 +872,16 @@ pub fn project_named_routine(
     let root = tree.root_node();
     let cols = Utf16Cols::new(source);
 
-    // Owned-IR cutover (mirrors project_file): index IR routines by start byte.
+    // Owned-IR cutover (mirrors project_file): index IR routines + objects by byte.
     let ir_file = al_syntax::parse(source);
     let mut ir_routine_by_byte: std::collections::HashMap<
         usize,
         (usize, &al_syntax::ir::RoutineDecl),
     > = std::collections::HashMap::new();
+    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
+        std::collections::HashMap::new();
     for (oi, o) in ir_file.objects.iter().enumerate() {
+        ir_obj_by_byte.insert(o.origin.byte.start, o);
         for r in &o.routines {
             ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
         }
@@ -884,7 +895,10 @@ pub fn project_named_routine(
         let internal_object_id = encode_object_id(app_guid, object_type, object_number);
         let stable_object_id = to_stable_object_id(&internal_object_id);
 
-        let (_, _, source_table_name, _) = extract_object_metadata(decl, object_type, source);
+        let (_, _, source_table_name, _) = match ir_obj_by_byte.get(&decl.start_byte()) {
+            Some(o) => crate::engine::l2::ir_walk::ir_object_metadata(o, object_type),
+            None => extract_object_metadata(decl, object_type, source),
+        };
 
         let object_globals = extract_object_globals(decl, source_unit_id, source);
         let routine_nodes = collect_routine_nodes(decl);
