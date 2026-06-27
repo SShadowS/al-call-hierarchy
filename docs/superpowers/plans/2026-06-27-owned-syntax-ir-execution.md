@@ -43,6 +43,25 @@ REMAINING engine fields: **call_sites** (callee classify + argument_texts/infos 
 control_context UNCHANGED on the IR PCFNNode, gate serde-equality, wire into the driver, delete
 `body_walk`. Then Phases 3/4/5.
 
+### UPDATE 3 — record_variables, record_operations, operation_sites, variables ALL landed.
+**13 of 14 PFeatures fields now gated 591/591** by the engine `ir_walk`:
+statement_tree, has_branching, nesting_depth, loops, field_accesses, var_assignments,
+condition_references, unreachable_statements, record_variables, record_operations, operation_sites,
+**variables** (params + locals w/ first-assignment initializer + globals). identifier_references
+585/591 measured. Also fixed a real LEGACY bug: `classify_rhs` checked stale v2 node kinds
+(`boolean_literal`/`true`/`false`); v3 emits `boolean`, so boolean initializers were misclassified
+`{kind:expression}` — recognized `boolean`, rebaselined the 11 affected Rust-owned R1a goldens
+(diff = exclusively boolean expression→literal). **ONLY `call_sites` REMAINS** before full PFeatures.
+
+### NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
+object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
+upgrade); callee_text; argument_texts + argument_infos (ir_expression_info, already built);
+argument_bindings (each arg → source variable/param/literal — needs enclosing params + record-vars +
+a variable_types_by_name map computed from IR var decls); result_consumed / object_run_return_used
+(object-run parent context). Then assemble full `PFeatures`, run operation_order + control_context
+UNCHANGED on the IR PCFNNode, gate full serde-`PFeatures` equality, wire `project_routine_features_ir`
+into the L2 driver, delete `body_walk`. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+
 ### (historical) THE SECOND BOUNDARY: the remaining engine fields — **record_operations,
 call_sites, operation_sites, variables** — need the object-level scope subsystem
 the L2 driver assembles: implicit-`Rec` seeding (object-type-dependent: table self / page+pageext
