@@ -455,6 +455,16 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
                 out.idents.insert(name.to_ascii_lowercase());
             }
         }
+        // `Keyword::Name` (database_reference): the object-type keyword is excluded,
+        // but an UNQUOTED table_name identifier is a value ref.
+        DatabaseReference(text) => {
+            if let Some(last) = text.rsplit("::").next() {
+                let t = last.trim();
+                if !t.starts_with('"') {
+                    out.idents.insert(t.to_ascii_lowercase());
+                }
+            }
+        }
         Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, frvars, implicit, out); rec_walk_expr(f, *rhs, rvars, frvars, implicit, out); }
         Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, frvars, implicit, out),
         Parenthesized(x) => rec_walk_expr(f, *x, rvars, frvars, implicit, out),
