@@ -636,8 +636,14 @@ fn project_file(
                 };
 
             // Stable routine id — its normalizedSignatureHash is the canonical
-            // (return-type-aware) signature hash, identical on the ABI side.
-            let parameters = extract_parameters(routine, source);
+            // (return-type-aware) signature hash, identical on the ABI side. Parameters
+            // from the IR when matched (validated byte-exact, so the hash is stable).
+            let parameters = match ir_match {
+                Some((_, ir_routine)) => {
+                    crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine)
+                }
+                None => extract_parameters(routine, source),
+            };
             let param_specs: Vec<ParamSpec> = parameters
                 .iter()
                 .map(|p| ParamSpec {
@@ -944,7 +950,12 @@ pub fn project_named_routine(
                     (a, ap, classify_access_modifier(routine, source))
                 };
 
-            let parameters = extract_parameters(routine, source);
+            let parameters = match ir_match {
+                Some((_, ir_routine)) => {
+                    crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine)
+                }
+                None => extract_parameters(routine, source),
+            };
             let param_specs: Vec<ParamSpec> = parameters
                 .iter()
                 .map(|p| ParamSpec {

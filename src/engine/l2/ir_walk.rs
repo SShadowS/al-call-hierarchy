@@ -2138,3 +2138,31 @@ pub fn ir_object_metadata(
         inherent_commit_behavior,
     )
 }
+
+/// Per-routine ParameterSymbols from the IR (index/name/type_text/is_var/is_record/
+/// table_name) — mirrors scope::extract_parameters. Validated byte-exact (the
+/// stable-routine-id signature hash depends on type_text + is_var).
+pub fn ir_parameter_symbols(routine: &RoutineDecl) -> Vec<super::scope::ParameterSymbol> {
+    routine
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let ty = p.ty.clone().unwrap_or_default();
+            let is_record = ty.to_ascii_lowercase().starts_with("record");
+            let table_name = if is_record {
+                parse_record_table_name(&ty)
+            } else {
+                None
+            };
+            super::scope::ParameterSymbol {
+                index: i as u32,
+                name: p.name.clone(),
+                type_text: ty,
+                is_var: p.by_ref,
+                is_record,
+                table_name,
+            }
+        })
+        .collect()
+}
