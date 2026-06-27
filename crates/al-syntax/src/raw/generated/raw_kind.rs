@@ -48,6 +48,7 @@ pub enum RawKind {
     AreaSection,
     ArgumentList,
     ArrayType,
+    AsExpression,
     AssemblyBody,
     AssemblyDeclaration,
     AsserterrorKeyword,
@@ -158,6 +159,7 @@ pub enum RawKind {
     ImplementationValueList,
     ImplementsClause,
     ImplementsKeyword,
+    InExpression,
     InKeyword,
     Integer,
     InterfaceBody,
@@ -166,6 +168,7 @@ pub enum RawKind {
     InterfaceProcedure,
     InterfaceProcedureSuffix,
     InternalKeyword,
+    IsExpression,
     KeyDeclaration,
     KeyKeyword,
     KeysBody,
@@ -443,6 +446,7 @@ impl RawKind {
             "area_section" => RawKind::AreaSection,
             "argument_list" => RawKind::ArgumentList,
             "array_type" => RawKind::ArrayType,
+            "as_expression" => RawKind::AsExpression,
             "assembly_body" => RawKind::AssemblyBody,
             "assembly_declaration" => RawKind::AssemblyDeclaration,
             "asserterror_keyword" => RawKind::AsserterrorKeyword,
@@ -553,6 +557,7 @@ impl RawKind {
             "implementation_value_list" => RawKind::ImplementationValueList,
             "implements_clause" => RawKind::ImplementsClause,
             "implements_keyword" => RawKind::ImplementsKeyword,
+            "in_expression" => RawKind::InExpression,
             "in_keyword" => RawKind::InKeyword,
             "integer" => RawKind::Integer,
             "interface_body" => RawKind::InterfaceBody,
@@ -561,6 +566,7 @@ impl RawKind {
             "interface_procedure" => RawKind::InterfaceProcedure,
             "interface_procedure_suffix" => RawKind::InterfaceProcedureSuffix,
             "internal_keyword" => RawKind::InternalKeyword,
+            "is_expression" => RawKind::IsExpression,
             "key_declaration" => RawKind::KeyDeclaration,
             "key_keyword" => RawKind::KeyKeyword,
             "keys_body" => RawKind::KeysBody,
@@ -837,6 +843,7 @@ impl RawKind {
             RawKind::AreaSection => "area_section",
             RawKind::ArgumentList => "argument_list",
             RawKind::ArrayType => "array_type",
+            RawKind::AsExpression => "as_expression",
             RawKind::AssemblyBody => "assembly_body",
             RawKind::AssemblyDeclaration => "assembly_declaration",
             RawKind::AsserterrorKeyword => "asserterror_keyword",
@@ -947,6 +954,7 @@ impl RawKind {
             RawKind::ImplementationValueList => "implementation_value_list",
             RawKind::ImplementsClause => "implements_clause",
             RawKind::ImplementsKeyword => "implements_keyword",
+            RawKind::InExpression => "in_expression",
             RawKind::InKeyword => "in_keyword",
             RawKind::Integer => "integer",
             RawKind::InterfaceBody => "interface_body",
@@ -955,6 +963,7 @@ impl RawKind {
             RawKind::InterfaceProcedure => "interface_procedure",
             RawKind::InterfaceProcedureSuffix => "interface_procedure_suffix",
             RawKind::InternalKeyword => "internal_keyword",
+            RawKind::IsExpression => "is_expression",
             RawKind::KeyDeclaration => "key_declaration",
             RawKind::KeyKeyword => "key_keyword",
             RawKind::KeysBody => "keys_body",
@@ -1189,7 +1198,7 @@ impl RawKind {
 /// sha256 of the `node-types.json` this file was generated from. al-syntax
 /// `build.rs` asserts the checked-in grammar matches, so a silent grammar swap
 /// fails the build.
-pub const GRAMMAR_NODE_TYPES_HASH: &str = "b1c2174a573cce9ab1599dc1c40cd03e439d1d4438d0a046734072b85487bd7c";
+pub const GRAMMAR_NODE_TYPES_HASH: &str = "75a697ae4ec49d02d923de01759b8572c1fdeedab3790667c3af16a6885689a2";
 
 /// Count of NAMED kinds (excludes `Error`). Sanity anchor for the coverage test.
-pub const NAMED_KIND_COUNT: usize = 383;
+pub const NAMED_KIND_COUNT: usize = 386;

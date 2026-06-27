@@ -21,7 +21,7 @@ mod tests {
         assert_eq!(RawKind::from_raw("declaration_body"), RawKind::DeclarationBody);
         assert_eq!(RawKind::Procedure.as_str(), "procedure");
         assert_eq!(RawKind::from_raw("ERROR"), RawKind::Error);
-        assert_eq!(NAMED_KIND_COUNT, 383);
+        assert_eq!(NAMED_KIND_COUNT, 386);
         assert_eq!(GRAMMAR_NODE_TYPES_HASH.len(), 64);
     }
 

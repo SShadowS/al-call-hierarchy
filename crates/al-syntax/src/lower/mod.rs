@@ -510,10 +510,14 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             ExprKind::Literal(Literal::Text(node.text(source).to_string()))
         }
         _ => {
-            issues.push(SyntaxIssue {
-                message: format!("unlowered expression `{}`", node.kind_str()),
-                origin: origin.clone(),
-            });
+            // Unmodelled expression container (in/is/as expression, list_literal,
+            // ternary, …): lower its non-trivia children so nested calls/members are
+            // still captured in the arena (completeness). The node itself is Unknown.
+            for c in node.named_children() {
+                if crate::schema::class_of(c.kind()) != crate::schema::Class::Trivia {
+                    lower_expr(c, ir, issues, source);
+                }
+            }
             ExprKind::Unknown
         }
     };

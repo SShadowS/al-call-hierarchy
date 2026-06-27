@@ -338,10 +338,11 @@ mod tests {
         // Calculate complexity
         let complexity = calculate_complexity(&proc_node);
 
-        // Actual observed: 8
-        // The difference from expected 9 may be due to how the grammar structures
-        // certain nodes. The implementation correctly counts decision points.
-        assert_eq!(complexity, 8, "Expected complexity 8, got {}", complexity);
+        // Expected 9 (1 + if + nested if/else + while + if + `and` + 2 case branches).
+        // The tree-sitter-al grammar fix (owned-IR consumer: named in/is/as expressions,
+        // removing the spurious left/operator/right field bleed) corrected a previous
+        // undercount to 8 — the clean grammar now yields the theoretically correct 9.
+        assert_eq!(complexity, 9, "Expected complexity 9, got {}", complexity);
     }
 
     #[test]

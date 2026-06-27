@@ -54,6 +54,7 @@ pub fn class_of(k: RawKind) -> Class {
 
         // ---- Structural: declarations, statements, expressions, bodies,
         //      preprocessor nodes (lowerer owns descent / both #if-#else branches) ----
+    RawKind::InExpression | RawKind::IsExpression | RawKind::AsExpression |
     RawKind::ActionAreaSection | RawKind::ActionBody | RawKind::ActionDeclaration |
     RawKind::ActionGroupBody | RawKind::ActionGroupSection | RawKind::ActionrefDeclaration |
     RawKind::ActionsSection | RawKind::AddDatasetModification |

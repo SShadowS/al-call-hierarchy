@@ -62,30 +62,6 @@ impl<'t> BooleanOrIntegerOrStringLiteral<'t> {
     }
 }
 
-/// One of: comparison_operator, in_keyword.
-#[derive(Copy, Clone)]
-pub enum ComparisonOperatorOrInKeyword<'t> {
-    ComparisonOperator(RawComparisonOperator<'t>),
-    InKeyword(RawInKeyword<'t>),
-}
-impl<'t> ComparisonOperatorOrInKeyword<'t> {
-    #[inline]
-    pub fn cast(n: RawNode<'t>) -> Option<Self> {
-        match n.kind() {
-            RawKind::ComparisonOperator => Some(Self::ComparisonOperator(RawComparisonOperator(n))),
-            RawKind::InKeyword => Some(Self::InKeyword(RawInKeyword(n))),
-            _ => None,
-        }
-    }
-    #[inline]
-    pub fn node(self) -> RawNode<'t> {
-        match self {
-            Self::ComparisonOperator(x) => x.node(),
-            Self::InKeyword(x) => x.node(),
-        }
-    }
-}
-
 /// One of: dotnet_assembly_name, quoted_identifier, string_literal.
 #[derive(Copy, Clone)]
 pub enum DotnetAssemblyNameOrQuotedIdentifierOrStringLiteral<'t> {
@@ -325,30 +301,6 @@ impl<'t> IdentifierOrQuotedIdentifierOrStringLiteral<'t> {
             Self::Identifier(x) => x.node(),
             Self::QuotedIdentifier(x) => x.node(),
             Self::StringLiteral(x) => x.node(),
-        }
-    }
-}
-
-/// One of: list_literal, type_specification.
-#[derive(Copy, Clone)]
-pub enum ListLiteralOrTypeSpecification<'t> {
-    ListLiteral(RawListLiteral<'t>),
-    TypeSpecification(RawTypeSpecification<'t>),
-}
-impl<'t> ListLiteralOrTypeSpecification<'t> {
-    #[inline]
-    pub fn cast(n: RawNode<'t>) -> Option<Self> {
-        match n.kind() {
-            RawKind::ListLiteral => Some(Self::ListLiteral(RawListLiteral(n))),
-            RawKind::TypeSpecification => Some(Self::TypeSpecification(RawTypeSpecification(n))),
-            _ => None,
-        }
-    }
-    #[inline]
-    pub fn node(self) -> RawNode<'t> {
-        match self {
-            Self::ListLiteral(x) => x.node(),
-            Self::TypeSpecification(x) => x.node(),
         }
     }
 }
@@ -619,9 +571,9 @@ impl<'t> RawAdditiveExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::AdditiveExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Operator) }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn operator(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Operator) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -773,9 +725,6 @@ impl<'t> RawArgumentList<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ArgumentList { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -787,6 +736,17 @@ impl<'t> RawArrayType<'t> {
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn element_type(self) -> Option<RawTypeSpecification<'t>> { self.0.field(FieldName::ElementType).and_then(RawTypeSpecification::cast) }
     pub fn sizes(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Sizes) }
+}
+
+#[derive(Copy, Clone)]
+pub struct RawAsExpression<'t>(pub(super) RawNode<'t>);
+impl<'t> RawAsExpression<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::AsExpression { Some(Self(n)) } else { None } }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> { self.0 }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn right(self) -> Option<RawTypeSpecification<'t>> { self.0.field(FieldName::Right).and_then(RawTypeSpecification::cast) }
 }
 
 #[derive(Copy, Clone)]
@@ -825,10 +785,7 @@ impl<'t> RawAsserterrorStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::AsserterrorStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn body(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Body) }
 }
 
 #[derive(Copy, Clone)]
@@ -838,9 +795,8 @@ impl<'t> RawAssignmentExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::AssignmentExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -850,9 +806,8 @@ impl<'t> RawAssignmentStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::AssignmentStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -997,7 +952,7 @@ impl<'t> RawCaseBranch<'t> {
     pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
     pub fn pattern(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Pattern) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn right(self) -> Vec<RawListLiteral<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(RawListLiteral::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -1007,9 +962,7 @@ impl<'t> RawCaseElseBranch<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::CaseElseBranch { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
 }
 
 #[derive(Copy, Clone)]
@@ -1029,10 +982,7 @@ impl<'t> RawCaseStatement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawCaseBody<'t>> { self.0.field(FieldName::Body).and_then(RawCaseBody::cast) }
-    pub fn expression(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Expression) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn expression(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Expression) }
 }
 
 #[derive(Copy, Clone)]
@@ -1101,9 +1051,9 @@ impl<'t> RawComparisonExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ComparisonExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<ComparisonOperatorOrInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(ComparisonOperatorOrInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn operator(self) -> Option<RawComparisonOperator<'t>> { self.0.field(FieldName::Operator).and_then(RawComparisonOperator::cast) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -1558,10 +1508,7 @@ impl<'t> RawExitStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ExitStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn return_value(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ReturnValue) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn return_value(self) -> Option<RawNode<'t>> { self.0.field(FieldName::ReturnValue) }
 }
 
 #[derive(Copy, Clone)]
@@ -1739,11 +1686,8 @@ impl<'t> RawForStatement<'t> {
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
     pub fn direction(self) -> Option<DowntoKeywordOrToKeyword<'t>> { self.0.field(FieldName::Direction).and_then(DowntoKeywordOrToKeyword::cast) }
-    pub fn end(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::End) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn start(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Start) }
+    pub fn end(self) -> Option<RawNode<'t>> { self.0.field(FieldName::End) }
+    pub fn start(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Start) }
     pub fn variable(self) -> Option<IdentifierOrMemberExpressionOrQuotedIdentifier<'t>> { self.0.field(FieldName::Variable).and_then(IdentifierOrMemberExpressionOrQuotedIdentifier::cast) }
 }
 
@@ -1764,10 +1708,7 @@ impl<'t> RawForeachStatement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
-    pub fn iterable(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Iterable) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn iterable(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Iterable) }
     pub fn variable(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Variable).and_then(IdentifierOrQuotedIdentifier::cast) }
 }
 
@@ -1836,11 +1777,8 @@ impl<'t> RawIfStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::IfStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
     pub fn else_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ElseBranch) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
     pub fn then_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ThenBranch) }
 }
 
@@ -1892,6 +1830,18 @@ impl<'t> RawImplementsKeyword<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ImplementsKeyword { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
+}
+
+#[derive(Copy, Clone)]
+pub struct RawInExpression<'t>(pub(super) RawNode<'t>);
+impl<'t> RawInExpression<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::InExpression { Some(Self(n)) } else { None } }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> { self.0 }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn operator(self) -> Option<RawInKeyword<'t>> { self.0.field(FieldName::Operator).and_then(RawInKeyword::cast) }
+    pub fn right(self) -> Option<RawListLiteral<'t>> { self.0.field(FieldName::Right).and_then(RawListLiteral::cast) }
 }
 
 #[derive(Copy, Clone)]
@@ -1972,6 +1922,17 @@ impl<'t> RawInternalKeyword<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::InternalKeyword { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
+}
+
+#[derive(Copy, Clone)]
+pub struct RawIsExpression<'t>(pub(super) RawNode<'t>);
+impl<'t> RawIsExpression<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::IsExpression { Some(Self(n)) } else { None } }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> { self.0 }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn right(self) -> Option<RawTypeSpecification<'t>> { self.0.field(FieldName::Right).and_then(RawTypeSpecification::cast) }
 }
 
 #[derive(Copy, Clone)]
@@ -2160,9 +2121,6 @@ impl<'t> RawListLiteral<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ListLiteral { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -2191,9 +2149,9 @@ impl<'t> RawLogicalExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::LogicalExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Operator) }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn operator(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Operator) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -2213,11 +2171,8 @@ impl<'t> RawMemberExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::MemberExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn member(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Member).and_then(IdentifierOrQuotedIdentifier::cast) }
-    pub fn object(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Object) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn object(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Object) }
 }
 
 #[derive(Copy, Clone)]
@@ -2322,9 +2277,9 @@ impl<'t> RawMultiplicativeExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::MultiplicativeExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Operator) }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn operator(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Operator) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -2458,11 +2413,8 @@ impl<'t> RawPageField<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawDeclarationBody<'t>> { self.0.field(FieldName::Body).and_then(RawDeclarationBody::cast) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn name(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Name).and_then(IdentifierOrQuotedIdentifier::cast) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn source(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Source) }
+    pub fn source(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Source) }
 }
 
 #[derive(Copy, Clone)]
@@ -2545,9 +2497,6 @@ impl<'t> RawParenthesizedExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::ParenthesizedExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -2686,7 +2635,7 @@ impl<'t> RawPreprocConditionalCasePatterns<'t> {
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn right(self) -> Vec<RawListLiteral<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(RawListLiteral::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -2840,9 +2789,6 @@ impl<'t> RawPreprocConditionalStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocConditionalStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -2934,9 +2880,6 @@ impl<'t> RawPreprocFragmentedElseTail<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocFragmentedElseTail { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -2946,10 +2889,7 @@ impl<'t> RawPreprocGuardedStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocGuardedStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
     pub fn then_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ThenBranch) }
 }
 
@@ -3042,9 +2982,6 @@ impl<'t> RawPreprocSplitCallStatement<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocSplitCallStatement { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3058,7 +2995,7 @@ impl<'t> RawPreprocSplitCaseBranch<'t> {
     pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
     pub fn pattern(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Pattern) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn right(self) -> Vec<RawListLiteral<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(RawListLiteral::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3072,7 +3009,7 @@ impl<'t> RawPreprocSplitCaseExtended<'t> {
     pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
     pub fn pattern(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Pattern) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn right(self) -> Vec<RawListLiteral<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(RawListLiteral::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3082,9 +3019,6 @@ impl<'t> RawPreprocSplitCodeBlockEnd<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocSplitCodeBlockEnd { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3127,10 +3061,7 @@ impl<'t> RawPreprocSplitField<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawDeclarationBody<'t>> { self.0.field(FieldName::Body).and_then(RawDeclarationBody::cast) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn name(self) -> Vec<IdentifierOrQuotedIdentifier<'t>> { self.0.children_by_field(FieldName::Name).into_iter().filter_map(IdentifierOrQuotedIdentifier::cast).collect() }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
     pub fn source(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Source) }
 }
 
@@ -3141,10 +3072,7 @@ impl<'t> RawPreprocSplitIfBeginAsymmetric<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocSplitIfBeginAsymmetric { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
 }
 
 #[derive(Copy, Clone)]
@@ -3155,9 +3083,6 @@ impl<'t> RawPreprocSplitIfBeginElse<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3169,9 +3094,6 @@ impl<'t> RawPreprocSplitIfElseStatement<'t> {
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
     pub fn else_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ElseBranch) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
     pub fn then_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ThenBranch) }
 }
 
@@ -3184,9 +3106,6 @@ impl<'t> RawPreprocSplitIfStatement<'t> {
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
     pub fn else_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ElseBranch) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
     pub fn then_branch(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ThenBranch) }
 }
 
@@ -3197,10 +3116,7 @@ impl<'t> RawPreprocSplitIfThenBegin<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::PreprocSplitIfThenBegin { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
 }
 
 #[derive(Copy, Clone)]
@@ -3211,9 +3127,6 @@ impl<'t> RawPreprocSplitIfThenBeginElseShared<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3239,10 +3152,7 @@ impl<'t> RawPreprocSplitProcedureBody<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Vec<RawStatementBlock<'t>> { self.0.children_by_field(FieldName::Body).into_iter().filter_map(RawStatementBlock::cast).collect() }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
 }
 
 #[derive(Copy, Clone)]
@@ -3477,9 +3387,8 @@ impl<'t> RawRangeExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::RangeExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Right) }
+    pub fn left(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Left) }
+    pub fn right(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Right) }
 }
 
 #[derive(Copy, Clone)]
@@ -3548,10 +3457,7 @@ impl<'t> RawRepeatStatement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawStatementBlock<'t>> { self.0.field(FieldName::Body).and_then(RawStatementBlock::cast) }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
 }
 
 #[derive(Copy, Clone)]
@@ -3591,11 +3497,8 @@ impl<'t> RawReportColumn<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawDeclarationBody<'t>> { self.0.field(FieldName::Body).and_then(RawDeclarationBody::cast) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn name(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Name).and_then(IdentifierOrQuotedIdentifier::cast) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn source(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Source) }
+    pub fn source(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Source) }
 }
 
 #[derive(Copy, Clone)]
@@ -3755,9 +3658,6 @@ impl<'t> RawStatementBlock<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::StatementBlock { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
 }
 
 #[derive(Copy, Clone)]
@@ -3776,11 +3676,8 @@ impl<'t> RawSubscriptExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::SubscriptExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn index(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Index) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn object(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Object) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn index(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Index) }
+    pub fn object(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Object) }
 }
 
 #[derive(Copy, Clone)]
@@ -3912,12 +3809,9 @@ impl<'t> RawTernaryExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::TernaryExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn else_value(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ElseValue) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn then_value(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::ThenValue) }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
+    pub fn else_value(self) -> Option<RawNode<'t>> { self.0.field(FieldName::ElseValue) }
+    pub fn then_value(self) -> Option<RawNode<'t>> { self.0.field(FieldName::ThenValue) }
 }
 
 #[derive(Copy, Clone)]
@@ -4008,10 +3902,8 @@ impl<'t> RawUnaryExpression<'t> {
     pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::UnaryExpression { Some(Self(n)) } else { None } }
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operand(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Operand) }
-    pub fn operator(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Operator) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn operand(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Operand) }
+    pub fn operator(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Operator) }
 }
 
 #[derive(Copy, Clone)]
@@ -4234,10 +4126,7 @@ impl<'t> RawWhileStatement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
-    pub fn condition(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Condition) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn condition(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Condition) }
 }
 
 #[derive(Copy, Clone)]
@@ -4257,10 +4146,7 @@ impl<'t> RawWithStatement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Body) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn record(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Record) }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
+    pub fn record(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Record) }
 }
 
 #[derive(Copy, Clone)]
@@ -4271,11 +4157,8 @@ impl<'t> RawXmlportAttribute<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawDeclarationBody<'t>> { self.0.field(FieldName::Body).and_then(RawDeclarationBody::cast) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn name(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Name).and_then(IdentifierOrQuotedIdentifier::cast) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn source(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Source) }
+    pub fn source(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Source) }
 }
 
 #[derive(Copy, Clone)]
@@ -4307,11 +4190,8 @@ impl<'t> RawXmlportElement<'t> {
     #[inline]
     pub fn node(self) -> RawNode<'t> { self.0 }
     pub fn body(self) -> Option<RawXmlportBody<'t>> { self.0.field(FieldName::Body).and_then(RawXmlportBody::cast) }
-    pub fn left(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Left) }
     pub fn name(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Name).and_then(IdentifierOrQuotedIdentifier::cast) }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> { self.0.children_by_field(FieldName::Operator).into_iter().filter_map(RawInKeyword::cast).collect() }
-    pub fn right(self) -> Vec<ListLiteralOrTypeSpecification<'t>> { self.0.children_by_field(FieldName::Right).into_iter().filter_map(ListLiteralOrTypeSpecification::cast).collect() }
-    pub fn source(self) -> Vec<RawNode<'t>> { self.0.children_by_field(FieldName::Source) }
+    pub fn source(self) -> Option<RawNode<'t>> { self.0.field(FieldName::Source) }
 }
 
 #[derive(Copy, Clone)]
