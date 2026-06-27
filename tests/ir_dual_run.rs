@@ -284,6 +284,13 @@ struct Trace {
     // CFN builder, which references op/cs leaves by their sequence number.
     op_idx: std::collections::HashMap<al_syntax::ir::ExprId, u32>,
     cs_idx: std::collections::HashMap<al_syntax::ir::ExprId, u32>,
+    // Enclosing-loop id stacks (loop SEQUENCE numbers) snapshotted per op / per call,
+    // parallel to `ops` / `calls`. Mirrors legacy `loop_stack` (`{routine}/loop{N}`,
+    // N = loop DFS-discovery order). `cur_loops`/`loop_ctr` are the working state.
+    op_loops: Vec<Vec<u32>>,
+    cs_loops: Vec<Vec<u32>>,
+    cur_loops: Vec<u32>,
+    loop_ctr: u32,
 }
 
 /// collect_idents over a condition expr: identifiers + member NAMES (plain
@@ -512,13 +519,23 @@ fn rec_walk_stmt(
         }
         While { cond, body } => {
             collect_cond_idents(f, *cond, "while", &sa, out);
+            // Loop id pushed at the loop node (legacy body_walk), so condition + body
+            // ops see it on the stack. N = DFS-discovery order (monotonic counter).
+            let ln = out.loop_ctr;
+            out.loop_ctr += 1;
+            out.cur_loops.push(ln);
             e!(*cond);
             b!(*body);
+            out.cur_loops.pop();
         }
         Repeat { body, until } => {
             collect_cond_idents(f, *until, "repeat-until", &sa, out);
+            let ln = out.loop_ctr;
+            out.loop_ctr += 1;
+            out.cur_loops.push(ln);
             b!(*body);
             e!(*until);
+            out.cur_loops.pop();
         }
         For {
             var,
@@ -527,19 +544,27 @@ fn rec_walk_stmt(
             body,
             ..
         } => {
+            let ln = out.loop_ctr;
+            out.loop_ctr += 1;
+            out.cur_loops.push(ln);
             e!(*var);
             e!(*from);
             e!(*to);
             b!(*body);
+            out.cur_loops.pop();
         }
         Foreach {
             var,
             iterable,
             body,
         } => {
+            let ln = out.loop_ctr;
+            out.loop_ctr += 1;
+            out.cur_loops.push(ln);
             e!(*var);
             e!(*iterable);
             b!(*body);
+            out.cur_loops.pop();
         }
         With { receiver, body } => {
             e!(*receiver);
@@ -635,11 +660,13 @@ fn rec_walk_expr(
             if !is_error {
                 out.op_idx.insert(eid, out.ops.len() as u32);
             }
+            out.op_loops.push(out.cur_loops.clone());
             out.ops.push(anchor.clone());
         }
         // call site: everything that isn't a record-op or a commit (Error IS a call site).
         if !is_record_op && !is_commit {
             out.cs_idx.insert(eid, out.calls.len() as u32);
+            out.cs_loops.push(out.cur_loops.clone());
             out.calls.push(anchor);
         }
         // Recurse the callee. A member-call RECEIVER is a value ref (counted); the
@@ -1827,6 +1854,91 @@ fn statement_tree_measure() {
         matching_stripped, total,
         "statement_tree structural divergences (see report)"
     );
+}
+
+/// L2 cutover — loop_stack per op and per call site (enclosing-loop id sequence),
+/// plus the routine `loops` table size/order. Loop ids normalized to sequence
+/// numbers (legacy `{routine}/loop{N}` → N).
+#[test]
+fn loop_stack_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String, String)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            // ops: align legacy operation_sites (by op number) to IR op_loops order.
+            let mut lops: Vec<(u32, Vec<u32>)> = lf
+                .operation_sites
+                .iter()
+                .map(|o| {
+                    (
+                        id_num(&o.id),
+                        o.loop_stack.iter().map(|s| id_num(s)).collect(),
+                    )
+                })
+                .collect();
+            lops.sort_by_key(|(n, _)| *n);
+            let l_op_loops: Vec<Vec<u32>> = lops.into_iter().map(|(_, s)| s).collect();
+            // calls: align legacy call_sites (by cs number) to IR cs_loops order.
+            let mut lcs: Vec<(u32, Vec<u32>)> = lf
+                .call_sites
+                .iter()
+                .map(|c| {
+                    (
+                        id_num(&c.id),
+                        c.loop_stack.iter().map(|s| id_num(s)).collect(),
+                    )
+                })
+                .collect();
+            lcs.sort_by_key(|(n, _)| *n);
+            let l_cs_loops: Vec<Vec<u32>> = lcs.into_iter().map(|(_, s)| s).collect();
+            // loops table: legacy loop count must equal IR loop_ctr; loop ids 0..N-1.
+            let l_loop_count = lf.loops.len() as u32;
+            if l_op_loops == itrace.op_loops
+                && l_cs_loops == itrace.cs_loops
+                && l_loop_count == itrace.loop_ctr
+            {
+                matching += 1;
+            } else if divs.len() < 20 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln}"),
+                    format!(
+                        "op {l_op_loops:?} vs {:?}; cs {l_cs_loops:?} vs {:?}",
+                        itrace.op_loops, itrace.cs_loops
+                    ),
+                    format!("loops {l_loop_count} vs {}", itrace.loop_ctr),
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== L2 cutover: loop_stack ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (a, b, c) in divs.iter().take(12) {
+        eprintln!("  {a}\n    {b}\n    {c}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "loop_stack divergences (see report)");
 }
 
 #[test]
