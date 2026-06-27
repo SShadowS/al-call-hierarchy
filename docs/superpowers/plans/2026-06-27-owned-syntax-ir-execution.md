@@ -53,7 +53,24 @@ condition_references, unreachable_statements, record_variables, record_operation
 `{kind:expression}` — recognized `boolean`, rebaselined the 11 affected Rust-owned R1a goldens
 (diff = exclusively boolean expression→literal). **ONLY `call_sites` REMAINS** before full PFeatures.
 
-### NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
+### UPDATE 4 — L2 FEATURE EXTRACTION COMPLETE + FULL PFEATURES ASSEMBLED (commits c2b6bf0, a3803d5).
+**ALL 14 PFeatures fields produced by the engine `ir_walk`, gated 591/591** (statement_tree,
+has_branching, nesting_depth, loops, field_accesses, var_assignments, condition_references,
+unreachable_statements, record_variables, record_operations, operation_sites, variables, **call_sites**).
+`project_routine_features_ir` assembles the COMPLETE PFeatures; capstone gate
+`engine_ir_walk_full_pfeatures_equality` serde-compares byte-for-byte (hash-normalized): **584/591
+(98.8%)**. statement_tree is now BYTE-IDENTICAL — the residual 7 are ONLY the known
+identifier_references parenless/chained-receiver edge cases (≈6) + 1 broken-AL ERROR-recovery case.
+TWO root-cause comment fixes (comments aren't statements): IR `lower_block_child` skip
+comment/multiline_comment/pragma (was lowering them as Unknown→phantom "other"); legacy `cfn.rs`
+build_block + repeat-loop skip the same (rebaselined R1a goldens, diff = 135 comment-"other" removals).
+Also fixed legacy `classify_rhs` v3-`boolean` staleness (variables initializer). order/control_context/
+scope_frames stay empty (post-pass fields legacy_l2_features also leaves empty).
+NEXT: (a) the identifier_references residual (6 edge cases) for ~100% byte-equality; (b) wire
+`project_routine_features_ir` into the L2 driver (l2_workspace) so operation_order/control_context/
+scope_frames run on the IR PCFNNode; (c) delete `body_walk`. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+
+### (historical) NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
 object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
 upgrade); callee_text; argument_texts + argument_infos (ir_expression_info, already built);
 argument_bindings (each arg → source variable/param/literal — needs enclosing params + record-vars +
