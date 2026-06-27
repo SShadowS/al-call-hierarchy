@@ -245,6 +245,8 @@ struct Trace {
     calls: Vec<String>,
     fields: Vec<String>,
     idents: BTreeSet<String>,
+    // (lhs_name, rhs_literal, anchor) per assignment — mirrors PVarAssignment.
+    assigns: Vec<(String, Option<String>, String)>,
 }
 
 /// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
@@ -304,11 +306,33 @@ fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars:
 }
 
 fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
-    use al_syntax::ir::{ExprKind, StmtKind::*};
+    use al_syntax::ir::{ExprKind, Literal, StmtKind::*};
     macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, frvars, implicit, out) }; }
     macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, frvars, implicit, out) }; }
-    match &f.ir.stmt(sid).kind {
-        Assignment { target, value } => { e!(*target); e!(*value); }
+    let st = f.ir.stmt(sid);
+    match &st.kind {
+        Assignment { target, value } => {
+            // PVarAssignment: lhs base name (identifier or member name), optional
+            // literal rhs (bool/int/string), anchored on the assignment statement.
+            let lhs = match &f.ir.expr(*target).kind {
+                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => Some(x.to_ascii_lowercase()),
+                ExprKind::Member { member, .. } => Some(member.to_ascii_lowercase()),
+                _ => None,
+            };
+            if let Some(lhs) = lhs {
+                let rhs_lit = match &f.ir.expr(*value).kind {
+                    ExprKind::Literal(Literal::Bool(b)) => Some(b.to_string()),
+                    ExprKind::Literal(Literal::Int(s)) => Some(s.clone()),
+                    ExprKind::Literal(Literal::Text(s)) => {
+                        let t = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')).unwrap_or(s);
+                        Some(t.to_ascii_lowercase())
+                    }
+                    _ => None,
+                };
+                out.assigns.push((lhs, rhs_lit, format!("{}:{}", st.origin.start.row, st.origin.start.column)));
+            }
+            e!(*target); e!(*value);
+        }
         Call(x) => e!(*x),
         If { cond, then_block, else_block } => { e!(*cond); b!(*then_block); if let Some(x)=else_block { b!(*x); } }
         While { cond, body } => { e!(*cond); b!(*body); }
@@ -709,6 +733,48 @@ fn callsite_trace_measure() {
     }
     assert!(total > 0);
     assert_eq!(matching, total, "call-site trace divergences (see report)");
+}
+
+/// L2 cutover — var_assignments (lhs name + literal rhs, per assignment).
+#[test]
+fn var_assignment_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let mut l: Vec<(String, Option<String>, String)> = lf
+                .var_assignments
+                .iter()
+                .map(|a| (a.lhs_name.clone(), a.rhs_literal_value.clone(), format!("{}:{}", a.source_anchor.start_line, a.source_anchor.start_column)))
+                .collect();
+            let mut i = itrace.assigns.clone();
+            l.sort();
+            i.sort();
+            if l == i {
+                matching += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((format!("{rel} :: {ln}"), format!("legacy={l:?} ir={i:?}")));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: var_assignments ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (a, b) in divs.iter().take(10) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "var_assignment divergences (see report)");
 }
 
 /// L2 cutover — identifier_references (deduped/sorted value-ref identifiers).

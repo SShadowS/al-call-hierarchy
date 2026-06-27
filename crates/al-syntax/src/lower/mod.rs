@@ -472,9 +472,11 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         RawKind::QuotedIdentifier => ExprKind::QuotedIdentifier(ident_text(node, source)),
         RawKind::MemberExpression => {
             let object = lower_opt_field(node, FieldName::Object, ir, issues, source);
+            // RAW member text (quotes preserved) — source-faithful; consumers strip
+            // when needed. Legacy keeps quotes for var-assignment lhs names.
             let member = node
                 .field(FieldName::Member)
-                .map(|m| ident_text(m, source))
+                .map(|m| m.text(source).to_string())
                 .unwrap_or_default();
             ExprKind::Member { object, member }
         }
