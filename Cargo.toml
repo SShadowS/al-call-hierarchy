@@ -7,7 +7,16 @@ description = "Blazing-fast call hierarchy server for AL (Business Central) usin
 license = "GPL-3.0"
 repository = "https://github.com/SShadowS/al-call-hierarchy"
 
+# Owned-syntax-IR migration (Phase -1): this package is now the workspace ROOT and
+# the legacy engine/CLI crate. `al-syntax` is the only crate that compiles+links the
+# grammar; this crate keeps a direct `tree-sitter` dep ONLY for the legacy CST walk
+# (`tree_sitter::Node` in engine::l2/l3), to be dropped at Phase 5.
+[workspace]
+members = ["crates/al-syntax"]
+
 [dependencies]
+# The grammar boundary crate (FFI + Phase 0+ generated raw layer / lowerer / IR).
+al-syntax = { path = "crates/al-syntax" }
 # Tree-sitter
 tree-sitter = "0.26"
 streaming-iterator = "0.1"
@@ -122,9 +131,6 @@ telemetry = [
 # assert on `record_*` calls without spinning up the real exporter. Implies
 # `telemetry`.
 test-runtime = ["telemetry"]
-
-[build-dependencies]
-cc = "1"
 
 [dev-dependencies]
 tempfile = "3"

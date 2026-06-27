@@ -1,18 +1,11 @@
-//! Tree-sitter AL language bindings
+//! Tree-sitter AL language bindings.
+//!
+//! The FFI binding + grammar C compilation moved to the `al-syntax` crate
+//! (owned-syntax-IR migration, Phase -1). `language()` is re-exported here so the
+//! existing `crate::language::language()` call sites are unchanged. The `queries`
+//! below are the legacy tree-sitter S-expr queries, retired in Phase 4 (§3.7).
 
-use tree_sitter::Language;
-
-extern "C" {
-    fn tree_sitter_al() -> Language;
-}
-
-/// Get the tree-sitter AL language
-///
-/// # Safety
-/// This calls into the compiled C code from tree-sitter-al
-pub fn language() -> Language {
-    unsafe { tree_sitter_al() }
-}
+pub use al_syntax::language::language;
 
 /// Tree-sitter queries for extracting AL constructs
 pub mod queries {
