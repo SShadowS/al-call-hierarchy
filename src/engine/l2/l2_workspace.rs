@@ -602,10 +602,30 @@ fn project_file(
             }
 
             let kind = classify_kind(routine, source);
-            let (attributes, attributes_parsed) = collect_attributes(routine, source);
-            let access_modifier = classify_access_modifier(routine, source);
             let body_available = find_code_block(routine).is_some();
             let parse_incomplete = routine.has_error();
+
+            // Well-formed routines use the owned IR; routines with a parse error fall
+            // back to the legacy walk (the IR's ERROR-recovery differs on malformed
+            // code — the sole known divergence). A structural byte-position miss also
+            // falls back (should not occur for IR-modelled objects).
+            let ir_match = if parse_incomplete {
+                None
+            } else {
+                ir_routine_by_byte.get(&routine.start_byte())
+            };
+
+            // Routine envelope metadata: from the IR when matched (validated byte-exact),
+            // else legacy.
+            let (attributes, attributes_parsed, access_modifier) =
+                if let Some((_, ir_routine)) = ir_match {
+                    let (a, ap) =
+                        crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
+                    (a, ap, ir_routine.access_modifier.clone())
+                } else {
+                    let (a, ap) = collect_attributes(routine, source);
+                    (a, ap, classify_access_modifier(routine, source))
+                };
 
             // Stable routine id — its normalizedSignatureHash is the canonical
             // (return-type-aware) signature hash, identical on the ABI side.
@@ -622,15 +642,6 @@ fn project_file(
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            // Well-formed routines use the owned IR; routines with a parse error fall
-            // back to the legacy walk (the IR's ERROR-recovery differs on malformed
-            // code — the sole known divergence). A structural byte-position miss also
-            // falls back (should not occur for IR-modelled objects).
-            let ir_match = if parse_incomplete {
-                None
-            } else {
-                ir_routine_by_byte.get(&routine.start_byte())
-            };
             let mut features: PFeatures = if let Some((oi, ir_routine)) = ir_match {
                 let routine_id = scope::compute_routine_id(
                     app_guid,
@@ -901,10 +912,23 @@ pub fn project_named_routine(
             }
 
             let kind = classify_kind(routine, source);
-            let (attributes, attributes_parsed) = collect_attributes(routine, source);
-            let access_modifier = classify_access_modifier(routine, source);
             let body_available = find_code_block(routine).is_some();
             let parse_incomplete = routine.has_error();
+
+            let ir_match = if parse_incomplete {
+                None
+            } else {
+                ir_routine_by_byte.get(&routine.start_byte())
+            };
+            let (attributes, attributes_parsed, access_modifier) =
+                if let Some((_, ir_routine)) = ir_match {
+                    let (a, ap) =
+                        crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
+                    (a, ap, ir_routine.access_modifier.clone())
+                } else {
+                    let (a, ap) = collect_attributes(routine, source);
+                    (a, ap, classify_access_modifier(routine, source))
+                };
 
             let parameters = extract_parameters(routine, source);
             let param_specs: Vec<ParamSpec> = parameters
@@ -919,11 +943,6 @@ pub fn project_named_routine(
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            let ir_match = if parse_incomplete {
-                None
-            } else {
-                ir_routine_by_byte.get(&routine.start_byte())
-            };
             let mut features: PFeatures = if let Some((oi, ir_routine)) = ir_match {
                 let routine_id = scope::compute_routine_id(
                     app_guid,
