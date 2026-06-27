@@ -79,6 +79,32 @@ fn ir_variable_names(source: &str) -> Vec<String> {
     out
 }
 
+/// IR statement-kind multiset (kind strings matching the legacy node kinds).
+fn ir_statement_kinds(source: &str) -> Vec<String> {
+    use al_syntax::ir::StmtKind;
+    let f = al_syntax::parse(source);
+    f.ir.iter_stmts()
+        .filter_map(|s| {
+            Some(match &s.kind {
+                StmtKind::If { .. } => "if_statement",
+                StmtKind::While { .. } => "while_statement",
+                StmtKind::Repeat { .. } => "repeat_statement",
+                StmtKind::For { .. } => "for_statement",
+                StmtKind::Foreach { .. } => "foreach_statement",
+                StmtKind::With { .. } => "with_statement",
+                StmtKind::Case { .. } => "case_statement",
+                StmtKind::Assignment { .. } => "assignment_statement",
+                StmtKind::Exit(_) => "exit_statement",
+                StmtKind::Break => "break_statement",
+                StmtKind::Continue => "continue_statement",
+                StmtKind::AssertError(_) => "asserterror_statement",
+                _ => return None,
+            }
+            .to_string())
+        })
+        .collect()
+}
+
 /// Shared corpus parity runner: norm+sort both sides per file, report, return
 /// (matching, total).
 fn run_parity(
@@ -250,4 +276,12 @@ fn variable_inventory_parity() {
     let (matching, total) = run_parity("variable inventory", legacy_variable_names, ir_variable_names);
     assert!(total > 0);
     assert_eq!(matching, total, "variable divergences (see report)");
+}
+
+#[test]
+fn statement_kind_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_statement_kinds;
+    let (matching, total) = run_parity("statement kinds", legacy_statement_kinds, ir_statement_kinds);
+    assert!(total > 0);
+    assert_eq!(matching, total, "statement-kind divergences (see report)");
 }

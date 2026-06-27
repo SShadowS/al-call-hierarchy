@@ -105,6 +105,10 @@ impl Ir {
         self.exprs.iter()
     }
 
+    pub fn iter_stmts(&self) -> impl Iterator<Item = &Stmt> {
+        self.stmts.iter()
+    }
+
     pub fn expr_count(&self) -> usize {
         self.exprs.len()
     }

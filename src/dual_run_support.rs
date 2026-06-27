@@ -29,6 +29,50 @@ pub fn legacy_body_member_names(source: &str) -> Vec<String> {
     out
 }
 
+/// The unambiguous statement kinds compared in the histogram stream (excludes
+/// `call_expression`, which is ambiguous between statement and expression position).
+const STMT_KINDS: &[&str] = &[
+    "if_statement",
+    "while_statement",
+    "repeat_statement",
+    "for_statement",
+    "foreach_statement",
+    "with_statement",
+    "case_statement",
+    "assignment_statement",
+    "exit_statement",
+    "break_statement",
+    "continue_statement",
+    "asserterror_statement",
+];
+
+/// Legacy statement-kind multiset inside routine bodies (one entry per statement
+/// node). Mirrors the IR `Stmt` arena (which holds only body statements).
+pub fn legacy_statement_kinds(source: &str) -> Vec<String> {
+    let lang = language::language();
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    walk_stmt_kinds(tree.root_node(), false, &mut out);
+    out
+}
+
+fn walk_stmt_kinds(node: tree_sitter::Node, in_routine: bool, out: &mut Vec<String>) {
+    let in_routine = in_routine || matches!(node.kind(), "procedure" | "trigger_declaration");
+    if in_routine && STMT_KINDS.contains(&node.kind()) {
+        out.push(node.kind().to_string());
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        walk_stmt_kinds(child, in_routine, out);
+    }
+}
+
 fn walk_members(node: tree_sitter::Node, in_routine: bool, source: &str, out: &mut Vec<String>) {
     let in_routine =
         in_routine || matches!(node.kind(), "procedure" | "trigger_declaration");
