@@ -151,3 +151,15 @@ tree-sitter-al #1 (named in/is/as expressions) + #2 (case_else body field) made 
 bleed; regen vocab (386 kinds), class_of loudness gate fired + classified, lower fallback recurses.
 Validated behaviour-preserving: full suite 1353/0/15 + dual-run 5x100%; complexity 8→9 was a fix.
 Proves the seam makes grammar bumps cheap+gated. (Push grammar branch to github before CI.)
+
+## Phase 2 STARTED — real-L2 dual-run gate (commits d15a2c4, 41bdcea)
+`dual_run_support::legacy_l2_features(source)` drives the REAL engine L2 walk
+(`project_routine_features`) per routine → `(routine_name, PFeatures)`. This is the proper
+Phase-2 gate (actual engine features, not query proxies). Per-routine IR traversal built
+(block/stmt recursion over the IR). Real-L2 features re-expressed over the IR, both 335/335:
+  - **has_branching** (if/case/try present).
+  - **nesting_depth** (max loop-nesting; loops by containment, if/case transparent).
+8 dual-run streams total (6 query + 2 real-L2). REMAINING real-L2 features (the intricate bulk):
+callSites (calleeText/callee + op-numbering keyed on node.id + visit-order, INV-1/2/3),
+operationSites, recordOperations, fieldAccesses, identifierReferences, CFN statement_tree.
+Then cut L2 over to consume the IR (delete the legacy walk), then L3, LSP, seal.
