@@ -3,6 +3,23 @@
 Tracks execution of `docs/superpowers/specs/2026-06-27-owned-al-syntax-ir-design.md`.
 Worktree `U:/Git/al-call-hierarchy-ir`, branch `feat/owned-syntax-ir`. Autonomous run.
 
+## PHASE 2 — THE CUT IS UNDERWAY (engine module `engine::l2::ir_walk`, commits 9dfb8b4, 2af36db, e4dbb0d)
+`engine::l2::ir_walk` walks the OWNED IR (not tree-sitter) and produces REAL engine
+`PFeatures` types — `project_routine_features_ir`'s growing validated slice. Gated vs the
+real legacy L2 walk over 591 routines in `engine_ir_walk_statement_tree_parity`:
+- **statement_tree** (real `PCFNNode`) 591/591 ✓ · **has_branching** 591/591 ✓
+- **loops** (`Vec<PLoop>`, byte-fidelity anchors) 591/591 ✓ · **field_accesses** 591/591 ✓
+- **var_assignments** 591/591 ✓ · **condition_references** 591/591 ✓
+- **identifier_references** 585/591 (measured — known parenless/chained residual)
+Anchors built exactly as legacy `Ctx::anchor` (utf16 cols via `Utf16Cols` over the IR
+`Origin` byte column; `syntax_kind` = raw grammar kind). `Origin.byte` → lossless raw text.
+REMAINING engine fields need the full `Ctx` scope (variable_types_by_name,
+object_procedure_names, enclosing params/record-vars, implicit-frame text): **record_operations**
+(+ field_arguments/temp_state backfill), **call_sites** (callee/args/bindings), **operation_sites**,
+**variables/record_variables**, **unreachable_statements**, **nesting_depth**. Then run
+`operation_order.rs` + `control_context.rs` UNCHANGED on the IR `PCFNNode`, assemble full
+`PFeatures`, gate serde-equality, wire into the L2 driver, delete `body_walk`.
+
 ## Status legend
 `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked/needs decision
 
