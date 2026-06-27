@@ -62,4 +62,32 @@ mod tests {
         let onrun = o.routines.iter().find(|r| r.name == "OnRun").expect("OnRun");
         assert_eq!(onrun.kind, RoutineKind::Trigger);
     }
+
+    #[test]
+    fn lowers_statement_body() {
+        use crate::ir::{BlockItem, StmtKind};
+        let src = "codeunit 1 A\n{\n    procedure P()\n    var\n        i: Integer;\n    begin\n        \
+                   i := 1;\n        if i > 0 then\n            Message('x')\n        else\n            \
+                   Clear(i);\n        while i < 10 do\n            i += 1;\n    end;\n}\n";
+        let f = parse(src);
+        assert_eq!(f.parse_status, ParseStatus::Clean);
+        let r = &f.objects[0].routines[0];
+        let body = r.body.expect("body");
+        let blk = f.ir.block(body);
+        assert_eq!(blk.items.len(), 3, "assignment, if, while");
+        match blk.items[0] {
+            BlockItem::Stmt(sid) => {
+                assert!(matches!(f.ir.stmt(sid).kind, StmtKind::Assignment { .. }));
+            }
+            _ => panic!("expected stmt"),
+        }
+        match blk.items[1] {
+            BlockItem::Stmt(sid) => {
+                assert!(matches!(f.ir.stmt(sid).kind, StmtKind::If { .. }));
+            }
+            _ => panic!("expected if"),
+        }
+        let msgs: Vec<&String> = f.issues.iter().map(|i| &i.message).collect();
+        assert!(f.issues.is_empty(), "unexpected unlowered nodes: {:?}", msgs);
+    }
 }

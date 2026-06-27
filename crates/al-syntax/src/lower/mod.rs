@@ -7,8 +7,9 @@
 //! silently dropped — they surface as `SyntaxIssue` / IR `Unknown`.
 
 use crate::ir::{
-    AlFile, Ir, ObjectDecl, ObjectKind, Origin, Param, ParseStatus, Point, RoutineDecl,
-    RoutineKind, VarDecl,
+    AlFile, BinaryOp, Block, BlockId, BlockItem, CaseBranch, Expr, ExprId, ExprKind, Ir, Literal,
+    ObjectDecl, ObjectKind, Origin, Param, ParseStatus, Point, RoutineDecl, RoutineKind, Stmt,
+    StmtId, StmtKind, SyntaxIssue, UnaryOp, VarDecl,
 };
 use crate::raw::{FieldName, RawKind, RawNode};
 
@@ -142,7 +143,7 @@ fn lower_routine(
     node: RawNode,
     source: &str,
     ir: &mut Ir,
-    _issues: &mut Vec<crate::ir::SyntaxIssue>,
+    issues: &mut Vec<SyntaxIssue>,
 ) -> RoutineDecl {
     let kind = if node.kind() == RawKind::TriggerDeclaration {
         RoutineKind::Trigger
@@ -175,9 +176,12 @@ fn lower_routine(
         collect_globals(child, source, &mut locals);
     }
 
-    // body lowered in the next Phase-1 step (validated by dual-run).
-    let _ = ir;
-    RoutineDecl { kind, name, params, return_type, locals, body: None, origin: origin_of(node) }
+    let body = node
+        .field(FieldName::Body)
+        .filter(|b| b.kind() == RawKind::CodeBlock)
+        .map(|cb| lower_code_block(cb, ir, issues, source));
+
+    RoutineDecl { kind, name, params, return_type, locals, body, origin: origin_of(node) }
 }
 
 fn lower_param(node: RawNode, source: &str) -> Param {
@@ -238,6 +242,310 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
             }
             _ => {}
         }
+    }
+}
+
+// ---- body lowering (statements + expressions) ----
+//
+// First cut: preproc-wrapped statements are FLATTENED in document order (legacy
+// recursively descends; the structured-vs-flat choice is settled by Phase 1
+// dual-run). Unmodelled nodes become `Unknown` + a `SyntaxIssue` — never dropped.
+
+/// `code_block` → its `statement_block` (v3) → a `Block`.
+fn lower_code_block(cb: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> BlockId {
+    let inner = cb.field(FieldName::Body).unwrap_or(cb);
+    lower_stmt_seq(inner, origin_of(cb), ir, issues, source)
+}
+
+/// A branch position (then/else/loop body): a `code_block`, a bare `statement_block`,
+/// or a single statement. Always normalized to a `Block`.
+fn lower_branch(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> BlockId {
+    match node.kind() {
+        RawKind::CodeBlock => lower_code_block(node, ir, issues, source),
+        RawKind::StatementBlock => lower_stmt_seq(node, origin_of(node), ir, issues, source),
+        _ => {
+            let mut items = Vec::new();
+            lower_block_child(node, ir, issues, source, &mut items);
+            ir.add_block(Block { items, origin: origin_of(node) })
+        }
+    }
+}
+
+fn lower_stmt_seq(
+    container: RawNode,
+    origin: Origin,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
+    let mut items = Vec::new();
+    for child in container.named_children() {
+        lower_block_child(child, ir, issues, source, &mut items);
+    }
+    ir.add_block(Block { items, origin })
+}
+
+fn lower_block_child(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+    items: &mut Vec<BlockItem>,
+) {
+    if is_preproc_wrapper(node) {
+        for c in node.named_children() {
+            lower_block_child(c, ir, issues, source, items);
+        }
+        return;
+    }
+    if node.kind() == RawKind::EmptyStatement {
+        return;
+    }
+    let sid = lower_stmt(node, ir, issues, source);
+    items.push(BlockItem::Stmt(sid));
+}
+
+fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> StmtId {
+    let origin = origin_of(node);
+    let kind = match node.kind() {
+        RawKind::AssignmentStatement => {
+            let target = lower_opt_field(node, FieldName::Left, ir, issues, source);
+            let value = lower_opt_field(node, FieldName::Right, ir, issues, source);
+            StmtKind::Assignment { target, value }
+        }
+        RawKind::CallExpression | RawKind::MemberExpression => StmtKind::Call(lower_expr(node, ir, issues, source)),
+        RawKind::IfStatement => StmtKind::If {
+            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source),
+            then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source),
+            else_block: node
+                .field(FieldName::ElseBranch)
+                .map(|b| lower_branch(b, ir, issues, source)),
+        },
+        RawKind::WhileStatement => StmtKind::While {
+            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+        },
+        RawKind::RepeatStatement => StmtKind::Repeat {
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+            until: lower_opt_field(node, FieldName::Condition, ir, issues, source),
+        },
+        RawKind::ForStatement => {
+            let down = node
+                .field(FieldName::Direction)
+                .map(|d| d.text(source).eq_ignore_ascii_case("downto"))
+                .unwrap_or(false);
+            StmtKind::For {
+                var: lower_opt_field(node, FieldName::Variable, ir, issues, source),
+                from: lower_opt_field(node, FieldName::Start, ir, issues, source),
+                to: lower_opt_field(node, FieldName::End, ir, issues, source),
+                down,
+                body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+            }
+        }
+        RawKind::ForeachStatement => StmtKind::Foreach {
+            var: lower_opt_field(node, FieldName::Variable, ir, issues, source),
+            iterable: lower_opt_field(node, FieldName::Iterable, ir, issues, source),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+        },
+        RawKind::WithStatement => StmtKind::With {
+            receiver: lower_opt_field(node, FieldName::Record, ir, issues, source),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+        },
+        RawKind::CaseStatement => {
+            let scrutinee = lower_opt_field(node, FieldName::Expression, ir, issues, source);
+            let (branches, else_block) = lower_case_body(node, ir, issues, source);
+            StmtKind::Case { scrutinee, branches, else_block }
+        }
+        RawKind::AsserterrorStatement => {
+            StmtKind::AssertError(lower_branch_field(node, FieldName::Body, ir, issues, source))
+        }
+        RawKind::ExitStatement => StmtKind::Exit(
+            node.field(FieldName::ReturnValue)
+                .map(|e| lower_expr(e, ir, issues, source)),
+        ),
+        RawKind::BreakStatement => StmtKind::Break,
+        RawKind::ContinueStatement => StmtKind::Continue,
+        RawKind::CodeBlock => StmtKind::Block(lower_code_block(node, ir, issues, source)),
+        _ => {
+            issues.push(SyntaxIssue {
+                message: format!("unlowered statement `{}`", node.kind_str()),
+                origin: origin.clone(),
+            });
+            StmtKind::Unknown
+        }
+    };
+    ir.add_stmt(Stmt { kind, origin })
+}
+
+/// Lower `case_body` → (branches, else block).
+fn lower_case_body(
+    case_node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> (Vec<CaseBranch>, Option<BlockId>) {
+    let mut branches = Vec::new();
+    let mut else_block = None;
+    let Some(body) = case_node.field(FieldName::Body) else {
+        return (branches, else_block);
+    };
+    for child in body.named_children() {
+        match child.kind() {
+            RawKind::CaseBranch => {
+                let patterns = child
+                    .children_by_field(FieldName::Pattern)
+                    .into_iter()
+                    .map(|p| lower_expr(p, ir, issues, source))
+                    .collect();
+                let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
+                branches.push(CaseBranch { patterns, body, origin: origin_of(child) });
+            }
+            RawKind::CaseElseBranch => {
+                else_block = Some(lower_branch_field(child, FieldName::Body, ir, issues, source));
+            }
+            _ => {}
+        }
+    }
+    (branches, else_block)
+}
+
+/// Lower a required-expression field; missing → `Unknown` placeholder (recorded).
+fn lower_opt_field(
+    node: RawNode,
+    f: FieldName,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> ExprId {
+    match node.field(f) {
+        Some(e) => lower_expr(e, ir, issues, source),
+        None => {
+            let origin = origin_of(node);
+            issues.push(SyntaxIssue {
+                message: format!("missing `{:?}` on `{}`", f, node.kind_str()),
+                origin: origin.clone(),
+            });
+            ir.add_expr(Expr { kind: ExprKind::Unknown, origin })
+        }
+    }
+}
+
+fn lower_branch_field(
+    node: RawNode,
+    f: FieldName,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
+    match node.field(f) {
+        Some(b) => lower_branch(b, ir, issues, source),
+        None => ir.add_block(Block { items: Vec::new(), origin: origin_of(node) }),
+    }
+}
+
+fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> ExprId {
+    let origin = origin_of(node);
+    let kind = match node.kind() {
+        RawKind::Identifier | RawKind::KeywordIdentifier => ExprKind::Identifier(node.text(source).to_string()),
+        RawKind::QuotedIdentifier => ExprKind::QuotedIdentifier(ident_text(node, source)),
+        RawKind::MemberExpression => {
+            let object = lower_opt_field(node, FieldName::Object, ir, issues, source);
+            let member = node
+                .field(FieldName::Member)
+                .map(|m| ident_text(m, source))
+                .unwrap_or_default();
+            ExprKind::Member { object, member }
+        }
+        RawKind::CallExpression => {
+            let function = lower_opt_field(node, FieldName::Function, ir, issues, source);
+            let args = node
+                .field(FieldName::Arguments)
+                .map(|al| {
+                    al.named_children()
+                        .into_iter()
+                        .map(|a| lower_expr(a, ir, issues, source))
+                        .collect()
+                })
+                .unwrap_or_default();
+            ExprKind::Call { function, args }
+        }
+        RawKind::SubscriptExpression => ExprKind::Index {
+            base: lower_opt_field(node, FieldName::Object, ir, issues, source),
+            index: lower_opt_field(node, FieldName::Index, ir, issues, source),
+        },
+        RawKind::ParenthesizedExpression => {
+            match node.named_children().into_iter().next() {
+                Some(inner) => ExprKind::Parenthesized(lower_expr(inner, ir, issues, source)),
+                None => ExprKind::Unknown,
+            }
+        }
+        RawKind::UnaryExpression => ExprKind::Unary {
+            op: unary_op(node, source),
+            operand: lower_opt_field(node, FieldName::Operand, ir, issues, source),
+        },
+        RawKind::AdditiveExpression
+        | RawKind::MultiplicativeExpression
+        | RawKind::ComparisonExpression
+        | RawKind::LogicalExpression => ExprKind::Binary {
+            op: binary_op(node, source),
+            lhs: lower_opt_field(node, FieldName::Left, ir, issues, source),
+            rhs: lower_opt_field(node, FieldName::Right, ir, issues, source),
+        },
+        RawKind::RangeExpression => ExprKind::RangeExpr {
+            start: lower_opt_field(node, FieldName::Left, ir, issues, source),
+            end: lower_opt_field(node, FieldName::Right, ir, issues, source),
+        },
+        RawKind::QualifiedEnumValue => ExprKind::QualifiedEnum {
+            enum_type: node.field(FieldName::EnumType).map(|e| e.text(source).to_string()).unwrap_or_default(),
+            value: node.field(FieldName::Value).map(|v| ident_text(v, source)).unwrap_or_default(),
+        },
+        RawKind::DatabaseReference => ExprKind::DatabaseReference(node.text(source).to_string()),
+        RawKind::Boolean => ExprKind::Literal(Literal::Bool(node.text(source).eq_ignore_ascii_case("true"))),
+        RawKind::Integer => ExprKind::Literal(Literal::Int(node.text(source).to_string())),
+        RawKind::Decimal => ExprKind::Literal(Literal::Decimal(node.text(source).to_string())),
+        RawKind::StringLiteral | RawKind::VerbatimString => {
+            ExprKind::Literal(Literal::Text(node.text(source).to_string()))
+        }
+        _ => {
+            issues.push(SyntaxIssue {
+                message: format!("unlowered expression `{}`", node.kind_str()),
+                origin: origin.clone(),
+            });
+            ExprKind::Unknown
+        }
+    };
+    ir.add_expr(Expr { kind, origin })
+}
+
+fn binary_op(node: RawNode, source: &str) -> BinaryOp {
+    let t = node.field(FieldName::Operator).map(|o| o.text(source).to_string()).unwrap_or_default();
+    match t.to_ascii_lowercase().as_str() {
+        "+" => BinaryOp::Add,
+        "-" => BinaryOp::Sub,
+        "*" => BinaryOp::Mul,
+        "/" => BinaryOp::Div,
+        "div" => BinaryOp::IntDiv,
+        "mod" => BinaryOp::Mod,
+        "=" => BinaryOp::Eq,
+        "<>" => BinaryOp::Ne,
+        "<" => BinaryOp::Lt,
+        "<=" => BinaryOp::Le,
+        ">" => BinaryOp::Gt,
+        ">=" => BinaryOp::Ge,
+        "and" => BinaryOp::And,
+        "or" => BinaryOp::Or,
+        "xor" => BinaryOp::Xor,
+        "in" => BinaryOp::In,
+        _ => BinaryOp::Other,
+    }
+}
+
+fn unary_op(node: RawNode, source: &str) -> UnaryOp {
+    let t = node.field(FieldName::Operator).map(|o| o.text(source).to_string()).unwrap_or_default();
+    match t.to_ascii_lowercase().as_str() {
+        "not" => UnaryOp::Not,
+        "-" => UnaryOp::Neg,
+        _ => UnaryOp::Plus,
     }
 }
 
