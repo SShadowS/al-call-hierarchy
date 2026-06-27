@@ -103,10 +103,22 @@ preproc question empirically. (Spec §5 Phase 1, INV-1/2/3.)
   unmodelled) — `487434b`. 8 al-syntax tests green. **Lowerer produces a full IR for common AL.**
 - [ ] **1a tail** (driven by dual-run): temporary detection, member-trigger enclosing member,
   structured-vs-flat preproc decision, rare-kind coverage, name/quote parity.
-- [ ] **1b** dual-run harness (parse once, fork tree) + L2 feature-stream parity. NOTE: requires an
-  IR→features extractor (the L2 walk re-expressed over IR) — this is intertwined with Phase 2.
+- [~] **1b** dual-run harness LIVE (`tests/ir_dual_run.rs`, legacy query vs IR over r0-corpus,
+  335 files). **4 feature streams hard-gated at 100%:** routine inventory, call inventory,
+  member access (body-scoped), variable inventory. Caught + fixed 2 real lowerer bugs
+  (case-else dropped statements; qualified-enum inner member). Legacy side =
+  `src/dual_run_support.rs` (real engine queries / tree walk). Commits `3de62d8`, `eb7e2ba`,
+  `5890995`. **The lowerer's structural fidelity is now corpus-validated.**
+- [ ] **deeper L2 parity** (merges into Phase 2): the full `PFeatures` projection (loops,
+  operationSites, callSites with node.id-keyed maps + visit order, fieldAccesses, recordOps,
+  identifierReferences, CFN). Requires re-expressing the L2 walk over the IR + the
+  parse-once/fork-same-Tree harness (INV-2). This is the bulk of the remaining migration.
 - [ ] **1c** CFN/control/operation-order parity · **1d** L3 projection parity.
 - [ ] malformed/live-edit recovery fixtures.
+
+### Grammar feedback (we own tree-sitter-al) — see [[tree-sitter-al-grammar-issues]]
+Spec written at `u:\Git\tree-sitter-al\docs\improvements-for-owned-ir-consumer.md`. Decoupled by the
+pin; ADOPT after Phase 1 broad parity, then bump+revalidate via this dual-run harness.
 
 > **Honest status:** the grammar-insulation FOUNDATION is complete (substrate + IR contract + a
 > working lowerer for common AL). The remaining 1b–5 (dual-run validation + re-expressing L2/L3/LSP
