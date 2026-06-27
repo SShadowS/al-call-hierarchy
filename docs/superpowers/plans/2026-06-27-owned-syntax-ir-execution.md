@@ -98,11 +98,21 @@ NEW code now at a fraction of the churn:
 Per-construct lowering of the full AL surface + the parse-once/fork-same-Tree dual-run harness
 diffing legacy-vs-IR feature streams across the corpus until zero. Resolves the flat-vs-structured
 preproc question empirically. (Spec §5 Phase 1, INV-1/2/3.)
-- [ ] **1a** lower objects→routines→decls (outer structure) + IR snapshot fixtures.
-- [ ] **1a** lower blocks→statements→expressions (the body; mirror legacy visit order).
-- [ ] **1b** dual-run harness (parse once, fork tree) + L2 feature-stream parity.
+- [x] **1a** outer structure (objects→routines→params/return/locals/globals) — `0e7ed46`.
+- [x] **1a** bodies (blocks→statements→expressions; preproc flattened first-cut; Unknown+issue for
+  unmodelled) — `487434b`. 8 al-syntax tests green. **Lowerer produces a full IR for common AL.**
+- [ ] **1a tail** (driven by dual-run): temporary detection, member-trigger enclosing member,
+  structured-vs-flat preproc decision, rare-kind coverage, name/quote parity.
+- [ ] **1b** dual-run harness (parse once, fork tree) + L2 feature-stream parity. NOTE: requires an
+  IR→features extractor (the L2 walk re-expressed over IR) — this is intertwined with Phase 2.
 - [ ] **1c** CFN/control/operation-order parity · **1d** L3 projection parity.
 - [ ] malformed/live-edit recovery fixtures.
+
+> **Honest status:** the grammar-insulation FOUNDATION is complete (substrate + IR contract + a
+> working lowerer for common AL). The remaining 1b–5 (dual-run validation + re-expressing L2/L3/LSP
+> over the IR + seal) is the bulk of the migration — a large multi-session effort, since it
+> reimplements ~3000 lines of body_walk/l3_workspace feature extraction against the IR and proves
+> byte-parity. Proceeding incrementally, each step committed + green + dual-run-gated.
 - [ ] **0d** — `ir/` types (Origin + Stmt/Expr taxonomy incl. try/asserterror/foreach/case_else),
   `lower/` skeleton, `parse.rs`. ← **reviewer checkpoint here** (IR taxonomy + class_of design).
 - [ ] Boundary scanner in CI, monotonic-decrease, seeded from real grep.
