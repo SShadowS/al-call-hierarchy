@@ -2038,3 +2038,109 @@ fn nesting_depth_parity() {
     assert!(total > 0);
     assert_eq!(matching, total, "nesting_depth divergences (see report)");
 }
+
+/// Module-level inert-`other` stripper (mirrors the nested one in
+/// statement_tree_measure) for the engine-side gate.
+fn strip_inert_ncfn(n: &NCfn) -> NCfn {
+    fn is_inert(c: &NCfn) -> bool {
+        c.kind == "other"
+            && c.op.is_none()
+            && c.cs.is_none()
+            && c.guard.is_none()
+            && c.leaves.is_none()
+            && c.children.is_none()
+            && c.else_children.is_none()
+    }
+    let map_vec = |v: &Option<Vec<NCfn>>| {
+        v.as_ref().map(|xs| {
+            xs.iter()
+                .filter(|c| !is_inert(c))
+                .map(strip_inert_ncfn)
+                .collect()
+        })
+    };
+    NCfn {
+        kind: n.kind.clone(),
+        op: n.op,
+        cs: n.cs,
+        guard: n.guard.clone(),
+        leaves: map_vec(&n.leaves),
+        children: map_vec(&n.children),
+        else_children: map_vec(&n.else_children),
+    }
+}
+
+/// PHASE-2 CUT — the engine-side `ir_walk` produces a REAL `PCFNNode` statement_tree
+/// and `has_branching` from the owned IR. Gate them against the real legacy L2 walk
+/// (591 routines): statement_tree STRUCTURE (inert comment-`other` stripped) + the
+/// has_branching flag. This is `project_routine_features_ir`'s first validated slice,
+/// promoting the proven trace logic to real engine-type production.
+#[test]
+fn engine_ir_walk_statement_tree_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut hb_match = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        // Enumerate IR routines in the same (object, routine) order legacy walks.
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let (ir_tree, ir_hb) = ir_walk::statement_tree(&file, *oi, routine, "ir");
+            if ir_hb == lf.has_branching {
+                hb_match += 1;
+            }
+            let ltree = lf
+                .statement_tree
+                .as_ref()
+                .map(norm_legacy_cfn)
+                .map(|n| strip_inert_ncfn(&n));
+            let itree = ir_tree
+                .as_ref()
+                .map(norm_legacy_cfn)
+                .map(|n| strip_inert_ncfn(&n));
+            if ltree == itree {
+                matching += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln}"),
+                    format!("legacy={ltree:?}\n    ir={itree:?}"),
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 engine ir_walk: statement_tree {matching}/{total} ({pct:.1}%), has_branching {hb_match}/{total} ===");
+    for (a, b) in divs.iter().take(8) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
+    assert_eq!(matching, total, "engine ir_walk statement_tree divergences");
+}

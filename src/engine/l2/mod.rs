@@ -17,6 +17,7 @@ pub mod classify;
 pub mod control_context;
 pub mod control_flow;
 pub mod features;
+pub mod ir_walk;
 pub mod l2_workspace;
 pub mod node_util;
 pub mod operation_order;
