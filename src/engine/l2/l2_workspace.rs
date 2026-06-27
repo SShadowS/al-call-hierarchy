@@ -1,10 +1,16 @@
 //! Workspace-level L2 feature emitter (R1a Task 3).
 //!
-//! Drives the Task-2 single-DFS body walker (`project_routine_features`) over an
-//! entire AL workspace and produces the ALLOWLISTED L2 projection
+//! Drives the owned AL syntax IR (`al_syntax::parse` → [`ir_walk`]) over an entire
+//! AL workspace and produces the ALLOWLISTED L2 projection
 //! ([`features::L2Projection`]) — objects + routines with metadata + per-routine
 //! `features`. This is the producer behind `aldump --l2`; it mirrors the golden
 //! shape of `scripts/r1a-goldens/<fixture>.l2.golden.json` EXACTLY.
+//!
+//! The emitter no longer walks the tree-sitter CST: objects, routines, metadata,
+//! parameters and per-routine `features` all come from the owned IR (the legacy
+//! `project_routine_features` body-walker survives only as the dual_run validation
+//! oracle, not on this production path). See `tests/ir_robustness.rs` for the
+//! edge-case anti-regression suite that backs the cutover.
 //!
 //! Discovery + fail-closed layout detection + BOM strip + `.al` sort reproduce
 //! R0's `snapshot_workspace` (`engine::snapshot`): a sound workspace is exactly
@@ -408,6 +414,114 @@ pub fn classify_kind(node: Node, source: &str) -> &'static str {
     kind
 }
 
+/// Build one fully-populated [`PRoutine`] from an IR routine (features →
+/// control-context → operation-order → capabilities), the single shared per-routine
+/// path for BOTH [`project_file`] and [`project_named_routine`] so they cannot drift.
+/// Returns `None` for a nameless routine.
+#[allow(clippy::too_many_arguments)]
+fn build_proutine(
+    ir_file: &al_syntax::ir::AlFile,
+    oi: usize,
+    ir_routine: &al_syntax::ir::RoutineDecl,
+    object_type: &str,
+    object_number: i64,
+    stable_object_id: &str,
+    source_table_name: Option<&str>,
+    app_guid: &str,
+    source: &str,
+    source_unit_id: &str,
+) -> Option<PRoutine> {
+    use crate::engine::l2::ir_walk;
+
+    let rname = ir_routine.name.clone();
+    if rname.is_empty() {
+        return None;
+    }
+
+    let body_available = ir_routine.body.is_some();
+    let parse_incomplete = ir_routine.parse_incomplete;
+    let kind = ir_walk::ir_routine_kind(ir_routine);
+    let (attributes, attributes_parsed) = ir_walk::ir_attributes(ir_routine, ir_file, source);
+    let access_modifier = ir_routine.access_modifier.clone();
+
+    // Stable routine id — its normalizedSignatureHash is the canonical
+    // (return-type-aware) signature hash, identical on the ABI side.
+    let parameters = ir_walk::ir_parameter_symbols(ir_routine);
+    let param_specs: Vec<ParamSpec> = parameters
+        .iter()
+        .map(|p| ParamSpec {
+            type_text: p.type_text.clone(),
+            is_var: p.is_var,
+        })
+        .collect();
+    let return_type_text = ir_routine.return_type.clone();
+    let norm_hash = normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
+    let stable_routine_id = to_stable_routine_id_from_parts(stable_object_id, &norm_hash);
+
+    let routine_id = scope::compute_routine_id(
+        app_guid,
+        object_type,
+        object_number,
+        kind,
+        &rname,
+        &parameters,
+        return_type_text.as_deref(),
+        MODEL_INSTANCE_ID,
+    );
+    let mut features: PFeatures = ir_walk::project_routine_features_ir(
+        ir_file,
+        oi,
+        ir_routine,
+        &routine_id,
+        source,
+        source_unit_id,
+        source_table_name,
+    );
+
+    // R1b: control-context lattice over the CFN skeleton (+ metadata). Populates
+    // `controlContext` on each op/callsite (absent when none), including the
+    // error-call source-range post-pass. `attributesParsed` names drive the
+    // TryFunction guard; `parameters` the by-var Boolean IsHandled eligibility.
+    let attr_names_lc: Vec<String> = attributes_parsed
+        .iter()
+        .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+        .map(|n| n.to_lowercase())
+        .collect();
+    crate::engine::l2::control_context::apply_control_contexts(
+        &mut features,
+        &attr_names_lc,
+        &parameters,
+    );
+
+    // R1c: operation-order index over the CFN skeleton (+ TryFunction guard).
+    // Populates `order` on each op/callsite (absent when the walk produced none) —
+    // including the error-call source-range post-pass over the op/callsite records —
+    // and the routine's `scopeFrames`.
+    crate::engine::l2::operation_order::apply_operation_order(&mut features, &attr_names_lc);
+
+    let mut routine = PRoutine {
+        stable_routine_id,
+        name: rname,
+        kind: kind.to_string(),
+        attributes,
+        attributes_parsed,
+        access_modifier,
+        body_available,
+        parse_incomplete,
+        features,
+        capability_facts_direct: Vec::new(),
+        capability_status: crate::engine::l2::capability::CoverageStatus::Complete,
+        capability_reasons: Vec::new(),
+        capability_diagnostics: Vec::new(),
+    };
+
+    // R1d: direct capability facts. MUST run AFTER controlContext is set (the
+    // unreachable filter in `extract_capabilities` reads it).
+    apply_capabilities(&mut routine);
+
+    Some(routine)
+}
+
 /// Build the full L2 projection for one source file, driven entirely by the owned
 /// AL syntax IR (`al_syntax::parse`). The engine no longer walks the tree-sitter CST
 /// here: objects, routines, metadata, parameters and per-routine `features` all come
@@ -449,101 +563,20 @@ fn project_file(
         });
 
         for ir_routine in &o.routines {
-            let rname = ir_routine.name.clone();
-            if rname.is_empty() {
-                continue;
-            }
-
-            let body_available = ir_routine.body.is_some();
-            let parse_incomplete = ir_routine.parse_incomplete;
-
-            let kind = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
-
-            let (attributes, attributes_parsed) =
-                crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
-            let access_modifier = ir_routine.access_modifier.clone();
-
-            // Stable routine id — its normalizedSignatureHash is the canonical
-            // (return-type-aware) signature hash, identical on the ABI side.
-            let parameters = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
-            let param_specs: Vec<ParamSpec> = parameters
-                .iter()
-                .map(|p| ParamSpec {
-                    type_text: p.type_text.clone(),
-                    is_var: p.is_var,
-                })
-                .collect();
-            let return_type_text = ir_routine.return_type.clone();
-            let norm_hash =
-                normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
-            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
-
-            let routine_id = scope::compute_routine_id(
-                app_guid,
-                object_type,
-                object_number,
-                kind,
-                &rname,
-                &parameters,
-                return_type_text.as_deref(),
-                MODEL_INSTANCE_ID,
-            );
-            let mut features: PFeatures = crate::engine::l2::ir_walk::project_routine_features_ir(
+            if let Some(routine) = build_proutine(
                 &ir_file,
                 oi,
                 ir_routine,
-                &routine_id,
+                object_type,
+                object_number,
+                &stable_object_id,
+                source_table_name.as_deref(),
+                app_guid,
                 source,
                 source_unit_id,
-                source_table_name.as_deref(),
-            );
-
-            // R1b: control-context lattice over the CFN skeleton (+ metadata).
-            // Populates `controlContext` on each op/callsite (absent when none),
-            // including the error-call source-range post-pass. `attributesParsed`
-            // names drive the TryFunction guard; `parameters` the by-var Boolean
-            // IsHandled eligibility.
-            let attr_names_lc: Vec<String> = attributes_parsed
-                .iter()
-                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
-                .map(|n| n.to_lowercase())
-                .collect();
-            crate::engine::l2::control_context::apply_control_contexts(
-                &mut features,
-                &attr_names_lc,
-                &parameters,
-            );
-
-            // R1c: operation-order index over the CFN skeleton (+ TryFunction
-            // guard). Populates `order` on each op/callsite (absent when the walk
-            // produced none) — including the error-call source-range post-pass over
-            // the op/callsite records — and the routine's `scopeFrames`.
-            crate::engine::l2::operation_order::apply_operation_order(
-                &mut features,
-                &attr_names_lc,
-            );
-
-            let mut routine = PRoutine {
-                stable_routine_id,
-                name: rname,
-                kind: kind.to_string(),
-                attributes,
-                attributes_parsed,
-                access_modifier,
-                body_available,
-                parse_incomplete,
-                features,
-                capability_facts_direct: Vec::new(),
-                capability_status: crate::engine::l2::capability::CoverageStatus::Complete,
-                capability_reasons: Vec::new(),
-                capability_diagnostics: Vec::new(),
-            };
-
-            // R1d: direct capability facts. MUST run AFTER controlContext is set
-            // (the unreachable filter in `extract_capabilities` reads it).
-            apply_capabilities(&mut routine);
-
-            routines.push(routine);
+            ) {
+                routines.push(routine);
+            }
         }
     }
 }
@@ -680,84 +713,23 @@ pub fn project_named_routine(
             crate::engine::l2::ir_walk::ir_object_metadata(o, object_type);
 
         for ir_routine in &o.routines {
-            let rname = ir_routine.name.clone();
-            if rname != routine_name {
+            if ir_routine.name != routine_name {
                 continue;
             }
-
-            let body_available = ir_routine.body.is_some();
-            let parse_incomplete = ir_routine.parse_incomplete;
-
-            let kind = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
-            let (attributes, attributes_parsed) =
-                crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
-            let access_modifier = ir_routine.access_modifier.clone();
-
-            let parameters = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
-            let param_specs: Vec<ParamSpec> = parameters
-                .iter()
-                .map(|p| ParamSpec {
-                    type_text: p.type_text.clone(),
-                    is_var: p.is_var,
-                })
-                .collect();
-            let return_type_text = ir_routine.return_type.clone();
-            let norm_hash =
-                normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
-            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
-
-            let routine_id = scope::compute_routine_id(
-                app_guid,
-                object_type,
-                object_number,
-                kind,
-                &rname,
-                &parameters,
-                return_type_text.as_deref(),
-                MODEL_INSTANCE_ID,
-            );
-            let mut features: PFeatures = crate::engine::l2::ir_walk::project_routine_features_ir(
+            if let Some(routine) = build_proutine(
                 &ir_file,
                 oi,
                 ir_routine,
-                &routine_id,
+                object_type,
+                object_number,
+                &stable_object_id,
+                source_table_name.as_deref(),
+                app_guid,
                 source,
                 source_unit_id,
-                source_table_name.as_deref(),
-            );
-
-            let attr_names_lc: Vec<String> = attributes_parsed
-                .iter()
-                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
-                .map(|n| n.to_lowercase())
-                .collect();
-            crate::engine::l2::control_context::apply_control_contexts(
-                &mut features,
-                &attr_names_lc,
-                &parameters,
-            );
-            crate::engine::l2::operation_order::apply_operation_order(
-                &mut features,
-                &attr_names_lc,
-            );
-
-            let mut routine = PRoutine {
-                stable_routine_id,
-                name: rname,
-                kind: kind.to_string(),
-                attributes,
-                attributes_parsed,
-                access_modifier,
-                body_available,
-                parse_incomplete,
-                features,
-                capability_facts_direct: Vec::new(),
-                capability_status: crate::engine::l2::capability::CoverageStatus::Complete,
-                capability_reasons: Vec::new(),
-                capability_diagnostics: Vec::new(),
-            };
-            apply_capabilities(&mut routine);
-            return Some(routine);
+            ) {
+                return Some(routine);
+            }
         }
     }
     None
