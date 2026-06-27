@@ -381,9 +381,6 @@
           "kind": "block",
           "children": [
             {
-              "kind": "other"
-            },
-            {
               "kind": "op",
               "operationId": "r0/3181fefc0ec58170e512790cadbc23b38923c7435c9c36b85ff7dc86ca3ec2a4/op0"
             }

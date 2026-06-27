@@ -372,6 +372,9 @@ fn lower_block_child(
     // body, so `lower_code_block` falls back to the code_block itself), `else` from a
     // `case_else_branch` (lowered by iterating its direct children), etc. None are
     // statements — skip them, exactly as legacy `block_statements`/CFN `build_block` do.
+    // Trivia (`comment` / `multiline_comment` / `pragma`) are named children of a
+    // block but are NOT statements — skip them (legacy CFN `build_block` does too).
+    // Lowering them as `Unknown` produced phantom "other" CFN nodes.
     if matches!(
         node.kind(),
         RawKind::EmptyStatement
@@ -389,6 +392,9 @@ fn lower_block_child(
             | RawKind::DoKeyword
             | RawKind::ForeachKeyword
             | RawKind::InKeyword
+            | RawKind::Comment
+            | RawKind::MultilineComment
+            | RawKind::Pragma
     ) {
         return;
     }

@@ -711,15 +711,6 @@
           "kind": "block",
           "children": [
             {
-              "kind": "other"
-            },
-            {
-              "kind": "other"
-            },
-            {
-              "kind": "other"
-            },
-            {
               "kind": "if",
               "children": [
                 {
@@ -2114,9 +2105,6 @@
             {
               "kind": "op",
               "operationId": "r0/394d6a34db51aa43e486314acbdc06d9f0f3c5511f9e5a58a9cd0969a99efb10/op2"
-            },
-            {
-              "kind": "other"
             }
           ]
         },

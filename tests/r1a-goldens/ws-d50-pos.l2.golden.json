@@ -132,9 +132,6 @@
           "kind": "block",
           "children": [
             {
-              "kind": "other"
-            },
-            {
               "kind": "if",
               "conditionLeaves": [
                 {
@@ -760,11 +757,7 @@
         "conditionReferences": [],
         "statementTree": {
           "kind": "block",
-          "children": [
-            {
-              "kind": "other"
-            }
-          ]
+          "children": []
         },
         "scopeFrames": [
           {

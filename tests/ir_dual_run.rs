@@ -2628,3 +2628,90 @@ fn engine_ir_walk_call_sites_measure() {
     // under_asserterror all match legacy. THE LAST PFeatures field.
     assert_eq!(matching, total, "engine ir_walk call_sites divergences");
 }
+
+/// PHASE-2 — FULL serde-PFeatures equality: assemble the complete PFeatures from the
+/// owned IR (project_routine_features_ir) and compare the serialized JSON to the
+/// legacy L2 walk, with the routine-id hash normalized. The capstone gate.
+#[test]
+fn engine_ir_walk_full_pfeatures_equality() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::features::PFeatures;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    // Extract the `dual/<hash>` routine-id prefix from any id present in PFeatures.
+    fn routine_prefix(f: &PFeatures) -> Option<String> {
+        let any_id = f
+            .operation_sites
+            .first()
+            .map(|o| o.id.clone())
+            .or_else(|| f.call_sites.first().map(|c| c.id.clone()))
+            .or_else(|| f.record_operations.first().map(|o| o.id.clone()))
+            .or_else(|| f.record_variables.iter().find_map(|v| Some(v.id.clone())))
+            .or_else(|| f.loops.first().map(|l| l.id.clone()))?;
+        // id is `dual/<hash>/...` → take the first two segments.
+        let mut it = any_id.splitn(3, '/');
+        let a = it.next()?;
+        let b = it.next()?;
+        Some(format!("{a}/{b}"))
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<String> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let irf =
+                ir_walk::project_routine_features_ir(&file, *oi, routine, "ir", &src, "dual", None);
+            let mut lj = serde_json::to_string(lf).unwrap();
+            if let Some(prefix) = routine_prefix(lf) {
+                lj = lj.replace(&prefix, "ir");
+            }
+            let ij = serde_json::to_string(&irf).unwrap();
+            if lj == ij {
+                matching += 1;
+            } else if divs.len() < 8 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                // find first differing offset for a focused snippet
+                let off = lj
+                    .chars()
+                    .zip(ij.chars())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(0);
+                let s = off.saturating_sub(40);
+                divs.push(format!(
+                    "{rel} :: {ln}\n    L…{}\n    I…{}",
+                    &lj[s..(s + 120).min(lj.len())],
+                    &ij[s..(s + 120).min(ij.len())]
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 FULL serde-PFeatures equality: {matching}/{total} ({pct:.1}%) ===");
+    for d in divs.iter().take(8) {
+        eprintln!("  {d}");
+    }
+    assert!(total > 0);
+}

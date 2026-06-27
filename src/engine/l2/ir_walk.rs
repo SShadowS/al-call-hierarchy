@@ -1538,6 +1538,51 @@ pub fn routine_features_partial(
     }
 }
 
+/// Assemble the FULL `PFeatures` for one routine from the owned IR — the complete
+/// `project_routine_features_ir`. `order` / `control_context` / `scope_frames` are
+/// left empty (post-pass fields that `extract_body_features` also leaves empty;
+/// the L2 emitter applies operation_order/control_context on the `statement_tree`).
+#[allow(clippy::too_many_arguments)]
+pub fn project_routine_features_ir(
+    file: &AlFile,
+    object_idx: usize,
+    routine: &RoutineDecl,
+    routine_id: &str,
+    source: &str,
+    source_unit_id: &str,
+    source_table_name: Option<&str>,
+) -> super::features::PFeatures {
+    let p = routine_features_partial(
+        file,
+        object_idx,
+        routine,
+        routine_id,
+        source,
+        source_unit_id,
+        source_table_name,
+    );
+    let record_variables =
+        ir_record_variables(file, object_idx, routine, routine_id, source_table_name);
+    let variables = ir_variables(file, object_idx, routine, source, source_unit_id);
+    super::features::PFeatures {
+        loops: p.loops,
+        operation_sites: p.operation_sites,
+        record_operations: p.record_operations,
+        call_sites: p.call_sites,
+        field_accesses: p.field_accesses,
+        record_variables,
+        nesting_depth: p.nesting_depth,
+        has_branching: p.has_branching,
+        unreachable_statements: p.unreachable_statements,
+        identifier_references: p.identifier_references,
+        variables,
+        var_assignments: p.var_assignments,
+        condition_references: p.condition_references,
+        statement_tree: p.statement_tree,
+        scope_frames: Vec::new(),
+    }
+}
+
 // ---- record_variables (params + locals + implicit Rec) ----
 
 /// Table name from a `Record …` type string (`Record Customer` /

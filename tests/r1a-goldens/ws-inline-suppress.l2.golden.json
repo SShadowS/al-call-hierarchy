@@ -705,9 +705,6 @@
               "operationId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/op1"
             },
             {
-              "kind": "other"
-            },
-            {
               "kind": "call",
               "callsiteId": "r0/e72cb0b7e07848afb9af27b8b8bebb9c1feb412425fa2914991a3fe540f9c57e/cs0"
             }
@@ -1062,9 +1059,6 @@
             {
               "kind": "op",
               "operationId": "r0/aa5f22f7714c0abfc689a3fae7e0638f3865cf5214e57e03721559acf8de06f6/op1"
-            },
-            {
-              "kind": "other"
             },
             {
               "kind": "call",

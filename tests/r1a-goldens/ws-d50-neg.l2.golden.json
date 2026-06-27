@@ -111,9 +111,6 @@
           "kind": "block",
           "children": [
             {
-              "kind": "other"
-            },
-            {
               "kind": "call",
               "callsiteId": "r0/b76d44e7a17896f348aed265b476fd276454d7cb092c3730a2904aa95da6918e/cs0"
             }
@@ -721,11 +718,7 @@
         "conditionReferences": [],
         "statementTree": {
           "kind": "block",
-          "children": [
-            {
-              "kind": "other"
-            }
-          ]
+          "children": []
         },
         "scopeFrames": [
           {

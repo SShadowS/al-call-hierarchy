@@ -478,11 +478,7 @@
         "conditionReferences": [],
         "statementTree": {
           "kind": "block",
-          "children": [
-            {
-              "kind": "other"
-            }
-          ]
+          "children": []
         },
         "scopeFrames": [
           {

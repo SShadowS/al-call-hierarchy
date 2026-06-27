@@ -237,14 +237,8 @@
               "operationId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op0"
             },
             {
-              "kind": "other"
-            },
-            {
               "kind": "op",
               "operationId": "r0/4c394c44802a11282821ad1444d913bb48ce95c21b419d60d20bb3fcd33086b1/op1"
-            },
-            {
-              "kind": "other"
             }
           ]
         },
@@ -439,9 +433,6 @@
                   ]
                 }
               ]
-            },
-            {
-              "kind": "other"
             }
           ]
         },
@@ -598,9 +589,6 @@
             {
               "kind": "call",
               "callsiteId": "r0/94255dcdedfb69e5c016e7cf452a1c38aeea9d510aa5454179f5ed9ec220f9e0/cs0"
-            },
-            {
-              "kind": "other"
             }
           ]
         },
@@ -692,9 +680,6 @@
             {
               "kind": "call",
               "callsiteId": "r0/2ebedc4d2d5a3bdb6dbf4086a5f61219bbb72b8f12ac4446e7314e70503127c1/cs0"
-            },
-            {
-              "kind": "other"
             }
           ]
         },

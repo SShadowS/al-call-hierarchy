@@ -62,9 +62,6 @@
           "kind": "block",
           "children": [
             {
-              "kind": "other"
-            },
-            {
               "kind": "call",
               "callsiteId": "r0/a4a84c6e9ad99f268f1dc9bbfb77b5165b1534a7bcc4312cb1b54f7a224afb2e/cs0"
             }
@@ -137,9 +134,6 @@
         "statementTree": {
           "kind": "block",
           "children": [
-            {
-              "kind": "other"
-            },
             {
               "kind": "call",
               "callsiteId": "r0/58a80edb5508e8925bb334ee68c78e919cac49595c4550a0613ec71b6ca0fc2d/cs0"

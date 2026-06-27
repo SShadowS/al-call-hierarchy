@@ -54,7 +54,13 @@ impl<'a> CfnCtx<'a> {
         let mut children = Vec::new();
         for child in block_statements(block_node) {
             let t = child.kind();
-            if t == "begin_keyword" || t == "end_keyword" {
+            // Skip keyword + trivia nodes: comments/pragmas are not control-flow
+            // statements (they were emitting inert "other" CFN nodes — see the IR
+            // statement_tree parity, which correctly omits them).
+            if matches!(
+                t,
+                "begin_keyword" | "end_keyword" | "comment" | "multiline_comment" | "pragma"
+            ) {
                 continue;
             }
             if let Some(cfn) = self.build_statement(child) {
@@ -362,9 +368,10 @@ impl<'a> CfnCtx<'a> {
             // `statement_block` (the `body` field) — flatten it inline so trailing
             // trivia (e.g. a comment between the body and `until`) is preserved in
             // source order, matching the pre-v3 flat layout.
+            let is_trivia = |k: &str| matches!(k, "comment" | "multiline_comment" | "pragma");
             for child in named_children(node_in) {
                 let ct = child.kind();
-                if ct == "until_keyword" || ct == "repeat_keyword" {
+                if ct == "until_keyword" || ct == "repeat_keyword" || is_trivia(ct) {
                     continue;
                 }
                 if Some(child.start_byte()) == condition_start {
@@ -372,6 +379,9 @@ impl<'a> CfnCtx<'a> {
                 }
                 if ct == "statement_block" {
                     for stmt in named_children(child) {
+                        if is_trivia(stmt.kind()) {
+                            continue;
+                        }
                         if let Some(cfn) = self.build_statement(stmt) {
                             body_children.push(cfn);
                         }
