@@ -9,13 +9,23 @@
 //! `project_routine_features_ir`. Rich fields (callee/bindings/temp_state) land in
 //! subsequent increments, which thread the full `Ctx` scope inputs.
 
-use super::features::{PCFNNode, PConditionGuard};
+use super::features::{PAnchor, PCFNNode, PConditionGuard, PFieldAccess, PLoop};
+use super::node_util::Utf16Cols;
 use super::record_op::record_op_type;
 use al_syntax::ir::{
-    AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, RoutineDecl, StmtKind,
-    UnaryOp, VarDecl,
+    AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
+    StmtKind, UnaryOp, VarDecl,
 };
 use std::collections::{HashMap, HashSet};
+
+/// Strip surrounding double-quotes from a quoted identifier's raw text.
+fn strip_quotes(s: &str) -> String {
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
 
 /// The spine result of the IR walk: the op/cs id maps (keyed by the call ExprId,
 /// formatted `{routine_id}/op{N}` / `/cs{N}` in DFS order — exactly legacy's
@@ -25,6 +35,8 @@ pub struct IrSpine {
     pub cs_id_by_expr: HashMap<ExprId, String>,
     pub has_branching: bool,
     pub loop_count: u32,
+    pub loops: Vec<PLoop>,
+    pub field_accesses: Vec<PFieldAccess>,
 }
 
 /// Per-routine record-receiver scope, mirroring the harness `ir_op_trace` setup
@@ -95,6 +107,9 @@ struct SpineCtx<'a> {
     file: &'a AlFile,
     scope: &'a Scope,
     routine_id: &'a str,
+    source: &'a str,
+    cols: &'a Utf16Cols<'a>,
+    source_unit_id: &'a str,
     op_index: u32,
     cs_index: u32,
     loop_count: u32,
@@ -102,9 +117,46 @@ struct SpineCtx<'a> {
     implicit: Vec<bool>,
     op_id_by_expr: HashMap<ExprId, String>,
     cs_id_by_expr: HashMap<ExprId, String>,
+    loops: Vec<PLoop>,
+    field_accesses: Vec<PFieldAccess>,
 }
 
 impl<'a> SpineCtx<'a> {
+    /// PAnchor for an IR node origin (utf16 columns via `Utf16Cols`, exactly as the
+    /// legacy `Ctx::anchor`; `syntax_kind` = the raw grammar kind).
+    fn anchor(&self, origin: &Origin) -> PAnchor {
+        PAnchor {
+            source_unit_id: self.source_unit_id.to_string(),
+            start_line: origin.start.row,
+            start_column: self
+                .cols
+                .col(origin.start.row as usize, origin.start.column as usize),
+            end_line: origin.end.row,
+            end_column: self
+                .cols
+                .col(origin.end.row as usize, origin.end.column as usize),
+            syntax_kind: origin.kind_text.to_string(),
+        }
+    }
+
+    /// Exact raw source text of an IR node (via its byte span).
+    fn raw(&self, origin: &Origin) -> &'a str {
+        &self.source[origin.byte.clone()]
+    }
+
+    /// Record a loop at its node (legacy creates the PLoop at the loop node, id
+    /// `{routine}/loop{N}` with N = discovery order = `loops.len()`).
+    fn enter_loop(&mut self, loop_type: &str, origin: &Origin) {
+        let id = format!("{}/loop{}", self.routine_id, self.loops.len());
+        let source_anchor = self.anchor(origin);
+        self.loops.push(PLoop {
+            id,
+            loop_type: loop_type.to_string(),
+            source_anchor,
+        });
+        self.loop_count += 1;
+    }
+
     fn walk_block(&mut self, bid: BlockId) {
         for item in &self.file.ir.block(bid).items {
             match item {
@@ -157,12 +209,12 @@ impl<'a> SpineCtx<'a> {
                 }
             }
             While { cond, body } => {
-                self.loop_count += 1;
+                self.enter_loop("while", &st.origin);
                 self.walk_expr(*cond);
                 self.walk_block(*body);
             }
             Repeat { body, until } => {
-                self.loop_count += 1;
+                self.enter_loop("repeat", &st.origin);
                 self.walk_block(*body);
                 self.walk_expr(*until);
             }
@@ -173,7 +225,7 @@ impl<'a> SpineCtx<'a> {
                 body,
                 ..
             } => {
-                self.loop_count += 1;
+                self.enter_loop("for", &st.origin);
                 self.walk_expr(*var);
                 self.walk_expr(*from);
                 self.walk_expr(*to);
@@ -184,7 +236,7 @@ impl<'a> SpineCtx<'a> {
                 iterable,
                 body,
             } => {
-                self.loop_count += 1;
+                self.enter_loop("foreach", &st.origin);
                 self.walk_expr(*var);
                 self.walk_expr(*iterable);
                 self.walk_block(*body);
@@ -275,7 +327,31 @@ impl<'a> SpineCtx<'a> {
             return;
         }
         match &e.kind {
-            Member { object, .. } => {
+            Member {
+                object,
+                member,
+                member_origin,
+            } => {
+                // Value-position `X.Field` where X is a record var → field access,
+                // anchored on the member_expression. Enum-scope refs go through the
+                // QualifiedEnum arm (object recursed directly), never here.
+                if let Identifier(x) | QuotedIdentifier(x) = &self.file.ir.expr(*object).kind {
+                    if self.scope.frvars.contains(&x.to_ascii_lowercase()) {
+                        let record_variable_name =
+                            self.raw(&self.file.ir.expr(*object).origin).to_string();
+                        let field_name = if member_origin.kind_text == "quoted_identifier" {
+                            strip_quotes(member)
+                        } else {
+                            member.clone()
+                        };
+                        let source_anchor = self.anchor(&e.origin);
+                        self.field_accesses.push(PFieldAccess {
+                            record_variable_name,
+                            field_name,
+                            source_anchor,
+                        });
+                    }
+                }
                 let object = *object;
                 self.walk_expr(object);
             }
@@ -317,18 +393,26 @@ impl<'a> SpineCtx<'a> {
     }
 }
 
-/// Walk the routine body, producing the op/cs id maps + has_branching + loop count.
+/// Walk the routine body, producing the op/cs id maps + has_branching + the
+/// anchored `loops` and `field_accesses`.
+#[allow(clippy::too_many_arguments)]
 pub fn walk_spine(
     file: &AlFile,
     object_idx: usize,
     routine: &RoutineDecl,
     routine_id: &str,
+    source: &str,
+    cols: &Utf16Cols,
+    source_unit_id: &str,
 ) -> IrSpine {
     let (scope, table_method) = build_scope(file, object_idx, routine);
     let mut ctx = SpineCtx {
         file,
         scope: &scope,
         routine_id,
+        source,
+        cols,
+        source_unit_id,
         op_index: 0,
         cs_index: 0,
         loop_count: 0,
@@ -336,6 +420,8 @@ pub fn walk_spine(
         implicit: vec![table_method],
         op_id_by_expr: HashMap::new(),
         cs_id_by_expr: HashMap::new(),
+        loops: Vec::new(),
+        field_accesses: Vec::new(),
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
@@ -345,6 +431,8 @@ pub fn walk_spine(
         cs_id_by_expr: ctx.cs_id_by_expr,
         has_branching: ctx.has_branching,
         loop_count: ctx.loop_count,
+        loops: ctx.loops,
+        field_accesses: ctx.field_accesses,
     }
 }
 
@@ -660,20 +748,46 @@ impl<'a> IrCfn<'a> {
     }
 }
 
-/// Convenience: build the routine's `statement_tree` (real PCFNNode) + has_branching.
-pub fn statement_tree(
+/// The slice of `PFeatures` the IR walk currently produces as REAL engine types.
+/// Grows toward full `PFeatures` as the rich call_site/record_operation payloads
+/// are threaded in subsequent increments.
+pub struct IrPartialFeatures {
+    pub statement_tree: Option<PCFNNode>,
+    pub has_branching: bool,
+    pub loops: Vec<PLoop>,
+    pub field_accesses: Vec<PFieldAccess>,
+}
+
+/// Build the validated slice of `PFeatures` from the owned IR for one routine.
+pub fn routine_features_partial(
     file: &AlFile,
     object_idx: usize,
     routine: &RoutineDecl,
     routine_id: &str,
-) -> (Option<PCFNNode>, bool) {
-    let spine = walk_spine(file, object_idx, routine, routine_id);
-    let tree = routine.body.map(|b| {
+    source: &str,
+    source_unit_id: &str,
+) -> IrPartialFeatures {
+    let cols = Utf16Cols::new(source);
+    let spine = walk_spine(
+        file,
+        object_idx,
+        routine,
+        routine_id,
+        source,
+        &cols,
+        source_unit_id,
+    );
+    let statement_tree = routine.body.map(|b| {
         let cfn = IrCfn {
             file,
             spine: &spine,
         };
         cfn.build_block(b)
     });
-    (tree, spine.has_branching)
+    IrPartialFeatures {
+        statement_tree,
+        has_branching: spine.has_branching,
+        loops: spine.loops,
+        field_accesses: spine.field_accesses,
+    }
 }

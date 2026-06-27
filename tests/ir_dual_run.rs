@@ -2084,9 +2084,18 @@ fn engine_ir_walk_statement_tree_parity() {
         return;
     }
     let mut total = 0usize;
-    let mut matching = 0usize;
+    let mut st_match = 0usize;
     let mut hb_match = 0usize;
+    let mut loop_match = 0usize;
+    let mut fa_match = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
+
+    // Loop ids carry the routine-id hash on the legacy side; normalize to sequence
+    // numbers. source_unit_id is "dual" on both sides (legacy_l2_features' id_ctx),
+    // so PAnchors compare directly.
+    let loop_key = |l: &al_call_hierarchy::engine::l2::features::PLoop| {
+        (id_num(&l.id), l.loop_type.clone(), l.source_anchor.clone())
+    };
 
     for fpath in collect_al_files(&root) {
         let Ok(src) = std::fs::read_to_string(&fpath) else {
@@ -2103,8 +2112,8 @@ fn engine_ir_walk_statement_tree_parity() {
         }
         for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
             total += 1;
-            let (ir_tree, ir_hb) = ir_walk::statement_tree(&file, *oi, routine, "ir");
-            if ir_hb == lf.has_branching {
+            let ir = ir_walk::routine_features_partial(&file, *oi, routine, "ir", &src, "dual");
+            if ir.has_branching == lf.has_branching {
                 hb_match += 1;
             }
             let ltree = lf
@@ -2112,12 +2121,13 @@ fn engine_ir_walk_statement_tree_parity() {
                 .as_ref()
                 .map(norm_legacy_cfn)
                 .map(|n| strip_inert_ncfn(&n));
-            let itree = ir_tree
+            let itree = ir
+                .statement_tree
                 .as_ref()
                 .map(norm_legacy_cfn)
                 .map(|n| strip_inert_ncfn(&n));
             if ltree == itree {
-                matching += 1;
+                st_match += 1;
             } else if divs.len() < 12 {
                 let rel = fpath
                     .strip_prefix(&root)
@@ -2125,22 +2135,52 @@ fn engine_ir_walk_statement_tree_parity() {
                     .display()
                     .to_string();
                 divs.push((
-                    format!("{rel} :: {ln}"),
+                    format!("{rel} :: {ln} [statement_tree]"),
                     format!("legacy={ltree:?}\n    ir={itree:?}"),
+                ));
+            }
+            // loops (id-normalized) + field_accesses (direct — no id).
+            let l_loops: Vec<_> = lf.loops.iter().map(loop_key).collect();
+            let i_loops: Vec<_> = ir.loops.iter().map(loop_key).collect();
+            if l_loops == i_loops {
+                loop_match += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln} [loops]"),
+                    format!("legacy={l_loops:?}\n    ir={i_loops:?}"),
+                ));
+            }
+            if lf.field_accesses == ir.field_accesses {
+                fa_match += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln} [field_accesses]"),
+                    format!(
+                        "legacy={:?}\n    ir={:?}",
+                        lf.field_accesses, ir.field_accesses
+                    ),
                 ));
             }
         }
     }
-    let pct = if total > 0 {
-        matching as f64 * 100.0 / total as f64
-    } else {
-        0.0
-    };
-    eprintln!("\n=== PHASE-2 engine ir_walk: statement_tree {matching}/{total} ({pct:.1}%), has_branching {hb_match}/{total} ===");
+    eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
+    eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
     assert!(total > 0);
     assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
-    assert_eq!(matching, total, "engine ir_walk statement_tree divergences");
+    assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");
+    assert_eq!(loop_match, total, "engine ir_walk loops divergences");
+    assert_eq!(fa_match, total, "engine ir_walk field_accesses divergences");
 }
