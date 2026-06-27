@@ -9,7 +9,9 @@
 //! `project_routine_features_ir`. Rich fields (callee/bindings/temp_state) land in
 //! subsequent increments, which thread the full `Ctx` scope inputs.
 
-use super::features::{PAnchor, PCFNNode, PConditionGuard, PFieldAccess, PLoop};
+use super::features::{
+    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PFieldAccess, PLoop, PVarAssignment,
+};
 use super::node_util::Utf16Cols;
 use super::record_op::record_op_type;
 use al_syntax::ir::{
@@ -27,6 +29,16 @@ fn strip_quotes(s: &str) -> String {
     }
 }
 
+/// LHS base name of an assignment target (legacy `lhs_identifier_of`, lowercased):
+/// a bare identifier's name, or a member_expression's member name; else None.
+fn lhs_base_name(file: &AlFile, target: ExprId) -> Option<String> {
+    match &file.ir.expr(target).kind {
+        ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => Some(x.to_ascii_lowercase()),
+        ExprKind::Member { member, .. } => Some(member.to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
 /// The spine result of the IR walk: the op/cs id maps (keyed by the call ExprId,
 /// formatted `{routine_id}/op{N}` / `/cs{N}` in DFS order — exactly legacy's
 /// numbering), plus `has_branching`. Consumed by the CFN builder.
@@ -37,6 +49,9 @@ pub struct IrSpine {
     pub loop_count: u32,
     pub loops: Vec<PLoop>,
     pub field_accesses: Vec<PFieldAccess>,
+    pub var_assignments: Vec<PVarAssignment>,
+    pub condition_references: Vec<PConditionReference>,
+    pub identifier_references: Vec<String>,
 }
 
 /// Per-routine record-receiver scope, mirroring the harness `ir_op_trace` setup
@@ -119,6 +134,9 @@ struct SpineCtx<'a> {
     cs_id_by_expr: HashMap<ExprId, String>,
     loops: Vec<PLoop>,
     field_accesses: Vec<PFieldAccess>,
+    var_assignments: Vec<PVarAssignment>,
+    condition_references: Vec<PConditionReference>,
+    identifier_ref_set: HashSet<String>,
 }
 
 impl<'a> SpineCtx<'a> {
@@ -142,6 +160,92 @@ impl<'a> SpineCtx<'a> {
     /// Exact raw source text of an IR node (via its byte span).
     fn raw(&self, origin: &Origin) -> &'a str {
         &self.source[origin.byte.clone()]
+    }
+
+    /// Literal text of an rhs value (legacy `literal_text_of`): boolean → lc,
+    /// integer → raw, string → quote-stripped lc; otherwise None.
+    fn lit_text(&self, eid: ExprId) -> Option<String> {
+        use al_syntax::ir::Literal::*;
+        match &self.file.ir.expr(eid).kind {
+            ExprKind::Literal(Bool(b)) => Some(b.to_string()),
+            ExprKind::Literal(Int(s)) => Some(s.clone()),
+            ExprKind::Literal(Text(s)) => {
+                let t = s
+                    .strip_prefix('\'')
+                    .and_then(|x| x.strip_suffix('\''))
+                    .unwrap_or(s);
+                Some(t.to_ascii_lowercase())
+            }
+            _ => None,
+        }
+    }
+
+    /// Collect condition references (the `collect_idents` closure in legacy): a bare
+    /// `identifier`, or a `member_expression`'s member identifier, anchored at the
+    /// reference; recursing other expression shapes but NOT a member's object.
+    fn collect_cond_idents(&mut self, eid: ExprId, kind: &str, stmt: &PAnchor) {
+        use ExprKind::*;
+        let e = self.file.ir.expr(eid);
+        match &e.kind {
+            Identifier(name) if e.origin.kind_text == "identifier" => {
+                self.condition_references.push(PConditionReference {
+                    identifier: name.to_ascii_lowercase(),
+                    condition_kind: kind.to_string(),
+                    statement_anchor: stmt.clone(),
+                    reference_anchor: self.anchor(&e.origin),
+                });
+            }
+            Member {
+                member,
+                member_origin,
+                ..
+            } => {
+                if member_origin.kind_text == "identifier" {
+                    self.condition_references.push(PConditionReference {
+                        identifier: member.to_ascii_lowercase(),
+                        condition_kind: kind.to_string(),
+                        statement_anchor: stmt.clone(),
+                        reference_anchor: self.anchor(member_origin),
+                    });
+                }
+                // does NOT recurse into the object.
+            }
+            Call { function, args } => {
+                let (function, args) = (*function, args.clone());
+                self.collect_cond_idents(function, kind, stmt);
+                for a in args {
+                    self.collect_cond_idents(a, kind, stmt);
+                }
+            }
+            Binary { lhs, rhs, .. } => {
+                let (lhs, rhs) = (*lhs, *rhs);
+                self.collect_cond_idents(lhs, kind, stmt);
+                self.collect_cond_idents(rhs, kind, stmt);
+            }
+            Unary { operand, .. } => {
+                let operand = *operand;
+                self.collect_cond_idents(operand, kind, stmt);
+            }
+            Parenthesized(x) => {
+                let x = *x;
+                self.collect_cond_idents(x, kind, stmt);
+            }
+            Index { base, index } => {
+                let (base, index) = (*base, *index);
+                self.collect_cond_idents(base, kind, stmt);
+                self.collect_cond_idents(index, kind, stmt);
+            }
+            QualifiedEnum { enum_type, .. } => {
+                let enum_type = *enum_type;
+                self.collect_cond_idents(enum_type, kind, stmt);
+            }
+            RangeExpr { start, end } => {
+                let (start, end) = (*start, *end);
+                self.collect_cond_idents(start, kind, stmt);
+                self.collect_cond_idents(end, kind, stmt);
+            }
+            _ => {}
+        }
     }
 
     /// Record a loop at its node (legacy creates the PLoop at the loop node, id
@@ -175,6 +279,25 @@ impl<'a> SpineCtx<'a> {
         let st = self.file.ir.stmt(sid);
         match &st.kind {
             Assignment { target, value } => {
+                // PVarAssignment: lhs base name (identifier or member name), optional
+                // literal rhs, anchored on the assignment statement.
+                if let Some(lhs_name) = lhs_base_name(self.file, *target) {
+                    let rhs_identifier = match (
+                        &self.file.ir.expr(*target).kind,
+                        &self.file.ir.expr(*value).kind,
+                    ) {
+                        (ExprKind::Identifier(_), ExprKind::Identifier(v)) => {
+                            Some(v.to_ascii_lowercase())
+                        }
+                        _ => None,
+                    };
+                    self.var_assignments.push(PVarAssignment {
+                        lhs_name,
+                        rhs_literal_value: self.lit_text(*value),
+                        source_anchor: self.anchor(&st.origin),
+                        rhs_identifier,
+                    });
+                }
                 self.walk_expr(*target);
                 self.walk_expr(*value);
             }
@@ -185,6 +308,8 @@ impl<'a> SpineCtx<'a> {
                 else_block,
             } => {
                 self.has_branching = true;
+                let sa = self.anchor(&st.origin);
+                self.collect_cond_idents(*cond, "if", &sa);
                 self.walk_expr(*cond);
                 self.walk_block(*then_block);
                 if let Some(b) = else_block {
@@ -197,6 +322,8 @@ impl<'a> SpineCtx<'a> {
                 else_block,
             } => {
                 self.has_branching = true;
+                let sa = self.anchor(&st.origin);
+                self.collect_cond_idents(*scrutinee, "case", &sa);
                 self.walk_expr(*scrutinee);
                 for br in branches {
                     for p in &br.patterns {
@@ -209,11 +336,15 @@ impl<'a> SpineCtx<'a> {
                 }
             }
             While { cond, body } => {
+                let sa = self.anchor(&st.origin);
+                self.collect_cond_idents(*cond, "while", &sa);
                 self.enter_loop("while", &st.origin);
                 self.walk_expr(*cond);
                 self.walk_block(*body);
             }
             Repeat { body, until } => {
+                let sa = self.anchor(&st.origin);
+                self.collect_cond_idents(*until, "repeat-until", &sa);
                 self.enter_loop("repeat", &st.origin);
                 self.walk_block(*body);
                 self.walk_expr(*until);
@@ -388,6 +519,23 @@ impl<'a> SpineCtx<'a> {
                 self.walk_expr(start);
                 self.walk_expr(end);
             }
+            // Value-reference identifier (lc, deduped) — legacy counts only plain
+            // `identifier` nodes, NOT keyword_identifier/quoted_identifier.
+            Identifier(name) => {
+                if e.origin.kind_text == "identifier" {
+                    self.identifier_ref_set.insert(name.to_ascii_lowercase());
+                }
+            }
+            // `Keyword::Name` (database_reference): the object-type keyword is excluded,
+            // but an UNQUOTED table_name identifier is a value ref.
+            DatabaseReference(text) => {
+                if let Some(last) = text.rsplit("::").next() {
+                    let t = last.trim();
+                    if !t.starts_with('"') {
+                        self.identifier_ref_set.insert(t.to_ascii_lowercase());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -422,10 +570,33 @@ pub fn walk_spine(
         cs_id_by_expr: HashMap::new(),
         loops: Vec::new(),
         field_accesses: Vec::new(),
+        var_assignments: Vec::new(),
+        condition_references: Vec::new(),
+        identifier_ref_set: HashSet::new(),
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
     }
+    // Post-pass ordering to match legacy: var_assignments by source anchor,
+    // condition_references by reference anchor, identifier_references sorted+deduped.
+    let mut var_assignments = ctx.var_assignments;
+    var_assignments.sort_by(|a, b| {
+        (a.source_anchor.start_line, a.source_anchor.start_column)
+            .cmp(&(b.source_anchor.start_line, b.source_anchor.start_column))
+    });
+    let mut condition_references = ctx.condition_references;
+    condition_references.sort_by(|a, b| {
+        (
+            a.reference_anchor.start_line,
+            a.reference_anchor.start_column,
+        )
+            .cmp(&(
+                b.reference_anchor.start_line,
+                b.reference_anchor.start_column,
+            ))
+    });
+    let mut identifier_references: Vec<String> = ctx.identifier_ref_set.into_iter().collect();
+    identifier_references.sort();
     IrSpine {
         op_id_by_expr: ctx.op_id_by_expr,
         cs_id_by_expr: ctx.cs_id_by_expr,
@@ -433,6 +604,9 @@ pub fn walk_spine(
         loop_count: ctx.loop_count,
         loops: ctx.loops,
         field_accesses: ctx.field_accesses,
+        var_assignments,
+        condition_references,
+        identifier_references,
     }
 }
 
@@ -756,6 +930,9 @@ pub struct IrPartialFeatures {
     pub has_branching: bool,
     pub loops: Vec<PLoop>,
     pub field_accesses: Vec<PFieldAccess>,
+    pub var_assignments: Vec<PVarAssignment>,
+    pub condition_references: Vec<PConditionReference>,
+    pub identifier_references: Vec<String>,
 }
 
 /// Build the validated slice of `PFeatures` from the owned IR for one routine.
@@ -789,5 +966,8 @@ pub fn routine_features_partial(
         has_branching: spine.has_branching,
         loops: spine.loops,
         field_accesses: spine.field_accesses,
+        var_assignments: spine.var_assignments,
+        condition_references: spine.condition_references,
+        identifier_references: spine.identifier_references,
     }
 }

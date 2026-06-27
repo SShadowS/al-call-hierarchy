@@ -2088,6 +2088,9 @@ fn engine_ir_walk_statement_tree_parity() {
     let mut hb_match = 0usize;
     let mut loop_match = 0usize;
     let mut fa_match = 0usize;
+    let mut va_match = 0usize;
+    let mut cr_match = 0usize;
+    let mut id_match = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
 
     // Loop ids carry the routine-id hash on the legacy side; normalize to sequence
@@ -2171,10 +2174,48 @@ fn engine_ir_walk_statement_tree_parity() {
                     ),
                 ));
             }
+            // var_assignments + condition_references (direct PartialEq — anchors carry
+            // source_unit_id "dual" on both sides). identifier_references measured.
+            if lf.var_assignments == ir.var_assignments {
+                va_match += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln} [var_assignments]"),
+                    format!(
+                        "legacy={:?}\n    ir={:?}",
+                        lf.var_assignments, ir.var_assignments
+                    ),
+                ));
+            }
+            if lf.condition_references == ir.condition_references {
+                cr_match += 1;
+            } else if divs.len() < 12 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln} [condition_references]"),
+                    format!(
+                        "legacy={:?}\n    ir={:?}",
+                        lf.condition_references, ir.condition_references
+                    ),
+                ));
+            }
+            if lf.identifier_references == ir.identifier_references {
+                id_match += 1;
+            }
         }
     }
     eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
     eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
+    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  identifier_references {id_match}/{total} (measured)");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
@@ -2183,4 +2224,12 @@ fn engine_ir_walk_statement_tree_parity() {
     assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");
     assert_eq!(loop_match, total, "engine ir_walk loops divergences");
     assert_eq!(fa_match, total, "engine ir_walk field_accesses divergences");
+    assert_eq!(
+        va_match, total,
+        "engine ir_walk var_assignments divergences"
+    );
+    assert_eq!(
+        cr_match, total,
+        "engine ir_walk condition_references divergences"
+    );
 }
