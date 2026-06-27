@@ -2495,3 +2495,136 @@ fn engine_ir_walk_variables_measure() {
     // legacy. Named return-value variable not yet IR-modelled (absent from corpus).
     assert_eq!(matching, total, "engine ir_walk variables divergences");
 }
+
+/// PHASE-2 — engine ir_walk call_sites (callee + callee_text + args + infos +
+/// bindings + simple fields). Measured vs legacy (ids normalized). Object-run
+/// result_consumed/object_run_return_used are placeholder for now.
+#[test]
+fn engine_ir_walk_call_sites_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::features::PCallSite;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    // Normalize a call site to a comparable form: cs id → number; binding rv ids →
+    // `/rv/` suffix; loop ids → numbers.
+    fn norm_cs(c: &PCallSite) -> String {
+        let cs_num =
+            c.id.rsplit("cs")
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(u32::MAX);
+        let mut c2 = c.clone();
+        c2.id = format!("cs{cs_num}");
+        c2.operation_id = c2
+            .operation_id
+            .rsplit('/')
+            .next()
+            .unwrap_or(&c2.operation_id)
+            .to_string();
+        c2.loop_stack = c2
+            .loop_stack
+            .iter()
+            .map(|s| s.rsplit("loop").next().unwrap_or(s).to_string())
+            .collect();
+        for b in &mut c2.argument_bindings {
+            b.source_record_variable_id = b
+                .source_record_variable_id
+                .as_ref()
+                .and_then(|id| id.rsplit_once("/rv/").map(|(_, s)| s.to_string()));
+        }
+        format!("{c2:?}")
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut field_div: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut divs: Vec<(String, String)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let ir =
+                ir_walk::routine_features_partial(&file, *oi, routine, "ir", &src, "dual", None);
+            let cs_num = |id: &str| {
+                id.rsplit("cs")
+                    .next()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(u32::MAX)
+            };
+            let mut l: Vec<_> = lf.call_sites.iter().collect();
+            l.sort_by_key(|c| cs_num(&c.id));
+            let mut i: Vec<_> = ir.call_sites.iter().collect();
+            i.sort_by_key(|c| cs_num(&c.id));
+            let ln_: Vec<String> = l.iter().map(|c| norm_cs(c)).collect();
+            let in_: Vec<String> = i.iter().map(|c| norm_cs(c)).collect();
+            if ln_ == in_ {
+                matching += 1;
+            } else {
+                // categorize which fields differ (rough)
+                for (lc, ic) in l.iter().zip(i.iter()) {
+                    if lc.callee != ic.callee {
+                        *field_div.entry("callee".into()).or_default() += 1;
+                    }
+                    if lc.callee_text != ic.callee_text {
+                        *field_div.entry("callee_text".into()).or_default() += 1;
+                    }
+                    if lc.argument_bindings != ic.argument_bindings {
+                        *field_div.entry("argument_bindings".into()).or_default() += 1;
+                    }
+                    if lc.argument_infos != ic.argument_infos {
+                        *field_div.entry("argument_infos".into()).or_default() += 1;
+                    }
+                    if lc.result_consumed != ic.result_consumed {
+                        *field_div.entry("result_consumed".into()).or_default() += 1;
+                    }
+                    if lc.object_run_return_used != ic.object_run_return_used {
+                        *field_div
+                            .entry("object_run_return_used".into())
+                            .or_default() += 1;
+                    }
+                }
+                if l.len() != i.len() {
+                    *field_div.entry("COUNT".into()).or_default() += 1;
+                }
+                if divs.len() < 8 {
+                    let rel = fpath
+                        .strip_prefix(&root)
+                        .unwrap_or(&fpath)
+                        .display()
+                        .to_string();
+                    divs.push((
+                        format!("{rel} :: {ln}"),
+                        format!("legacy={ln_:?}\n    ir={in_:?}"),
+                    ));
+                }
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 engine ir_walk: call_sites {matching}/{total} ({pct:.1}%) ===");
+    eprintln!("  field divergence counts: {field_div:?}");
+    for (a, b) in divs.iter().take(6) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    // Hard gate: callee, callee_text, args, infos, argument_bindings, operation_id
+    // (two-phase), loop_stack, anchors, object-run result_consumed/return_used,
+    // under_asserterror all match legacy. THE LAST PFeatures field.
+    assert_eq!(matching, total, "engine ir_walk call_sites divergences");
+}

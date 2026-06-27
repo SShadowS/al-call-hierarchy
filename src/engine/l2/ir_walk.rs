@@ -10,8 +10,9 @@
 //! subsequent increments, which thread the full `Ctx` scope inputs.
 
 use super::features::{
-    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PExpressionInfo, PFieldAccess, PLoop,
-    POperationSite, PRecordOperation, PTempState, PUnreachableStatement, PVarAssignment,
+    PAnchor, PCFNNode, PCallArgumentBinding, PCallSite, PCallee, PConditionGuard,
+    PConditionReference, PExpressionInfo, PFieldAccess, PLoop, POperationSite, PRecordOperation,
+    PTempState, PUnreachableStatement, PVarAssignment,
 };
 use super::node_util::Utf16Cols;
 use super::record_op::{record_op_type, FIELD_ARGS_OPS};
@@ -36,6 +37,28 @@ fn ts_unknown() -> PTempState {
         kind: "unknown".to_string(),
         value: None,
         parameter_index: None,
+    }
+}
+
+/// Strip ONE surrounding quote char (`"` or `'`), as legacy `strip_quote_chars`.
+fn strip_quote_chars(s: &str) -> String {
+    let s = s.trim();
+    if s.len() >= 2
+        && (s.starts_with('"') && s.ends_with('"') || s.starts_with('\'') && s.ends_with('\''))
+    {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// Object-run object kind for a `keyword_identifier` receiver (`Codeunit`/`Page`/`Report`).
+fn object_run_kind(text: &str) -> Option<&'static str> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "codeunit" => Some("Codeunit"),
+        "page" => Some("Page"),
+        "report" => Some("Report"),
+        _ => None,
     }
 }
 
@@ -69,6 +92,12 @@ pub struct IrSpine {
     /// The unified op0..opN list (record-op / lock / commit / error-call), in
     /// op-index order. `control_context`/`order` are None (post-pass fields).
     pub operation_sites: Vec<POperationSite>,
+    /// call_sites with `argument_bindings` EMPTY (filled by the post-pass in
+    /// `routine_features_partial` from `ir_record_variables` + the params).
+    pub call_sites: Vec<PCallSite>,
+    /// Per call-site, the argument ExprIds (parallel to `call_sites`) — the binding
+    /// post-pass needs them to anchor + classify each argument.
+    pub cs_arg_exprs: Vec<Vec<ExprId>>,
 }
 
 /// An implicit-receiver frame (table-method base `Rec` seed / `with` body). Carries
@@ -170,6 +199,12 @@ struct SpineCtx<'a> {
     operation_sites: Vec<POperationSite>,
     /// asserterror nesting depth (only error-call operation_sites carry under_asserterror).
     assert_depth: u32,
+    /// True while walking a bare statement-position call (`StmtKind::Call`'s expr) —
+    /// drives object-run result_consumed/return_used (a bare statement does not
+    /// consume the result; an expression-position call does).
+    in_stmt_position: bool,
+    call_sites: Vec<PCallSite>,
+    cs_arg_exprs: Vec<Vec<ExprId>>,
 }
 
 impl<'a> SpineCtx<'a> {
@@ -210,6 +245,67 @@ impl<'a> SpineCtx<'a> {
                 Some(t.to_ascii_lowercase())
             }
             _ => None,
+        }
+    }
+
+    /// Classify a call's callee (legacy `callee_from_node`) + its `callee_text`
+    /// (the raw function-expr source). Handles bare, member, and the object-run
+    /// upgrade (`Codeunit.Run(Database::"X")`). The implicit-frame member upgrade is
+    /// not modelled here (rare; bare calls inside a non-record `with`).
+    fn classify_callee(&self, function: ExprId, args: &[ExprId]) -> (PCallee, String) {
+        use ExprKind::*;
+        let fe = self.file.ir.expr(function);
+        let callee_text = self.raw(&fe.origin).to_string();
+        let callee = match &fe.kind {
+            Identifier(_) | QuotedIdentifier(_) => PCallee::Bare {
+                name: strip_quote_chars(&self.raw(&fe.origin)),
+            },
+            Member { object, member, .. } => {
+                let obj = self.file.ir.expr(*object);
+                if obj.origin.kind_text == "keyword_identifier" {
+                    if let Some(okind) = object_run_kind(self.raw(&obj.origin)) {
+                        if member.eq_ignore_ascii_case("run") {
+                            return (self.object_run_callee(okind, args), callee_text);
+                        }
+                    }
+                }
+                PCallee::Member {
+                    receiver: self.raw(&obj.origin).to_string(),
+                    method: strip_quote_chars(member),
+                }
+            }
+            _ => PCallee::Unknown,
+        };
+        (callee, callee_text)
+    }
+
+    /// ObjectRun callee from the first argument (a `database_reference`), legacy
+    /// `classify_object_run_first_arg`.
+    fn object_run_callee(&self, object_kind: &str, args: &[ExprId]) -> PCallee {
+        let mut target_ref = None;
+        let mut target_is_name = false;
+        if let Some(&first) = args.first() {
+            if let ExprKind::DatabaseReference(text) = &self.file.ir.expr(first).kind {
+                if let Some((_, tn)) = text.split_once("::") {
+                    let tn = tn.trim();
+                    if tn.starts_with('"') {
+                        target_ref = Some(strip_quote_chars(tn));
+                        target_is_name = true;
+                    } else if tn.parse::<i64>().is_ok() {
+                        target_ref = Some(tn.to_string());
+                        target_is_name = false;
+                    } else {
+                        target_ref = Some(tn.to_string());
+                        target_is_name = true;
+                    }
+                }
+            }
+        }
+        PCallee::ObjectRun {
+            object_kind: object_kind.to_string(),
+            target_type: object_kind.to_string(),
+            target_ref,
+            target_is_name,
         }
     }
 
@@ -502,7 +598,11 @@ impl<'a> SpineCtx<'a> {
                 self.walk_expr(*target);
                 self.walk_expr(*value);
             }
-            Call(x) => self.walk_expr(*x),
+            Call(x) => {
+                self.in_stmt_position = true;
+                self.walk_expr(*x);
+                self.in_stmt_position = false;
+            }
             If {
                 cond,
                 then_block,
@@ -719,11 +819,56 @@ impl<'a> SpineCtx<'a> {
                 self.op_index += 1;
             }
             if !is_record_op && !is_commit {
-                self.cs_id_by_expr
-                    .insert(eid, format!("{}/cs{}", self.routine_id, self.cs_index));
+                let cs_id = format!("{}/cs{}", self.routine_id, self.cs_index);
                 self.cs_index += 1;
+                self.cs_id_by_expr.insert(eid, cs_id.clone());
+                // Full PCallSite (argument_bindings filled by the post-pass).
+                let (callee, callee_text) = self.classify_callee(function, &args);
+                let is_object_run = matches!(callee, PCallee::ObjectRun { .. });
+                let argument_texts: Vec<String> = args
+                    .iter()
+                    .map(|&a| self.raw(&self.file.ir.expr(a).origin).to_string())
+                    .collect();
+                let argument_infos: Vec<PExpressionInfo> =
+                    args.iter().map(|&a| self.ir_expression_info(a)).collect();
+                let under = if self.assert_depth > 0 {
+                    Some(true)
+                } else {
+                    None
+                };
+                // object-run result_consumed/return_used from the call's position: a
+                // bare statement does not consume (result_consumed true only under
+                // asserterror; return_used false); an expression-position call does.
+                let (result_consumed, object_run_return_used) = if is_object_run {
+                    if self.in_stmt_position {
+                        (Some(self.assert_depth > 0), Some(false))
+                    } else {
+                        (Some(true), Some(true))
+                    }
+                } else {
+                    (None, None)
+                };
+                self.call_sites.push(PCallSite {
+                    id: cs_id,
+                    operation_id: String::new(),
+                    callee_text,
+                    callee,
+                    argument_texts,
+                    argument_infos,
+                    argument_bindings: Vec::new(),
+                    loop_stack: self.loop_stack_ids(),
+                    source_anchor: self.anchor(&e.origin),
+                    result_consumed,
+                    object_run_return_used,
+                    under_asserterror: under,
+                    control_context: None,
+                    order: None,
+                });
+                self.cs_arg_exprs.push(args.clone());
             }
             // Recurse: a member-call RECEIVER is a value ref; a bare callee name is not.
+            // Sub-expressions (receiver, args) are EXPRESSION position (consumed).
+            self.in_stmt_position = false;
             match &self.file.ir.expr(function).kind {
                 Member { object, .. } => {
                     let object = *object;
@@ -865,9 +1010,18 @@ pub fn walk_spine(
         record_operations: Vec::new(),
         operation_sites: Vec::new(),
         assert_depth: 0,
+        in_stmt_position: false,
+        call_sites: Vec::new(),
+        cs_arg_exprs: Vec::new(),
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
+    }
+    // Two-phase numbering: each call site's operation_id = op{op_count + i}, where
+    // op_count is the final op total and i the call-site index (legacy body_walk tail).
+    let op_count = ctx.op_index;
+    for (i, cs) in ctx.call_sites.iter_mut().enumerate() {
+        cs.operation_id = format!("{}/op{}", routine_id, op_count + i as u32);
     }
     // Post-pass ordering to match legacy: var_assignments by source anchor,
     // condition_references by reference anchor, identifier_references sorted+deduped.
@@ -902,6 +1056,8 @@ pub fn walk_spine(
         unreachable_statements: ctx.unreachable_statements,
         record_operations: ctx.record_operations,
         operation_sites: ctx.operation_sites,
+        call_sites: ctx.call_sites,
+        cs_arg_exprs: ctx.cs_arg_exprs,
     }
 }
 
@@ -1232,6 +1388,7 @@ pub struct IrPartialFeatures {
     pub unreachable_statements: Vec<PUnreachableStatement>,
     pub record_operations: Vec<PRecordOperation>,
     pub operation_sites: Vec<POperationSite>,
+    pub call_sites: Vec<PCallSite>,
 }
 
 /// Build the validated slice of `PFeatures` from the owned IR for one routine.
@@ -1283,6 +1440,88 @@ pub fn routine_features_partial(
         }
     }
 
+    // argument_bindings post-pass: each call-site arg → its source (parameter /
+    // implicit-rec / local record / unknown / expression). Mirrors
+    // extract_argument_bindings, using ir_record_variables + the IR params.
+    let anchor = |o: &Origin| PAnchor {
+        source_unit_id: source_unit_id.to_string(),
+        start_line: o.start.row,
+        start_column: cols.col(o.start.row as usize, o.start.column as usize),
+        end_line: o.end.row,
+        end_column: cols.col(o.end.row as usize, o.end.column as usize),
+        syntax_kind: o.kind_text.to_string(),
+    };
+    // param lc-name → (index, is_var).
+    let param_by_lc: HashMap<String, (u32, bool)> = routine
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.name.to_ascii_lowercase(), (i as u32, p.by_ref)))
+        .collect();
+    let mut call_sites = spine.call_sites;
+    for (cs, arg_exprs) in call_sites.iter_mut().zip(spine.cs_arg_exprs.iter()) {
+        cs.argument_bindings = arg_exprs
+            .iter()
+            .enumerate()
+            .map(|(parameter_index, &a)| {
+                let e = file.ir.expr(a);
+                let argument_anchor = anchor(&e.origin);
+                let parameter_index = parameter_index as u32;
+                // Only bare-identifier args bind to a record/parameter symbol.
+                let lc = match &e.kind {
+                    ExprKind::Identifier(n) if e.origin.kind_text == "identifier" => {
+                        n.to_ascii_lowercase()
+                    }
+                    _ => {
+                        return PCallArgumentBinding {
+                            parameter_index,
+                            source_kind: "expression".to_string(),
+                            source_variable_name: None,
+                            source_record_variable_id: None,
+                            source_parameter_index: None,
+                            caller_source_parameter_is_var: None,
+                            source_temp_state: None,
+                            argument_anchor,
+                        };
+                    }
+                };
+                let param = param_by_lc.get(&lc);
+                let rec_var = rv_by_lc.get(&lc);
+                let is_implicit_rec = (lc == "rec" || lc == "xrec")
+                    && rec_var.map(|rv| rv.table_name.is_none()).unwrap_or(true);
+                let source_kind = if param.is_some() {
+                    "parameter"
+                } else if is_implicit_rec {
+                    "implicit-rec"
+                } else if rec_var.is_some() {
+                    "local"
+                } else {
+                    "unknown"
+                };
+                let bound_rec_var = if is_implicit_rec { None } else { rec_var };
+                let source_temp_state = match bound_rec_var {
+                    Some(rv) => Some(rv.temp_state.clone()),
+                    None if is_implicit_rec => rec_var.map(|rv| rv.temp_state.clone()),
+                    None => None,
+                };
+                PCallArgumentBinding {
+                    parameter_index,
+                    source_kind: source_kind.to_string(),
+                    source_variable_name: if source_kind == "unknown" {
+                        None
+                    } else {
+                        Some(lc.clone())
+                    },
+                    source_record_variable_id: bound_rec_var.map(|rv| rv.id.clone()),
+                    source_parameter_index: param.map(|(i, _)| *i),
+                    caller_source_parameter_is_var: param.map(|(_, v)| *v),
+                    source_temp_state,
+                    argument_anchor,
+                }
+            })
+            .collect();
+    }
+
     IrPartialFeatures {
         statement_tree,
         has_branching: spine.has_branching,
@@ -1295,6 +1534,7 @@ pub fn routine_features_partial(
         unreachable_statements: spine.unreachable_statements,
         record_operations,
         operation_sites: spine.operation_sites,
+        call_sites,
     }
 }
 
