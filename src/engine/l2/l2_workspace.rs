@@ -853,6 +853,18 @@ pub fn project_named_routine(
     let root = tree.root_node();
     let cols = Utf16Cols::new(source);
 
+    // Owned-IR cutover (mirrors project_file): index IR routines by start byte.
+    let ir_file = al_syntax::parse(source);
+    let mut ir_routine_by_byte: std::collections::HashMap<
+        usize,
+        (usize, &al_syntax::ir::RoutineDecl),
+    > = std::collections::HashMap::new();
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        for r in &o.routines {
+            ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
+        }
+    }
+
     for decl in named_children(root) {
         let Some(object_type) = scope::object_type_for(decl.kind()) else {
             continue;
@@ -907,19 +919,46 @@ pub fn project_named_routine(
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            let mut features: PFeatures = project_routine_features(
-                decl,
-                routine,
-                object_type,
-                object_number,
-                source_table_name.as_deref(),
-                &object_procedure_names,
-                &object_globals,
-                &id_ctx,
-                source,
-                &cols,
-            )
-            .map(|(_, f)| f)?;
+            let ir_match = if parse_incomplete {
+                None
+            } else {
+                ir_routine_by_byte.get(&routine.start_byte())
+            };
+            let mut features: PFeatures = if let Some((oi, ir_routine)) = ir_match {
+                let routine_id = scope::compute_routine_id(
+                    app_guid,
+                    object_type,
+                    object_number,
+                    kind,
+                    &rname,
+                    &parameters,
+                    return_type_text.as_deref(),
+                    MODEL_INSTANCE_ID,
+                );
+                crate::engine::l2::ir_walk::project_routine_features_ir(
+                    &ir_file,
+                    *oi,
+                    ir_routine,
+                    &routine_id,
+                    source,
+                    source_unit_id,
+                    source_table_name.as_deref(),
+                )
+            } else {
+                project_routine_features(
+                    decl,
+                    routine,
+                    object_type,
+                    object_number,
+                    source_table_name.as_deref(),
+                    &object_procedure_names,
+                    &object_globals,
+                    &id_ctx,
+                    source,
+                    &cols,
+                )
+                .map(|(_, f)| f)?
+            };
 
             let attr_names_lc: Vec<String> = attributes_parsed
                 .iter()
