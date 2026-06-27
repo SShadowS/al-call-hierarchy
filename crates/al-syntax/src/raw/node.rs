@@ -1,0 +1,86 @@
+//! `RawNode` — a zero-copy typed lens over a `tree_sitter::Node`.
+//!
+//! This is the single place tree-sitter's node API is touched. Payload accessors
+//! (kind/ranges/positions/id/text/error flags) are public; structural navigation
+//! (`field`, `named_children`) is crate-internal so only the raw typed wrappers and
+//! the lowerer descend the tree — consumers above `al-syntax` see only the IR.
+
+use crate::raw::generated::{FieldName, RawKind};
+use tree_sitter::Node;
+
+#[derive(Copy, Clone)]
+pub struct RawNode<'t> {
+    node: Node<'t>,
+}
+
+impl<'t> RawNode<'t> {
+    pub(crate) fn new(node: Node<'t>) -> Self {
+        Self { node }
+    }
+
+    // ---- payload (public) ----
+
+    /// Semantic kind. Panics on a kind absent from the pinned grammar (loud — a
+    /// grammar/binary mismatch), since only named children are ever classified.
+    pub fn kind(self) -> RawKind {
+        RawKind::from_raw(self.node.kind())
+    }
+
+    /// The raw grammar kind string, for anchor `syntax_kind` byte-parity.
+    pub fn kind_str(self) -> &'static str {
+        self.node.kind()
+    }
+
+    /// tree-sitter node id. EPHEMERAL: only valid within one parse; tree-sitter
+    /// recycles ids across re-parses. Used to key the L2 op/callsite maps during a
+    /// single lowering pass — never persist or compare across parses.
+    pub fn id(self) -> usize {
+        self.node.id()
+    }
+
+    pub fn byte_range(self) -> std::ops::Range<usize> {
+        self.node.byte_range()
+    }
+    pub fn start_position(self) -> tree_sitter::Point {
+        self.node.start_position()
+    }
+    pub fn end_position(self) -> tree_sitter::Point {
+        self.node.end_position()
+    }
+    pub fn is_error(self) -> bool {
+        self.node.is_error()
+    }
+    pub fn is_missing(self) -> bool {
+        self.node.is_missing()
+    }
+    pub fn has_error(self) -> bool {
+        self.node.has_error()
+    }
+
+    /// Source text of this node.
+    pub fn text<'s>(self, src: &'s str) -> &'s str {
+        &src[self.node.byte_range()]
+    }
+
+    // ---- structural navigation (crate-internal) ----
+
+    /// The single child held in `field`, if present.
+    // Consumed by the generated typed nodes (0c) + the lowerer (0d).
+    #[allow(dead_code)]
+    pub(crate) fn field(self, f: FieldName) -> Option<RawNode<'t>> {
+        self.node.child_by_field_name(f.as_raw()).map(RawNode::new)
+    }
+
+    /// Named children in tree-sitter **document order**. NEVER byte-sorted: nested
+    /// `call_expression`s share a start position, so only traversal order is
+    /// well-defined, and L2 op/callsite numbering depends on it (spec INV-1).
+    // Consumed by the generated typed nodes (0c) + the lowerer (0d).
+    #[allow(dead_code)]
+    pub(crate) fn named_children(self) -> Vec<RawNode<'t>> {
+        let mut cursor = self.node.walk();
+        self.node
+            .named_children(&mut cursor)
+            .map(RawNode::new)
+            .collect()
+    }
+}

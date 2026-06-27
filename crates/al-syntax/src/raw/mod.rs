@@ -4,8 +4,10 @@
 //! it is tightened to crate-internal at the Phase 5 seal.
 
 pub mod generated;
+pub mod node;
 
 pub use generated::{FieldName, RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};
+pub use node::RawNode;
 
 #[cfg(test)]
 mod tests {
