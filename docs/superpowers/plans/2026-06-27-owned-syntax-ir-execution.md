@@ -89,10 +89,18 @@ to **590/591 (99.8%)**. The SINGLE remaining divergence is `ws-callsite-resoluti
 intentionally-malformed AL (`CallSomething(); @@@` stray tokens), an ERROR-recovery edge case where
 IR/legacy differ on the recovery fragment. So the L2 cutover is byte-identical on ALL well-formed
 code, validated FIVE ways.
-NEXT (mechanical, fully de-risked): (a) swap the `project_routine_features` call in `project_workspace`
-for `project_routine_features_ir` (parse the file's IR alongside, match routines by byte position,
-compute routine_id as in the byte-exact test) + gate the workspace `L2Projection`; (b) delete
-`body_walk` + the engine's per-routine tree-sitter walk. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+### ✅ PHASE 2 CUT — L2 IS LIVE ON THE OWNED IR (commits c59cb56, 342eaa2). `project_file`
+(the production `project_workspace` path) now produces every WELL-FORMED routine's `PFeatures` from
+the owned IR (`project_routine_features_ir`): parse the file's IR once, index routines by start byte,
+match each tree-sitter routine, compute routine_id via `compute_routine_id`. Parse-error routines
+fall back to legacy `body_walk` (the IR's ERROR-recovery differs on malformed code — the sole known
+divergence). **THE ENTIRE TEST SUITE PASSES** — every committed golden (L2 features, L3 call-graph,
+cli formats, SARIF, snapshots) is byte-identical with the IR driving L2. Fixed the implicit-Rec scope
+gap the workspace exposed (build_scope now adds Rec to frvars + base frame for table/pageext/
+page-with-SourceTable/codeunit-TableNo via `has_implicit_rec`, threaded with source_table_name).
+REMAINING for Phase 2: (a) `body_walk` deletion is BLOCKED by the malformed-AL ERROR-recovery
+fallback — stays as the parse-error path (acceptable; IR drives all real code); (b) wire the
+secondary `project_named_routine` helper. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
 
 ### (historical) NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
 object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
