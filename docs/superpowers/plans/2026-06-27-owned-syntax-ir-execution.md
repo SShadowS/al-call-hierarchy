@@ -234,3 +234,26 @@ REMAINING cutover (layered, lower-risk, sequenced):
 - Assemble full PFeatures from the IR walk; gate full serde-PFeatures equality vs legacy_l2_features.
 - Then CUT L2 over: build engine-side project_routine_features_ir consuming the IR, delete legacy
   body_walk. Then Phase 3 (L3), Phase 4 (LSP + retire queries), Phase 5 (seal: drop engine tree-sitter).
+
+## L2 CUTOVER — Layer-3 progress (commits baf8057, 3f2ba88, a2538ff)
+Feature re-expression over the IR vs real engine PFeatures (591 routines), trace-validated:
+- field_accesses 100% (HARD GATE) — value-position member on a record var; frvars (field rvar set,
+  record_var_names semantics) distinct from op rvars (Rec/xRec convention).
+- var_assignments 100% (HARD GATE) — lhs base name + literal rhs. Drove a lowerer fix: Member.member
+  now RAW (quotes preserved) — source-faithful, consumers norm().
+- identifier_references 98.1% (measurement) — value-ref idents; excludes callee/method names +
+  keyword_identifier (via Origin.kind_text). Residual = Codeunit::Name object-ref enum values.
+
+### IR refinement needed (next): Member.member carries no position
+condition_references' reference_anchor = the MEMBER identifier node's position, but IR Member.member
+is a bare String (no Origin). Same lossy-String pattern as var-assignment quotes. FIX: make
+ExprKind::Member carry the member's Origin (or member as an ExprId → Identifier expr). Clean but
+ripples through the walkers/streams — do fresh. Then condition_references + the rich PFeatures fields
+(callee structures, argument bindings) become expressible.
+
+### State: op/cs NUMBERING + 5 FEATURES at 100%; the deepest risk (op-order) is retired.
+REMAINING: condition_references (after Member-position refinement) → CFN statement_tree → assemble
+full PFeatures (with loop_stack/argument_bindings/callee/control_context/temp_state — the rich
+fields, only ANCHORS validated so far) → gate full serde-equality → cut L2 over (engine consumes IR,
+delete body_walk) → Phase 3 (L3) → Phase 4 (LSP, retire queries) → Phase 5 (seal). Substantial,
+multi-session; the parity-critical heart is DONE.
