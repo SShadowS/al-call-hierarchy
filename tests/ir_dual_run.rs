@@ -2993,3 +2993,123 @@ fn engine_ir_attributes_parity() {
         "engine ir_walk routine-envelope metadata divergences"
     );
 }
+
+/// PHASE-3 prep — IR-derived ParameterSymbol matches legacy extract_parameters
+/// (the stable-id hash input). Validates the parameters port is safe before wiring.
+#[test]
+fn engine_ir_parameters_parity() {
+    use al_call_hierarchy::engine::l2::scope::{extract_parameters, ParameterSymbol};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    fn ir_params(
+        r: &al_syntax::ir::RoutineDecl,
+    ) -> Vec<(u32, String, String, bool, bool, Option<String>)> {
+        r.params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let ty = p.ty.clone().unwrap_or_default();
+                let lc = ty.to_ascii_lowercase();
+                let is_record = lc.starts_with("record");
+                let table_name = if is_record {
+                    let rest = ty[6..].trim_start();
+                    if let Some(a) = rest.strip_prefix('"') {
+                        a.find('"').map(|e| a[..e].to_string())
+                    } else {
+                        rest.split_whitespace().next().map(|w| w.to_string())
+                    }
+                } else {
+                    None
+                };
+                (
+                    i as u32,
+                    p.name.clone(),
+                    ty,
+                    p.by_ref,
+                    is_record,
+                    table_name,
+                )
+            })
+            .collect()
+    }
+    fn key(p: &ParameterSymbol) -> (u32, String, String, bool, bool, Option<String>) {
+        (
+            p.index,
+            p.name.clone(),
+            p.type_text.clone(),
+            p.is_var,
+            p.is_record,
+            p.table_name.clone(),
+        )
+    }
+    fn routine_nodes<'t>(n: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
+        let mut c = n.walk();
+        for ch in n.named_children(&mut c) {
+            if ch.kind() == "procedure" || ch.kind() == "trigger_declaration" {
+                out.push(ch);
+            } else {
+                routine_nodes(ch, out);
+            }
+        }
+    }
+    let lang = al_call_hierarchy::language::language();
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<String> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&lang).is_err() {
+            continue;
+        }
+        let Some(tree) = parser.parse(&src, None) else {
+            continue;
+        };
+        let file = al_syntax::parse(&src);
+        let mut ir_by_byte: std::collections::HashMap<usize, &al_syntax::ir::RoutineDecl> =
+            Default::default();
+        for o in &file.objects {
+            for r in &o.routines {
+                ir_by_byte.insert(r.origin.byte.start, r);
+            }
+        }
+        let mut nodes = Vec::new();
+        routine_nodes(tree.root_node(), &mut nodes);
+        for node in nodes {
+            let Some(r) = ir_by_byte.get(&node.start_byte()) else {
+                continue;
+            };
+            total += 1;
+            let legacy: Vec<_> = extract_parameters(node, &src).iter().map(key).collect();
+            let ir: Vec<_> = ir_params(r);
+            if legacy == ir {
+                matching += 1;
+            } else if divs.len() < 10 {
+                divs.push(format!(
+                    "{} :: {}\n    legacy={:?}\n    ir    ={:?}",
+                    fpath.strip_prefix(&root).unwrap_or(&fpath).display(),
+                    r.name,
+                    legacy,
+                    ir
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== PHASE-3 IR parameters vs extract_parameters: {matching}/{total} ({pct:.1}%) ==="
+    );
+    for d in divs.iter().take(10) {
+        eprintln!("  {d}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "engine ir parameters divergences");
+}
