@@ -62,6 +62,9 @@ pub struct RoutineDecl {
     /// routine — e.g. "eventsubscriber", "tryfunction", "integrationevent". Drives
     /// routine-kind classification + control-context guards.
     pub attributes: Vec<String>,
+    /// Access modifier keyword (lowercased: "local"/"internal"/"protected"), or None
+    /// for a public procedure / a trigger. Mirrors the `modifier` field.
+    pub access_modifier: Option<String>,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,

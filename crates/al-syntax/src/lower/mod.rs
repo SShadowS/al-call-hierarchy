@@ -235,6 +235,16 @@ fn lower_routine(
         .field(FieldName::ReturnType)
         .map(|n| n.text(source).trim().to_string());
 
+    // Access modifier (`local`/`internal`/`protected`); None = public / trigger.
+    let access_modifier = node.field(FieldName::Modifier).and_then(|m| {
+        match m.text(source).trim().to_ascii_lowercase().as_str() {
+            "local" => Some("local".to_string()),
+            "internal" => Some("internal".to_string()),
+            "protected" => Some("protected".to_string()),
+            _ => None,
+        }
+    });
+
     // Locals: var_section child(ren) of the routine (+ preproc-wrapped).
     let mut locals = Vec::new();
     for child in node.named_children() {
@@ -253,6 +263,7 @@ fn lower_routine(
         return_type,
         locals,
         attributes,
+        access_modifier,
         body,
         origin: origin_of(node),
     }
