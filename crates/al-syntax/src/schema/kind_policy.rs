@@ -1,0 +1,174 @@
+// @generated starter (one-time) then HAND-OWNED — edit freely; the exhaustive
+// match (no wildcard) is the loudness gate: a new RawKind variant makes this
+// match non-exhaustive -> `cargo check` fails -> the kind must be triaged.
+
+use crate::raw::RawKind;
+
+/// How the lowerer treats a raw kind. `class_of` is the loudness gate; actual
+/// descent lives in the per-context lowerer (via the typed nodes), so this is
+/// intentionally coarse: Trivia (keywords/comments — never lowered), Recovery
+/// (tree-sitter ERROR), Structural (everything the lowerer may route).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Class {
+    Trivia,
+    Recovery,
+    Structural,
+}
+
+pub fn class_of(k: RawKind) -> Class {
+    match k {
+        // ---- Trivia: keyword tokens + comments ----
+    RawKind::ActionsKeyword | RawKind::AnalysisviewKeyword | RawKind::AnalysisviewsKeyword |
+    RawKind::AreaKeyword | RawKind::AsserterrorKeyword | RawKind::BeginKeyword |
+    RawKind::BreakKeyword | RawKind::CaseKeyword | RawKind::CodeunitKeyword |
+    RawKind::ColumnKeyword | RawKind::Comment | RawKind::ContinueKeyword |
+    RawKind::ControladdinKeyword | RawKind::CuegroupKeyword | RawKind::CustomizesKeyword |
+    RawKind::DataitemKeyword | RawKind::DatasetKeyword | RawKind::DoKeyword |
+    RawKind::DotnetKeyword | RawKind::DowntoKeyword | RawKind::ElementsKeyword |
+    RawKind::ElseKeyword | RawKind::EndKeyword | RawKind::EntitlementKeyword |
+    RawKind::EnumKeyword | RawKind::EnumextensionKeyword | RawKind::EventKeyword |
+    RawKind::ExitKeyword | RawKind::ExtendsKeyword | RawKind::FieldgroupKeyword |
+    RawKind::FieldgroupsKeyword | RawKind::FieldsKeyword | RawKind::FilterKeyword |
+    RawKind::FixedKeyword | RawKind::ForKeyword | RawKind::ForeachKeyword |
+    RawKind::GridKeyword | RawKind::GroupKeyword | RawKind::IfKeyword |
+    RawKind::ImplementsKeyword | RawKind::InKeyword | RawKind::InterfaceKeyword |
+    RawKind::InternalKeyword | RawKind::KeyKeyword | RawKind::KeysKeyword |
+    RawKind::LabelsKeyword | RawKind::LayoutKeyword | RawKind::LocalKeyword |
+    RawKind::MultilineComment | RawKind::NamespaceKeyword | RawKind::ObjectTypeKeyword |
+    RawKind::OfKeyword | RawKind::PageKeyword | RawKind::PagecustomizationKeyword |
+    RawKind::PageextensionKeyword | RawKind::PartKeyword | RawKind::PermissionsetKeyword |
+    RawKind::PermissionsetextensionKeyword | RawKind::ProcedureKeyword |
+    RawKind::ProfileKeyword | RawKind::ProfileextensionKeyword | RawKind::ProtectedKeyword |
+    RawKind::QueryKeyword | RawKind::RenderingKeyword | RawKind::RepeatKeyword |
+    RawKind::RepeaterKeyword | RawKind::ReportKeyword | RawKind::ReportextensionKeyword |
+    RawKind::RequestpageKeyword | RawKind::SchemaKeyword | RawKind::SystempartKeyword |
+    RawKind::TableKeyword | RawKind::TableextensionKeyword | RawKind::TemporaryKeyword |
+    RawKind::ThenKeyword | RawKind::ToKeyword | RawKind::TriggerKeyword |
+    RawKind::UntilKeyword | RawKind::UsercontrolKeyword | RawKind::UsingKeyword |
+    RawKind::VarKeyword | RawKind::ViewKeyword | RawKind::ViewsKeyword |
+    RawKind::WhileKeyword | RawKind::WithKeyword | RawKind::XmlportKeyword
+        => Class::Trivia,
+
+        // ---- Recovery ----
+        RawKind::Error => Class::Recovery,
+
+        // ---- Structural: declarations, statements, expressions, bodies,
+        //      preprocessor nodes (lowerer owns descent / both #if-#else branches) ----
+    RawKind::ActionAreaSection | RawKind::ActionBody | RawKind::ActionDeclaration |
+    RawKind::ActionGroupBody | RawKind::ActionGroupSection | RawKind::ActionrefDeclaration |
+    RawKind::ActionsSection | RawKind::AddDatasetModification |
+    RawKind::AddafterActionModification | RawKind::AddafterDatasetModification |
+    RawKind::AddafterModification | RawKind::AddafterViewsModification |
+    RawKind::AddbeforeActionModification | RawKind::AddbeforeDatasetModification |
+    RawKind::AddbeforeModification | RawKind::AddbeforeViewsModification |
+    RawKind::AddfirstActionModification | RawKind::AddfirstDatasetModification |
+    RawKind::AddfirstFieldgroupModification | RawKind::AddfirstModification |
+    RawKind::AddfirstViewsModification | RawKind::AdditiveExpression |
+    RawKind::AddlastActionModification | RawKind::AddlastDatasetModification |
+    RawKind::AddlastFieldgroupModification | RawKind::AddlastModification |
+    RawKind::AddlastViewsModification | RawKind::AggregateFormula |
+    RawKind::AggregateFunction | RawKind::AnalysisviewDeclaration |
+    RawKind::AnalysisviewsBody | RawKind::AnalysisviewsSection | RawKind::AreaSection |
+    RawKind::ArgumentList | RawKind::ArrayType | RawKind::AssemblyBody |
+    RawKind::AssemblyDeclaration | RawKind::AsserterrorStatement |
+    RawKind::AssignmentExpression | RawKind::AssignmentStatement |
+    RawKind::AttributeArgumentList | RawKind::AttributeArguments | RawKind::AttributeContent |
+    RawKind::AttributeItem | RawKind::BasicType | RawKind::BigintegerLiteral |
+    RawKind::Boolean | RawKind::BreakStatement | RawKind::CalcFieldReference |
+    RawKind::CallExpression | RawKind::CaptionValue | RawKind::CaseBody | RawKind::CaseBranch |
+    RawKind::CaseElseBranch | RawKind::CaseStatement | RawKind::CodeBlock | RawKind::CodeType |
+    RawKind::CodeunitDeclaration | RawKind::ComparisonExpression |
+    RawKind::ComparisonOperator | RawKind::ContinueStatement | RawKind::ControladdinBody |
+    RawKind::ControladdinDeclaration | RawKind::CuegroupSection |
+    RawKind::CustomactionDeclaration | RawKind::DatabaseReference | RawKind::DatasetBody |
+    RawKind::DatasetModBody | RawKind::DatasetSection | RawKind::DateLiteral |
+    RawKind::DatetimeLiteral | RawKind::Decimal | RawKind::DecimalRangeValue |
+    RawKind::DeclarationBody | RawKind::DictionaryType | RawKind::DotnetAssemblyName |
+    RawKind::DotnetBody | RawKind::DotnetDeclaration | RawKind::DotnetType |
+    RawKind::ElementsBody | RawKind::ElementsSection | RawKind::ElseTableRelationFragment |
+    RawKind::EmptyStatement | RawKind::EntitlementDeclaration | RawKind::EnumDeclaration |
+    RawKind::EnumValueDeclaration | RawKind::EnumextensionDeclaration |
+    RawKind::EventDeclaration | RawKind::ExitStatement | RawKind::FieldDeclaration |
+    RawKind::FieldList | RawKind::FieldgroupDeclaration | RawKind::FieldgroupsBody |
+    RawKind::FieldgroupsSection | RawKind::FieldsBody | RawKind::FieldsSection |
+    RawKind::FileuploadactionDeclaration | RawKind::FilterValue | RawKind::FixedSection |
+    RawKind::ForStatement | RawKind::ForeachStatement | RawKind::GridSection |
+    RawKind::GroupSection | RawKind::Identifier | RawKind::IfStatement |
+    RawKind::IfTableRelation | RawKind::ImplementationValue |
+    RawKind::ImplementationValueList | RawKind::ImplementsClause | RawKind::Integer |
+    RawKind::InterfaceBody | RawKind::InterfaceDeclaration | RawKind::InterfaceProcedure |
+    RawKind::InterfaceProcedureSuffix | RawKind::KeyDeclaration | RawKind::KeysBody |
+    RawKind::KeysSection | RawKind::KeywordIdentifier | RawKind::LabelAttribute |
+    RawKind::LabelDeclaration | RawKind::LabelSection | RawKind::LabelsBody |
+    RawKind::LabelsSection | RawKind::LayoutBody | RawKind::LayoutContainerBody |
+    RawKind::LayoutSection | RawKind::LinkValue | RawKind::LinkValueList |
+    RawKind::ListLiteral | RawKind::ListType | RawKind::LogicalExpression |
+    RawKind::LookupFormula | RawKind::MemberExpression | RawKind::MlValueList |
+    RawKind::MlValuePair | RawKind::ModifyActionModification | RawKind::ModifyModification |
+    RawKind::MoveafterModification | RawKind::MovebeforeModification |
+    RawKind::MovefirstModification | RawKind::MovelastModification |
+    RawKind::MultiplicativeExpression | RawKind::NamespaceDeclaration |
+    RawKind::NamespaceName | RawKind::ObjectReferenceType | RawKind::ObjectReferenceValue |
+    RawKind::OptionMember | RawKind::OptionMemberList | RawKind::OptionType |
+    RawKind::OrderByItem | RawKind::OrderByList | RawKind::PageDeclaration |
+    RawKind::PageField | RawKind::PagecustomizationDeclaration |
+    RawKind::PageextensionDeclaration | RawKind::Parameter | RawKind::ParameterList |
+    RawKind::ParenthesizedExpression | RawKind::PartSection | RawKind::PermissionType |
+    RawKind::PermissionsetDeclaration | RawKind::PermissionsetextensionDeclaration |
+    RawKind::Pragma | RawKind::PreprocAndExpression | RawKind::PreprocClose |
+    RawKind::PreprocConditional | RawKind::PreprocConditionalActions |
+    RawKind::PreprocConditionalCase | RawKind::PreprocConditionalCasePatterns |
+    RawKind::PreprocConditionalControladdin | RawKind::PreprocConditionalDataset |
+    RawKind::PreprocConditionalFieldgroups | RawKind::PreprocConditionalFields |
+    RawKind::PreprocConditionalImplValues | RawKind::PreprocConditionalKeys |
+    RawKind::PreprocConditionalLabels | RawKind::PreprocConditionalLayout |
+    RawKind::PreprocConditionalLayoutMixed | RawKind::PreprocConditionalLinkValues |
+    RawKind::PreprocConditionalObject | RawKind::PreprocConditionalOptionMembers |
+    RawKind::PreprocConditionalPermissions | RawKind::PreprocConditionalQuery |
+    RawKind::PreprocConditionalRendering | RawKind::PreprocConditionalReport |
+    RawKind::PreprocConditionalStatement | RawKind::PreprocConditionalTableRelation |
+    RawKind::PreprocConditionalVar | RawKind::PreprocConditionalVarBlock |
+    RawKind::PreprocConditionalWhere | RawKind::PreprocConditionalXmlport |
+    RawKind::PreprocElif | RawKind::PreprocElse | RawKind::PreprocEndif |
+    RawKind::PreprocEndregion | RawKind::PreprocFragmentedElseTail |
+    RawKind::PreprocGuardedStatement | RawKind::PreprocIf | RawKind::PreprocNotExpression |
+    RawKind::PreprocOpen | RawKind::PreprocOrExpression | RawKind::PreprocPragmaOnly |
+    RawKind::PreprocRegion | RawKind::PreprocSplitBegin | RawKind::PreprocSplitBraceClose |
+    RawKind::PreprocSplitBraceCloseIfOnly | RawKind::PreprocSplitCallStatement |
+    RawKind::PreprocSplitCaseBranch | RawKind::PreprocSplitCaseExtended |
+    RawKind::PreprocSplitCodeBlockEnd | RawKind::PreprocSplitCompleteBody |
+    RawKind::PreprocSplitDeclaration | RawKind::PreprocSplitEnd | RawKind::PreprocSplitField |
+    RawKind::PreprocSplitIfBeginAsymmetric | RawKind::PreprocSplitIfBeginElse |
+    RawKind::PreprocSplitIfElseStatement | RawKind::PreprocSplitIfStatement |
+    RawKind::PreprocSplitIfThenBegin | RawKind::PreprocSplitIfThenBeginElseShared |
+    RawKind::PreprocSplitProcedure | RawKind::PreprocSplitProcedureBody |
+    RawKind::PreprocSplitProcedurePreamble | RawKind::PreprocSplitTableField |
+    RawKind::Procedure | RawKind::ProcedureModifier | RawKind::ProfileDeclaration |
+    RawKind::ProfileextensionDeclaration | RawKind::Property | RawKind::PropertyExpression |
+    RawKind::PropertyName | RawKind::QualifiedEnumValue | RawKind::QueryBody |
+    RawKind::QueryColumn | RawKind::QueryDataitem | RawKind::QueryDeclaration |
+    RawKind::QueryFilter | RawKind::QuotedIdentifier | RawKind::RangeExpression |
+    RawKind::RecordType | RawKind::RenderingBody | RawKind::RenderingLayout |
+    RawKind::RenderingSection | RawKind::RepeatStatement | RawKind::RepeaterSection |
+    RawKind::ReportBody | RawKind::ReportColumn | RawKind::ReportDataitem |
+    RawKind::ReportDeclaration | RawKind::ReportextensionDeclaration |
+    RawKind::RequestpageSection | RawKind::SchemaBody | RawKind::SchemaSection |
+    RawKind::SeparatorAction | RawKind::SignedIntegerList | RawKind::SimpleTableRelation |
+    RawKind::SortingValue | RawKind::SourceFile | RawKind::StatementBlock |
+    RawKind::StringLiteral | RawKind::SubscriptExpression | RawKind::SystemactionDeclaration |
+    RawKind::SystempartSection | RawKind::TableDeclaration | RawKind::TableRelationExpression |
+    RawKind::TableRelationValue | RawKind::TabledataPermission |
+    RawKind::TabledataPermissionList | RawKind::TableextensionDeclaration |
+    RawKind::TernaryExpression | RawKind::TextType | RawKind::TimeLiteral |
+    RawKind::TriggerDeclaration | RawKind::TypeDeclaration | RawKind::TypeSpecification |
+    RawKind::UnaryExpression | RawKind::UsercontrolSection | RawKind::UsingStatement |
+    RawKind::VarAttributeItem | RawKind::VarAttributeOpen | RawKind::VarBody |
+    RawKind::VarSection | RawKind::VariableDeclaration | RawKind::VerbatimString |
+    RawKind::ViewDefinition | RawKind::ViewsBody | RawKind::ViewsModBody |
+    RawKind::ViewsSection | RawKind::WhereClause | RawKind::WhereCondition |
+    RawKind::WhereConditions | RawKind::WhileStatement | RawKind::WithStatement |
+    RawKind::XmlportAttribute | RawKind::XmlportBody | RawKind::XmlportDeclaration |
+    RawKind::XmlportElement
+        => Class::Structural,
+    }
+}

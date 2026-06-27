@@ -5,5 +5,11 @@
 //! and the owned AL syntax IR that the rest of the workspace consumes. Raw
 //! grammar details never leave this crate; consumers see only the IR.
 
+pub mod ir;
 pub mod language;
+pub mod lower;
+pub mod parse;
 pub mod raw;
+pub mod schema;
+
+pub use parse::parse;
