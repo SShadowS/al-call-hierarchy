@@ -74,8 +74,22 @@ NEW code now at a fraction of the churn:
   al-syntax vocabulary unit tests pass. Workspace green/unchanged (pending confirm).
 - [ ] **0b** — `schema/kind_policy.rs`: exhaustive `class_of(RawKind)->Class`
   (Semantic/Transparent/Trivia/Recovery/Ignored) + generated coverage test asserting exhaustiveness.
-- [ ] **0c** — typed CST wrappers (`nodes.rs`) + `shape.rs` (required/optional field facts;
-  `required_field()` debug-assert).
+- [x] **0c(1)** — `RawNode` zero-copy lens (`raw/node.rs`): public payload accessors,
+  crate-internal `field`/`named_children` (document-order), `id()` documented ephemeral. Committed
+  `4e73eb3`. Reviewer-confirmed (both): order-preserving children, private inner node, no
+  `RawKind::Missing`.
+- [ ] **0c(2)** — typed CST wrappers (`nodes.rs`, generated) + `shape.rs`. **Reviewer-confirmed
+  decisions:** generate a struct per named kind (`RawProcedure<'t>(RawNode)`), `cast()`/`node()` +
+  field accessors. Accessor rule: single named-type field → `Option<RawT>`; multiple → `Vec<RawT>`
+  (needs `RawNode::children_by_field_name`); **multi named-type field → deduplicated union enum**
+  (Gemini's correction — `RawNode` fallback loses compile-time wrapper-safety); any **anonymous**
+  member type (operators/punct, not a `RawKind`) → `RawNode` fallback (can't type). Typed layer is
+  SHAPE safety only, no AL semantics; stays private to al-syntax.
+- [ ] **0b** — `schema/kind_policy.rs`: **exhaustive `match class_of(RawKind)->Class` with NO
+  wildcard** (Gemini wins the split: compile-time gate beats test-time union; a new variant →
+  non-exhaustive match → `cargo check` fails → forced human decision). Classes:
+  Semantic/Transparent/Trivia/Recovery/Ignored. Generate a one-time starter to seed the ~340
+  Semantic arm; thereafter hand-owned.
 - [ ] **0d** — `ir/` types (Origin + Stmt/Expr taxonomy incl. try/asserterror/foreach/case_else),
   `lower/` skeleton, `parse.rs`. ← **reviewer checkpoint here** (IR taxonomy + class_of design).
 - [ ] Boundary scanner in CI, monotonic-decrease, seeded from real grep.
