@@ -24,7 +24,12 @@ pub fn lower_file(root: RawNode, source: &str) -> AlFile {
     let mut issues = Vec::new();
     let mut objects = Vec::new();
     collect_objects(root, source, &mut ir, &mut issues, &mut objects);
-    AlFile { objects, ir, issues, parse_status }
+    AlFile {
+        objects,
+        ir,
+        issues,
+        parse_status,
+    }
 }
 
 /// Walk for top-level object declarations, descending namespaces and preproc
@@ -111,7 +116,14 @@ fn lower_object(
         }
     }
 
-    ObjectDecl { kind, id, name, routines, globals, origin: origin_of(node) }
+    ObjectDecl {
+        kind,
+        id,
+        name,
+        routines,
+        globals,
+        origin: origin_of(node),
+    }
 }
 
 /// DFS collecting `procedure` / `trigger_declaration` nodes. AL has no nested
@@ -181,7 +193,15 @@ fn lower_routine(
         .filter(|b| b.kind() == RawKind::CodeBlock)
         .map(|cb| lower_code_block(cb, ir, issues, source));
 
-    RoutineDecl { kind, name, params, return_type, locals, body, origin: origin_of(node) }
+    RoutineDecl {
+        kind,
+        name,
+        params,
+        return_type,
+        locals,
+        body,
+        origin: origin_of(node),
+    }
 }
 
 fn lower_param(node: RawNode, source: &str) -> Param {
@@ -193,7 +213,12 @@ fn lower_param(node: RawNode, source: &str) -> Param {
     let ty = node
         .field(FieldName::Type)
         .map(|n| n.text(source).trim().to_string());
-    Param { name, by_ref, ty, origin: origin_of(node) }
+    Param {
+        name,
+        by_ref,
+        ty,
+        origin: origin_of(node),
+    }
 }
 
 /// A `var_section` → its `var_body` → one `VarDecl` per declared name (`A, B: T`
@@ -256,21 +281,34 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
 // dual-run). Unmodelled nodes become `Unknown` + a `SyntaxIssue` — never dropped.
 
 /// `code_block` → its `statement_block` (v3) → a `Block`.
-fn lower_code_block(cb: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> BlockId {
+fn lower_code_block(
+    cb: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
     let inner = cb.field(FieldName::Body).unwrap_or(cb);
     lower_stmt_seq(inner, origin_of(cb), ir, issues, source)
 }
 
 /// A branch position (then/else/loop body): a `code_block`, a bare `statement_block`,
 /// or a single statement. Always normalized to a `Block`.
-fn lower_branch(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> BlockId {
+fn lower_branch(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
     match node.kind() {
         RawKind::CodeBlock => lower_code_block(node, ir, issues, source),
         RawKind::StatementBlock => lower_stmt_seq(node, origin_of(node), ir, issues, source),
         _ => {
             let mut items = Vec::new();
             lower_block_child(node, ir, issues, source, &mut items);
-            ir.add_block(Block { items, origin: origin_of(node) })
+            ir.add_block(Block {
+                items,
+                origin: origin_of(node),
+            })
         }
     }
 }
@@ -302,7 +340,29 @@ fn lower_block_child(
         }
         return;
     }
-    if node.kind() == RawKind::EmptyStatement {
+    // Statement-position keyword tokens are named children that leak from certain
+    // wrappers: `begin`/`end` from an EMPTY `code_block` (v3 emits no `statement_block`
+    // body, so `lower_code_block` falls back to the code_block itself), `else` from a
+    // `case_else_branch` (lowered by iterating its direct children), etc. None are
+    // statements — skip them, exactly as legacy `block_statements`/CFN `build_block` do.
+    if matches!(
+        node.kind(),
+        RawKind::EmptyStatement
+            | RawKind::BeginKeyword
+            | RawKind::EndKeyword
+            | RawKind::IfKeyword
+            | RawKind::ThenKeyword
+            | RawKind::ElseKeyword
+            | RawKind::CaseKeyword
+            | RawKind::OfKeyword
+            | RawKind::RepeatKeyword
+            | RawKind::UntilKeyword
+            | RawKind::WhileKeyword
+            | RawKind::ForKeyword
+            | RawKind::DoKeyword
+            | RawKind::ForeachKeyword
+            | RawKind::InKeyword
+    ) {
         return;
     }
     let sid = lower_stmt(node, ir, issues, source);
@@ -328,7 +388,10 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         | RawKind::SubscriptExpression => {
             let function = lower_expr(node, ir, issues, source);
             let call = ir.add_expr(Expr {
-                kind: ExprKind::Call { function, args: Vec::new() },
+                kind: ExprKind::Call {
+                    function,
+                    args: Vec::new(),
+                },
                 origin: origin_of(node),
             });
             StmtKind::Call(call)
@@ -373,11 +436,19 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         RawKind::CaseStatement => {
             let scrutinee = lower_opt_field(node, FieldName::Expression, ir, issues, source);
             let (branches, else_block) = lower_case_body(node, ir, issues, source);
-            StmtKind::Case { scrutinee, branches, else_block }
+            StmtKind::Case {
+                scrutinee,
+                branches,
+                else_block,
+            }
         }
-        RawKind::AsserterrorStatement => {
-            StmtKind::AssertError(lower_branch_field(node, FieldName::Body, ir, issues, source))
-        }
+        RawKind::AsserterrorStatement => StmtKind::AssertError(lower_branch_field(
+            node,
+            FieldName::Body,
+            ir,
+            issues,
+            source,
+        )),
         RawKind::ExitStatement => StmtKind::Exit(
             node.field(FieldName::ReturnValue)
                 .map(|e| lower_expr(e, ir, issues, source)),
@@ -415,18 +486,34 @@ fn lower_case_body(
                     .map(|p| lower_expr(p, ir, issues, source))
                     .collect();
                 let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
-                branches.push(CaseBranch { patterns, body, origin: origin_of(child) });
+                branches.push(CaseBranch {
+                    patterns,
+                    body,
+                    origin: origin_of(child),
+                });
             }
         }
     }
     // The `case_else_branch` is a DIRECT child of the case_statement (not under
-    // case_body) and holds its statements as direct children (no `body` field).
+    // case_body) and holds its content as direct children (the `else` keyword + a
+    // `code_block` or bare statements; no `body` field). Lower it like a branch body:
+    // a SOLE `code_block`/`statement_block` is unwrapped (`lower_branch`) so we don't
+    // double-nest a block inside the else block — matching then/loop branches and the
+    // legacy CFN, which builds the code_block child directly.
     if let Some(else_node) = case_node
         .named_children()
         .into_iter()
         .find(|c| c.kind() == RawKind::CaseElseBranch)
     {
-        else_block = Some(lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source));
+        let content: Vec<RawNode> = else_node
+            .named_children()
+            .into_iter()
+            .filter(|c| c.kind() != RawKind::ElseKeyword)
+            .collect();
+        else_block = Some(match content.as_slice() {
+            [only] => lower_branch(*only, ir, issues, source),
+            _ => lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source),
+        });
     }
     (branches, else_block)
 }
@@ -447,7 +534,10 @@ fn lower_opt_field(
                 message: format!("missing `{:?}` on `{}`", f, node.kind_str()),
                 origin: origin.clone(),
             });
-            ir.add_expr(Expr { kind: ExprKind::Unknown, origin })
+            ir.add_expr(Expr {
+                kind: ExprKind::Unknown,
+                origin,
+            })
         }
     }
 }
@@ -461,23 +551,36 @@ fn lower_branch_field(
 ) -> BlockId {
     match node.field(f) {
         Some(b) => lower_branch(b, ir, issues, source),
-        None => ir.add_block(Block { items: Vec::new(), origin: origin_of(node) }),
+        None => ir.add_block(Block {
+            items: Vec::new(),
+            origin: origin_of(node),
+        }),
     }
 }
 
 fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> ExprId {
     let origin = origin_of(node);
     let kind = match node.kind() {
-        RawKind::Identifier | RawKind::KeywordIdentifier => ExprKind::Identifier(node.text(source).to_string()),
+        RawKind::Identifier | RawKind::KeywordIdentifier => {
+            ExprKind::Identifier(node.text(source).to_string())
+        }
         RawKind::QuotedIdentifier => ExprKind::QuotedIdentifier(ident_text(node, source)),
         RawKind::MemberExpression => {
             let object = lower_opt_field(node, FieldName::Object, ir, issues, source);
             // RAW member text (quotes preserved) — source-faithful; consumers strip
             // when needed. Legacy keeps quotes for var-assignment lhs names.
             let member_node = node.field(FieldName::Member);
-            let member = member_node.map(|m| m.text(source).to_string()).unwrap_or_default();
-            let member_origin = member_node.map(origin_of).unwrap_or_else(|| origin_of(node));
-            ExprKind::Member { object, member, member_origin }
+            let member = member_node
+                .map(|m| m.text(source).to_string())
+                .unwrap_or_default();
+            let member_origin = member_node
+                .map(origin_of)
+                .unwrap_or_else(|| origin_of(node));
+            ExprKind::Member {
+                object,
+                member,
+                member_origin,
+            }
         }
         RawKind::CallExpression => {
             let function = lower_opt_field(node, FieldName::Function, ir, issues, source);
@@ -496,12 +599,10 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             base: lower_opt_field(node, FieldName::Object, ir, issues, source),
             index: lower_opt_field(node, FieldName::Index, ir, issues, source),
         },
-        RawKind::ParenthesizedExpression => {
-            match node.named_children().into_iter().next() {
-                Some(inner) => ExprKind::Parenthesized(lower_expr(inner, ir, issues, source)),
-                None => ExprKind::Unknown,
-            }
-        }
+        RawKind::ParenthesizedExpression => match node.named_children().into_iter().next() {
+            Some(inner) => ExprKind::Parenthesized(lower_expr(inner, ir, issues, source)),
+            None => ExprKind::Unknown,
+        },
         RawKind::UnaryExpression => ExprKind::Unary {
             op: unary_op(node, source),
             operand: lower_opt_field(node, FieldName::Operand, ir, issues, source),
@@ -520,10 +621,15 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         },
         RawKind::QualifiedEnumValue => ExprKind::QualifiedEnum {
             enum_type: lower_opt_field(node, FieldName::EnumType, ir, issues, source),
-            value: node.field(FieldName::Value).map(|v| ident_text(v, source)).unwrap_or_default(),
+            value: node
+                .field(FieldName::Value)
+                .map(|v| ident_text(v, source))
+                .unwrap_or_default(),
         },
         RawKind::DatabaseReference => ExprKind::DatabaseReference(node.text(source).to_string()),
-        RawKind::Boolean => ExprKind::Literal(Literal::Bool(node.text(source).eq_ignore_ascii_case("true"))),
+        RawKind::Boolean => ExprKind::Literal(Literal::Bool(
+            node.text(source).eq_ignore_ascii_case("true"),
+        )),
         RawKind::Integer => ExprKind::Literal(Literal::Int(node.text(source).to_string())),
         RawKind::Decimal => ExprKind::Literal(Literal::Decimal(node.text(source).to_string())),
         RawKind::StringLiteral | RawKind::VerbatimString => {
@@ -545,7 +651,10 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
 }
 
 fn binary_op(node: RawNode, source: &str) -> BinaryOp {
-    let t = node.field(FieldName::Operator).map(|o| o.text(source).to_string()).unwrap_or_default();
+    let t = node
+        .field(FieldName::Operator)
+        .map(|o| o.text(source).to_string())
+        .unwrap_or_default();
     match t.to_ascii_lowercase().as_str() {
         "+" => BinaryOp::Add,
         "-" => BinaryOp::Sub,
@@ -568,7 +677,10 @@ fn binary_op(node: RawNode, source: &str) -> BinaryOp {
 }
 
 fn unary_op(node: RawNode, source: &str) -> UnaryOp {
-    let t = node.field(FieldName::Operator).map(|o| o.text(source).to_string()).unwrap_or_default();
+    let t = node
+        .field(FieldName::Operator)
+        .map(|o| o.text(source).to_string())
+        .unwrap_or_default();
     match t.to_ascii_lowercase().as_str() {
         "not" => UnaryOp::Not,
         "-" => UnaryOp::Neg,
@@ -601,7 +713,13 @@ pub(crate) fn origin_of(n: RawNode) -> Origin {
         kind_text: n.kind_str(),
         ts_id: n.id(),
         byte: n.byte_range(),
-        start: Point { row: s.row as u32, column: s.column as u32 },
-        end: Point { row: e.row as u32, column: e.column as u32 },
+        start: Point {
+            row: s.row as u32,
+            column: s.column as u32,
+        },
+        end: Point {
+            row: e.row as u32,
+            column: e.column as u32,
+        },
     }
 }

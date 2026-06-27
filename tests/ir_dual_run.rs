@@ -17,12 +17,18 @@ use al_call_hierarchy::dual_run_support::legacy_routine_names;
 /// case-insensitive; the IR strips quotes, so normalize both sides the same way).
 fn norm(s: &str) -> String {
     let s = s.trim();
-    let s = s.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(s);
+    let s = s
+        .strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .unwrap_or(s);
     s.to_ascii_lowercase()
 }
 
 fn legacy_routines(source: &str) -> BTreeSet<String> {
-    legacy_routine_names(source).iter().map(|n| norm(n)).collect()
+    legacy_routine_names(source)
+        .iter()
+        .map(|n| norm(n))
+        .collect()
 }
 
 fn ir_routines(source: &str) -> BTreeSet<String> {
@@ -85,22 +91,24 @@ fn ir_statement_kinds(source: &str) -> Vec<String> {
     let f = al_syntax::parse(source);
     f.ir.iter_stmts()
         .filter_map(|s| {
-            Some(match &s.kind {
-                StmtKind::If { .. } => "if_statement",
-                StmtKind::While { .. } => "while_statement",
-                StmtKind::Repeat { .. } => "repeat_statement",
-                StmtKind::For { .. } => "for_statement",
-                StmtKind::Foreach { .. } => "foreach_statement",
-                StmtKind::With { .. } => "with_statement",
-                StmtKind::Case { .. } => "case_statement",
-                StmtKind::Assignment { .. } => "assignment_statement",
-                StmtKind::Exit(_) => "exit_statement",
-                StmtKind::Break => "break_statement",
-                StmtKind::Continue => "continue_statement",
-                StmtKind::AssertError(_) => "asserterror_statement",
-                _ => return None,
-            }
-            .to_string())
+            Some(
+                match &s.kind {
+                    StmtKind::If { .. } => "if_statement",
+                    StmtKind::While { .. } => "while_statement",
+                    StmtKind::Repeat { .. } => "repeat_statement",
+                    StmtKind::For { .. } => "for_statement",
+                    StmtKind::Foreach { .. } => "foreach_statement",
+                    StmtKind::With { .. } => "with_statement",
+                    StmtKind::Case { .. } => "case_statement",
+                    StmtKind::Assignment { .. } => "assignment_statement",
+                    StmtKind::Exit(_) => "exit_statement",
+                    StmtKind::Break => "break_statement",
+                    StmtKind::Continue => "continue_statement",
+                    StmtKind::AssertError(_) => "asserterror_statement",
+                    _ => return None,
+                }
+                .to_string(),
+            )
         })
         .collect()
 }
@@ -110,9 +118,19 @@ fn ir_temporary_var_names(source: &str) -> Vec<String> {
     let f = al_syntax::parse(source);
     let mut out = Vec::new();
     for o in &f.objects {
-        out.extend(o.globals.iter().filter(|v| v.temporary).map(|v| v.name.clone()));
+        out.extend(
+            o.globals
+                .iter()
+                .filter(|v| v.temporary)
+                .map(|v| v.name.clone()),
+        );
         for r in &o.routines {
-            out.extend(r.locals.iter().filter(|v| v.temporary).map(|v| v.name.clone()));
+            out.extend(
+                r.locals
+                    .iter()
+                    .filter(|v| v.temporary)
+                    .map(|v| v.name.clone()),
+            );
         }
     }
     out
@@ -181,12 +199,22 @@ fn stmt_loop_nesting(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, dept
             let d = depth + 1;
             d.max(block_loop_nesting(f, *body, d))
         }
-        If { then_block, else_block, .. } => {
+        If {
+            then_block,
+            else_block,
+            ..
+        } => {
             let a = block_loop_nesting(f, *then_block, depth);
-            let b = else_block.map(|e| block_loop_nesting(f, e, depth)).unwrap_or(0);
+            let b = else_block
+                .map(|e| block_loop_nesting(f, e, depth))
+                .unwrap_or(0);
             a.max(b)
         }
-        Case { branches, else_block, .. } => {
+        Case {
+            branches,
+            else_block,
+            ..
+        } => {
             let mut m = 0;
             for br in branches {
                 m = m.max(block_loop_nesting(f, br.body, depth));
@@ -198,7 +226,9 @@ fn stmt_loop_nesting(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, dept
         }
         Try { body, catch_block } => {
             let a = block_loop_nesting(f, *body, depth);
-            let b = catch_block.map(|c| block_loop_nesting(f, c, depth)).unwrap_or(0);
+            let b = catch_block
+                .map(|c| block_loop_nesting(f, c, depth))
+                .unwrap_or(0);
             a.max(b)
         }
         With { body, .. } | AssertError(body) | Block(body) => block_loop_nesting(f, *body, depth),
@@ -249,63 +279,129 @@ struct Trace {
     assigns: Vec<(String, Option<String>, String)>,
     // (identifier, condition_kind, ref_anchor, stmt_anchor) — PConditionReference.
     conds: Vec<(String, String, String, String)>,
+    // Per Call-ExprId op/cs sequence index, assigned during the main DFS walk
+    // (same numbering legacy body_walk emits as `op{N}` / `cs{N}`). Consumed by the
+    // CFN builder, which references op/cs leaves by their sequence number.
+    op_idx: std::collections::HashMap<al_syntax::ir::ExprId, u32>,
+    cs_idx: std::collections::HashMap<al_syntax::ir::ExprId, u32>,
 }
 
 /// collect_idents over a condition expr: identifiers + member NAMES (plain
 /// identifier only), NOT recursing a member's object. Mirrors legacy collect_idents.
-fn collect_cond_idents(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, kind: &str, stmt: &str, out: &mut Trace) {
+fn collect_cond_idents(
+    f: &al_syntax::ir::AlFile,
+    eid: al_syntax::ir::ExprId,
+    kind: &str,
+    stmt: &str,
+    out: &mut Trace,
+) {
     use al_syntax::ir::ExprKind::*;
     let e = f.ir.expr(eid);
     match &e.kind {
         Identifier(name) if e.origin.kind_text == "identifier" => {
-            out.conds.push((name.to_ascii_lowercase(), kind.to_string(), format!("{}:{}", e.origin.start.row, e.origin.start.column), stmt.to_string()));
+            out.conds.push((
+                name.to_ascii_lowercase(),
+                kind.to_string(),
+                format!("{}:{}", e.origin.start.row, e.origin.start.column),
+                stmt.to_string(),
+            ));
         }
-        Member { member, member_origin, .. } => {
+        Member {
+            member,
+            member_origin,
+            ..
+        } => {
             if member_origin.kind_text == "identifier" {
-                out.conds.push((member.to_ascii_lowercase(), kind.to_string(), format!("{}:{}", member_origin.start.row, member_origin.start.column), stmt.to_string()));
+                out.conds.push((
+                    member.to_ascii_lowercase(),
+                    kind.to_string(),
+                    format!("{}:{}", member_origin.start.row, member_origin.start.column),
+                    stmt.to_string(),
+                ));
             }
             // does NOT recurse into the object.
         }
         Call { function, args } => {
             collect_cond_idents(f, *function, kind, stmt, out);
-            for a in args { collect_cond_idents(f, *a, kind, stmt, out); }
+            for a in args {
+                collect_cond_idents(f, *a, kind, stmt, out);
+            }
         }
-        Binary { lhs, rhs, .. } => { collect_cond_idents(f, *lhs, kind, stmt, out); collect_cond_idents(f, *rhs, kind, stmt, out); }
+        Binary { lhs, rhs, .. } => {
+            collect_cond_idents(f, *lhs, kind, stmt, out);
+            collect_cond_idents(f, *rhs, kind, stmt, out);
+        }
         Unary { operand, .. } => collect_cond_idents(f, *operand, kind, stmt, out),
         Parenthesized(x) => collect_cond_idents(f, *x, kind, stmt, out),
-        Index { base, index } => { collect_cond_idents(f, *base, kind, stmt, out); collect_cond_idents(f, *index, kind, stmt, out); }
+        Index { base, index } => {
+            collect_cond_idents(f, *base, kind, stmt, out);
+            collect_cond_idents(f, *index, kind, stmt, out);
+        }
         QualifiedEnum { enum_type, .. } => collect_cond_idents(f, *enum_type, kind, stmt, out),
-        RangeExpr { start, end } => { collect_cond_idents(f, *start, kind, stmt, out); collect_cond_idents(f, *end, kind, stmt, out); }
+        RangeExpr { start, end } => {
+            collect_cond_idents(f, *start, kind, stmt, out);
+            collect_cond_idents(f, *end, kind, stmt, out);
+        }
         _ => {}
     }
 }
 
 /// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
 fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
-    use al_syntax::ir::VarDecl;
     let f = al_syntax::parse(source);
-    let is_rec = |v: &VarDecl| v.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false);
+    ir_traces(&f)
+}
+
+/// Trace core over an already-parsed file (keeps ExprIds stable for the CFN, which
+/// references op/cs indices keyed by ExprId).
+fn ir_traces(f: &al_syntax::ir::AlFile) -> Vec<(String, Trace)> {
+    use al_syntax::ir::VarDecl;
+    let is_rec = |v: &VarDecl| {
+        v.ty.as_deref()
+            .map(|t| t.to_ascii_lowercase().starts_with("record"))
+            .unwrap_or(false)
+    };
     let mut out = Vec::new();
     for o in &f.objects {
-        let mut globals: std::collections::HashSet<String> =
-            o.globals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()).collect();
+        let mut globals: std::collections::HashSet<String> = o
+            .globals
+            .iter()
+            .filter(|v| is_rec(v))
+            .map(|v| v.name.to_ascii_lowercase())
+            .collect();
         // `Rec`/`xRec` are record receivers by name convention (classify.rs:277),
         // regardless of object type.
         globals.insert("rec".to_string());
         globals.insert("xrec".to_string());
         // A table/tableext method (procedure OR trigger) has an implicit record `Rec`.
-        let table_method = matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension);
+        let table_method = matches!(
+            o.kind,
+            al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension
+        );
         // `globals` (with rec/xrec convention) is the record-OP receiver set; the
         // FIELD-access set uses record_var_names semantics (rec only for tables).
-        let explicit_globals: std::collections::HashSet<String> =
-            o.globals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()).collect();
+        let explicit_globals: std::collections::HashSet<String> = o
+            .globals
+            .iter()
+            .filter(|v| is_rec(v))
+            .map(|v| v.name.to_ascii_lowercase())
+            .collect();
         for r in &o.routines {
             let params_locals = r
                 .params
                 .iter()
-                .filter(|p| p.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false))
+                .filter(|p| {
+                    p.ty.as_deref()
+                        .map(|t| t.to_ascii_lowercase().starts_with("record"))
+                        .unwrap_or(false)
+                })
                 .map(|p| p.name.to_ascii_lowercase())
-                .chain(r.locals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()))
+                .chain(
+                    r.locals
+                        .iter()
+                        .filter(|v| is_rec(v))
+                        .map(|v| v.name.to_ascii_lowercase()),
+                )
                 .collect::<Vec<_>>();
             let mut rvars = globals.clone();
             rvars.extend(params_locals.iter().cloned());
@@ -318,7 +414,7 @@ fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
             // implicit-receiver stack: top = is-current-implicit-receiver-a-record.
             let mut implicit = vec![table_method];
             if let Some(b) = r.body {
-                rec_walk_block(&f, b, &rvars, &frvars, &mut implicit, &mut trace);
+                rec_walk_block(f, b, &rvars, &frvars, &mut implicit, &mut trace);
             }
             out.push((r.name.clone(), trace));
         }
@@ -326,20 +422,46 @@ fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
     out
 }
 
-fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_block(
+    f: &al_syntax::ir::AlFile,
+    bid: al_syntax::ir::BlockId,
+    rvars: &std::collections::HashSet<String>,
+    frvars: &std::collections::HashSet<String>,
+    implicit: &mut Vec<bool>,
+    out: &mut Trace,
+) {
     use al_syntax::ir::BlockItem;
     for item in &f.ir.block(bid).items {
         match item {
             BlockItem::Stmt(s) => rec_walk_stmt(f, *s, rvars, frvars, implicit, out),
-            BlockItem::Preproc(g) => for b in &g.branches { rec_walk_block(f, *b, rvars, frvars, implicit, out); },
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    rec_walk_block(f, *b, rvars, frvars, implicit, out);
+                }
+            }
         }
     }
 }
 
-fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_stmt(
+    f: &al_syntax::ir::AlFile,
+    sid: al_syntax::ir::StmtId,
+    rvars: &std::collections::HashSet<String>,
+    frvars: &std::collections::HashSet<String>,
+    implicit: &mut Vec<bool>,
+    out: &mut Trace,
+) {
     use al_syntax::ir::{ExprKind, Literal, StmtKind::*};
-    macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, frvars, implicit, out) }; }
-    macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, frvars, implicit, out) }; }
+    macro_rules! e {
+        ($x:expr) => {
+            rec_walk_expr(f, $x, rvars, frvars, implicit, out)
+        };
+    }
+    macro_rules! b {
+        ($x:expr) => {
+            rec_walk_block(f, $x, rvars, frvars, implicit, out)
+        };
+    }
     let st = f.ir.stmt(sid);
     let sa = format!("{}:{}", st.origin.start.row, st.origin.start.column);
     match &st.kind {
@@ -347,7 +469,9 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
             // PVarAssignment: lhs base name (identifier or member name), optional
             // literal rhs (bool/int/string), anchored on the assignment statement.
             let lhs = match &f.ir.expr(*target).kind {
-                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => Some(x.to_ascii_lowercase()),
+                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => {
+                    Some(x.to_ascii_lowercase())
+                }
                 ExprKind::Member { member, .. } => Some(member.to_ascii_lowercase()),
                 _ => None,
             };
@@ -356,42 +480,122 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
                     ExprKind::Literal(Literal::Bool(b)) => Some(b.to_string()),
                     ExprKind::Literal(Literal::Int(s)) => Some(s.clone()),
                     ExprKind::Literal(Literal::Text(s)) => {
-                        let t = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')).unwrap_or(s);
+                        let t = s
+                            .strip_prefix('\'')
+                            .and_then(|x| x.strip_suffix('\''))
+                            .unwrap_or(s);
                         Some(t.to_ascii_lowercase())
                     }
                     _ => None,
                 };
-                out.assigns.push((lhs, rhs_lit, format!("{}:{}", st.origin.start.row, st.origin.start.column)));
+                out.assigns.push((
+                    lhs,
+                    rhs_lit,
+                    format!("{}:{}", st.origin.start.row, st.origin.start.column),
+                ));
             }
-            e!(*target); e!(*value);
+            e!(*target);
+            e!(*value);
         }
         Call(x) => e!(*x),
-        If { cond, then_block, else_block } => { collect_cond_idents(f, *cond, "if", &sa, out); e!(*cond); b!(*then_block); if let Some(x)=else_block { b!(*x); } }
-        While { cond, body } => { collect_cond_idents(f, *cond, "while", &sa, out); e!(*cond); b!(*body); }
-        Repeat { body, until } => { collect_cond_idents(f, *until, "repeat-until", &sa, out); b!(*body); e!(*until); }
-        For { var, from, to, body, .. } => { e!(*var); e!(*from); e!(*to); b!(*body); }
-        Foreach { var, iterable, body } => { e!(*var); e!(*iterable); b!(*body); }
+        If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_cond_idents(f, *cond, "if", &sa, out);
+            e!(*cond);
+            b!(*then_block);
+            if let Some(x) = else_block {
+                b!(*x);
+            }
+        }
+        While { cond, body } => {
+            collect_cond_idents(f, *cond, "while", &sa, out);
+            e!(*cond);
+            b!(*body);
+        }
+        Repeat { body, until } => {
+            collect_cond_idents(f, *until, "repeat-until", &sa, out);
+            b!(*body);
+            e!(*until);
+        }
+        For {
+            var,
+            from,
+            to,
+            body,
+            ..
+        } => {
+            e!(*var);
+            e!(*from);
+            e!(*to);
+            b!(*body);
+        }
+        Foreach {
+            var,
+            iterable,
+            body,
+        } => {
+            e!(*var);
+            e!(*iterable);
+            b!(*body);
+        }
         With { receiver, body } => {
             e!(*receiver);
             // implicit receiver of the with-body is a record iff the receiver is a record var.
             let is_rec = match &f.ir.expr(*receiver).kind {
-                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => rvars.contains(&x.to_ascii_lowercase()),
+                ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => {
+                    rvars.contains(&x.to_ascii_lowercase())
+                }
                 _ => false,
             };
             implicit.push(is_rec);
             b!(*body);
             implicit.pop();
         }
-        Case { scrutinee, branches, else_block } => { collect_cond_idents(f, *scrutinee, "case", &sa, out); e!(*scrutinee); for br in branches { for p in &br.patterns { e!(*p); } b!(br.body); } if let Some(x)=else_block { b!(*x); } }
-        Try { body, catch_block } => { b!(*body); if let Some(c)=catch_block { b!(*c); } }
+        Case {
+            scrutinee,
+            branches,
+            else_block,
+        } => {
+            collect_cond_idents(f, *scrutinee, "case", &sa, out);
+            e!(*scrutinee);
+            for br in branches {
+                for p in &br.patterns {
+                    e!(*p);
+                }
+                b!(br.body);
+            }
+            if let Some(x) = else_block {
+                b!(*x);
+            }
+        }
+        Try { body, catch_block } => {
+            b!(*body);
+            if let Some(c) = catch_block {
+                b!(*c);
+            }
+        }
         AssertError(body) => b!(*body),
-        Exit(x) => { if let Some(x)=x { e!(*x); } }
+        Exit(x) => {
+            if let Some(x) = x {
+                e!(*x);
+            }
+        }
         Block(x) => b!(*x),
         _ => {}
     }
 }
 
-fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_expr(
+    f: &al_syntax::ir::AlFile,
+    eid: al_syntax::ir::ExprId,
+    rvars: &std::collections::HashSet<String>,
+    frvars: &std::collections::HashSet<String>,
+    implicit: &mut Vec<bool>,
+    out: &mut Trace,
+) {
     use al_call_hierarchy::engine::l2::record_op::record_op_type;
     use al_syntax::ir::ExprKind::*;
     let e = f.ir.expr(eid);
@@ -400,26 +604,42 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
         let is_record_op = match &fe.kind {
             // explicit receiver: X.Method() where X is a record var.
             Member { object, member, .. } => {
-                let recv = match &f.ir.expr(*object).kind { Identifier(x) | QuotedIdentifier(x) => Some(x.to_ascii_lowercase()), _ => None };
-                recv.map(|r| rvars.contains(&r)).unwrap_or(false) && record_op_type(&member.to_ascii_lowercase()).is_some()
+                let recv = match &f.ir.expr(*object).kind {
+                    Identifier(x) | QuotedIdentifier(x) => Some(x.to_ascii_lowercase()),
+                    _ => None,
+                };
+                recv.map(|r| rvars.contains(&r)).unwrap_or(false)
+                    && record_op_type(&member.to_ascii_lowercase()).is_some()
             }
             // implicit receiver: bare Method() with a record implicit receiver in scope.
             Identifier(m) | QuotedIdentifier(m) => {
-                implicit.last().copied().unwrap_or(false) && record_op_type(&m.to_ascii_lowercase()).is_some()
+                implicit.last().copied().unwrap_or(false)
+                    && record_op_type(&m.to_ascii_lowercase()).is_some()
             }
             _ => false,
         };
         // Commit() = operation only; Error() = operation AND a call site (legacy
         // pushes both). Both detected as a bare identifier function.
-        let fname = match &fe.kind { Identifier(m) | QuotedIdentifier(m) => Some(m.to_ascii_lowercase()), _ => None };
+        let fname = match &fe.kind {
+            Identifier(m) | QuotedIdentifier(m) => Some(m.to_ascii_lowercase()),
+            _ => None,
+        };
         let is_commit = fname.as_deref() == Some("commit");
         let is_error = fname.as_deref() == Some("error");
         let anchor = format!("{}:{}", e.origin.start.row, e.origin.start.column);
         if is_record_op || is_commit || is_error {
+            // The op SEQUENCE index = position among all ops (record-op/commit/error).
+            // But the CFN's `op_id_by_node_id` (mirrored by `op_idx`) deliberately
+            // OMITS error nodes — an error renders as its `cs` "error" leaf, not an op
+            // leaf — so only map non-error ops while still counting error in the index.
+            if !is_error {
+                out.op_idx.insert(eid, out.ops.len() as u32);
+            }
             out.ops.push(anchor.clone());
         }
         // call site: everything that isn't a record-op or a commit (Error IS a call site).
         if !is_record_op && !is_commit {
+            out.cs_idx.insert(eid, out.calls.len() as u32);
             out.calls.push(anchor);
         }
         // Recurse the callee. A member-call RECEIVER is a value ref (counted); the
@@ -429,7 +649,9 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
             Identifier(_) | QuotedIdentifier(_) => {} // bare callee name — not a value ref
             _ => rec_walk_expr(f, *function, rvars, frvars, implicit, out),
         }
-        for a in args { rec_walk_expr(f, *a, rvars, frvars, implicit, out); }
+        for a in args {
+            rec_walk_expr(f, *a, rvars, frvars, implicit, out);
+        }
         return;
     }
     match &e.kind {
@@ -437,7 +659,8 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
         Member { object, .. } => {
             if let Identifier(x) | QuotedIdentifier(x) = &f.ir.expr(*object).kind {
                 if frvars.contains(&x.to_ascii_lowercase()) {
-                    out.fields.push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
+                    out.fields
+                        .push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
                 }
             }
             rec_walk_expr(f, *object, rvars, frvars, implicit, out);
@@ -465,13 +688,395 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
                 }
             }
         }
-        Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, frvars, implicit, out); rec_walk_expr(f, *rhs, rvars, frvars, implicit, out); }
+        Binary { lhs, rhs, .. } => {
+            rec_walk_expr(f, *lhs, rvars, frvars, implicit, out);
+            rec_walk_expr(f, *rhs, rvars, frvars, implicit, out);
+        }
         Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, frvars, implicit, out),
         Parenthesized(x) => rec_walk_expr(f, *x, rvars, frvars, implicit, out),
-        Index { base, index } => { rec_walk_expr(f, *base, rvars, frvars, implicit, out); rec_walk_expr(f, *index, rvars, frvars, implicit, out); }
-        RangeExpr { start, end } => { rec_walk_expr(f, *start, rvars, frvars, implicit, out); rec_walk_expr(f, *end, rvars, frvars, implicit, out); }
+        Index { base, index } => {
+            rec_walk_expr(f, *base, rvars, frvars, implicit, out);
+            rec_walk_expr(f, *index, rvars, frvars, implicit, out);
+        }
+        RangeExpr { start, end } => {
+            rec_walk_expr(f, *start, rvars, frvars, implicit, out);
+            rec_walk_expr(f, *end, rvars, frvars, implicit, out);
+        }
         _ => {}
     }
+}
+
+// ---- L2 cutover: statement_tree (CFN skeleton) ----
+
+/// Normalized CFN node — the parity surface of `PCFNNode`. op/cs ids are replaced
+/// by their sequence NUMBER (legacy `op{N}`/`cs{N}` → N) so the IR and legacy trees
+/// compare regardless of the routine-id hash prefix. Mirrors `PCFNNode`'s Option
+/// semantics exactly (None vs Some([]) is significant — it is what serializes).
+#[derive(PartialEq, Eq, Debug, Clone)]
+struct NCfn {
+    kind: String,
+    op: Option<u32>,
+    cs: Option<u32>,
+    guard: Option<(String, String)>,
+    leaves: Option<Vec<NCfn>>,
+    children: Option<Vec<NCfn>>,
+    else_children: Option<Vec<NCfn>>,
+}
+
+fn ncfn(kind: &str) -> NCfn {
+    NCfn {
+        kind: kind.to_string(),
+        op: None,
+        cs: None,
+        guard: None,
+        leaves: None,
+        children: None,
+        else_children: None,
+    }
+}
+
+/// Trailing integer of a legacy `…/op{N}` or `…/cs{N}` id.
+fn id_num(id: &str) -> u32 {
+    id.rsplit(|c| c == 'p' || c == 's')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(u32::MAX)
+}
+
+/// Convert a legacy `PCFNNode` to the normalized form (ids → sequence numbers).
+fn norm_legacy_cfn(n: &al_call_hierarchy::engine::l2::features::PCFNNode) -> NCfn {
+    let conv = |v: &Option<Vec<al_call_hierarchy::engine::l2::features::PCFNNode>>| {
+        v.as_ref()
+            .map(|xs| xs.iter().map(norm_legacy_cfn).collect())
+    };
+    NCfn {
+        kind: n.kind.clone(),
+        op: n.operation_id.as_deref().map(id_num),
+        cs: n.callsite_id.as_deref().map(id_num),
+        guard: n
+            .condition_guard
+            .as_ref()
+            .map(|g| (g.identifier.clone(), g.polarity.clone())),
+        leaves: conv(&n.condition_leaves),
+        children: conv(&n.children),
+        else_children: conv(&n.else_children),
+    }
+}
+
+/// IR CFN builder — a faithful port of `engine::l2::cfn` over the owned IR. Reads
+/// op/cs sequence numbers from the `Trace` (assigned during the proven main walk).
+struct IrCfn<'a> {
+    f: &'a al_syntax::ir::AlFile,
+    tr: &'a Trace,
+}
+
+impl<'a> IrCfn<'a> {
+    fn block_items(&self, bid: al_syntax::ir::BlockId) -> Vec<NCfn> {
+        use al_syntax::ir::BlockItem;
+        let mut out = Vec::new();
+        for item in &self.f.ir.block(bid).items {
+            match item {
+                BlockItem::Stmt(s) => {
+                    if let Some(c) = self.build_statement(*s) {
+                        out.push(c);
+                    }
+                }
+                // A preproc group's branches splice inline in source order (matching
+                // the flat layout the legacy CST walk sees).
+                BlockItem::Preproc(g) => {
+                    for b in &g.branches {
+                        out.extend(self.block_items(*b));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// `build_block` → a "block" node wrapping its statement children.
+    fn build_block(&self, bid: al_syntax::ir::BlockId) -> NCfn {
+        let mut n = ncfn("block");
+        n.children = Some(self.block_items(bid));
+        n
+    }
+
+    fn is_error_fn(&self, function: al_syntax::ir::ExprId) -> bool {
+        use al_syntax::ir::ExprKind::*;
+        matches!(&self.f.ir.expr(function).kind, Identifier(m) | QuotedIdentifier(m) if m.eq_ignore_ascii_case("error"))
+    }
+
+    /// Receiver-side leaves of a chained call: if the function is `X.m` and `X` is
+    /// itself a call/member, harvest it into `out` (as siblings, before the leaf).
+    fn harvest_receiver(&self, function: al_syntax::ir::ExprId, out: &mut Vec<NCfn>) {
+        use al_syntax::ir::ExprKind::*;
+        if let Member { object, .. } = &self.f.ir.expr(function).kind {
+            if matches!(&self.f.ir.expr(*object).kind, Call { .. } | Member { .. }) {
+                self.harvest(*object, out);
+            }
+        }
+    }
+
+    /// Harvest op/callsite leaves from an expression subtree (condition/expression
+    /// position): receiver leaves become SIBLINGS, args nest as `leaves`.
+    fn harvest(&self, eid: al_syntax::ir::ExprId, out: &mut Vec<NCfn>) {
+        use al_syntax::ir::ExprKind::*;
+        let e = self.f.ir.expr(eid);
+        match &e.kind {
+            Call { function, args } => {
+                if let Some(&op) = self.tr.op_idx.get(&eid) {
+                    let mut inner = Vec::new();
+                    for a in args {
+                        self.harvest(*a, &mut inner);
+                    }
+                    self.harvest_receiver(*function, out);
+                    let mut leaf = ncfn("op");
+                    leaf.op = Some(op);
+                    if !inner.is_empty() {
+                        leaf.leaves = Some(inner);
+                    }
+                    out.push(leaf);
+                    return;
+                }
+                if let Some(&cs) = self.tr.cs_idx.get(&eid) {
+                    let mut inner = Vec::new();
+                    for a in args {
+                        self.harvest(*a, &mut inner);
+                    }
+                    self.harvest_receiver(*function, out);
+                    let mut leaf = ncfn(if self.is_error_fn(*function) {
+                        "error"
+                    } else {
+                        "call"
+                    });
+                    leaf.cs = Some(cs);
+                    if !inner.is_empty() {
+                        leaf.leaves = Some(inner);
+                    }
+                    out.push(leaf);
+                    return;
+                }
+                // No id: recurse function then args (matches legacy named-child recursion).
+                self.harvest(*function, out);
+                for a in args {
+                    self.harvest(*a, out);
+                }
+            }
+            Member { object, .. } => self.harvest(*object, out),
+            Binary { lhs, rhs, .. } => {
+                self.harvest(*lhs, out);
+                self.harvest(*rhs, out);
+            }
+            Unary { operand, .. } => self.harvest(*operand, out),
+            Parenthesized(x) => self.harvest(*x, out),
+            Index { base, index } => {
+                self.harvest(*base, out);
+                self.harvest(*index, out);
+            }
+            QualifiedEnum { enum_type, .. } => self.harvest(*enum_type, out),
+            RangeExpr { start, end } => {
+                self.harvest(*start, out);
+                self.harvest(*end, out);
+            }
+            _ => {}
+        }
+    }
+
+    /// A call in STATEMENT position → ONE leaf; receiver + arg leaves nest inside it
+    /// as `leaves` (unlike condition position, where the receiver is a sibling).
+    fn build_stmt_call(&self, eid: al_syntax::ir::ExprId) -> NCfn {
+        use al_syntax::ir::ExprKind::*;
+        let e = self.f.ir.expr(eid);
+        let Call { function, args } = &e.kind else {
+            return ncfn("other");
+        };
+        let mut pre = Vec::new();
+        self.harvest_receiver(*function, &mut pre);
+        for a in args {
+            self.harvest(*a, &mut pre);
+        }
+        let mut leaf = if let Some(&op) = self.tr.op_idx.get(&eid) {
+            let mut l = ncfn("op");
+            l.op = Some(op);
+            l
+        } else if let Some(&cs) = self.tr.cs_idx.get(&eid) {
+            let mut l = ncfn(if self.is_error_fn(*function) {
+                "error"
+            } else {
+                "call"
+            });
+            l.cs = Some(cs);
+            l
+        } else {
+            ncfn("other")
+        };
+        if !pre.is_empty() {
+            leaf.leaves = Some(pre);
+        }
+        leaf
+    }
+
+    /// Simple boolean-guard recognizer on an `if` condition.
+    fn simple_guard(&self, cond: al_syntax::ir::ExprId) -> Option<(String, String)> {
+        use al_syntax::ir::{BinaryOp, ExprKind::*, Literal, UnaryOp};
+        let e = self.f.ir.expr(cond);
+        match &e.kind {
+            Identifier(n) if e.origin.kind_text == "identifier" => {
+                Some((n.to_ascii_lowercase(), "positive".to_string()))
+            }
+            Unary {
+                op: UnaryOp::Not,
+                operand,
+            } => match &self.f.ir.expr(*operand).kind {
+                Identifier(n) if self.f.ir.expr(*operand).origin.kind_text == "identifier" => {
+                    Some((n.to_ascii_lowercase(), "negative".to_string()))
+                }
+                _ => None,
+            },
+            Binary {
+                op: BinaryOp::Eq,
+                lhs,
+                rhs,
+            } => {
+                let id_side =
+                    [*lhs, *rhs]
+                        .into_iter()
+                        .find_map(|s| match &self.f.ir.expr(s).kind {
+                            Identifier(n) if self.f.ir.expr(s).origin.kind_text == "identifier" => {
+                                Some(n.to_ascii_lowercase())
+                            }
+                            _ => None,
+                        });
+                let false_side = [*lhs, *rhs]
+                    .into_iter()
+                    .any(|s| matches!(&self.f.ir.expr(s).kind, Literal(Literal::Bool(false))));
+                match (id_side, false_side) {
+                    (Some(id), true) => Some((id, "negative".to_string())),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn harvest_vec(&self, eid: al_syntax::ir::ExprId) -> Vec<NCfn> {
+        let mut v = Vec::new();
+        self.harvest(eid, &mut v);
+        v
+    }
+
+    fn build_statement(&self, sid: al_syntax::ir::StmtId) -> Option<NCfn> {
+        use al_syntax::ir::StmtKind::*;
+        let st = self.f.ir.stmt(sid);
+        let some_if = |v: Vec<NCfn>| if v.is_empty() { None } else { Some(v) };
+        Some(match &st.kind {
+            Call(e) => self.build_stmt_call(*e),
+            If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                let mut n = ncfn("if");
+                n.children = Some(vec![self.build_block(*then_block)]);
+                n.else_children = else_block.map(|b| vec![self.build_block(b)]);
+                n.leaves = some_if(self.harvest_vec(*cond));
+                n.guard = self.simple_guard(*cond);
+                n
+            }
+            Case {
+                scrutinee,
+                branches,
+                else_block,
+            } => {
+                let mut branch_cfns = Vec::new();
+                for br in branches {
+                    let mut b = ncfn("case-branch");
+                    b.children = Some(vec![self.build_block(br.body)]);
+                    branch_cfns.push(b);
+                }
+                if let Some(eb) = else_block {
+                    let mut b = ncfn("case-branch");
+                    b.children = Some(vec![self.build_block(*eb)]);
+                    branch_cfns.push(b);
+                }
+                let mut n = ncfn("case");
+                n.children = Some(branch_cfns);
+                n.leaves = some_if(self.harvest_vec(*scrutinee));
+                n
+            }
+            While { cond, body } => {
+                let mut n = ncfn("while");
+                n.children = Some(vec![self.build_block(*body)]);
+                n.leaves = some_if(self.harvest_vec(*cond));
+                n
+            }
+            For { from, to, body, .. } => {
+                let mut n = ncfn("for");
+                n.children = Some(vec![self.build_block(*body)]);
+                let mut leaves = self.harvest_vec(*from);
+                leaves.extend(self.harvest_vec(*to));
+                n.leaves = some_if(leaves);
+                n
+            }
+            Foreach { iterable, body, .. } => {
+                let mut n = ncfn("foreach");
+                n.children = Some(vec![self.build_block(*body)]);
+                n.leaves = some_if(self.harvest_vec(*iterable));
+                n
+            }
+            Repeat { body, until } => {
+                // repeat's body statements are DIRECT children (not wrapped in a block).
+                let mut n = ncfn("repeat");
+                n.children = Some(self.block_items(*body));
+                n.leaves = some_if(self.harvest_vec(*until));
+                n
+            }
+            Try { .. } => {
+                let mut n = ncfn("try");
+                n.children = Some(vec![]);
+                n
+            }
+            Exit(x) => {
+                let mut n = ncfn("exit");
+                n.leaves = x.map(|e| self.harvest_vec(e)).and_then(some_if);
+                n
+            }
+            With { body, .. } | AssertError(body) => {
+                let mut n = ncfn("other");
+                n.children = Some(vec![self.build_block(*body)]);
+                n
+            }
+            Assignment { target, value } => {
+                let mut leaves = self.harvest_vec(*target);
+                leaves.extend(self.harvest_vec(*value));
+                let mut n = ncfn("other");
+                n.leaves = some_if(leaves);
+                n
+            }
+            Block(b) => self.build_block(*b),
+            // break / continue / unknown → legacy default "other".
+            Break | Continue | Unknown => ncfn("other"),
+        })
+    }
+}
+
+/// IR per-routine statement_tree (the root "block" CFN), normalized.
+fn ir_statement_tree(source: &str) -> Vec<(String, NCfn)> {
+    let f = al_syntax::parse(source);
+    let traces = ir_traces(&f);
+    let mut out = Vec::new();
+    let mut ti = traces.into_iter();
+    for o in &f.objects {
+        for r in &o.routines {
+            let (_n, tr) = ti.next().expect("trace/routine count mismatch");
+            let builder = IrCfn { f: &f, tr: &tr };
+            let tree = match r.body {
+                Some(b) => builder.build_block(b),
+                None => ncfn("block"),
+            };
+            out.push((r.name.clone(), tree));
+        }
+    }
+    out
 }
 
 /// Shared corpus parity runner: norm+sort both sides per file, report, return
@@ -489,7 +1094,9 @@ fn run_parity(
     let mut matching = 0usize;
     let mut divergences: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
     for f in &collect_al_files(&root) {
-        let Ok(source) = std::fs::read_to_string(f) else { continue };
+        let Ok(source) = std::fs::read_to_string(f) else {
+            continue;
+        };
         total += 1;
         let mut l: Vec<String> = legacy(&source).iter().map(|s| norm(s)).collect();
         let mut i: Vec<String> = ir(&source).iter().map(|s| norm(s)).collect();
@@ -508,8 +1115,15 @@ fn run_parity(
             ));
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
-    eprintln!("\n=== IR dual-run: {label} ===\n{matching}/{total} files match ({pct:.1}%), {} diverge", divergences.len());
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== IR dual-run: {label} ===\n{matching}/{total} files match ({pct:.1}%), {} diverge",
+        divergences.len()
+    );
     for (file, only_legacy, only_ir) in divergences.iter().take(25) {
         eprintln!("  {file}\n    legacy-only: {only_legacy:?}\n    ir-only:     {only_ir:?}");
     }
@@ -539,14 +1153,20 @@ fn routine_inventory_parity() {
         return;
     }
     let files = collect_al_files(&root);
-    assert!(!files.is_empty(), "no .al fixtures found under {}", root.display());
+    assert!(
+        !files.is_empty(),
+        "no .al fixtures found under {}",
+        root.display()
+    );
 
     let mut total = 0usize;
     let mut matching = 0usize;
     let mut divergences: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
 
     for f in &files {
-        let Ok(source) = std::fs::read_to_string(f) else { continue };
+        let Ok(source) = std::fs::read_to_string(f) else {
+            continue;
+        };
         total += 1;
         let legacy = legacy_routines(&source);
         let ir = ir_routines(&source);
@@ -560,7 +1180,11 @@ fn routine_inventory_parity() {
         }
     }
 
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
     eprintln!(
         "\n=== IR dual-run: routine inventory ===\n{matching}/{total} files match ({pct:.1}%), {} diverge",
         divergences.len()
@@ -579,7 +1203,12 @@ fn routine_inventory_parity() {
     }
 
     // Hard parity gate: the IR routine inventory must match legacy on every file.
-    assert_eq!(matching, total, "{} files diverge — see report above", divergences.len());
+    assert_eq!(
+        matching,
+        total,
+        "{} files diverge — see report above",
+        divergences.len()
+    );
 }
 
 #[test]
@@ -595,9 +1224,14 @@ fn call_inventory_parity() {
     let mut divergences: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
 
     for f in &files {
-        let Ok(source) = std::fs::read_to_string(f) else { continue };
+        let Ok(source) = std::fs::read_to_string(f) else {
+            continue;
+        };
         total += 1;
-        let mut legacy: Vec<String> = legacy_call_methods(&source).iter().map(|n| norm(n)).collect();
+        let mut legacy: Vec<String> = legacy_call_methods(&source)
+            .iter()
+            .map(|n| norm(n))
+            .collect();
         let mut ir = ir_call_methods(&source);
         legacy.sort();
         ir.sort();
@@ -616,7 +1250,11 @@ fn call_inventory_parity() {
         }
     }
 
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
     eprintln!(
         "\n=== IR dual-run: call inventory ===\n{matching}/{total} files match ({pct:.1}%), {} diverge",
         divergences.len()
@@ -628,7 +1266,12 @@ fn call_inventory_parity() {
         eprintln!("  ... {} more", divergences.len() - 25);
     }
     // Hard parity gate: IR call inventory must match legacy on every file.
-    assert_eq!(matching, total, "{} files diverge — see report above", divergences.len());
+    assert_eq!(
+        matching,
+        total,
+        "{} files diverge — see report above",
+        divergences.len()
+    );
 }
 
 #[test]
@@ -642,7 +1285,11 @@ fn member_access_parity() {
 #[test]
 fn variable_inventory_parity() {
     use al_call_hierarchy::dual_run_support::legacy_variable_names;
-    let (matching, total) = run_parity("variable inventory", legacy_variable_names, ir_variable_names);
+    let (matching, total) = run_parity(
+        "variable inventory",
+        legacy_variable_names,
+        ir_variable_names,
+    );
     assert!(total > 0);
     assert_eq!(matching, total, "variable divergences (see report)");
 }
@@ -650,7 +1297,11 @@ fn variable_inventory_parity() {
 #[test]
 fn statement_kind_parity() {
     use al_call_hierarchy::dual_run_support::legacy_statement_kinds;
-    let (matching, total) = run_parity("statement kinds", legacy_statement_kinds, ir_statement_kinds);
+    let (matching, total) = run_parity(
+        "statement kinds",
+        legacy_statement_kinds,
+        ir_statement_kinds,
+    );
     assert!(total > 0);
     assert_eq!(matching, total, "statement-kind divergences (see report)");
 }
@@ -658,9 +1309,16 @@ fn statement_kind_parity() {
 #[test]
 fn temporary_variable_parity() {
     use al_call_hierarchy::dual_run_support::legacy_temporary_var_names;
-    let (matching, total) = run_parity("temporary vars", legacy_temporary_var_names, ir_temporary_var_names);
+    let (matching, total) = run_parity(
+        "temporary vars",
+        legacy_temporary_var_names,
+        ir_temporary_var_names,
+    );
     assert!(total > 0);
-    assert_eq!(matching, total, "temporary-variable divergences (see report)");
+    assert_eq!(
+        matching, total,
+        "temporary-variable divergences (see report)"
+    );
 }
 
 /// First REAL-L2 PFeatures parity: has_branching, diffed against the actual engine
@@ -692,13 +1350,20 @@ fn record_op_trace_measure() {
         return;
     }
     // id is `<routine_id>/opN`; extract the trailing op number (hex routine_id has no "op").
-    let op_num = |id: &str| -> u32 { id.rsplit("op").next().and_then(|s| s.parse().ok()).unwrap_or(u32::MAX) };
+    let op_num = |id: &str| -> u32 {
+        id.rsplit("op")
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(u32::MAX)
+    };
     let mut total = 0usize;
     let mut matching = 0usize;
     let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
 
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -711,19 +1376,35 @@ fn record_op_trace_measure() {
             let mut ops: Vec<(u32, String)> = lf
                 .operation_sites
                 .iter()
-                .map(|o| (op_num(&o.id), format!("{}:{}", o.source_anchor.start_line, o.source_anchor.start_column)))
+                .map(|o| {
+                    (
+                        op_num(&o.id),
+                        format!(
+                            "{}:{}",
+                            o.source_anchor.start_line, o.source_anchor.start_column
+                        ),
+                    )
+                })
                 .collect();
             ops.sort_by_key(|(n, _)| *n);
             let lanchors: Vec<String> = ops.into_iter().map(|(_, a)| a).collect();
             if &lanchors == ianchors {
                 matching += 1;
             } else if divs.len() < 20 {
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
                 divs.push((rel, ln.clone(), lanchors, ianchors.clone()));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
     eprintln!("\n=== L2 cutover: op-counter trace (record-ops + commit/error) ===\n{matching}/{total} routines match ({pct:.1}%)");
     for (file, routine, l, i) in divs.iter().take(12) {
         eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
@@ -742,13 +1423,20 @@ fn callsite_trace_measure() {
     if !root.is_dir() {
         return;
     }
-    let cs_num = |id: &str| -> u32 { id.rsplit("cs").next().and_then(|s| s.parse().ok()).unwrap_or(u32::MAX) };
+    let cs_num = |id: &str| -> u32 {
+        id.rsplit("cs")
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(u32::MAX)
+    };
     let mut total = 0usize;
     let mut matching = 0usize;
     let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
 
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -756,19 +1444,35 @@ fn callsite_trace_measure() {
             let mut cs: Vec<(u32, String)> = lf
                 .call_sites
                 .iter()
-                .map(|c| (cs_num(&c.id), format!("{}:{}", c.source_anchor.start_line, c.source_anchor.start_column)))
+                .map(|c| {
+                    (
+                        cs_num(&c.id),
+                        format!(
+                            "{}:{}",
+                            c.source_anchor.start_line, c.source_anchor.start_column
+                        ),
+                    )
+                })
                 .collect();
             cs.sort_by_key(|(n, _)| *n);
             let lanchors: Vec<String> = cs.into_iter().map(|(_, a)| a).collect();
             if lanchors == itrace.calls {
                 matching += 1;
             } else if divs.len() < 20 {
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
                 divs.push((rel, ln.clone(), lanchors, itrace.calls.clone()));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
     eprintln!("\n=== L2 cutover: call-site order trace ===\n{matching}/{total} routines match ({pct:.1}%)");
     for (file, routine, l, i) in divs.iter().take(12) {
         eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
@@ -789,7 +1493,9 @@ fn var_assignment_measure() {
     let mut matching = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -797,7 +1503,16 @@ fn var_assignment_measure() {
             let mut l: Vec<(String, Option<String>, String)> = lf
                 .var_assignments
                 .iter()
-                .map(|a| (a.lhs_name.clone(), a.rhs_literal_value.clone(), format!("{}:{}", a.source_anchor.start_line, a.source_anchor.start_column)))
+                .map(|a| {
+                    (
+                        a.lhs_name.clone(),
+                        a.rhs_literal_value.clone(),
+                        format!(
+                            "{}:{}",
+                            a.source_anchor.start_line, a.source_anchor.start_column
+                        ),
+                    )
+                })
                 .collect();
             let mut i = itrace.assigns.clone();
             l.sort();
@@ -805,13 +1520,23 @@ fn var_assignment_measure() {
             if l == i {
                 matching += 1;
             } else if divs.len() < 12 {
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
                 divs.push((format!("{rel} :: {ln}"), format!("legacy={l:?} ir={i:?}")));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
-    eprintln!("\n=== L2 cutover: var_assignments ===\n{matching}/{total} routines match ({pct:.1}%)");
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== L2 cutover: var_assignments ===\n{matching}/{total} routines match ({pct:.1}%)"
+    );
     for (a, b) in divs.iter().take(10) {
         eprintln!("  {a}\n    {b}");
     }
@@ -831,7 +1556,9 @@ fn condition_ref_measure() {
     let mut matching = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -839,12 +1566,20 @@ fn condition_ref_measure() {
             let mut l: Vec<(String, String, String, String)> = lf
                 .condition_references
                 .iter()
-                .map(|c| (
-                    c.identifier.clone(),
-                    c.condition_kind.clone(),
-                    format!("{}:{}", c.reference_anchor.start_line, c.reference_anchor.start_column),
-                    format!("{}:{}", c.statement_anchor.start_line, c.statement_anchor.start_column),
-                ))
+                .map(|c| {
+                    (
+                        c.identifier.clone(),
+                        c.condition_kind.clone(),
+                        format!(
+                            "{}:{}",
+                            c.reference_anchor.start_line, c.reference_anchor.start_column
+                        ),
+                        format!(
+                            "{}:{}",
+                            c.statement_anchor.start_line, c.statement_anchor.start_column
+                        ),
+                    )
+                })
                 .collect();
             let mut i = itrace.conds.clone();
             l.sort();
@@ -852,18 +1587,31 @@ fn condition_ref_measure() {
             if l == i {
                 matching += 1;
             } else if divs.len() < 12 {
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
                 divs.push((format!("{rel} :: {ln}"), format!("legacy={l:?} ir={i:?}")));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
-    eprintln!("\n=== L2 cutover: condition_references ===\n{matching}/{total} routines match ({pct:.1}%)");
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== L2 cutover: condition_references ===\n{matching}/{total} routines match ({pct:.1}%)"
+    );
     for (a, b) in divs.iter().take(10) {
         eprintln!("  {a}\n    {b}");
     }
     assert!(total > 0);
-    assert_eq!(matching, total, "condition_reference divergences (see report)");
+    assert_eq!(
+        matching, total,
+        "condition_reference divergences (see report)"
+    );
 }
 
 /// L2 cutover — identifier_references (deduped/sorted value-ref identifiers).
@@ -878,7 +1626,9 @@ fn identifier_refs_measure() {
     let mut matching = 0usize;
     let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -890,12 +1640,25 @@ fn identifier_refs_measure() {
             } else if divs.len() < 20 {
                 let lset: BTreeSet<_> = l.iter().cloned().collect();
                 let iset: BTreeSet<_> = i.iter().cloned().collect();
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
-                divs.push((rel, ln.clone(), lset.difference(&iset).cloned().collect(), iset.difference(&lset).cloned().collect()));
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    rel,
+                    ln.clone(),
+                    lset.difference(&iset).cloned().collect(),
+                    iset.difference(&lset).cloned().collect(),
+                ));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
     eprintln!("\n=== L2 cutover: identifier_references ===\n{matching}/{total} routines match ({pct:.1}%)");
     for (file, routine, l, i) in divs.iter().take(12) {
         eprintln!("  {file} :: {routine}\n    legacy-only: {l:?}\n    ir-only:     {i:?}");
@@ -917,7 +1680,9 @@ fn field_access_trace_measure() {
     let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
 
     for fpath in collect_al_files(&root) {
-        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
         let legacy = legacy_l2_features(&src);
         let ir = ir_op_trace(&src);
         for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
@@ -925,23 +1690,143 @@ fn field_access_trace_measure() {
             let lanchors: Vec<String> = lf
                 .field_accesses
                 .iter()
-                .map(|fa| format!("{}:{}", fa.source_anchor.start_line, fa.source_anchor.start_column))
+                .map(|fa| {
+                    format!(
+                        "{}:{}",
+                        fa.source_anchor.start_line, fa.source_anchor.start_column
+                    )
+                })
                 .collect();
             if lanchors == itrace.fields {
                 matching += 1;
             } else if divs.len() < 20 {
-                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
                 divs.push((rel, ln.clone(), lanchors, itrace.fields.clone()));
             }
         }
     }
-    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
-    eprintln!("\n=== L2 cutover: field-access trace ===\n{matching}/{total} routines match ({pct:.1}%)");
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!(
+        "\n=== L2 cutover: field-access trace ===\n{matching}/{total} routines match ({pct:.1}%)"
+    );
     for (file, routine, l, i) in divs.iter().take(12) {
         eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
     }
     assert!(total > 0);
-    assert_eq!(matching, total, "field-access trace divergences (see report)");
+    assert_eq!(
+        matching, total,
+        "field-access trace divergences (see report)"
+    );
+}
+
+/// L2 cutover — statement_tree (CFN skeleton). Compares the normalized CFN tree
+/// (kinds + child/else structure + op/cs sequence numbers + condition_leaves +
+/// guards) IR-vs-legacy per routine. The most complex L2 feature.
+#[test]
+fn statement_tree_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    // Recursively drop INERT "other" nodes — kind=="other" with no op/cs/guard/
+    // leaves/children/else. Legacy `build_block` renders a trailing-line comment as
+    // such a node (it has no skip for `comment`); the IR correctly omits comments.
+    // The nodes are provably inert (no op/cs/order entry), so dropping them on BOTH
+    // sides isolates that artifact from genuine structural divergence.
+    fn strip_inert(n: &NCfn) -> NCfn {
+        let is_inert = |c: &NCfn| {
+            c.kind == "other"
+                && c.op.is_none()
+                && c.cs.is_none()
+                && c.guard.is_none()
+                && c.leaves.is_none()
+                && c.children.is_none()
+                && c.else_children.is_none()
+        };
+        let map_vec = |v: &Option<Vec<NCfn>>| {
+            v.as_ref().map(|xs| {
+                xs.iter()
+                    .filter(|c| !is_inert(c))
+                    .map(strip_inert)
+                    .collect()
+            })
+        };
+        NCfn {
+            kind: n.kind.clone(),
+            op: n.op,
+            cs: n.cs,
+            guard: n.guard.clone(),
+            leaves: map_vec(&n.leaves),
+            children: map_vec(&n.children),
+            else_children: map_vec(&n.else_children),
+        }
+    }
+
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut matching_stripped = 0usize;
+    let mut divs: Vec<(String, String, String, String)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_statement_tree(&src);
+        for ((ln, lf), (_in, itree)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let ltree = lf.statement_tree.as_ref().map(norm_legacy_cfn);
+            let exact = ltree.as_ref() == Some(itree);
+            if exact {
+                matching += 1;
+            }
+            if ltree.as_ref().map(strip_inert) == Some(strip_inert(itree)) {
+                matching_stripped += 1;
+            } else if divs.len() < 20 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((rel, ln.clone(), format!("{ltree:?}"), format!("{itree:?}")));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    let pct_s = if total > 0 {
+        matching_stripped as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== L2 cutover: statement_tree (CFN) ===\n{matching}/{total} routines match exactly ({pct:.1}%)");
+    eprintln!("{matching_stripped}/{total} match after stripping inert comment-`other` nodes ({pct_s:.1}%)");
+    for (file, routine, l, i) in divs.iter().take(6) {
+        eprintln!("  {file} :: {routine}\n    legacy: {l}\n    ir:     {i}");
+    }
+    assert!(total > 0);
+    // Hard gate: the IR CFN matches legacy's statement_tree STRUCTURE exactly — same
+    // node kinds, nesting, op/cs sequence numbers, condition_leaves and guards — once
+    // legacy's inert comment-`other` artifact is removed. The residual exact-match gap
+    // is ONLY those comment nodes (legacy's `build_block` has no `comment` skip; the IR
+    // correctly omits them). They carry no op/cs and get no operation-order entry, so
+    // they are behaviourally inert — the structural contract is what governs L2.
+    assert_eq!(
+        matching_stripped, total,
+        "statement_tree structural divergences (see report)"
+    );
 }
 
 #[test]
