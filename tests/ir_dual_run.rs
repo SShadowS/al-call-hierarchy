@@ -244,6 +244,7 @@ struct Trace {
     ops: Vec<String>,
     calls: Vec<String>,
     fields: Vec<String>,
+    idents: BTreeSet<String>,
 }
 
 /// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
@@ -365,10 +366,11 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
         if !is_record_op && !is_commit {
             out.calls.push(anchor);
         }
-        // Recurse the CALLEE's receiver (a Member function is a callee, not a field
-        // access); recurse identifiers (noop) / chained calls directly. Then args.
+        // Recurse the callee. A member-call RECEIVER is a value ref (counted); the
+        // bare-call FUNCTION name and the method name are NOT.
         match &fe.kind {
             Member { object, .. } => rec_walk_expr(f, *object, rvars, frvars, implicit, out),
+            Identifier(_) | QuotedIdentifier(_) => {} // bare callee name — not a value ref
             _ => rec_walk_expr(f, *function, rvars, frvars, implicit, out),
         }
         for a in args { rec_walk_expr(f, *a, rvars, frvars, implicit, out); }
@@ -390,6 +392,13 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
             Member { object, .. } => rec_walk_expr(f, *object, rvars, frvars, implicit, out),
             _ => rec_walk_expr(f, *enum_type, rvars, frvars, implicit, out),
         },
+        // value-reference identifier (lc, deduped) — legacy identifier_references
+        // counts only plain `identifier` nodes, NOT keyword_identifier.
+        Identifier(name) => {
+            if e.origin.kind_text == "identifier" {
+                out.idents.insert(name.to_ascii_lowercase());
+            }
+        }
         Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, frvars, implicit, out); rec_walk_expr(f, *rhs, rvars, frvars, implicit, out); }
         Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, frvars, implicit, out),
         Parenthesized(x) => rec_walk_expr(f, *x, rvars, frvars, implicit, out),
@@ -700,6 +709,43 @@ fn callsite_trace_measure() {
     }
     assert!(total > 0);
     assert_eq!(matching, total, "call-site trace divergences (see report)");
+}
+
+/// L2 cutover — identifier_references (deduped/sorted value-ref identifiers).
+#[test]
+fn identifier_refs_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let l: Vec<String> = lf.identifier_references.clone();
+            let i: Vec<String> = itrace.idents.iter().cloned().collect();
+            if l == i {
+                matching += 1;
+            } else if divs.len() < 20 {
+                let lset: BTreeSet<_> = l.iter().cloned().collect();
+                let iset: BTreeSet<_> = i.iter().cloned().collect();
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((rel, ln.clone(), lset.difference(&iset).cloned().collect(), iset.difference(&lset).cloned().collect()));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: identifier_references ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (file, routine, l, i) in divs.iter().take(12) {
+        eprintln!("  {file} :: {routine}\n    legacy-only: {l:?}\n    ir-only:     {i:?}");
+    }
+    assert!(total > 0);
 }
 
 /// L2 cutover — field-access ORDER trace. `X.Field` in expression position where X
