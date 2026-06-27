@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **L2 emitter is now fully owned-IR-driven — no tree-sitter CST walk.**
+  `l2_workspace::project_file` and `project_named_routine` iterate the owned AL
+  syntax IR (`al_syntax::parse`) directly: objects, routines, metadata, parameters
+  and per-routine `features` all come from the IR, and `project_workspace` no longer
+  parses tree-sitter at all. Preconditions proven over the r0-corpus before cutover
+  (object set 404/404, routine set 591/591, `(type,number,name)` 404/404,
+  `parse_incomplete` 591/591); feature output is byte-identical to the legacy
+  body_walk on every well-formed routine. `project_named_routine` dropped its
+  `tree: &Tree` parameter. Added `al_syntax::ir::RoutineDecl.parse_incomplete` and
+  `ir_walk::ir_object_type` to support the cutover.
+
+### Fixed
+- **Malformed-routine statementTree no longer carries a phantom `other` node.**
+  The legacy tree-sitter ERROR-recovery emitted a spurious `{kind:"other"}`
+  statement_tree child for a stray token inside a body; the IR cleanly drops the
+  ERROR token. Rebaselined the one affected Rust-owned golden
+  (`ws-callsite-resolutions`).
+
 ## [0.9.3] - 2026-06-26
 
 The tree-sitter-al v3 compliance work. (v0.9.1 and v0.9.2 were tagged during the

@@ -2922,11 +2922,35 @@ fn engine_ir_walk_exact_id_pfeatures() {
 #[test]
 fn engine_ir_attributes_parity() {
     use al_call_hierarchy::engine::l2::ir_walk;
-    use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
+    use al_call_hierarchy::engine::l2::l2_workspace::collect_attributes;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
     if !root.is_dir() {
         return;
     }
+    // Raw tree-sitter legacy oracle: collect_attributes + the `modifier` field text.
+    // (project_named_routine is now fully IR-driven, so it can no longer serve as the
+    // legacy oracle without the comparison going tautological.)
+    fn routine_nodes<'t>(n: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
+        let mut c = n.walk();
+        for ch in n.named_children(&mut c) {
+            if ch.kind() == "procedure" || ch.kind() == "trigger_declaration" {
+                out.push(ch);
+            } else {
+                routine_nodes(ch, out);
+            }
+        }
+    }
+    let legacy_access_modifier = |node: tree_sitter::Node, src: &str| -> Option<String> {
+        if node.kind() != "procedure" {
+            return None;
+        }
+        let m = node.child_by_field_name("modifier")?;
+        let t = m.utf8_text(src.as_bytes()).ok()?.trim().to_lowercase();
+        match t.as_str() {
+            "local" | "internal" | "protected" => Some(t),
+            _ => None,
+        }
+    };
     let lang = al_call_hierarchy::language::language();
     let mut total = 0usize;
     let mut matching = 0usize;
@@ -2943,35 +2967,36 @@ fn engine_ir_attributes_parity() {
             continue;
         };
         let file = al_syntax::parse(&src);
-        // Per-name dedup: only compare names unique within the file (project_named_routine
-        // returns the first match).
-        let mut name_counts: std::collections::HashMap<String, usize> = Default::default();
-        for o in &file.objects {
-            for r in &o.routines {
-                *name_counts.entry(r.name.to_ascii_lowercase()).or_default() += 1;
-            }
+
+        // Legacy attributes/access_modifier indexed by routine start byte.
+        let mut ts_nodes = Vec::new();
+        routine_nodes(tree.root_node(), &mut ts_nodes);
+        let mut legacy_by_byte: std::collections::HashMap<
+            usize,
+            (Vec<String>, Vec<serde_json::Value>, Option<String>),
+        > = Default::default();
+        for n in ts_nodes {
+            let (a, ap) = collect_attributes(n, &src);
+            legacy_by_byte.insert(n.start_byte(), (a, ap, legacy_access_modifier(n, &src)));
         }
+
         for o in &file.objects {
             for r in &o.routines {
-                if name_counts[&r.name.to_ascii_lowercase()] != 1 {
-                    continue; // ambiguous name — skip
-                }
-                let Some(legacy) = project_named_routine(&src, &r.name, "dual", "ws:test", &tree)
+                let Some((l_attrs, l_parsed, l_mod)) = legacy_by_byte.get(&r.origin.byte.start)
                 else {
                     continue;
                 };
                 total += 1;
                 let (ir_attrs, ir_parsed) = ir_walk::ir_attributes(r, &file, &src);
-                let ok = ir_attrs == legacy.attributes
-                    && ir_parsed == legacy.attributes_parsed
-                    && r.access_modifier == legacy.access_modifier;
+                let ok =
+                    &ir_attrs == l_attrs && &ir_parsed == l_parsed && &r.access_modifier == l_mod;
                 if ok {
                     matching += 1;
                 } else if divs.len() < 12 {
                     divs.push(format!(
                         "{} :: {}\n    legacy attrs={:?} parsed={:?} mod={:?}\n    ir     attrs={:?} parsed={:?} mod={:?}",
                         fpath.strip_prefix(&root).unwrap_or(&fpath).display(), r.name,
-                        legacy.attributes, legacy.attributes_parsed, legacy.access_modifier,
+                        l_attrs, l_parsed, l_mod,
                         ir_attrs, ir_parsed, r.access_modifier
                     ));
                 }

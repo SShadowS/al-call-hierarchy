@@ -485,9 +485,6 @@
             {
               "kind": "call",
               "callsiteId": "r0/accf77edfb07984129b261e98c32a8df38dadc04f77d0c6185894f8566aef5b3/cs0"
-            },
-            {
-              "kind": "other"
             }
           ]
         },

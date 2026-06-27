@@ -20,9 +20,7 @@
 
 use al_call_hierarchy::engine::l2::capability::extract_capabilities;
 use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
-use al_call_hierarchy::language::language;
 use std::collections::BTreeMap;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
@@ -105,25 +103,11 @@ fn all_l2cap_vector_families_match() {
     assert_eq!(doc.vector_count, 18, "expected 18 vectors");
     assert_eq!(doc.vectors.len(), 18, "expected 18 vectors");
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-
     let mut failures: Vec<String> = Vec::new();
 
     for vec in &doc.vectors {
-        let tree = parser
-            .parse(&vec.source, None)
-            .expect("source parses into a tree");
-
-        let routine = project_named_routine(
-            &vec.source,
-            &vec.routine_name,
-            APP_GUID,
-            SOURCE_UNIT_ID,
-            &tree,
-        );
+        let routine =
+            project_named_routine(&vec.source, &vec.routine_name, APP_GUID, SOURCE_UNIT_ID);
         let Some(routine) = routine else {
             failures.push(format!(
                 "[{}] {}: routine `{}` not found by the Rust projector",

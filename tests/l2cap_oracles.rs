@@ -73,8 +73,6 @@
 use al_call_hierarchy::engine::l2::capability::{extract_capabilities, CapabilityFact};
 use al_call_hierarchy::engine::l2::features::PRoutine;
 use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
@@ -84,12 +82,7 @@ const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
 /// as the emitter does. Panics if the routine isn't found — a missing routine is an
 /// oracle failure.
 fn project(source: &str, routine: &str) -> PRoutine {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-    let tree = parser.parse(source, None).expect("source parses");
-    project_named_routine(source, routine, APP_GUID, SOURCE_UNIT_ID, &tree)
+    project_named_routine(source, routine, APP_GUID, SOURCE_UNIT_ID)
         .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 projector"))
 }
 

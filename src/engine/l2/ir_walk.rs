@@ -2087,6 +2087,31 @@ pub fn ir_attributes(
     (raw, parsed)
 }
 
+/// IR `ObjectKind` → the L2 object-type string, mirroring `scope::object_type_for`
+/// EXACTLY (including its skips: PermissionSetExtension / Profile / Entitlement and
+/// any `Other` construct return `None`, so the emitter omits them — same object set
+/// the legacy tree-sitter walk produced). Validated 404/404 over the r0-corpus.
+pub fn ir_object_type(kind: &al_syntax::ir::ObjectKind) -> Option<&'static str> {
+    use al_syntax::ir::ObjectKind::*;
+    Some(match kind {
+        Codeunit => "Codeunit",
+        Table => "Table",
+        TableExtension => "TableExtension",
+        Page => "Page",
+        PageExtension => "PageExtension",
+        Report => "Report",
+        ReportExtension => "ReportExtension",
+        Query => "Query",
+        XmlPort => "XMLport",
+        Enum => "Enum",
+        EnumExtension => "EnumExtension",
+        Interface => "Interface",
+        ControlAddIn => "ControlAddIn",
+        PermissionSet => "PermissionSet",
+        PermissionSetExtension | Profile | Entitlement | Other => return None,
+    })
+}
+
 // ---- object metadata (subtype / pageType / sourceTable / inherentCommit) ----
 
 /// Object metadata from the IR's properties — mirrors `extract_object_metadata`.

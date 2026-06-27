@@ -31,17 +31,15 @@
 //! logs/warnings go to stderr. The projection carries no absolute paths.
 
 use super::features::{L2Projection, PFeatures, PObject, PRoutine};
-use super::node_util::{named_children, node_text, strip_quotes, Utf16Cols};
-use super::{extract_object_number, find_code_block, project_routine_features, IdentityCtx};
+use super::node_util::{named_children, node_text};
 use crate::engine::ids::{
     encode_object_id, normalized_signature_hash, to_stable_object_id,
     to_stable_routine_id_from_parts, ParamSpec,
 };
-use crate::engine::l2::scope::{self, extract_object_globals, extract_parameters};
+use crate::engine::l2::scope;
 use serde_json::json;
-use std::collections::HashSet;
 use std::path::Path;
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 
 /// The intentional stable corpus/model-instance label (matches the golden's id
 /// prefixes `r0/…`). It does not enter the R1a stable comparison subset.
@@ -230,45 +228,6 @@ pub(crate) fn count_app_json_paths(workspace: &Path) -> Vec<std::path::PathBuf> 
 // attribute-from-node.ts.
 // ---------------------------------------------------------------------------
 
-/// `extractObjectName` — first quoted_identifier (stripped) or identifier, else "".
-fn extract_object_name(decl: Node, source: &str) -> String {
-    for child in named_children(decl) {
-        match child.kind() {
-            "quoted_identifier" => return strip_quotes(node_text(child, source)).to_string(),
-            "identifier" => return node_text(child, source).to_string(),
-            _ => {}
-        }
-    }
-    String::new()
-}
-
-/// `readObjectProperty` — first direct `property` named child whose `name` field
-/// matches (case-insensitive); returns the raw `value` field text. Mirrors
-/// object-indexer.ts (DIRECT children only — never descends).
-fn read_object_property(decl: Node, property_name: &str, source: &str) -> Option<String> {
-    let want = property_name.to_lowercase();
-    // tree-sitter-al v3 wraps the object body in a `declaration_body` (the
-    // `body` field), so object-level properties (Subtype, SourceTable, ...) are
-    // no longer direct children of the declaration. Look inside the body when
-    // present; fall back to the declaration for older grammars.
-    let container = decl.child_by_field_name("body").unwrap_or(decl);
-    for child in named_children(container) {
-        if child.kind() != "property" {
-            continue;
-        }
-        let Some(name_node) = child.child_by_field_name("name") else {
-            continue;
-        };
-        if node_text(name_node, source).to_lowercase() != want {
-            continue;
-        }
-        return child
-            .child_by_field_name("value")
-            .map(|v| node_text(v, source).to_string());
-    }
-    None
-}
-
 /// Strip a single layer of surrounding double OR single quotes (mirrors
 /// attribute-from-node.ts `stripQuoteChars`).
 fn strip_quote_chars(text: &str) -> &str {
@@ -449,126 +408,35 @@ pub fn classify_kind(node: Node, source: &str) -> &'static str {
     kind
 }
 
-/// `(objectSubtype, pageType, sourceTableName, inherentCommitBehavior)` for an
-/// object decl — mirrors object-indexer.ts `indexObjects`.
-fn extract_object_metadata(
-    decl: Node,
-    object_type: &str,
-    source: &str,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let mut object_subtype = None;
-    let mut page_type = None;
-    let mut source_table_name = None;
-    let mut inherent_commit_behavior = None;
-
-    if object_type == "Codeunit" {
-        object_subtype = read_object_property(decl, "Subtype", source);
-    }
-    if object_type == "Page" || object_type == "PageExtension" {
-        page_type = read_object_property(decl, "PageType", source);
-        source_table_name =
-            read_object_property(decl, "SourceTable", source).map(|s| strip_quotes(&s).to_string());
-    }
-    if object_type == "Codeunit" || object_type == "Table" || object_type == "TableExtension" {
-        if let Some(icb_raw) = read_object_property(decl, "InherentCommitBehavior", source) {
-            let member = match icb_raw.rfind("::") {
-                Some(sep) => icb_raw[sep + 2..].to_lowercase(),
-                None => icb_raw.to_lowercase(),
-            };
-            inherent_commit_behavior = match member.as_str() {
-                "ignore" => Some("ignore".to_string()),
-                "error" => Some("error".to_string()),
-                "allow" => Some("allow".to_string()),
-                _ => None,
-            };
-        }
-    }
-
-    (
-        object_subtype,
-        page_type,
-        source_table_name,
-        inherent_commit_behavior,
-    )
-}
-
-/// Return-type text — first direct `type_specification` named child (parameter
-/// types nest inside `parameter` nodes). Mirrors `getReturnTypeText`.
-fn return_type_text(node: Node, source: &str) -> Option<String> {
-    named_children(node)
-        .into_iter()
-        .find(|c| c.kind() == "type_specification")
-        .map(|c| node_text(c, source).to_string())
-}
-
-/// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
-fn collect_routine_nodes(decl: Node) -> Vec<Node> {
-    let mut out = Vec::new();
-    let mut stack = vec![decl];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
-            out.push(node);
-            continue;
-        }
-        for child in named_children(node) {
-            stack.push(child);
-        }
-    }
-    out
-}
-
-/// Build the full L2 projection for one parsed source file's tree.
-#[allow(clippy::too_many_arguments)]
+/// Build the full L2 projection for one source file, driven entirely by the owned
+/// AL syntax IR (`al_syntax::parse`). The engine no longer walks the tree-sitter CST
+/// here: objects, routines, metadata, parameters and per-routine `features` all come
+/// from the IR. Preconditions proven over the r0-corpus before cutover — object set
+/// 404/404, routine set 591/591, (type,number,name) 404/404, parse_incomplete 591/591
+/// — and feature output is byte-identical to the legacy body_walk on every well-formed
+/// routine. Malformed routines (`parse_incomplete`) take the IR's recovery too (it
+/// cleanly drops stray ERROR tokens rather than emitting phantom `other` nodes).
 fn project_file(
-    root: Node,
     source: &str,
     app_guid: &str,
     source_unit_id: &str,
-    cols: &Utf16Cols,
     objects: &mut Vec<PObject>,
     routines: &mut Vec<PRoutine>,
 ) {
-    // Owned-IR cutover: parse the file's IR once and index routines by start byte.
-    // Each well-formed routine's PFeatures come from `project_routine_features_ir`
-    // (byte-identical to the legacy body_walk — validated 5 ways at 99.8% / 100% on
-    // well-formed code); routines not matched or with a parse error fall back to the
-    // legacy tree-sitter walk.
     let ir_file = al_syntax::parse(source);
-    let mut ir_routine_by_byte: std::collections::HashMap<
-        usize,
-        (usize, &al_syntax::ir::RoutineDecl),
-    > = std::collections::HashMap::new();
-    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
-        std::collections::HashMap::new();
-    for (oi, o) in ir_file.objects.iter().enumerate() {
-        ir_obj_by_byte.insert(o.origin.byte.start, o);
-        for r in &o.routines {
-            ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
-        }
-    }
 
-    for decl in named_children(root) {
-        let Some(object_type) = scope::object_type_for(decl.kind()) else {
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        let Some(object_type) = crate::engine::l2::ir_walk::ir_object_type(&o.kind) else {
             continue;
         };
-        let object_number = extract_object_number(decl, source);
-        let name = extract_object_name(decl, source);
+        let object_number = o.id.unwrap_or(0);
+        let name = o.name.clone();
 
         let internal_object_id = encode_object_id(app_guid, object_type, object_number);
         let stable_object_id = to_stable_object_id(&internal_object_id);
 
-        // Object metadata from the IR's properties when the object is matched
-        // (byte-exact), else legacy.
         let (object_subtype, page_type, source_table_name, inherent_commit_behavior) =
-            match ir_obj_by_byte.get(&decl.start_byte()) {
-                Some(o) => crate::engine::l2::ir_walk::ir_object_metadata(o, object_type),
-                None => extract_object_metadata(decl, object_type, source),
-            };
+            crate::engine::l2::ir_walk::ir_object_metadata(o, object_type);
 
         objects.push(PObject {
             stable_object_id: stable_object_id.clone(),
@@ -580,76 +448,24 @@ fn project_file(
             inherent_commit_behavior,
         });
 
-        // Object globals (shared across routines).
-        let object_globals = extract_object_globals(decl, source_unit_id, source);
-
-        // Routine nodes (prune-at-match).
-        let routine_nodes = collect_routine_nodes(decl);
-
-        // Object procedure-name collision set (implicit-receiver §3.3).
-        let mut object_procedure_names = HashSet::new();
-        for n in &routine_nodes {
-            if let Some(nm) = n.child_by_field_name("name") {
-                object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
-            }
-        }
-
-        let id_ctx = IdentityCtx {
-            app_guid,
-            model_instance_id: MODEL_INSTANCE_ID,
-            source_unit_id,
-        };
-
-        for routine in routine_nodes {
-            let Some(nm) = routine.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(nm, source)).to_string();
+        for ir_routine in &o.routines {
+            let rname = ir_routine.name.clone();
             if rname.is_empty() {
                 continue;
             }
 
-            let body_available = find_code_block(routine).is_some();
-            let parse_incomplete = routine.has_error();
+            let body_available = ir_routine.body.is_some();
+            let parse_incomplete = ir_routine.parse_incomplete;
 
-            // Well-formed routines use the owned IR; routines with a parse error fall
-            // back to the legacy walk (the IR's ERROR-recovery differs on malformed
-            // code — the sole known divergence). A structural byte-position miss also
-            // falls back (should not occur for IR-modelled objects).
-            let ir_match = if parse_incomplete {
-                None
-            } else {
-                ir_routine_by_byte.get(&routine.start_byte())
-            };
+            let kind = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
 
-            // kind / return type: from the IR when matched (validated via routine_id),
-            // else legacy.
-            let kind = match ir_match {
-                Some((_, r)) => crate::engine::l2::ir_walk::ir_routine_kind(r),
-                None => classify_kind(routine, source),
-            };
-
-            // Routine envelope metadata: from the IR when matched (validated byte-exact),
-            // else legacy.
-            let (attributes, attributes_parsed, access_modifier) =
-                if let Some((_, ir_routine)) = ir_match {
-                    let (a, ap) =
-                        crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
-                    (a, ap, ir_routine.access_modifier.clone())
-                } else {
-                    let (a, ap) = collect_attributes(routine, source);
-                    (a, ap, classify_access_modifier(routine, source))
-                };
+            let (attributes, attributes_parsed) =
+                crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
+            let access_modifier = ir_routine.access_modifier.clone();
 
             // Stable routine id — its normalizedSignatureHash is the canonical
-            // (return-type-aware) signature hash, identical on the ABI side. Parameters
-            // from the IR when matched (validated byte-exact, so the hash is stable).
-            let parameters = match ir_match {
-                Some((_, ir_routine)) => {
-                    crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine)
-                }
-                None => extract_parameters(routine, source),
-            };
+            // (return-type-aware) signature hash, identical on the ABI side.
+            let parameters = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
             let param_specs: Vec<ParamSpec> = parameters
                 .iter()
                 .map(|p| ParamSpec {
@@ -657,51 +473,30 @@ fn project_file(
                     is_var: p.is_var,
                 })
                 .collect();
-            let return_type_text = match ir_match {
-                Some((_, r)) => r.return_type.clone(),
-                None => return_type_text(routine, source),
-            };
+            let return_type_text = ir_routine.return_type.clone();
             let norm_hash =
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            let mut features: PFeatures = if let Some((oi, ir_routine)) = ir_match {
-                let routine_id = scope::compute_routine_id(
-                    app_guid,
-                    object_type,
-                    object_number,
-                    kind,
-                    &rname,
-                    &parameters,
-                    return_type_text.as_deref(),
-                    MODEL_INSTANCE_ID,
-                );
-                crate::engine::l2::ir_walk::project_routine_features_ir(
-                    &ir_file,
-                    *oi,
-                    ir_routine,
-                    &routine_id,
-                    source,
-                    source_unit_id,
-                    source_table_name.as_deref(),
-                )
-            } else {
-                match project_routine_features(
-                    decl,
-                    routine,
-                    object_type,
-                    object_number,
-                    source_table_name.as_deref(),
-                    &object_procedure_names,
-                    &object_globals,
-                    &id_ctx,
-                    source,
-                    cols,
-                ) {
-                    Some((_, f)) => f,
-                    None => continue,
-                }
-            };
+            let routine_id = scope::compute_routine_id(
+                app_guid,
+                object_type,
+                object_number,
+                kind,
+                &rname,
+                &parameters,
+                return_type_text.as_deref(),
+                MODEL_INSTANCE_ID,
+            );
+            let mut features: PFeatures = crate::engine::l2::ir_walk::project_routine_features_ir(
+                &ir_file,
+                oi,
+                ir_routine,
+                &routine_id,
+                source,
+                source_unit_id,
+                source_table_name.as_deref(),
+            );
 
             // R1b: control-context lattice over the CFN skeleton (+ metadata).
             // Populates `controlContext` on each op/callsite (absent when none),
@@ -821,11 +616,6 @@ pub fn project_workspace(workspace: &Path) -> anyhow::Result<L2Projection> {
     let files = discover_al_files(workspace)
         .map_err(|e| anyhow::anyhow!("failed to discover .al files: {e}"))?;
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&crate::language::language())
-        .map_err(|e| anyhow::anyhow!("failed to set tree-sitter language: {e}"))?;
-
     let mut projection = empty();
 
     for file in &files {
@@ -836,21 +626,11 @@ pub fn project_workspace(workspace: &Path) -> anyhow::Result<L2Projection> {
                 continue;
             }
         };
-        let Some(tree) = parser.parse(&source, None) else {
-            eprintln!(
-                "warning: skipping {} (parse returned no tree)",
-                file.rel_posix
-            );
-            continue;
-        };
         let source_unit_id = format!("ws:{}", file.rel_posix);
-        let cols = Utf16Cols::new(&source);
         project_file(
-            tree.root_node(),
             &source,
             &app_guid,
             &source_unit_id,
-            &cols,
             &mut projection.objects,
             &mut projection.routines,
         );
@@ -877,97 +657,43 @@ pub fn project_workspace(workspace: &Path) -> anyhow::Result<L2Projection> {
 /// `op*`/`cs*` witness references that the capability facts carry).
 ///
 /// Returns `None` when the named routine isn't found in any object.
+///
+/// Like [`project_file`] this is now driven entirely by the owned AL syntax IR —
+/// no tree-sitter CST walk.
 pub fn project_named_routine(
     source: &str,
     routine_name: &str,
     app_guid: &str,
     source_unit_id: &str,
-    tree: &tree_sitter::Tree,
 ) -> Option<PRoutine> {
-    let root = tree.root_node();
-    let cols = Utf16Cols::new(source);
-
-    // Owned-IR cutover (mirrors project_file): index IR routines + objects by byte.
     let ir_file = al_syntax::parse(source);
-    let mut ir_routine_by_byte: std::collections::HashMap<
-        usize,
-        (usize, &al_syntax::ir::RoutineDecl),
-    > = std::collections::HashMap::new();
-    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
-        std::collections::HashMap::new();
-    for (oi, o) in ir_file.objects.iter().enumerate() {
-        ir_obj_by_byte.insert(o.origin.byte.start, o);
-        for r in &o.routines {
-            ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
-        }
-    }
 
-    for decl in named_children(root) {
-        let Some(object_type) = scope::object_type_for(decl.kind()) else {
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        let Some(object_type) = crate::engine::l2::ir_walk::ir_object_type(&o.kind) else {
             continue;
         };
-        let object_number = extract_object_number(decl, source);
+        let object_number = o.id.unwrap_or(0);
         let internal_object_id = encode_object_id(app_guid, object_type, object_number);
         let stable_object_id = to_stable_object_id(&internal_object_id);
 
-        let (_, _, source_table_name, _) = match ir_obj_by_byte.get(&decl.start_byte()) {
-            Some(o) => crate::engine::l2::ir_walk::ir_object_metadata(o, object_type),
-            None => extract_object_metadata(decl, object_type, source),
-        };
+        let (_, _, source_table_name, _) =
+            crate::engine::l2::ir_walk::ir_object_metadata(o, object_type);
 
-        let object_globals = extract_object_globals(decl, source_unit_id, source);
-        let routine_nodes = collect_routine_nodes(decl);
-
-        let mut object_procedure_names = HashSet::new();
-        for n in &routine_nodes {
-            if let Some(nm) = n.child_by_field_name("name") {
-                object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
-            }
-        }
-
-        let id_ctx = IdentityCtx {
-            app_guid,
-            model_instance_id: MODEL_INSTANCE_ID,
-            source_unit_id,
-        };
-
-        for routine in routine_nodes {
-            let Some(nm) = routine.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(nm, source)).to_string();
+        for ir_routine in &o.routines {
+            let rname = ir_routine.name.clone();
             if rname != routine_name {
                 continue;
             }
 
-            let body_available = find_code_block(routine).is_some();
-            let parse_incomplete = routine.has_error();
+            let body_available = ir_routine.body.is_some();
+            let parse_incomplete = ir_routine.parse_incomplete;
 
-            let ir_match = if parse_incomplete {
-                None
-            } else {
-                ir_routine_by_byte.get(&routine.start_byte())
-            };
-            let kind = match ir_match {
-                Some((_, r)) => crate::engine::l2::ir_walk::ir_routine_kind(r),
-                None => classify_kind(routine, source),
-            };
-            let (attributes, attributes_parsed, access_modifier) =
-                if let Some((_, ir_routine)) = ir_match {
-                    let (a, ap) =
-                        crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
-                    (a, ap, ir_routine.access_modifier.clone())
-                } else {
-                    let (a, ap) = collect_attributes(routine, source);
-                    (a, ap, classify_access_modifier(routine, source))
-                };
+            let kind = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
+            let (attributes, attributes_parsed) =
+                crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source);
+            let access_modifier = ir_routine.access_modifier.clone();
 
-            let parameters = match ir_match {
-                Some((_, ir_routine)) => {
-                    crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine)
-                }
-                None => extract_parameters(routine, source),
-            };
+            let parameters = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
             let param_specs: Vec<ParamSpec> = parameters
                 .iter()
                 .map(|p| ParamSpec {
@@ -975,49 +701,30 @@ pub fn project_named_routine(
                     is_var: p.is_var,
                 })
                 .collect();
-            let return_type_text = match ir_match {
-                Some((_, r)) => r.return_type.clone(),
-                None => return_type_text(routine, source),
-            };
+            let return_type_text = ir_routine.return_type.clone();
             let norm_hash =
                 normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
-            let mut features: PFeatures = if let Some((oi, ir_routine)) = ir_match {
-                let routine_id = scope::compute_routine_id(
-                    app_guid,
-                    object_type,
-                    object_number,
-                    kind,
-                    &rname,
-                    &parameters,
-                    return_type_text.as_deref(),
-                    MODEL_INSTANCE_ID,
-                );
-                crate::engine::l2::ir_walk::project_routine_features_ir(
-                    &ir_file,
-                    *oi,
-                    ir_routine,
-                    &routine_id,
-                    source,
-                    source_unit_id,
-                    source_table_name.as_deref(),
-                )
-            } else {
-                project_routine_features(
-                    decl,
-                    routine,
-                    object_type,
-                    object_number,
-                    source_table_name.as_deref(),
-                    &object_procedure_names,
-                    &object_globals,
-                    &id_ctx,
-                    source,
-                    &cols,
-                )
-                .map(|(_, f)| f)?
-            };
+            let routine_id = scope::compute_routine_id(
+                app_guid,
+                object_type,
+                object_number,
+                kind,
+                &rname,
+                &parameters,
+                return_type_text.as_deref(),
+                MODEL_INSTANCE_ID,
+            );
+            let mut features: PFeatures = crate::engine::l2::ir_walk::project_routine_features_ir(
+                &ir_file,
+                oi,
+                ir_routine,
+                &routine_id,
+                source,
+                source_unit_id,
+                source_table_name.as_deref(),
+            );
 
             let attr_names_lc: Vec<String> = attributes_parsed
                 .iter()
