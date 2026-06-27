@@ -163,3 +163,17 @@ Phase-2 gate (actual engine features, not query proxies). Per-routine IR travers
 callSites (calleeText/callee + op-numbering keyed on node.id + visit-order, INV-1/2/3),
 operationSites, recordOperations, fieldAccesses, identifierReferences, CFN statement_tree.
 Then cut L2 over to consume the IR (delete the legacy walk), then L3, LSP, seal.
+
+## Phase 2 finding — IR-level vs cutover-level features (key)
+The dual-run revealed a clean split in what's validatable at the IR level vs what needs the cutover:
+- **IR-level (SYNTAX) — done, 8 streams 100%:** routine/call-name/member/variable/statement-kind/
+  temporary inventories + has_branching + nesting_depth. These are derivable from the IR alone.
+- **Cutover-level (SEMANTICS):** callSites vs recordOperations vs operationSites is a 3-way SEMANTIC
+  classification legacy's L2 makes (knowing Customer is a Record, FindSet a builtin). The IR is
+  syntax and correctly does NOT split. So callSite/recordOp/opSite parity + op-numbering CANNOT be a
+  standalone IR stream — it IS the L2 CUTOVER: re-express body_walk's classification + two-phase
+  op-numbering (node.id-keyed, visit-order INV-1/2/3) + CFN OVER the IR, producing PFeatures, gated
+  against legacy PFeatures (full-struct equality). (Method-name completeness already at 100% via the
+  call-inventory stream — the CALLS query captures record-op methods too.)
+NEXT: the L2 cutover (re-express body_walk over IR). The intricate multi-session core; the real-L2
+gate (legacy_l2_features) is the full-PFeatures comparison target.
