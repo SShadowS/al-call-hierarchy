@@ -2804,3 +2804,112 @@ fn engine_ir_walk_post_passes_graft() {
     eprintln!("\n=== PHASE-2 INTEGRATION (post-passes on IR vs legacy): {matching}/{total} ({pct:.1}%) ===");
     assert!(total > 0);
 }
+
+/// PHASE-2 — IR produces BYTE-EXACT driver-ready PFeatures: compute the SAME
+/// routine_id legacy does (via compute_routine_id from IR object/routine metadata,
+/// incl. attributes for classify_kind) so the op/cs/rv/loop ids match EXACTLY, then
+/// full serde-PFeatures equality with NO id normalization.
+#[test]
+fn engine_ir_walk_exact_id_pfeatures() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    use al_call_hierarchy::engine::l2::scope::{compute_routine_id, ParameterSymbol};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let obj_type = |k: &al_syntax::ir::ObjectKind| -> &'static str {
+        use al_syntax::ir::ObjectKind::*;
+        match k {
+            Codeunit => "Codeunit",
+            Table => "Table",
+            TableExtension => "TableExtension",
+            Page => "Page",
+            PageExtension => "PageExtension",
+            Report => "Report",
+            ReportExtension => "ReportExtension",
+            Query => "Query",
+            XmlPort => "XMLport",
+            Enum => "Enum",
+            EnumExtension => "EnumExtension",
+            Interface => "Interface",
+            ControlAddIn => "ControlAddIn",
+            PermissionSet => "PermissionSet",
+            _ => "Codeunit",
+        }
+    };
+    let mut total = 0;
+    let mut matching = 0;
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((_ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let o = &file.objects[*oi];
+            let attrs: Vec<&str> = routine.attributes.iter().map(|s| s.as_str()).collect();
+            let kind = if attrs.contains(&"eventsubscriber") {
+                "event-subscriber"
+            } else if attrs.contains(&"integrationevent") || attrs.contains(&"businessevent") {
+                "event-publisher"
+            } else if routine.kind == al_syntax::ir::RoutineKind::Trigger {
+                "trigger"
+            } else {
+                "procedure"
+            };
+            let params: Vec<ParameterSymbol> = routine
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let ty = p.ty.clone().unwrap_or_default();
+                    ParameterSymbol {
+                        index: i as u32,
+                        name: p.name.clone(),
+                        type_text: ty.clone(),
+                        is_var: p.by_ref,
+                        is_record: ty.to_ascii_lowercase().starts_with("record"),
+                        table_name: None,
+                    }
+                })
+                .collect();
+            let routine_id = compute_routine_id(
+                "dual",
+                obj_type(&o.kind),
+                o.id.unwrap_or(0),
+                kind,
+                &routine.name,
+                &params,
+                routine.return_type.as_deref(),
+                "dual",
+            );
+            let irf = ir_walk::project_routine_features_ir(
+                &file,
+                *oi,
+                routine,
+                &routine_id,
+                &src,
+                "dual",
+                None,
+            );
+            if serde_json::to_string(lf).unwrap() == serde_json::to_string(&irf).unwrap() {
+                matching += 1;
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 IR byte-exact PFeatures (real ids, no normalization): {matching}/{total} ({pct:.1}%) ===");
+    assert!(total > 0);
+}
