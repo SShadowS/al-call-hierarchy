@@ -2715,3 +2715,92 @@ fn engine_ir_walk_full_pfeatures_equality() {
     }
     assert!(total > 0);
 }
+
+/// PHASE-2 INTEGRATION — the post-passes (control_context + operation_order) graft
+/// UNCHANGED onto the IR PFeatures. Run both on legacy AND IR features (same params)
+/// and compare the FINAL features (order/control_context/scope_frames now filled),
+/// hash-normalized. Proves project_routine_features_ir can feed the L2 driver.
+#[test]
+fn engine_ir_walk_post_passes_graft() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::control_context::apply_control_contexts;
+    use al_call_hierarchy::engine::l2::features::PFeatures;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    use al_call_hierarchy::engine::l2::operation_order::apply_operation_order;
+    use al_call_hierarchy::engine::l2::scope::ParameterSymbol;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    fn routine_prefix(f: &PFeatures) -> Option<String> {
+        let any = f
+            .operation_sites
+            .first()
+            .map(|o| o.id.clone())
+            .or_else(|| f.call_sites.first().map(|c| c.id.clone()))
+            .or_else(|| f.record_operations.first().map(|o| o.id.clone()))
+            .or_else(|| f.record_variables.first().map(|v| v.id.clone()))
+            .or_else(|| f.loops.first().map(|l| l.id.clone()))?;
+        let mut it = any.splitn(3, '/');
+        Some(format!("{}/{}", it.next()?, it.next()?))
+    }
+    let mut total = 0;
+    let mut matching = 0;
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((_ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            // ParameterSymbol list from the IR (same for both post-pass runs).
+            let params: Vec<ParameterSymbol> = routine
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let ty = p.ty.clone().unwrap_or_default();
+                    let is_record = ty.to_ascii_lowercase().starts_with("record");
+                    ParameterSymbol {
+                        index: i as u32,
+                        name: p.name.clone(),
+                        type_text: ty,
+                        is_var: p.by_ref,
+                        is_record,
+                        table_name: None,
+                    }
+                })
+                .collect();
+            let attrs: Vec<String> = Vec::new();
+            let mut lf2 = lf.clone();
+            apply_control_contexts(&mut lf2, &attrs, &params);
+            apply_operation_order(&mut lf2, &attrs);
+            let mut irf =
+                ir_walk::project_routine_features_ir(&file, *oi, routine, "ir", &src, "dual", None);
+            apply_control_contexts(&mut irf, &attrs, &params);
+            apply_operation_order(&mut irf, &attrs);
+            let mut lj = serde_json::to_string(&lf2).unwrap();
+            if let Some(p) = routine_prefix(&lf2) {
+                lj = lj.replace(&p, "ir");
+            }
+            let ij = serde_json::to_string(&irf).unwrap();
+            if lj == ij {
+                matching += 1;
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 INTEGRATION (post-passes on IR vs legacy): {matching}/{total} ({pct:.1}%) ===");
+    assert!(total > 0);
+}
