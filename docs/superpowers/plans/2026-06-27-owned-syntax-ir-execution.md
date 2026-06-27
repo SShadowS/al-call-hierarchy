@@ -98,9 +98,19 @@ divergence). **THE ENTIRE TEST SUITE PASSES** — every committed golden (L2 fea
 cli formats, SARIF, snapshots) is byte-identical with the IR driving L2. Fixed the implicit-Rec scope
 gap the workspace exposed (build_scope now adds Rec to frvars + base frame for table/pageext/
 page-with-SourceTable/codeunit-TableNo via `has_implicit_rec`, threaded with source_table_name).
-REMAINING for Phase 2: (a) `body_walk` deletion is BLOCKED by the malformed-AL ERROR-recovery
-fallback — stays as the parse-error path (acceptable; IR drives all real code); (b) wire the
-secondary `project_named_routine` helper. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+Phase 2: BOTH L2 entry points (`project_file` + `project_named_routine`) now drive features via the
+IR (commit e22f446). `body_walk` deletion stays BLOCKED by the malformed-AL fallback (acceptable).
+
+### PHASE 3 (L3) — LARGELY ALREADY ON THE IR. L3 (`l3_workspace`, call_resolver, record_types,
+event_graph, …) CONSUMES the L2 projection — now IR-produced — so the whole call-graph/resolution
+layer already runs on IR-derived features (all L3 goldens pass with the IR driving L2).
+`event_graph::Evidence::tree_sitter()` is just a provenance LABEL, not real tree-sitter use. L3's
+ONLY remaining real tree-sitter dependency is `l3_workspace` parsing the tree to feed `project_file`'s
+OBJECT-METADATA iteration (PObject: object_number/subtype/pageType/sourceTable, attributes_parsed
+JSON, access_modifier). So the remaining front-end port (for Phases 3/5) is the object+routine
+METADATA extraction over the IR (the features are done). Then Phase 4 (LSP: parser.rs/handlers.rs +
+retire the 6 queries) and Phase 5 (seal: drop the engine tree-sitter dep once metadata + LSP are
+ported). These are substantial, multi-session.
 
 ### (historical) NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
 object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
