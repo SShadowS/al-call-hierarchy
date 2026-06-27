@@ -177,3 +177,39 @@ The dual-run revealed a clean split in what's validatable at the IR level vs wha
   call-inventory stream — the CALLS query captures record-op methods too.)
 NEXT: the L2 cutover (re-express body_walk over IR). The intricate multi-session core; the real-L2
 gate (legacy_l2_features) is the full-PFeatures comparison target.
+
+## L2 CUTOVER blueprint (reviewer-validated — GPT-5.5 Pro + Gemini, convergent)
+Re-express body_walk over the IR. The plan before writing ~1100 lines:
+
+**Architecture:** ONE legacy-shaped ordered IR DFS ("event spine") with a shared Ctx (op/cs counters,
+loop stack, implicit-receiver stack, asserterror depth, op_id_by_ts_id / cs_id_by_ts_id maps). Reuse
+`Origin.ts_id` for op keys. DO NOT build the numbering from a separate CST pass (violates G1 / leaks
+engine semantics into syntax). DO NOT normalize the walk cleaner than legacy.
+
+**Biggest risk:** the walk must mirror legacy VISIT SEMANTICS, not just document order — esp.
+`chained_receiver_descent` (body_walk.rs:669: call emits before arg descent, chained receiver visited
+after args) and `with_statement` (receiver visited BEFORE pushing implicit frame, body after,
+:954-971). If the IR DFS reorders these, every op id diverges.
+
+**Side-channel trace (build FIRST, key debugging tool):** emit an ordered `Vec` of (ts_id, op_id) /
+visit events in BOTH the legacy path and the IR DFS; diff THAT before any feature payload. First
+divergent element = the node that flipped order. Loop/asserterror/with context stacks must exist from
+step 1 (loop_stack is embedded in record-ops AND call-sites).
+
+**Sequencing (layered, dependency order):**
+- L1 structural: loops, has_branching, unreachable (no op-counter). [has_branching/nesting DONE]
+- L2 op-counter: operation_sites + record_operations + call_sites together (share op0..opN-1 then
+  op{N+i} post-visit). Gate per-array to 100% via the trace before proceeding.
+- L3 value/refs: field_accesses, identifier_references, var_assignments, condition_references
+  (expression descent — lossiness-sensitive: parens unwrap, quote strip).
+- L4 CFN statement_tree + control-context + bindings — LAST (consume the id maps + loop_stack).
+
+**Gating:** per-array equality during dev (a desync at node 3 makes full-JSON a wall of red), then
+full-PFeatures serde equality as final acceptance. Never set-sort order-sensitive vectors; compare
+routines in legacy order. legacy_l2_features is the comparison target.
+
+**Desync detection:** the lossy IR (preproc flattened, empty_statement skipped, parens unwrapped,
+qualified_enum lowered) is fine for numbering IF INV-1/2/3 hold (legacy only counts op_index on
+call_expression / parenless member ops / commit / error — it skips trivia/parens/empty too). A
+desync means the lowerer didn't respect visit/document order on a SEMANTIC node → loud architectural
+failure (good), caught by the trace.
