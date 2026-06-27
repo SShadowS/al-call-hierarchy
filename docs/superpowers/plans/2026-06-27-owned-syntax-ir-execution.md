@@ -20,8 +20,18 @@ identifier_references 585/591 (measured). These are exactly the fields that need
 LIGHT scope (record-receiver sets). nesting_depth reuses the engine `compute_nesting_depth`
 UNCHANGED on the IR loops — first proof a post-pass grafts onto IR output cleanly.
 
-### THE SECOND BOUNDARY (object-level scope): the remaining engine fields — **record_variables,
-record_operations, call_sites, operation_sites, variables** — need the object-level scope subsystem
+### UPDATE — IR object properties + record_variables landed (commits d209a70, bce3325).
+- **IR extension:** `ObjectDecl.properties` (lowered from `property` nodes) — SourceTable/TableNo/
+  PageType now IR-visible. First IR enhancement driven by the cut.
+- **record_variables** 591/591 (HARD GATE): record params (temp_state known-temp / param-dependent
+  when by-ref / known-false; table_name parsed from the `Record …` type string) + local record vars
+  + implicit `Rec` (table/tableext/pageext always; codeunit with TableNo → Rec.table_name = TableNo;
+  page gated on `source_table_name` param, None in the harness = legacy parity). **10 real PFeatures
+  fields now gated.** Not yet IR-modelled (absent from corpus): named return-value records, report
+  dataitem record vars — IR extensions for production.
+
+### THE SECOND BOUNDARY (object-level scope): the remaining engine fields — **record_operations,
+call_sites, operation_sites, variables** — need the object-level scope subsystem
 the L2 driver assembles: implicit-`Rec` seeding (object-type-dependent: table self / page+pageext
 SourceTable / tableext extends-target / report dataitem source tables / codeunit `TableNo`
 property), `variable_types_by_name`, `object_procedure_names`, parameter symbols, and the
