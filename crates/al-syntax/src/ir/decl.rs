@@ -58,6 +58,10 @@ pub struct RoutineDecl {
     /// Return type text, if declared.
     pub return_type: Option<String>,
     pub locals: Vec<VarDecl>,
+    /// Attribute names (lowercased) from the `attribute_item` siblings preceding the
+    /// routine — e.g. "eventsubscriber", "tryfunction", "integrationevent". Drives
+    /// routine-kind classification + control-context guards.
+    pub attributes: Vec<String>,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,
