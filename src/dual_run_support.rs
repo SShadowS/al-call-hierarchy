@@ -86,10 +86,57 @@ pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::featu
     out
 }
 
-/// Legacy callee method/function names in a source file, via the engine's `CALLS`
-/// query: `@call.simple` (`Foo()`) + `@call.method` (`Rec.SetRange()`).
+/// Legacy callee method/function names: the `CALLS` query (`Foo()` / `Rec.SetRange()`)
+/// PLUS parenless call statements (`Modify;` / `Rec.SetRecFilter;`), which parse as a
+/// bare identifier/member in statement position (not `call_expression`) but ARE calls.
 pub fn legacy_call_methods(source: &str) -> Vec<String> {
-    capture_texts(source, language::queries::CALLS, &["call.simple", "call.method"])
+    let mut v = capture_texts(source, language::queries::CALLS, &["call.simple", "call.method"]);
+    let lang = language::language();
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_ok() {
+        if let Some(tree) = parser.parse(source, None) {
+            walk_parenless_calls(tree.root_node(), source, &mut v);
+        }
+    }
+    v
+}
+
+/// Collect parenless call method names. A bare identifier/member is a parenless
+/// CALL when it's in STATEMENT position (per-field disambiguation, mirroring legacy):
+/// a direct `statement_block` child, or the body/then/else field of a control
+/// statement — NOT a condition/bound (expression position).
+fn walk_parenless_calls(node: tree_sitter::Node, source: &str, out: &mut Vec<String>) {
+    match node.kind() {
+        "identifier" | "quoted_identifier" => {
+            if is_statement_position(node) {
+                out.push(source[node.byte_range()].to_string());
+            }
+        }
+        "member_expression" => {
+            if is_statement_position(node) {
+                if let Some(m) = node.child_by_field_name("member") {
+                    out.push(source[m.byte_range()].to_string());
+                }
+            }
+        }
+        _ => {}
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        walk_parenless_calls(child, source, out);
+    }
+}
+
+fn is_statement_position(node: tree_sitter::Node) -> bool {
+    let Some(parent) = node.parent() else { return false };
+    let field_is = |f: &str| parent.child_by_field_name(f).map(|n| n.id() == node.id()).unwrap_or(false);
+    match parent.kind() {
+        "statement_block" => true,
+        "if_statement" => field_is("then_branch") || field_is("else_branch"),
+        "while_statement" | "for_statement" | "foreach_statement" | "with_statement"
+        | "case_branch" | "case_else_branch" => field_is("body"),
+        _ => false,
+    }
 }
 
 /// Legacy member names for `object.member` expressions **inside routine bodies**

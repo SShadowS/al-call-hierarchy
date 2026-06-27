@@ -317,7 +317,22 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             let value = lower_opt_field(node, FieldName::Right, ir, issues, source);
             StmtKind::Assignment { target, value }
         }
-        RawKind::CallExpression | RawKind::MemberExpression => StmtKind::Call(lower_expr(node, ir, issues, source)),
+        RawKind::CallExpression => StmtKind::Call(lower_expr(node, ir, issues, source)),
+        // Parenless call statements (`Modify;`, `Rec.Find;`, `Foo;`) parse as a bare
+        // member/identifier/subscript in statement position. AL has no field-access
+        // statement, so these ARE calls — normalize to a Call with empty args so the
+        // engine sees them uniformly (matches legacy body_walk).
+        RawKind::MemberExpression
+        | RawKind::Identifier
+        | RawKind::QuotedIdentifier
+        | RawKind::SubscriptExpression => {
+            let function = lower_expr(node, ir, issues, source);
+            let call = ir.add_expr(Expr {
+                kind: ExprKind::Call { function, args: Vec::new() },
+                origin: origin_of(node),
+            });
+            StmtKind::Call(call)
+        }
         RawKind::IfStatement => StmtKind::If {
             cond: lower_opt_field(node, FieldName::Condition, ir, issues, source),
             then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source),
