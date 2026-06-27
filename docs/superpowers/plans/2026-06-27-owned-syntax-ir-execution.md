@@ -30,7 +30,20 @@ UNCHANGED on the IR loops — first proof a post-pass grafts onto IR output clea
   fields now gated.** Not yet IR-modelled (absent from corpus): named return-value records, report
   dataitem record vars — IR extensions for production.
 
-### THE SECOND BOUNDARY (object-level scope): the remaining engine fields — **record_operations,
+### UPDATE 2 — record_operations + operation_sites landed (commits 414bad9, 87d68a8). **12 real
+PFeatures fields now gated 591/591:** statement_tree, has_branching, nesting_depth, loops,
+field_accesses, var_assignments, condition_references, unreachable_statements, record_variables,
+**record_operations** (full payload: receiver text via an implicit-frame stack; field_arguments +
+field_argument_infos via a ported `expression_info_from_node`; temp_state/record_variable_id
+backfilled from `ir_record_variables`), **operation_sites** (unified op0..opN: record-op/lock/commit/
+error-call, only error-call carries under_asserterror). identifier_references 585/591 measured.
+REMAINING engine fields: **call_sites** (callee classify + argument_texts/infos + argument_bindings
+[needs enclosing params/record-vars + variable_types] + result_consumed/object_run_return_used) and
+**variables** (all var decls + initializers). Then assemble full `PFeatures`, run operation_order/
+control_context UNCHANGED on the IR PCFNNode, gate serde-equality, wire into the driver, delete
+`body_walk`. Then Phases 3/4/5.
+
+### (historical) THE SECOND BOUNDARY: the remaining engine fields — **record_operations,
 call_sites, operation_sites, variables** — need the object-level scope subsystem
 the L2 driver assembles: implicit-`Rec` seeding (object-type-dependent: table self / page+pageext
 SourceTable / tableext extends-target / report dataitem source tables / codeunit `TableNo`
