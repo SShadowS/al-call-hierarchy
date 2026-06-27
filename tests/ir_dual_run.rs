@@ -2094,6 +2094,7 @@ fn engine_ir_walk_statement_tree_parity() {
     let mut id_match = 0usize;
     let mut un_match = 0usize;
     let mut ro_match = 0usize;
+    let mut os_match = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
 
     // Loop ids carry the routine-id hash on the legacy side; normalize to sequence
@@ -2163,6 +2164,35 @@ fn engine_ir_walk_statement_tree_parity() {
                     divs.push((
                         format!("{rel} :: {ln} [record_operations]"),
                         format!("legacy={lro:?}\n    ir={iro:?}"),
+                    ));
+                }
+            }
+            // operation_sites: id-normalized to op-number; the unified op list.
+            {
+                let key = |o: &al_call_hierarchy::engine::l2::features::POperationSite| {
+                    (
+                        id_num(&o.id),
+                        o.kind.clone(),
+                        o.under_asserterror,
+                        o.loop_stack.iter().map(|s| id_num(s)).collect::<Vec<_>>(),
+                        o.source_anchor.clone(),
+                    )
+                };
+                let mut los: Vec<_> = lf.operation_sites.iter().map(key).collect();
+                los.sort_by_key(|t| t.0);
+                let mut ios: Vec<_> = ir.operation_sites.iter().map(key).collect();
+                ios.sort_by_key(|t| t.0);
+                if los == ios {
+                    os_match += 1;
+                } else if divs.len() < 20 {
+                    let rel = fpath
+                        .strip_prefix(&root)
+                        .unwrap_or(&fpath)
+                        .display()
+                        .to_string();
+                    divs.push((
+                        format!("{rel} :: {ln} [operation_sites]"),
+                        format!("legacy={los:?}\n    ir={ios:?}"),
                     ));
                 }
             }
@@ -2290,7 +2320,7 @@ fn engine_ir_walk_statement_tree_parity() {
     }
     eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
     eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  nesting_depth {nd_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
-    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  unreachable {un_match}/{total}  record_operations {ro_match}/{total}  identifier_references {id_match}/{total} (measured)");
+    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  unreachable {un_match}/{total}  record_operations {ro_match}/{total}  operation_sites {os_match}/{total}  identifier_references {id_match}/{total} (measured)");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
@@ -2303,6 +2333,10 @@ fn engine_ir_walk_statement_tree_parity() {
     assert_eq!(
         ro_match, total,
         "engine ir_walk record_operations divergences"
+    );
+    assert_eq!(
+        os_match, total,
+        "engine ir_walk operation_sites divergences"
     );
     assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
     assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");

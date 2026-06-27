@@ -11,7 +11,7 @@
 
 use super::features::{
     PAnchor, PCFNNode, PConditionGuard, PConditionReference, PExpressionInfo, PFieldAccess, PLoop,
-    PRecordOperation, PTempState, PUnreachableStatement, PVarAssignment,
+    POperationSite, PRecordOperation, PTempState, PUnreachableStatement, PVarAssignment,
 };
 use super::node_util::Utf16Cols;
 use super::record_op::{record_op_type, FIELD_ARGS_OPS};
@@ -66,6 +66,9 @@ pub struct IrSpine {
     /// record_operations BEFORE the temp_state/record_variable_id backfill (which
     /// `routine_features_partial` applies from `ir_record_variables`).
     pub record_operations: Vec<PRecordOperation>,
+    /// The unified op0..opN list (record-op / lock / commit / error-call), in
+    /// op-index order. `control_context`/`order` are None (post-pass fields).
+    pub operation_sites: Vec<POperationSite>,
 }
 
 /// An implicit-receiver frame (table-method base `Rec` seed / `with` body). Carries
@@ -164,6 +167,9 @@ struct SpineCtx<'a> {
     unreachable_statements: Vec<PUnreachableStatement>,
     unreachable_index: u32,
     record_operations: Vec<PRecordOperation>,
+    operation_sites: Vec<POperationSite>,
+    /// asserterror nesting depth (only error-call operation_sites carry under_asserterror).
+    assert_depth: u32,
 }
 
 impl<'a> SpineCtx<'a> {
@@ -594,7 +600,11 @@ impl<'a> SpineCtx<'a> {
                     self.walk_block(*c);
                 }
             }
-            AssertError(body) => self.walk_block(*body),
+            AssertError(body) => {
+                self.assert_depth += 1;
+                self.walk_block(*body);
+                self.assert_depth -= 1;
+            }
             Exit(x) => {
                 if let Some(x) = x {
                     self.walk_expr(*x);
@@ -652,32 +662,60 @@ impl<'a> SpineCtx<'a> {
             let is_commit = fname.as_deref() == Some("commit");
             let is_error = fname.as_deref() == Some("error");
             if is_record_op || is_commit || is_error {
+                let op_id = format!("{}/op{}", self.routine_id, self.op_index);
                 // Error advances the op counter but is NOT mapped (legacy
                 // op_id_by_node_id omits error — it renders as its cs "error" leaf).
                 if !is_error {
-                    self.op_id_by_expr
-                        .insert(eid, format!("{}/op{}", self.routine_id, self.op_index));
+                    self.op_id_by_expr.insert(eid, op_id.clone());
                 }
-                // Emit the PRecordOperation (pre-backfill). Commit/Error are ops too
-                // but produce operation_sites only — record_operations is record DB ops.
-                if let Some((op_type, receiver)) = &record_op {
-                    let op_id = format!("{}/op{}", self.routine_id, self.op_index);
+                let anchor = self.anchor(&e.origin);
+                let loop_stack = self.loop_stack_ids();
+                // operation_sites: one entry per op (record-op/lock/commit/error-call),
+                // in op-index order. Only error-call carries under_asserterror.
+                let (kind, under) = if let Some((op_type, receiver)) = &record_op {
+                    // PRecordOperation (pre-backfill) for record DB ops.
                     let (field_arguments, field_argument_infos) =
                         self.record_op_field_args(op_type, &args);
                     self.record_operations.push(PRecordOperation {
-                        id: op_id,
+                        id: op_id.clone(),
                         op: op_type.to_string(),
                         record_variable_name: receiver.clone(),
                         record_variable_id: None,
                         temp_state: ts_unknown(),
                         field_arguments,
                         field_argument_infos,
-                        loop_stack: self.loop_stack_ids(),
-                        source_anchor: self.anchor(&e.origin),
+                        loop_stack: loop_stack.clone(),
+                        source_anchor: anchor.clone(),
                         in_until_condition: false,
                         run_trigger: None,
                     });
-                }
+                    let k = if *op_type == "LockTable" {
+                        "lock"
+                    } else {
+                        "record-op"
+                    };
+                    (k, None)
+                } else if is_commit {
+                    ("commit", None)
+                } else {
+                    (
+                        "error-call",
+                        if self.assert_depth > 0 {
+                            Some(true)
+                        } else {
+                            None
+                        },
+                    )
+                };
+                self.operation_sites.push(POperationSite {
+                    id: op_id,
+                    kind: kind.to_string(),
+                    loop_stack,
+                    source_anchor: anchor,
+                    under_asserterror: under,
+                    control_context: None,
+                    order: None,
+                });
                 self.op_index += 1;
             }
             if !is_record_op && !is_commit {
@@ -825,6 +863,8 @@ pub fn walk_spine(
         unreachable_statements: Vec::new(),
         unreachable_index: 0,
         record_operations: Vec::new(),
+        operation_sites: Vec::new(),
+        assert_depth: 0,
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
@@ -861,6 +901,7 @@ pub fn walk_spine(
         identifier_references,
         unreachable_statements: ctx.unreachable_statements,
         record_operations: ctx.record_operations,
+        operation_sites: ctx.operation_sites,
     }
 }
 
@@ -1190,6 +1231,7 @@ pub struct IrPartialFeatures {
     pub identifier_references: Vec<String>,
     pub unreachable_statements: Vec<PUnreachableStatement>,
     pub record_operations: Vec<PRecordOperation>,
+    pub operation_sites: Vec<POperationSite>,
 }
 
 /// Build the validated slice of `PFeatures` from the owned IR for one routine.
@@ -1252,6 +1294,7 @@ pub fn routine_features_partial(
         identifier_references: spine.identifier_references,
         unreachable_statements: spine.unreachable_statements,
         record_operations,
+        operation_sites: spine.operation_sites,
     }
 }
 
