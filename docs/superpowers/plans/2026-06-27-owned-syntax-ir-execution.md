@@ -73,9 +73,19 @@ statement_tree node, a chained-receiver-in-condition value ref, a with-receiver 
 Four real engine bugs fixed along the way (boolean classify_rhs v3 staleness; IR + legacy CFN comment
 skip; identifier enum/parenless). The owned-IR L2 feature extraction is FEATURE-COMPLETE and
 byte-validated at 99.5%.
-NEXT: (a) the 3 residual edge cases (diminishing returns); (b) wire `project_routine_features_ir`
-into the L2 driver (l2_workspace) so operation_order/control_context/scope_frames run on the IR
-PCFNNode (they graft unchanged); (c) delete `body_walk`. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
+### UPDATE 6 — L2 CUTOVER VALIDATED 4 WAYS @ 99.5%; IR byte-ready for the driver (commits 6d949e9,
+04d65e3, d722554). The validation chain is COMPLETE:
+  1. all 14 PFeatures fields gated 591/591,
+  2. full PFeatures 99.5% (hash-normalized),
+  3. post-passes (control_context + operation_order) graft UNCHANGED → 99.5%, no new divergence,
+  4. byte-exact with REAL routine ids 99.5% (compute_routine_id from IR → ids match exactly).
+Second IR extension landed: `RoutineDecl.attributes` (EventSubscriber/TryFunction/… — for
+classify_kind + control-context guards). Residual 3 = broken-AL ERROR node, chained-receiver-in-cond,
+with-bare-Modify (intricate edge cases, diminishing returns).
+NEXT (mechanical, fully de-risked): (a) swap the `project_routine_features` call in `project_workspace`
+for `project_routine_features_ir` (parse the file's IR alongside, match routines, compute routine_id
+as in the byte-exact test) + gate the workspace `L2Projection`; (b) delete `body_walk` + the engine's
+per-routine tree-sitter walk. Then Phase 3 (L3) / 4 (LSP) / 5 (seal).
 
 ### (historical) NEXT: `call_sites` — the last + most complex field. Needs: callee classification (bare/member/
 object-run/unknown via classify.rs adapted to IR exprs + `Origin.byte`; the with-frame member
