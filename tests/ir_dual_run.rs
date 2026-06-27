@@ -3185,3 +3185,75 @@ fn engine_ir_record_op_l5_inputs_parity() {
         "record-op L5-input (in_until_condition/run_trigger) divergences"
     );
 }
+
+/// PHASE-2 — object-procedure-name collision: a bare `Modify()` inside a table
+/// method, where the table ALSO declares a `procedure Modify()`, is a CALL to that
+/// procedure, NOT a record op (legacy object_procedure_names check). Synthetic
+/// fixture (absent from the corpus); compares the IR record_operations/call_sites to
+/// legacy.
+#[test]
+fn engine_ir_object_procedure_collision() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let src = r#"table 50000 "Foo"
+{
+    fields { field(1; "No."; Integer) { } }
+    procedure Modify()
+    begin
+    end;
+
+    procedure Caller()
+    begin
+        Modify();
+    end;
+}
+"#;
+    let legacy = legacy_l2_features(src);
+    let file = al_syntax::parse(src);
+    let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+    for (oi, o) in file.objects.iter().enumerate() {
+        for r in &o.routines {
+            ir_routines.push((oi, r));
+        }
+    }
+    let mut checked_caller = false;
+    for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+        let irf =
+            ir_walk::project_routine_features_ir(&file, *oi, routine, "ir", src, "dual", None);
+        // record-op count + call-site count must match legacy.
+        assert_eq!(
+            lf.record_operations.len(),
+            irf.record_operations.len(),
+            "{ln}: record_operations count mismatch (legacy {} ir {})",
+            lf.record_operations.len(),
+            irf.record_operations.len()
+        );
+        assert_eq!(
+            lf.call_sites.len(),
+            irf.call_sites.len(),
+            "{ln}: call_sites count mismatch (legacy {} ir {})",
+            lf.call_sites.len(),
+            irf.call_sites.len()
+        );
+        if ln == "Caller" {
+            checked_caller = true;
+            // Modify() collides with the local procedure → a CALL, not a record op.
+            assert_eq!(
+                lf.record_operations.len(),
+                0,
+                "legacy treated Modify() as a record op?"
+            );
+            assert_eq!(
+                irf.record_operations.len(),
+                0,
+                "IR wrongly treated Modify() as a record op"
+            );
+            assert_eq!(
+                irf.call_sites.len(),
+                1,
+                "IR should emit a call site for Modify()"
+            );
+        }
+    }
+    assert!(checked_caller, "Caller routine not found");
+}

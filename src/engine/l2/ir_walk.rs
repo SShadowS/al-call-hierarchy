@@ -115,6 +115,10 @@ struct ImplicitFrame {
 struct Scope {
     rvars: HashSet<String>,
     frvars: HashSet<String>,
+    /// Lowercased names of the object's procedures/triggers. A bare implicit-receiver
+    /// call whose method name collides with one of these is a CALL to that procedure,
+    /// not a record op (legacy `object_procedure_names` collision check).
+    object_procedure_names: HashSet<String>,
 }
 
 fn is_record_ty(v: &VarDecl) -> bool {
@@ -190,7 +194,19 @@ fn build_scope(
         frvars.insert("rec".to_string());
     }
     frvars.extend(params_locals);
-    (Scope { rvars, frvars }, implicit_rec)
+    let object_procedure_names: HashSet<String> = o
+        .routines
+        .iter()
+        .map(|r| r.name.to_ascii_lowercase())
+        .collect();
+    (
+        Scope {
+            rvars,
+            frvars,
+            object_procedure_names,
+        },
+        implicit_rec,
+    )
 }
 
 /// Working state for the spine walk.
@@ -789,8 +805,13 @@ impl<'a> SpineCtx<'a> {
                     }
                 }
                 Identifier(m) | QuotedIdentifier(m) => {
-                    let frame_is_rec = self.implicit.last().map(|f| f.is_record).unwrap_or(false);
-                    match (frame_is_rec, record_op_type(&m.to_ascii_lowercase())) {
+                    let m_lc = m.to_ascii_lowercase();
+                    // A bare implicit-receiver call is a record op only if the method
+                    // name does NOT collide with an object procedure (else it is a
+                    // call to that procedure) — legacy object_procedure_names check.
+                    let frame_is_rec = self.implicit.last().map(|f| f.is_record).unwrap_or(false)
+                        && !self.scope.object_procedure_names.contains(&m_lc);
+                    match (frame_is_rec, record_op_type(&m_lc)) {
                         (true, Some(op)) => {
                             let recv = self
                                 .implicit
