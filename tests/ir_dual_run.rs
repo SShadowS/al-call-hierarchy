@@ -3257,3 +3257,80 @@ fn engine_ir_object_procedure_collision() {
     }
     assert!(checked_caller, "Caller routine not found");
 }
+
+/// PHASE-2 guard — NO well-formed routine silently falls back to legacy body_walk.
+/// The driver matches tree-sitter routines to IR routines by start byte and falls
+/// back to legacy on a miss; a miss for a well-formed routine would mean a lowerer
+/// regression silently degrading to legacy (and masking divergence). Assert every
+/// non-parse-error tree-sitter routine is matched in the IR byte index.
+#[test]
+fn engine_ir_no_silent_fallback() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    fn routine_nodes<'t>(n: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
+        let mut c = n.walk();
+        for ch in n.named_children(&mut c) {
+            if ch.kind() == "procedure" || ch.kind() == "trigger_declaration" {
+                out.push(ch);
+            } else {
+                routine_nodes(ch, out);
+            }
+        }
+    }
+    let lang = al_call_hierarchy::language::language();
+    let mut total = 0usize;
+    let mut matched = 0usize;
+    let mut misses: Vec<String> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&lang).is_err() {
+            continue;
+        }
+        let Some(tree) = parser.parse(&src, None) else {
+            continue;
+        };
+        let file = al_syntax::parse(&src);
+        let mut ir_bytes: std::collections::HashSet<usize> = Default::default();
+        for o in &file.objects {
+            for r in &o.routines {
+                ir_bytes.insert(r.origin.byte.start);
+            }
+        }
+        let mut nodes = Vec::new();
+        routine_nodes(tree.root_node(), &mut nodes);
+        for node in nodes {
+            if node.has_error() {
+                continue; // parse-error routine — legacy fallback is intended
+            }
+            // skip nameless routines (the driver continues past them).
+            let named = node.child_by_field_name("name").is_some();
+            if !named {
+                continue;
+            }
+            total += 1;
+            if ir_bytes.contains(&node.start_byte()) {
+                matched += 1;
+            } else if misses.len() < 20 {
+                misses.push(format!(
+                    "{} @ byte {}",
+                    fpath.strip_prefix(&root).unwrap_or(&fpath).display(),
+                    node.start_byte()
+                ));
+            }
+        }
+    }
+    eprintln!("\n=== PHASE-2 no-silent-fallback: {matched}/{total} well-formed routines matched in IR ===");
+    for m in misses.iter().take(20) {
+        eprintln!("  MISS: {m}");
+    }
+    assert!(total > 0);
+    assert_eq!(
+        matched, total,
+        "well-formed routines fell back to legacy (lowerer byte-miss)"
+    );
+}
