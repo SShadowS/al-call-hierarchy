@@ -12,6 +12,43 @@ pub fn legacy_call_methods(source: &str) -> Vec<String> {
     capture_texts(source, language::queries::CALLS, &["call.simple", "call.method"])
 }
 
+/// Legacy member names for `object.member` expressions **inside routine bodies**
+/// (procedure/trigger). The IR models routine bodies, not page-field-source or
+/// property expressions, so the comparison is scoped to match.
+pub fn legacy_body_member_names(source: &str) -> Vec<String> {
+    let lang = language::language();
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    walk_members(tree.root_node(), false, source, &mut out);
+    out
+}
+
+fn walk_members(node: tree_sitter::Node, in_routine: bool, source: &str, out: &mut Vec<String>) {
+    let in_routine =
+        in_routine || matches!(node.kind(), "procedure" | "trigger_declaration");
+    if in_routine && node.kind() == "member_expression" {
+        if let Some(m) = node.child_by_field_name("member") {
+            out.push(source[m.byte_range()].to_string());
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        walk_members(child, in_routine, source, out);
+    }
+}
+
+/// Legacy variable-declaration names (locals + globals; NOT parameters), via a
+/// direct query. `variable_declaration` has multiple `name` children (`A, B: T`).
+pub fn legacy_variable_names(source: &str) -> Vec<String> {
+    capture_texts(source, "(variable_declaration name: (_) @vn)", &["vn"])
+}
+
 /// Legacy routine names in a source file: every `procedure` / `trigger`
 /// definition, via the same `DEFINITIONS` query the engine uses.
 pub fn legacy_routine_names(source: &str) -> Vec<String> {

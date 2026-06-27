@@ -53,6 +53,77 @@ fn ir_call_methods(source: &str) -> Vec<String> {
     out
 }
 
+/// IR member names: every `Member.member`.
+fn ir_member_names(source: &str) -> Vec<String> {
+    use al_syntax::ir::ExprKind;
+    let f = al_syntax::parse(source);
+    f.ir.iter_exprs()
+        .filter_map(|e| match &e.kind {
+            ExprKind::Member { member, .. } => Some(member.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// IR variable names: object globals + routine locals (NOT parameters — legacy
+/// `variable_declaration` excludes params).
+fn ir_variable_names(source: &str) -> Vec<String> {
+    let f = al_syntax::parse(source);
+    let mut out = Vec::new();
+    for o in &f.objects {
+        out.extend(o.globals.iter().map(|v| v.name.clone()));
+        for r in &o.routines {
+            out.extend(r.locals.iter().map(|v| v.name.clone()));
+        }
+    }
+    out
+}
+
+/// Shared corpus parity runner: norm+sort both sides per file, report, return
+/// (matching, total).
+fn run_parity(
+    label: &str,
+    legacy: impl Fn(&str) -> Vec<String>,
+    ir: impl Fn(&str) -> Vec<String>,
+) -> (usize, usize) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return (0, 0);
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divergences: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+    for f in &collect_al_files(&root) {
+        let Ok(source) = std::fs::read_to_string(f) else { continue };
+        total += 1;
+        let mut l: Vec<String> = legacy(&source).iter().map(|s| norm(s)).collect();
+        let mut i: Vec<String> = ir(&source).iter().map(|s| norm(s)).collect();
+        l.sort();
+        i.sort();
+        if l == i {
+            matching += 1;
+        } else {
+            let lset: BTreeSet<_> = l.iter().cloned().collect();
+            let iset: BTreeSet<_> = i.iter().cloned().collect();
+            let rel = f.strip_prefix(&root).unwrap_or(f).display().to_string();
+            divergences.push((
+                rel,
+                lset.difference(&iset).cloned().collect(),
+                iset.difference(&lset).cloned().collect(),
+            ));
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== IR dual-run: {label} ===\n{matching}/{total} files match ({pct:.1}%), {} diverge", divergences.len());
+    for (file, only_legacy, only_ir) in divergences.iter().take(25) {
+        eprintln!("  {file}\n    legacy-only: {only_legacy:?}\n    ir-only:     {only_ir:?}");
+    }
+    if divergences.len() > 25 {
+        eprintln!("  ... {} more", divergences.len() - 25);
+    }
+    (matching, total)
+}
+
 fn collect_al_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
@@ -163,4 +234,20 @@ fn call_inventory_parity() {
     }
     // Hard parity gate: IR call inventory must match legacy on every file.
     assert_eq!(matching, total, "{} files diverge — see report above", divergences.len());
+}
+
+#[test]
+fn member_access_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_body_member_names;
+    let (matching, total) = run_parity("member access", legacy_body_member_names, ir_member_names);
+    assert!(total > 0);
+    assert_eq!(matching, total, "member-access divergences (see report)");
+}
+
+#[test]
+fn variable_inventory_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_variable_names;
+    let (matching, total) = run_parity("variable inventory", legacy_variable_names, ir_variable_names);
+    assert!(total > 0);
+    assert_eq!(matching, total, "variable divergences (see report)");
 }

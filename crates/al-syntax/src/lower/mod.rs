@@ -499,7 +499,7 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             end: lower_opt_field(node, FieldName::Right, ir, issues, source),
         },
         RawKind::QualifiedEnumValue => ExprKind::QualifiedEnum {
-            enum_type: node.field(FieldName::EnumType).map(|e| e.text(source).to_string()).unwrap_or_default(),
+            enum_type: lower_opt_field(node, FieldName::EnumType, ir, issues, source),
             value: node.field(FieldName::Value).map(|v| ident_text(v, source)).unwrap_or_default(),
         },
         RawKind::DatabaseReference => ExprKind::DatabaseReference(node.text(source).to_string()),

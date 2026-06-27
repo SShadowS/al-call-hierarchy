@@ -23,8 +23,9 @@ pub enum ExprKind {
     Unary { op: UnaryOp, operand: ExprId },
     Binary { op: BinaryOp, lhs: ExprId, rhs: ExprId },
     Parenthesized(ExprId),
-    /// `Enum::Value`
-    QualifiedEnum { enum_type: String, value: String },
+    /// `Enum::Value` — `enum_type` is lowered (it can be a `member_expression`
+    /// like `Rec.Status::Open`), `value` is the member text.
+    QualifiedEnum { enum_type: ExprId, value: String },
     /// `Database::"Customer"` and similar object references.
     DatabaseReference(String),
     /// `a..b`
