@@ -78,18 +78,19 @@ NEW code now at a fraction of the churn:
   crate-internal `field`/`named_children` (document-order), `id()` documented ephemeral. Committed
   `4e73eb3`. Reviewer-confirmed (both): order-preserving children, private inner node, no
   `RawKind::Missing`.
-- [ ] **0c(2)** — typed CST wrappers (`nodes.rs`, generated) + `shape.rs`. **Reviewer-confirmed
-  decisions:** generate a struct per named kind (`RawProcedure<'t>(RawNode)`), `cast()`/`node()` +
-  field accessors. Accessor rule: single named-type field → `Option<RawT>`; multiple → `Vec<RawT>`
-  (needs `RawNode::children_by_field_name`); **multi named-type field → deduplicated union enum**
-  (Gemini's correction — `RawNode` fallback loses compile-time wrapper-safety); any **anonymous**
-  member type (operators/punct, not a `RawKind`) → `RawNode` fallback (can't type). Typed layer is
-  SHAPE safety only, no AL semantics; stays private to al-syntax.
-- [ ] **0b** — `schema/kind_policy.rs`: **exhaustive `match class_of(RawKind)->Class` with NO
-  wildcard** (Gemini wins the split: compile-time gate beats test-time union; a new variant →
-  non-exhaustive match → `cargo check` fails → forced human decision). Classes:
-  Semantic/Transparent/Trivia/Recovery/Ignored. Generate a one-time starter to seed the ~340
-  Semantic arm; thereafter hand-owned.
+- [x] **0c(2)** — typed CST wrappers generated (`nodes.rs`): 383 structs + 14 union enums
+  (capped at ≤5 members; larger expression/statement sets → `RawNode` fallback). Single-type →
+  `Option<RawT>`/`Vec`; small multi-type → union enum; anon/large → `RawNode`. `RawNode` gained
+  `children_by_field`. Committed `936383d`. al-syntax tests + workspace build green, drift clean.
+- [ ] **0b+0d (merged)** — `class_of` only matters with the lowerer that consumes it, so build it
+  WITH 0d (else dead code, no validation). **0d = the reviewer checkpoint.**
+  - `ir/`: Origin (raw_kind_text/ts_id/range/positions) + Stmt/Expr taxonomy (incl.
+    try/asserterror-context/foreach/case_else), arena ids.
+  - `schema/kind_policy.rs`: exhaustive `class_of` (no wildcard; one-time heuristic starter then
+    hand-owned: Transparent={statement_block,declaration_body,var_body,case_body,report_body},
+    Trivia={*_keyword,comments,pragma}, Recovery={Error}, rest Semantic).
+  - `lower/` skeleton + `parse.rs` → `ParsedFile{ir, issues, parse_status}`.
+  - **Reviewer checkpoint** on IR taxonomy + class_of classification BEFORE the full lowerer.
 - [ ] **0d** — `ir/` types (Origin + Stmt/Expr taxonomy incl. try/asserterror/foreach/case_else),
   `lower/` skeleton, `parse.rs`. ← **reviewer checkpoint here** (IR taxonomy + class_of design).
 - [ ] Boundary scanner in CI, monotonic-decrease, seeded from real grep.
