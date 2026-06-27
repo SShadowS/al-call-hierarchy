@@ -2268,3 +2268,89 @@ fn engine_ir_walk_statement_tree_parity() {
         "engine ir_walk condition_references divergences"
     );
 }
+
+/// PHASE-2 — engine ir_walk record_variables (params + locals + implicit Rec).
+/// Measured vs legacy (id normalized to the `/rv/...` suffix). Surfaces the routines
+/// needing further IR modelling (named return-value records, report dataitems).
+#[test]
+fn engine_ir_walk_record_variables_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::features::PRecordVariable;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    // Normalize: replace the routine-hashed id prefix with the `/rv/...` suffix.
+    let key = |v: &PRecordVariable| {
+        let id =
+            v.id.rsplit_once("/rv/")
+                .map(|(_, s)| s.to_string())
+                .unwrap_or_else(|| v.id.clone());
+        (
+            id,
+            v.name.to_lowercase(),
+            v.table_name.clone(),
+            v.temp_state.clone(),
+            v.is_parameter,
+            v.parameter_index,
+            v.scope.clone(),
+        )
+    };
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String)> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let lrv: Vec<_> = lf.record_variables.iter().map(key).collect();
+            // legacy_l2_features passes source_table_name=None, so pass None here too
+            // (the page implicit Rec is gated on it — harness parity).
+            let irv: Vec<_> = ir_walk::ir_record_variables(&file, *oi, routine, "ir", None)
+                .iter()
+                .map(key)
+                .collect();
+            if lrv == irv {
+                matching += 1;
+            } else if divs.len() < 25 {
+                let rel = fpath
+                    .strip_prefix(&root)
+                    .unwrap_or(&fpath)
+                    .display()
+                    .to_string();
+                divs.push((
+                    format!("{rel} :: {ln}"),
+                    format!("legacy={lrv:?}\n    ir={irv:?}"),
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 engine ir_walk: record_variables {matching}/{total} ({pct:.1}%) ===");
+    for (a, b) in divs.iter().take(15) {
+        eprintln!("  {a}\n    {b}");
+    }
+    assert!(total > 0);
+    // Hard gate: record parameters + locals + implicit Rec (table/tableext/pageext/
+    // codeunit-TableNo) match legacy. Named return-value records and report dataitem
+    // record vars are not yet IR-modelled but are absent from this corpus.
+    assert_eq!(
+        matching, total,
+        "engine ir_walk record_variables divergences"
+    );
+}

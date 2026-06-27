@@ -1043,3 +1043,127 @@ pub fn routine_features_partial(
         unreachable_statements: spine.unreachable_statements,
     }
 }
+
+// ---- record_variables (params + locals + implicit Rec) ----
+
+/// Table name from a `Record …` type string (`Record Customer` /
+/// `Record "Sales Header"` / `Record Customer temporary`). None if not a record /
+/// no subtype.
+fn parse_record_table_name(ty: &str) -> Option<String> {
+    let t = ty.trim();
+    if !t.to_ascii_lowercase().starts_with("record") {
+        return None;
+    }
+    let rest = t[6..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    if let Some(after) = rest.strip_prefix('"') {
+        let end = after.find('"')?;
+        Some(after[..end].to_string())
+    } else {
+        rest.split_whitespace().next().map(|w| w.to_string())
+    }
+}
+
+fn is_record_type_str(ty: &str) -> bool {
+    ty.trim().to_ascii_lowercase().starts_with("record")
+}
+
+/// Per-routine `record_variables` (`PRecordVariable`) from the owned IR: record
+/// parameters, local record vars, and the implicit `Rec` of a table/page/pageext/
+/// codeunit-TableNo method. Mirrors `scope::extract_record_variables` + the
+/// implicit-Rec seeding in `project_routine_features`. NOT yet modelled (needs IR
+/// extensions): a named return-value record, and report dataitem record vars.
+pub fn ir_record_variables(
+    file: &AlFile,
+    object_idx: usize,
+    routine: &RoutineDecl,
+    routine_id: &str,
+    source_table_name: Option<&str>,
+) -> Vec<super::features::PRecordVariable> {
+    use super::features::PRecordVariable;
+    use super::scope::{ts_known, ts_param_dependent};
+    let o = &file.objects[object_idx];
+    let mut out: Vec<PRecordVariable> = Vec::new();
+
+    // Record parameters (index = position among ALL params).
+    for (i, p) in routine.params.iter().enumerate() {
+        let Some(ty) = p.ty.as_deref() else { continue };
+        if !is_record_type_str(ty) {
+            continue;
+        }
+        let is_temp = ty.to_ascii_lowercase().contains("temporary");
+        let temp_state = if is_temp {
+            ts_known(true)
+        } else if p.by_ref {
+            ts_param_dependent(i as u32)
+        } else {
+            ts_known(false)
+        };
+        out.push(PRecordVariable {
+            id: format!("{}/rv/{}", routine_id, p.name.to_lowercase()),
+            name: p.name.clone(),
+            table_name: parse_record_table_name(ty),
+            temp_state,
+            is_parameter: true,
+            parameter_index: Some(i as u32),
+            scope: None,
+        });
+    }
+
+    // Local record declarations.
+    for v in &routine.locals {
+        let Some(ty) = v.ty.as_deref() else { continue };
+        if !is_record_type_str(ty) {
+            continue;
+        }
+        out.push(PRecordVariable {
+            id: format!("{}/rv/{}", routine_id, v.name.to_lowercase()),
+            name: v.name.clone(),
+            table_name: parse_record_table_name(ty),
+            temp_state: ts_known(v.temporary),
+            is_parameter: false,
+            parameter_index: None,
+            scope: None,
+        });
+    }
+
+    // Implicit `Rec` (skip when a declared `Rec` already exists). table/tableext
+    // methods + pageext always; page only with a SourceTable; codeunit only with a
+    // TableNo (whose value is the Rec's table_name). table/page/pageext leave
+    // table_name None (L3 fills from the effective own table).
+    let prop = |name: &str| {
+        o.properties
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p.value.as_str())
+    };
+    let strip_q = |s: &str| s.trim().trim_matches('"').to_string();
+    let codeunit_tableno = if o.kind == ObjectKind::Codeunit {
+        prop("tableno").map(strip_q).filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+    // Page implicit Rec is gated on the RESOLVED source_table_name (as in
+    // `implicit_base_receiver`), not merely the SourceTable property's presence —
+    // mirroring `project_routine_features`'s `source_table_name` arg.
+    let has_implicit_rec = matches!(
+        o.kind,
+        ObjectKind::Table | ObjectKind::TableExtension | ObjectKind::PageExtension
+    ) || (o.kind == ObjectKind::Page && source_table_name.is_some())
+        || codeunit_tableno.is_some();
+    if has_implicit_rec && !out.iter().any(|v| v.name.eq_ignore_ascii_case("Rec")) {
+        out.push(PRecordVariable {
+            id: format!("{}/rv/rec", routine_id),
+            name: "Rec".to_string(),
+            table_name: codeunit_tableno,
+            temp_state: ts_known(false),
+            is_parameter: false,
+            parameter_index: None,
+            scope: None,
+        });
+    }
+
+    out
+}
