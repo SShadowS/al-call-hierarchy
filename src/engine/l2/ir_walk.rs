@@ -10,11 +10,11 @@
 //! subsequent increments, which thread the full `Ctx` scope inputs.
 
 use super::features::{
-    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PFieldAccess, PLoop,
-    PUnreachableStatement, PVarAssignment,
+    PAnchor, PCFNNode, PConditionGuard, PConditionReference, PExpressionInfo, PFieldAccess, PLoop,
+    PRecordOperation, PTempState, PUnreachableStatement, PVarAssignment,
 };
 use super::node_util::Utf16Cols;
-use super::record_op::record_op_type;
+use super::record_op::{record_op_type, FIELD_ARGS_OPS};
 use al_syntax::ir::{
     AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
     StmtKind, UnaryOp, VarDecl,
@@ -27,6 +27,15 @@ fn strip_quotes(s: &str) -> String {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
+    }
+}
+
+/// Pre-backfill record-op temp state (`{ kind: "unknown" }`).
+fn ts_unknown() -> PTempState {
+    PTempState {
+        kind: "unknown".to_string(),
+        value: None,
+        parameter_index: None,
     }
 }
 
@@ -54,6 +63,17 @@ pub struct IrSpine {
     pub condition_references: Vec<PConditionReference>,
     pub identifier_references: Vec<String>,
     pub unreachable_statements: Vec<PUnreachableStatement>,
+    /// record_operations BEFORE the temp_state/record_variable_id backfill (which
+    /// `routine_features_partial` applies from `ir_record_variables`).
+    pub record_operations: Vec<PRecordOperation>,
+}
+
+/// An implicit-receiver frame (table-method base `Rec` seed / `with` body). Carries
+/// the receiver TEXT so an implicit bare record-op (`Modify()` inside `with Cust do`)
+/// records the right `record_variable_name`. Mirrors `body_walk::ImplicitReceiverFrame`.
+struct ImplicitFrame {
+    is_record: bool,
+    text: String,
 }
 
 /// Per-routine record-receiver scope, mirroring the harness `ir_op_trace` setup
@@ -131,7 +151,9 @@ struct SpineCtx<'a> {
     cs_index: u32,
     loop_count: u32,
     has_branching: bool,
-    implicit: Vec<bool>,
+    implicit: Vec<ImplicitFrame>,
+    /// Enclosing-loop sequence numbers (for record-op loop_stack snapshots).
+    cur_loops: Vec<u32>,
     op_id_by_expr: HashMap<ExprId, String>,
     cs_id_by_expr: HashMap<ExprId, String>,
     loops: Vec<PLoop>,
@@ -141,6 +163,7 @@ struct SpineCtx<'a> {
     identifier_ref_set: HashSet<String>,
     unreachable_statements: Vec<PUnreachableStatement>,
     unreachable_index: u32,
+    record_operations: Vec<PRecordOperation>,
 }
 
 impl<'a> SpineCtx<'a> {
@@ -181,6 +204,104 @@ impl<'a> SpineCtx<'a> {
                 Some(t.to_ascii_lowercase())
             }
             _ => None,
+        }
+    }
+
+    /// Field-argument capture for a record op (legacy: only for `FIELD_ARGS_OPS`,
+    /// every arg's raw text + structured `PExpressionInfo`). `Some(vec![])` when the
+    /// op is a FIELD_ARGS op with an (possibly empty) argument list.
+    fn record_op_field_args(
+        &self,
+        op_type: &str,
+        args: &[ExprId],
+    ) -> (Option<Vec<String>>, Option<Vec<PExpressionInfo>>) {
+        if !FIELD_ARGS_OPS.contains(&op_type) {
+            return (None, None);
+        }
+        let mut texts = Vec::with_capacity(args.len());
+        let mut infos = Vec::with_capacity(args.len());
+        for &a in args {
+            texts.push(self.raw(&self.file.ir.expr(a).origin).to_string());
+            infos.push(self.ir_expression_info(a));
+        }
+        (Some(texts), Some(infos))
+    }
+
+    /// Structured expression classification (legacy `expression_info_from_node`).
+    fn ir_expression_info(&self, eid: ExprId) -> PExpressionInfo {
+        use ExprKind::*;
+        let e = self.file.ir.expr(eid);
+        let text = self.raw(&e.origin).to_string();
+        let strip_q = |s: &str| s.trim_matches(|c| c == '"' || c == '\'').to_string();
+        let mut value = None;
+        let mut qualifier = None;
+        let mut member = None;
+        let kind = match &e.kind {
+            Literal(al_syntax::ir::Literal::Text(_)) => {
+                value = Some(strip_q(&text));
+                "string_literal"
+            }
+            QuotedIdentifier(_) => {
+                value = Some(strip_q(&text));
+                "quoted_identifier"
+            }
+            Literal(al_syntax::ir::Literal::Int(_)) => {
+                value = Some(text.clone());
+                "integer"
+            }
+            Literal(al_syntax::ir::Literal::Decimal(_)) => {
+                value = Some(text.clone());
+                "decimal"
+            }
+            Literal(al_syntax::ir::Literal::Bool(_)) => {
+                value = Some(text.clone());
+                "boolean"
+            }
+            Identifier(_) if e.origin.kind_text == "identifier" => {
+                value = Some(text.clone());
+                "identifier"
+            }
+            QualifiedEnum {
+                enum_type,
+                value: v,
+            } => {
+                qualifier = Some(self.raw(&self.file.ir.expr(*enum_type).origin).to_string());
+                let m = strip_q(v);
+                member = Some(m.clone());
+                value = Some(m);
+                "qualified_enum_value"
+            }
+            DatabaseReference(t) => {
+                if let Some((kw, tn)) = t.split_once("::") {
+                    qualifier = Some(kw.trim().to_string());
+                    let m = strip_q(tn.trim());
+                    member = Some(m.clone());
+                    value = Some(m);
+                }
+                "database_reference"
+            }
+            Unary { operand, .. } => {
+                // signed numeric literal → the signed text, else None.
+                if matches!(
+                    &self.file.ir.expr(*operand).kind,
+                    Literal(al_syntax::ir::Literal::Int(_))
+                        | Literal(al_syntax::ir::Literal::Decimal(_))
+                ) {
+                    value = Some(text.clone());
+                }
+                "unary_expression"
+            }
+            Member { .. } => "member_expression",
+            Call { .. } => "call_expression",
+            Parenthesized(_) => "parenthesized_expression",
+            _ => "other",
+        };
+        PExpressionInfo {
+            kind: kind.to_string(),
+            text,
+            value,
+            qualifier,
+            member,
         }
     }
 
@@ -255,7 +376,8 @@ impl<'a> SpineCtx<'a> {
     /// Record a loop at its node (legacy creates the PLoop at the loop node, id
     /// `{routine}/loop{N}` with N = discovery order = `loops.len()`).
     fn enter_loop(&mut self, loop_type: &str, origin: &Origin) {
-        let id = format!("{}/loop{}", self.routine_id, self.loops.len());
+        let n = self.loops.len() as u32;
+        let id = format!("{}/loop{}", self.routine_id, n);
         let source_anchor = self.anchor(origin);
         self.loops.push(PLoop {
             id,
@@ -263,6 +385,15 @@ impl<'a> SpineCtx<'a> {
             source_anchor,
         });
         self.loop_count += 1;
+        self.cur_loops.push(n);
+    }
+
+    /// The enclosing-loop id stack (`{routine}/loop{N}`) for a record-op snapshot.
+    fn loop_stack_ids(&self) -> Vec<String> {
+        self.cur_loops
+            .iter()
+            .map(|n| format!("{}/loop{}", self.routine_id, n))
+            .collect()
     }
 
     fn walk_block(&mut self, bid: BlockId) {
@@ -405,6 +536,7 @@ impl<'a> SpineCtx<'a> {
                 self.enter_loop("while", &st.origin);
                 self.walk_expr(*cond);
                 self.walk_block(*body);
+                self.cur_loops.pop();
             }
             Repeat { body, until } => {
                 let sa = self.anchor(&st.origin);
@@ -412,6 +544,7 @@ impl<'a> SpineCtx<'a> {
                 self.enter_loop("repeat", &st.origin);
                 self.walk_block(*body);
                 self.walk_expr(*until);
+                self.cur_loops.pop();
             }
             For {
                 var,
@@ -425,6 +558,7 @@ impl<'a> SpineCtx<'a> {
                 self.walk_expr(*from);
                 self.walk_expr(*to);
                 self.walk_block(*body);
+                self.cur_loops.pop();
             }
             Foreach {
                 var,
@@ -435,16 +569,21 @@ impl<'a> SpineCtx<'a> {
                 self.walk_expr(*var);
                 self.walk_expr(*iterable);
                 self.walk_block(*body);
+                self.cur_loops.pop();
             }
             With { receiver, body } => {
                 self.walk_expr(*receiver);
-                let is_rec = match &self.file.ir.expr(*receiver).kind {
+                let is_record = match &self.file.ir.expr(*receiver).kind {
                     ExprKind::Identifier(x) | ExprKind::QuotedIdentifier(x) => {
                         self.scope.rvars.contains(&x.to_ascii_lowercase())
                     }
                     _ => false,
                 };
-                self.implicit.push(is_rec);
+                let text = self
+                    .raw(&self.file.ir.expr(*receiver).origin)
+                    .trim()
+                    .to_string();
+                self.implicit.push(ImplicitFrame { is_record, text });
                 self.walk_block(*body);
                 self.implicit.pop();
             }
@@ -472,21 +611,40 @@ impl<'a> SpineCtx<'a> {
         if let Call { function, args } = &e.kind {
             let (function, args) = (*function, args.clone());
             let fe = self.file.ir.expr(function);
-            let is_record_op = match &fe.kind {
+            // Record-op classification + (op_type, receiver text) for the emit.
+            let record_op: Option<(&'static str, String)> = match &fe.kind {
                 Member { object, member, .. } => {
-                    let recv = match &self.file.ir.expr(*object).kind {
+                    let recv_name = match &self.file.ir.expr(*object).kind {
                         Identifier(x) | QuotedIdentifier(x) => Some(x.to_ascii_lowercase()),
                         _ => None,
                     };
-                    recv.map(|r| self.scope.rvars.contains(&r)).unwrap_or(false)
-                        && record_op_type(&member.to_ascii_lowercase()).is_some()
+                    let is_rec = recv_name
+                        .map(|r| self.scope.rvars.contains(&r))
+                        .unwrap_or(false);
+                    match (is_rec, record_op_type(&member.to_ascii_lowercase())) {
+                        (true, Some(op)) => {
+                            Some((op, self.raw(&self.file.ir.expr(*object).origin).to_string()))
+                        }
+                        _ => None,
+                    }
                 }
                 Identifier(m) | QuotedIdentifier(m) => {
-                    self.implicit.last().copied().unwrap_or(false)
-                        && record_op_type(&m.to_ascii_lowercase()).is_some()
+                    let frame_is_rec = self.implicit.last().map(|f| f.is_record).unwrap_or(false);
+                    match (frame_is_rec, record_op_type(&m.to_ascii_lowercase())) {
+                        (true, Some(op)) => {
+                            let recv = self
+                                .implicit
+                                .last()
+                                .map(|f| f.text.clone())
+                                .unwrap_or_default();
+                            Some((op, recv))
+                        }
+                        _ => None,
+                    }
                 }
-                _ => false,
+                _ => None,
             };
+            let is_record_op = record_op.is_some();
             let fname = match &fe.kind {
                 Identifier(m) | QuotedIdentifier(m) => Some(m.to_ascii_lowercase()),
                 _ => None,
@@ -499,6 +657,26 @@ impl<'a> SpineCtx<'a> {
                 if !is_error {
                     self.op_id_by_expr
                         .insert(eid, format!("{}/op{}", self.routine_id, self.op_index));
+                }
+                // Emit the PRecordOperation (pre-backfill). Commit/Error are ops too
+                // but produce operation_sites only — record_operations is record DB ops.
+                if let Some((op_type, receiver)) = &record_op {
+                    let op_id = format!("{}/op{}", self.routine_id, self.op_index);
+                    let (field_arguments, field_argument_infos) =
+                        self.record_op_field_args(op_type, &args);
+                    self.record_operations.push(PRecordOperation {
+                        id: op_id,
+                        op: op_type.to_string(),
+                        record_variable_name: receiver.clone(),
+                        record_variable_id: None,
+                        temp_state: ts_unknown(),
+                        field_arguments,
+                        field_argument_infos,
+                        loop_stack: self.loop_stack_ids(),
+                        source_anchor: self.anchor(&e.origin),
+                        in_until_condition: false,
+                        run_trigger: None,
+                    });
                 }
                 self.op_index += 1;
             }
@@ -629,7 +807,14 @@ pub fn walk_spine(
         cs_index: 0,
         loop_count: 0,
         has_branching: false,
-        implicit: vec![table_method],
+        // Base implicit frame: a table/tableext method exposes `Rec` (is_record);
+        // other objects seed a non-record frame so a bare call is never an implicit
+        // record op (matches the gated op-trace behaviour).
+        implicit: vec![ImplicitFrame {
+            is_record: table_method,
+            text: "Rec".to_string(),
+        }],
+        cur_loops: Vec::new(),
         op_id_by_expr: HashMap::new(),
         cs_id_by_expr: HashMap::new(),
         loops: Vec::new(),
@@ -639,6 +824,7 @@ pub fn walk_spine(
         identifier_ref_set: HashSet::new(),
         unreachable_statements: Vec::new(),
         unreachable_index: 0,
+        record_operations: Vec::new(),
     };
     if let Some(b) = routine.body {
         ctx.walk_block(b);
@@ -674,6 +860,7 @@ pub fn walk_spine(
         condition_references,
         identifier_references,
         unreachable_statements: ctx.unreachable_statements,
+        record_operations: ctx.record_operations,
     }
 }
 
@@ -1002,9 +1189,13 @@ pub struct IrPartialFeatures {
     pub condition_references: Vec<PConditionReference>,
     pub identifier_references: Vec<String>,
     pub unreachable_statements: Vec<PUnreachableStatement>,
+    pub record_operations: Vec<PRecordOperation>,
 }
 
 /// Build the validated slice of `PFeatures` from the owned IR for one routine.
+/// `source_table_name` gates the page implicit `Rec` for `ir_record_variables`
+/// (which supplies the record-op temp_state/record_variable_id backfill).
+#[allow(clippy::too_many_arguments)]
 pub fn routine_features_partial(
     file: &AlFile,
     object_idx: usize,
@@ -1012,6 +1203,7 @@ pub fn routine_features_partial(
     routine_id: &str,
     source: &str,
     source_unit_id: &str,
+    source_table_name: Option<&str>,
 ) -> IrPartialFeatures {
     let cols = Utf16Cols::new(source);
     let spine = walk_spine(
@@ -1031,6 +1223,24 @@ pub fn routine_features_partial(
         cfn.build_block(b)
     });
     let nesting_depth = super::compute_nesting_depth(&spine.loops);
+
+    // recordOperation backfill: copy temp_state + record_variable_id from the
+    // declaring RecordVariable (matched by lc name) — mirrors extract_body_features.
+    let rec_vars = ir_record_variables(file, object_idx, routine, routine_id, source_table_name);
+    let rv_by_lc: HashMap<String, &super::features::PRecordVariable> = rec_vars
+        .iter()
+        .map(|rv| (rv.name.to_ascii_lowercase(), rv))
+        .collect();
+    let mut record_operations = spine.record_operations;
+    for op in &mut record_operations {
+        if let Some(rv) = rv_by_lc.get(&op.record_variable_name.to_ascii_lowercase()) {
+            if op.record_variable_id.is_none() {
+                op.record_variable_id = Some(rv.id.clone());
+            }
+            op.temp_state = rv.temp_state.clone();
+        }
+    }
+
     IrPartialFeatures {
         statement_tree,
         has_branching: spine.has_branching,
@@ -1041,6 +1251,7 @@ pub fn routine_features_partial(
         condition_references: spine.condition_references,
         identifier_references: spine.identifier_references,
         unreachable_statements: spine.unreachable_statements,
+        record_operations,
     }
 }
 

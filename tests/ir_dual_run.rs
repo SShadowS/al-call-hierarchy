@@ -2093,6 +2093,7 @@ fn engine_ir_walk_statement_tree_parity() {
     let mut cr_match = 0usize;
     let mut id_match = 0usize;
     let mut un_match = 0usize;
+    let mut ro_match = 0usize;
     let mut divs: Vec<(String, String)> = Vec::new();
 
     // Loop ids carry the routine-id hash on the legacy side; normalize to sequence
@@ -2117,9 +2118,53 @@ fn engine_ir_walk_statement_tree_parity() {
         }
         for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
             total += 1;
-            let ir = ir_walk::routine_features_partial(&file, *oi, routine, "ir", &src, "dual");
+            // source_table_name None — matches legacy_l2_features (harness parity).
+            let ir =
+                ir_walk::routine_features_partial(&file, *oi, routine, "ir", &src, "dual", None);
             if ir.has_branching == lf.has_branching {
                 hb_match += 1;
+            }
+            // record_operations: id carries the routine hash; compare op-number +
+            // payload (PRecordOperation::PartialEq excludes serde-skip internals).
+            {
+                let opnum = |o: &al_call_hierarchy::engine::l2::features::PRecordOperation| {
+                    o.id.rsplit("op")
+                        .next()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(u32::MAX)
+                };
+                let mut lro: Vec<_> = lf.record_operations.iter().collect();
+                lro.sort_by_key(|o| opnum(o));
+                let mut iro: Vec<_> = ir.record_operations.iter().collect();
+                iro.sort_by_key(|o| opnum(o));
+                let same = lro.len() == iro.len()
+                    && lro.iter().zip(iro.iter()).all(|(l, i)| {
+                        // compare via PartialEq but with ids normalized to op-number
+                        opnum(l) == opnum(i)
+                            && l.op == i.op
+                            && l.record_variable_name
+                                .eq_ignore_ascii_case(&i.record_variable_name)
+                            && l.temp_state == i.temp_state
+                            && l.field_arguments == i.field_arguments
+                            && l.field_argument_infos == i.field_argument_infos
+                            && l.loop_stack.iter().map(|s| id_num(s)).collect::<Vec<_>>()
+                                == i.loop_stack.iter().map(|s| id_num(s)).collect::<Vec<_>>()
+                            && l.source_anchor == i.source_anchor
+                            && l.record_variable_id.is_some() == i.record_variable_id.is_some()
+                    });
+                if same {
+                    ro_match += 1;
+                } else if divs.len() < 20 {
+                    let rel = fpath
+                        .strip_prefix(&root)
+                        .unwrap_or(&fpath)
+                        .display()
+                        .to_string();
+                    divs.push((
+                        format!("{rel} :: {ln} [record_operations]"),
+                        format!("legacy={lro:?}\n    ir={iro:?}"),
+                    ));
+                }
             }
             if ir.nesting_depth == lf.nesting_depth {
                 nd_match += 1;
@@ -2245,7 +2290,7 @@ fn engine_ir_walk_statement_tree_parity() {
     }
     eprintln!("\n=== PHASE-2 engine ir_walk (real PFeatures slice) over {total} routines ===");
     eprintln!("  statement_tree {st_match}/{total}  has_branching {hb_match}/{total}  nesting_depth {nd_match}/{total}  loops {loop_match}/{total}  field_accesses {fa_match}/{total}");
-    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  unreachable {un_match}/{total}  identifier_references {id_match}/{total} (measured)");
+    eprintln!("  var_assignments {va_match}/{total}  condition_references {cr_match}/{total}  unreachable {un_match}/{total}  record_operations {ro_match}/{total}  identifier_references {id_match}/{total} (measured)");
     for (a, b) in divs.iter().take(8) {
         eprintln!("  {a}\n    {b}");
     }
@@ -2255,6 +2300,10 @@ fn engine_ir_walk_statement_tree_parity() {
         "engine ir_walk unreachable_statements divergences"
     );
     assert_eq!(nd_match, total, "engine ir_walk nesting_depth divergences");
+    assert_eq!(
+        ro_match, total,
+        "engine ir_walk record_operations divergences"
+    );
     assert_eq!(hb_match, total, "engine ir_walk has_branching divergences");
     assert_eq!(st_match, total, "engine ir_walk statement_tree divergences");
     assert_eq!(loop_match, total, "engine ir_walk loops divergences");
