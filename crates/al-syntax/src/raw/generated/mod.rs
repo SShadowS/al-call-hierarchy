@@ -2,11 +2,14 @@
 // node-types.json. DO NOT EDIT — edit the generator or bump the grammar instead.
 // Source file: crates/al-syntax/src/raw/generated/mod.rs
 
-//! Generated raw grammar vocabulary. Regenerate with
+//! Generated raw grammar vocabulary + typed nodes. Regenerate with
 //! `cargo run -p xtask -- gen-syntax`; CI runs `--check` to catch drift.
 
 mod field;
+mod nodes;
 mod raw_kind;
 
 pub use field::FieldName;
 pub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};
+#[allow(unused_imports)]
+pub use nodes::*;

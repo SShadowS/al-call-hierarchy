@@ -65,16 +65,23 @@ impl<'t> RawNode<'t> {
     // ---- structural navigation (crate-internal) ----
 
     /// The single child held in `field`, if present.
-    // Consumed by the generated typed nodes (0c) + the lowerer (0d).
-    #[allow(dead_code)]
     pub(crate) fn field(self, f: FieldName) -> Option<RawNode<'t>> {
         self.node.child_by_field_name(f.as_raw()).map(RawNode::new)
+    }
+
+    /// All children held in `field` (for `multiple: true` fields), document order.
+    pub(crate) fn children_by_field(self, f: FieldName) -> Vec<RawNode<'t>> {
+        let mut cursor = self.node.walk();
+        self.node
+            .children_by_field_name(f.as_raw(), &mut cursor)
+            .map(RawNode::new)
+            .collect()
     }
 
     /// Named children in tree-sitter **document order**. NEVER byte-sorted: nested
     /// `call_expression`s share a start position, so only traversal order is
     /// well-defined, and L2 op/callsite numbering depends on it (spec INV-1).
-    // Consumed by the generated typed nodes (0c) + the lowerer (0d).
+    // Consumed by the lowerer (0d).
     #[allow(dead_code)]
     pub(crate) fn named_children(self) -> Vec<RawNode<'t>> {
         let mut cursor = self.node.walk();

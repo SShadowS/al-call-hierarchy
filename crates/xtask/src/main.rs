@@ -1,24 +1,34 @@
 //! `cargo run -p xtask -- gen-syntax [--check]`
 //!
-//! Generates the al-syntax *raw vocabulary* from the pinned tree-sitter-al
-//! `node-types.json`: `RawKind` (exhaustive over NAMED node kinds + `Error`) and
-//! `FieldName` (exhaustive over field names), plus a `GRAMMAR_NODE_TYPES_HASH`.
+//! Generates the al-syntax *raw layer* from the pinned tree-sitter-al
+//! `node-types.json`:
+//! - `raw_kind.rs` — `RawKind` (exhaustive over NAMED kinds + `Error`), `from_raw`
+//!   (panics on unknown), `as_str`, `GRAMMAR_NODE_TYPES_HASH`, `NAMED_KIND_COUNT`.
+//! - `field.rs` — `FieldName` (exhaustive over field names), `as_raw`.
+//! - `nodes.rs` — a typed wrapper struct per NAMED kind (`RawProcedure<'t>`) with
+//!   `cast`/`node` + typed field accessors, plus deduplicated union enums for
+//!   multi-type fields. Shape safety only; no AL semantics.
+//! - `node-types.sha256` — sidecar the al-syntax build.rs hash-guards against.
 //!
-//! The output is checked in and hash-guarded (al-syntax `build.rs` asserts the
-//! committed grammar matches the hash). `--check` regenerates into memory and
-//! diffs against the committed files, failing if they differ (CI drift guard).
+//! Output is checked in and never hand-edited. `--check` regenerates into memory
+//! and diffs against the committed files (CI drift guard).
 //!
-//! Design notes (owned-syntax-IR spec §3.2, Phase 0):
-//! - Only NAMED kinds become `RawKind` variants. The lowerer classifies named
-//!   children only; anonymous punctuation never reaches `RawKind::from_raw`, so an
-//!   unknown string there is a genuine grammar/binary mismatch → panic (loud).
-//! - `from_raw` panics on unknown; a removed/renamed kind that the hand-written
-//!   `NodeKind` mapping still references becomes a compile error (the loud path).
+//! Design (owned-syntax-IR spec §3.2; reviewer-confirmed): only NAMED kinds become
+//! variants/structs; single-type field → typed accessor; multi NAMED-type field →
+//! deduplicated union enum (preserves compile-time wrapper-insertion safety); any
+//! anonymous member type → `RawNode` fallback (cannot be typed).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use sha2::{Digest, Sha256};
+
+/// Multi-type fields with <= this many NAMED members get a typed union enum; larger
+/// sets (the "any expression"/"any statement" unions, ~30 members) fall back to
+/// `RawNode` — the lowerer dispatches those via `.kind()` anyway, and a 30-member
+/// enum name is unusable. (Reviewer guidance: union enums only where materially useful.)
+const MAX_UNION_MEMBERS: usize = 5;
 
 fn main() -> ExitCode {
     let check = std::env::args().any(|a| a == "--check");
@@ -47,9 +57,8 @@ fn main() -> ExitCode {
     let files: Vec<(String, String)> = vec![
         ("raw_kind.rs".to_string(), model.gen_raw_kind()),
         ("field.rs".to_string(), model.gen_field()),
+        ("nodes.rs".to_string(), model.gen_nodes()),
         ("mod.rs".to_string(), model.gen_mod()),
-        // Plain sidecar (no header) read by al-syntax build.rs to assert the
-        // checked-in grammar matches what this vocabulary was generated from.
         ("node-types.sha256".to_string(), format!("{hash}\n")),
     ];
 
@@ -63,9 +72,13 @@ fn main() -> ExitCode {
                 drift = true;
             }
         }
-        return if drift { ExitCode::FAILURE } else {
-            println!("gen-syntax --check: generated files up to date ({} named kinds, {} fields, hash {})",
-                model.kinds.len(), model.fields.len(), &hash[..12]);
+        return if drift {
+            ExitCode::FAILURE
+        } else {
+            println!(
+                "gen-syntax --check: up to date ({} kinds, {} fields, {} structs, {} unions, hash {})",
+                model.kinds.len(), model.fields.len(), model.nodes.len(), model.unions.len(), &hash[..12]
+            );
             ExitCode::SUCCESS
         };
     }
@@ -77,19 +90,35 @@ fn main() -> ExitCode {
         println!("wrote {}", path.display());
     }
     println!(
-        "gen-syntax: {} named kinds, {} fields, node-types.json hash {}",
-        model.kinds.len(),
-        model.fields.len(),
-        hash
+        "gen-syntax: {} named kinds, {} fields, {} typed structs, {} union enums, hash {}",
+        model.kinds.len(), model.fields.len(), model.nodes.len(), model.unions.len(), hash
     );
     ExitCode::SUCCESS
 }
 
+/// One member of a field's type set: (raw grammar type, is-named).
+type Member = (String, bool);
+
+struct FieldDef {
+    raw: String,
+    multiple: bool,
+    members: Vec<Member>,
+}
+
+struct NodeDef {
+    pascal: String,
+    fields: Vec<FieldDef>,
+}
+
 struct Model {
-    /// (raw type string, Rust variant ident) for every NAMED node kind, sorted by raw.
+    /// (raw type, Rust variant ident) for every NAMED ident-safe kind, sorted.
     kinds: Vec<(String, String)>,
-    /// (raw field name, Rust variant ident), sorted by raw.
+    /// (raw field name, Rust variant ident), sorted.
     fields: Vec<(String, String)>,
+    /// Typed node defs (named ident-safe nodes), sorted by raw.
+    nodes: Vec<NodeDef>,
+    /// Deduplicated union enums: sorted named-member raw types -> enum ident.
+    unions: BTreeMap<Vec<String>, String>,
     hash: String,
 }
 
@@ -97,25 +126,66 @@ impl Model {
     fn from_node_types(entries: &[serde_json::Value], hash: &str) -> Model {
         let mut kinds: Vec<(String, String)> = Vec::new();
         let mut field_set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut nodes: Vec<(String, NodeDef)> = Vec::new();
+        let mut unions: BTreeMap<Vec<String>, String> = BTreeMap::new();
+
         for e in entries {
             let named = e.get("named").and_then(|v| v.as_bool()).unwrap_or(false);
             let ty = e.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if named && is_ident_safe(ty) {
-                kinds.push((ty.to_string(), pascal(ty)));
-            }
             if let Some(fields) = e.get("fields").and_then(|v| v.as_object()) {
                 for fname in fields.keys() {
                     field_set.insert(fname.clone());
                 }
             }
+            if !(named && is_ident_safe(ty)) {
+                continue;
+            }
+            kinds.push((ty.to_string(), pascal(ty)));
+
+            // Capture typed field defs for this node.
+            let mut fdefs: Vec<FieldDef> = Vec::new();
+            if let Some(fields) = e.get("fields").and_then(|v| v.as_object()) {
+                for (fname, fval) in fields {
+                    let multiple = fval.get("multiple").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let members: Vec<Member> = fval
+                        .get("types")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|t| {
+                                    (
+                                        t.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        t.get("named").and_then(|v| v.as_bool()).unwrap_or(false),
+                                    )
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    // Register a union enum for a small all-typed multi-member field.
+                    if members.len() > 1 && members.iter().all(is_typed_member) {
+                        let key = typed_key(&members);
+                        if key.len() > 1 && key.len() <= MAX_UNION_MEMBERS {
+                            unions.entry(key.clone()).or_insert_with(|| union_name(&key));
+                        }
+                    }
+                    fdefs.push(FieldDef { raw: fname.clone(), multiple, members });
+                }
+            }
+            fdefs.sort_by(|a, b| a.raw.cmp(&b.raw));
+            nodes.push((ty.to_string(), NodeDef { pascal: pascal(ty), fields: fdefs }));
         }
+
         kinds.sort();
         kinds.dedup();
         assert_no_collisions(&kinds, "RawKind");
+        nodes.sort_by(|a, b| a.0.cmp(&b.0));
+        let nodes: Vec<NodeDef> = nodes.into_iter().map(|(_, n)| n).collect();
+
         let fields: Vec<(String, String)> =
             field_set.into_iter().map(|f| { let p = pascal(&f); (f, p) }).collect();
         assert_no_collisions(&fields, "FieldName");
-        Model { kinds, fields, hash: hash.to_string() }
+
+        Model { kinds, fields, nodes, unions, hash: hash.to_string() }
     }
 
     fn gen_raw_kind(&self) -> String {
@@ -176,10 +246,105 @@ impl Model {
         s
     }
 
+    fn gen_nodes(&self) -> String {
+        let mut s = header("nodes.rs");
+        s.push_str("//! Typed CST wrappers over `RawNode` — shape safety only, no AL semantics.\n");
+        s.push_str("//! A field whose grammar type set changes (e.g. a v-next wrapper insertion)\n");
+        s.push_str("//! changes the accessor's return type, breaking the lowerer at `cargo check`.\n\n");
+        s.push_str("#![allow(dead_code)]\n\n");
+        s.push_str("use super::{FieldName, RawKind};\nuse crate::raw::RawNode;\n\n");
+
+        // Union enums first (dedup'd).
+        for (members, name) in &self.unions {
+            s.push_str(&format!("/// One of: {}.\n", members.join(", ")));
+            s.push_str("#[derive(Copy, Clone)]\n");
+            s.push_str(&format!("pub enum {name}<'t> {{\n"));
+            for m in members {
+                s.push_str(&format!("    {}(Raw{}<'t>),\n", pascal(m), pascal(m)));
+            }
+            s.push_str("}\n");
+            s.push_str(&format!("impl<'t> {name}<'t> {{\n"));
+            s.push_str("    #[inline]\n    pub fn cast(n: RawNode<'t>) -> Option<Self> {\n        match n.kind() {\n");
+            for m in members {
+                s.push_str(&format!(
+                    "            RawKind::{p} => Some(Self::{p}(Raw{p}(n))),\n",
+                    p = pascal(m)
+                ));
+            }
+            s.push_str("            _ => None,\n        }\n    }\n");
+            s.push_str("    #[inline]\n    pub fn node(self) -> RawNode<'t> {\n        match self {\n");
+            for m in members {
+                s.push_str(&format!("            Self::{p}(x) => x.node(),\n", p = pascal(m)));
+            }
+            s.push_str("        }\n    }\n}\n\n");
+        }
+
+        // Structs.
+        for node in &self.nodes {
+            let p = &node.pascal;
+            s.push_str("#[derive(Copy, Clone)]\n");
+            s.push_str(&format!("pub struct Raw{p}<'t>(pub(super) RawNode<'t>);\n"));
+            s.push_str(&format!("impl<'t> Raw{p}<'t> {{\n"));
+            s.push_str(&format!(
+                "    #[inline]\n    pub fn cast(n: RawNode<'t>) -> Option<Self> {{ if n.kind() == RawKind::{p} {{ Some(Self(n)) }} else {{ None }} }}\n"
+            ));
+            s.push_str("    #[inline]\n    pub fn node(self) -> RawNode<'t> { self.0 }\n");
+            for f in &node.fields {
+                s.push_str(&self.gen_field_accessor(f));
+            }
+            s.push_str("}\n\n");
+        }
+        s
+    }
+
+    fn gen_field_accessor(&self, f: &FieldDef) -> String {
+        let method = rust_method_name(&f.raw);
+        let fv = pascal(&f.raw); // FieldName variant
+        let all_typed = !f.members.is_empty() && f.members.iter().all(is_typed_member);
+        if all_typed && f.members.len() == 1 {
+            let mp = pascal(&f.members[0].0);
+            if f.multiple {
+                format!(
+                    "    pub fn {method}(self) -> Vec<Raw{mp}<'t>> {{ self.0.children_by_field(FieldName::{fv}).into_iter().filter_map(Raw{mp}::cast).collect() }}\n"
+                )
+            } else {
+                format!(
+                    "    pub fn {method}(self) -> Option<Raw{mp}<'t>> {{ self.0.field(FieldName::{fv}).and_then(Raw{mp}::cast) }}\n"
+                )
+            }
+        } else if all_typed && typed_key(&f.members).len() <= MAX_UNION_MEMBERS {
+            // small multi typed -> union enum
+            let key = typed_key(&f.members);
+            let u = self.unions.get(&key).cloned().unwrap_or_else(|| union_name(&key));
+            if f.multiple {
+                format!(
+                    "    pub fn {method}(self) -> Vec<{u}<'t>> {{ self.0.children_by_field(FieldName::{fv}).into_iter().filter_map({u}::cast).collect() }}\n"
+                )
+            } else {
+                format!(
+                    "    pub fn {method}(self) -> Option<{u}<'t>> {{ self.0.field(FieldName::{fv}).and_then({u}::cast) }}\n"
+                )
+            }
+        } else {
+            // anon member(s) or large type-set -> RawNode fallback
+            if f.multiple {
+                format!(
+                    "    pub fn {method}(self) -> Vec<RawNode<'t>> {{ self.0.children_by_field(FieldName::{fv}) }}\n"
+                )
+            } else {
+                format!(
+                    "    pub fn {method}(self) -> Option<RawNode<'t>> {{ self.0.field(FieldName::{fv}) }}\n"
+                )
+            }
+        }
+    }
+
     fn gen_mod(&self) -> String {
         let mut s = header("mod.rs");
-        s.push_str("//! Generated raw grammar vocabulary. Regenerate with\n//! `cargo run -p xtask -- gen-syntax`; CI runs `--check` to catch drift.\n\n");
-        s.push_str("mod field;\nmod raw_kind;\n\npub use field::FieldName;\npub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};\n");
+        s.push_str("//! Generated raw grammar vocabulary + typed nodes. Regenerate with\n//! `cargo run -p xtask -- gen-syntax`; CI runs `--check` to catch drift.\n\n");
+        s.push_str("mod field;\nmod nodes;\nmod raw_kind;\n\n");
+        s.push_str("pub use field::FieldName;\npub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};\n");
+        s.push_str("#[allow(unused_imports)]\npub use nodes::*;\n");
         s
     }
 }
@@ -188,6 +353,24 @@ fn header(file: &str) -> String {
     format!(
         "// @generated by `cargo run -p xtask -- gen-syntax` from tree-sitter-al\n// node-types.json. DO NOT EDIT — edit the generator or bump the grammar instead.\n// Source file: crates/al-syntax/src/raw/generated/{file}\n\n"
     )
+}
+
+/// A field member is "typed" (gets a Raw struct) iff it is named and ident-safe.
+fn is_typed_member(m: &Member) -> bool {
+    m.1 && is_ident_safe(&m.0)
+}
+
+/// Sorted, deduplicated member raw types (union keying/naming).
+fn typed_key(members: &[Member]) -> Vec<String> {
+    let mut k: Vec<String> = members.iter().map(|m| m.0.clone()).collect();
+    k.sort();
+    k.dedup();
+    k
+}
+
+/// Deterministic union-enum name from a sorted member-type list.
+fn union_name(members: &[String]) -> String {
+    members.iter().map(|m| pascal(m)).collect::<Vec<_>>().join("Or")
 }
 
 /// snake_case / lowercase grammar string → PascalCase Rust ident.
@@ -201,6 +384,21 @@ fn pascal(s: &str) -> String {
         }
     }
     out
+}
+
+/// Field method name; raw-escape Rust keywords (e.g. `type` -> `r#type`).
+fn rust_method_name(s: &str) -> String {
+    const KW: &[&str] = &[
+        "as", "break", "const", "continue", "else", "enum", "extern", "false", "fn", "for", "if",
+        "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+        "static", "struct", "trait", "true", "type", "unsafe", "use", "where", "while", "async",
+        "await", "dyn", "box",
+    ];
+    if KW.contains(&s) {
+        format!("r#{s}")
+    } else {
+        s.to_string()
+    }
 }
 
 fn is_ident_safe(s: &str) -> bool {
@@ -226,13 +424,12 @@ fn hex(bytes: &[u8]) -> String {
     s
 }
 
-/// Strip CR for a line-ending-agnostic comparison (Windows checkouts may be CRLF).
+/// Strip CR for line-ending-agnostic comparison (Windows checkouts may be CRLF).
 fn normalize(s: &str) -> String {
     s.replace('\r', "")
 }
 
 fn workspace_root() -> PathBuf {
-    // xtask manifest dir = <ws>/crates/xtask
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .ancestors()
