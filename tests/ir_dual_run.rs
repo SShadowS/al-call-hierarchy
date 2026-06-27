@@ -3113,3 +3113,75 @@ fn engine_ir_parameters_parity() {
     assert!(total > 0);
     assert_eq!(matching, total, "engine ir parameters divergences");
 }
+
+/// PHASE-2 — the serde-SKIPPED L5 detector inputs (in_until_condition, run_trigger)
+/// on record_operations match legacy. These are EXCLUDED from PRecordOperation's
+/// PartialEq, so the byte-exact L2 gate cannot see them — this gate guards them.
+#[test]
+fn engine_ir_record_op_l5_inputs_parity() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    use al_call_hierarchy::engine::l2::ir_walk;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let opnum = |id: &str| {
+        id.rsplit("op")
+            .next()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(u32::MAX)
+    };
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<String> = Vec::new();
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else {
+            continue;
+        };
+        let legacy = legacy_l2_features(&src);
+        let file = al_syntax::parse(&src);
+        let mut ir_routines: Vec<(usize, &al_syntax::ir::RoutineDecl)> = Vec::new();
+        for (oi, o) in file.objects.iter().enumerate() {
+            for r in &o.routines {
+                ir_routines.push((oi, r));
+            }
+        }
+        for ((ln, lf), (oi, routine)) in legacy.iter().zip(ir_routines.iter()) {
+            total += 1;
+            let irf =
+                ir_walk::project_routine_features_ir(&file, *oi, routine, "ir", &src, "dual", None);
+            let key = |ops: &[al_call_hierarchy::engine::l2::features::PRecordOperation]| {
+                let mut v: Vec<(u32, bool, Option<bool>)> = ops
+                    .iter()
+                    .map(|o| (opnum(&o.id), o.in_until_condition, o.run_trigger))
+                    .collect();
+                v.sort_by_key(|t| t.0);
+                v
+            };
+            let l = key(&lf.record_operations);
+            let i = key(&irf.record_operations);
+            if l == i {
+                matching += 1;
+            } else if divs.len() < 12 {
+                divs.push(format!(
+                    "{} :: {ln}\n    legacy={l:?}\n    ir    ={i:?}",
+                    fpath.strip_prefix(&root).unwrap_or(&fpath).display()
+                ));
+            }
+        }
+    }
+    let pct = if total > 0 {
+        matching as f64 * 100.0 / total as f64
+    } else {
+        0.0
+    };
+    eprintln!("\n=== PHASE-2 record-op L5 inputs (in_until_condition/run_trigger): {matching}/{total} ({pct:.1}%) ===");
+    for d in divs.iter().take(10) {
+        eprintln!("  {d}");
+    }
+    assert!(total > 0);
+    assert_eq!(
+        matching, total,
+        "record-op L5-input (in_until_condition/run_trigger) divergences"
+    );
+}

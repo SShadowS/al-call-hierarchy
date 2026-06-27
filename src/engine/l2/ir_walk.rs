@@ -230,6 +230,11 @@ struct SpineCtx<'a> {
     /// (legacy `collect_identifiers_from` counts it — a non-root identifier in the
     /// receiver subtree). Top-level calls do not count their function.
     count_next_call_fn: bool,
+    /// True while walking a `repeat`'s `until` expression — a record op here is the
+    /// loop terminator (`PRecordOperation.in_until_condition`, an L5/d1 input that is
+    /// serde-skipped so the L2 byte gate cannot see it). `until` is an expression, so
+    /// no nested loop resets the nearest-enclosing-loop context.
+    in_until: bool,
     call_sites: Vec<PCallSite>,
     cs_arg_exprs: Vec<Vec<ExprId>>,
 }
@@ -676,7 +681,9 @@ impl<'a> SpineCtx<'a> {
                 self.collect_cond_idents(*until, "repeat-until", &sa);
                 self.enter_loop("repeat", &st.origin);
                 self.walk_block(*body);
+                self.in_until = true;
                 self.walk_expr(*until);
+                self.in_until = false;
                 self.cur_loops.pop();
             }
             For {
@@ -829,8 +836,23 @@ impl<'a> SpineCtx<'a> {
                         field_argument_infos,
                         loop_stack: loop_stack.clone(),
                         source_anchor: anchor.clone(),
-                        in_until_condition: false,
-                        run_trigger: None,
+                        in_until_condition: self.in_until,
+                        // RunTrigger literal arg of a mutating op (Modify/Delete/
+                        // DeleteAll → arg 0; ModifyAll → arg 2) — Some(bool) iff that
+                        // arg is a boolean literal. L5/d29 input (serde-skipped).
+                        run_trigger: {
+                            let idx = match *op_type {
+                                "Modify" | "Delete" | "DeleteAll" => Some(0),
+                                "ModifyAll" => Some(2),
+                                _ => None,
+                            };
+                            idx.and_then(|i| args.get(i)).and_then(|&a| {
+                                match &self.file.ir.expr(a).kind {
+                                    ExprKind::Literal(al_syntax::ir::Literal::Bool(b)) => Some(*b),
+                                    _ => None,
+                                }
+                            })
+                        },
                     });
                     let k = if *op_type == "LockTable" {
                         "lock"
@@ -1077,6 +1099,7 @@ pub fn walk_spine(
         assert_depth: 0,
         in_stmt_position: false,
         count_next_call_fn: false,
+        in_until: false,
         call_sites: Vec::new(),
         cs_arg_exprs: Vec::new(),
     };
