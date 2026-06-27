@@ -203,6 +203,11 @@ struct SpineCtx<'a> {
     /// drives object-run result_consumed/return_used (a bare statement does not
     /// consume the result; an expression-position call does).
     in_stmt_position: bool,
+    /// One-shot: the NEXT call walked is a chained-call RECEIVER (the object of a
+    /// member call), so its bare function name is harvested as an identifier-ref
+    /// (legacy `collect_identifiers_from` counts it — a non-root identifier in the
+    /// receiver subtree). Top-level calls do not count their function.
+    count_next_call_fn: bool,
     call_sites: Vec<PCallSite>,
     cs_arg_exprs: Vec<Vec<ExprId>>,
 }
@@ -725,7 +730,18 @@ impl<'a> SpineCtx<'a> {
             // identifier-refs from a call's function subtree ONLY for real (parens)
             // call_expressions; a parenless call's receiver is not counted.
             let is_parens_call = e.origin.kind_text == "call_expression";
+            // Consume the one-shot chained-receiver flag: if set, this call is a
+            // receiver and its bare function name is counted as an identifier-ref.
+            let count_this_fn = self.count_next_call_fn;
+            self.count_next_call_fn = false;
             let fe = self.file.ir.expr(function);
+            if count_this_fn {
+                if let Identifier(n) = &fe.kind {
+                    if fe.origin.kind_text == "identifier" {
+                        self.identifier_ref_set.insert(n.to_ascii_lowercase());
+                    }
+                }
+            }
             // Record-op classification + (op_type, receiver text) for the emit.
             let record_op: Option<(&'static str, String)> = match &fe.kind {
                 Member { object, member, .. } => {
@@ -880,7 +896,13 @@ impl<'a> SpineCtx<'a> {
                     // Walk the receiver for a parens call (legacy harvests its
                     // identifier-refs), or when it is itself a chained call (legacy
                     // `chained_receiver_descent` visits the inner call regardless).
-                    if is_parens_call || matches!(self.file.ir.expr(object).kind, Call { .. }) {
+                    let object_is_call = matches!(self.file.ir.expr(object).kind, Call { .. });
+                    if is_parens_call || object_is_call {
+                        // Chained-call receiver → harvest its function name (legacy
+                        // collect_identifiers_from counts the receiver subtree).
+                        if object_is_call {
+                            self.count_next_call_fn = true;
+                        }
                         self.walk_expr(object);
                     }
                 }
@@ -1031,6 +1053,7 @@ pub fn walk_spine(
         operation_sites: Vec::new(),
         assert_depth: 0,
         in_stmt_position: false,
+        count_next_call_fn: false,
         call_sites: Vec::new(),
         cs_arg_exprs: Vec::new(),
     };
