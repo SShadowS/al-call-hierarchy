@@ -14,7 +14,7 @@ mod decl;
 mod expr;
 mod stmt;
 
-pub use decl::{ObjectDecl, ObjectKind, Param, RoutineDecl, RoutineKind, VarDecl};
+pub use decl::{ObjectDecl, ObjectKind, ObjectProperty, Param, RoutineDecl, RoutineKind, VarDecl};
 pub use expr::{BinaryOp, Expr, ExprKind, Literal, UnaryOp};
 pub use stmt::{Block, BlockItem, CaseBranch, PreprocGroup, Stmt, StmtKind};
 

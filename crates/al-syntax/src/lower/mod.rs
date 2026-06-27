@@ -109,10 +109,17 @@ fn lower_object(
         .collect();
 
     // Object globals: var_sections under the declaration_body (not inside routines).
+    // Object-level properties (SourceTable / TableNo / PageType / …) are siblings.
     let mut globals = Vec::new();
+    let mut properties = Vec::new();
     if let Some(body) = node.field(FieldName::Body) {
         for member in body.named_children() {
             collect_globals(member, source, &mut globals);
+            if member.kind() == RawKind::Property {
+                if let Some(p) = lower_property(member, source) {
+                    properties.push(p);
+                }
+            }
         }
     }
 
@@ -122,8 +129,28 @@ fn lower_object(
         name,
         routines,
         globals,
+        properties,
         origin: origin_of(node),
     }
+}
+
+/// Lower a `property` node (`name = value`). Name lowercased; value is the raw text
+/// of the value field (trimmed). None when the name is missing.
+fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProperty> {
+    let name = node
+        .field(FieldName::Name)?
+        .text(source)
+        .trim()
+        .to_ascii_lowercase();
+    let value = node
+        .field(FieldName::Value)
+        .map(|v| v.text(source).trim().to_string())
+        .unwrap_or_default();
+    Some(crate::ir::ObjectProperty {
+        name,
+        value,
+        origin: origin_of(node),
+    })
 }
 
 /// DFS collecting `procedure` / `trigger_declaration` nodes. AL has no nested

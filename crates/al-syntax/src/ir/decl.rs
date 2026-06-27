@@ -13,6 +13,18 @@ pub struct ObjectDecl {
     pub name: String,
     pub routines: Vec<RoutineDecl>,
     pub globals: Vec<VarDecl>,
+    /// Object-level properties (`SourceTable`, `TableNo`, `PageType`, …) in source
+    /// order. Needed by the engine to seed implicit-`Rec` table resolution and object
+    /// classification; the value is the raw value text (trimmed).
+    pub properties: Vec<ObjectProperty>,
+    pub origin: Origin,
+}
+
+/// A single object-level `property` node (`name = value`). `name` is lowercased;
+/// `value` is the raw value text (quotes preserved — the engine strips as needed).
+pub struct ObjectProperty {
+    pub name: String,
+    pub value: String,
     pub origin: Origin,
 }
 
