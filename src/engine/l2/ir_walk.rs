@@ -123,8 +123,30 @@ fn is_record_ty(v: &VarDecl) -> bool {
         .unwrap_or(false)
 }
 
-/// Build the per-routine scope (record receiver sets) for `object`/`routine`.
-fn build_scope(file: &AlFile, object_idx: usize, routine: &RoutineDecl) -> (Scope, bool) {
+/// Does the object expose an implicit `Rec` (legacy `implicit_base_receiver` +
+/// codeunit `TableNo`)? table/tableext methods + pageext always; a page only with a
+/// resolved SourceTable; a codeunit only with a `TableNo` property.
+fn has_implicit_rec(o: &al_syntax::ir::ObjectDecl, source_table_name: Option<&str>) -> bool {
+    let codeunit_tableno = o.kind == ObjectKind::Codeunit
+        && o.properties
+            .iter()
+            .any(|p| p.name == "tableno" && !p.value.trim().is_empty());
+    matches!(
+        o.kind,
+        ObjectKind::Table | ObjectKind::TableExtension | ObjectKind::PageExtension
+    ) || (o.kind == ObjectKind::Page && source_table_name.is_some())
+        || codeunit_tableno
+}
+
+/// Build the per-routine scope (record receiver sets) for `object`/`routine`. The
+/// bool result is whether an implicit `Rec` is in scope (drives the base
+/// implicit-receiver frame's is-record).
+fn build_scope(
+    file: &AlFile,
+    object_idx: usize,
+    routine: &RoutineDecl,
+    source_table_name: Option<&str>,
+) -> (Scope, bool) {
     let o = &file.objects[object_idx];
     let mut globals: HashSet<String> = o
         .globals
@@ -141,7 +163,7 @@ fn build_scope(file: &AlFile, object_idx: usize, routine: &RoutineDecl) -> (Scop
         .filter(|v| is_record_ty(v))
         .map(|v| v.name.to_ascii_lowercase())
         .collect();
-    let table_method = matches!(o.kind, ObjectKind::Table | ObjectKind::TableExtension);
+    let implicit_rec = has_implicit_rec(o, source_table_name);
 
     let params_locals: Vec<String> = routine
         .params
@@ -164,11 +186,11 @@ fn build_scope(file: &AlFile, object_idx: usize, routine: &RoutineDecl) -> (Scop
     let mut rvars = globals;
     rvars.extend(params_locals.iter().cloned());
     let mut frvars = explicit_globals;
-    if table_method {
+    if implicit_rec {
         frvars.insert("rec".to_string());
     }
     frvars.extend(params_locals);
-    (Scope { rvars, frvars }, table_method)
+    (Scope { rvars, frvars }, implicit_rec)
 }
 
 /// Working state for the spine walk.
@@ -1019,8 +1041,9 @@ pub fn walk_spine(
     source: &str,
     cols: &Utf16Cols,
     source_unit_id: &str,
+    source_table_name: Option<&str>,
 ) -> IrSpine {
-    let (scope, table_method) = build_scope(file, object_idx, routine);
+    let (scope, implicit_rec) = build_scope(file, object_idx, routine, source_table_name);
     let mut ctx = SpineCtx {
         file,
         scope: &scope,
@@ -1032,11 +1055,11 @@ pub fn walk_spine(
         cs_index: 0,
         loop_count: 0,
         has_branching: false,
-        // Base implicit frame: a table/tableext method exposes `Rec` (is_record);
-        // other objects seed a non-record frame so a bare call is never an implicit
-        // record op (matches the gated op-trace behaviour).
+        // Base implicit frame: an object with an implicit `Rec` (table/tableext/
+        // pageext, page-with-SourceTable, codeunit-TableNo) seeds a record frame so a
+        // bare record-op call resolves to `Rec`.
         implicit: vec![ImplicitFrame {
-            is_record: table_method,
+            is_record: implicit_rec,
             text: "Rec".to_string(),
         }],
         cur_loops: Vec::new(),
@@ -1456,6 +1479,7 @@ pub fn routine_features_partial(
         source,
         &cols,
         source_unit_id,
+        source_table_name,
     );
     let statement_tree = routine.body.map(|b| {
         let cfn = IrCfn {
