@@ -213,3 +213,24 @@ qualified_enum lowered) is fine for numbering IF INV-1/2/3 hold (legacy only cou
 call_expression / parenless member ops / commit / error — it skips trivia/parens/empty too). A
 desync means the lowerer didn't respect visit/document order on a SEMANTIC node → loud architectural
 failure (good), caught by the trace.
+
+## L2 CUTOVER PROGRESS — op/cs numbering foundation DONE (100%)
+The cutover's parity-critical heart (the two-phase op/cs numbering, INV-1/2/3) is validated at
+100% across the r0-corpus (591 routines) via the trace-first methodology:
+- **record_operations** (commits 9a470e2, ac89161): classification (record_op_type catalog +
+  explicit/implicit Rec receivers + with-receiver stack + parenless calls + Rec/xRec convention)
+  AND visit order — 591/591. HARD GATE.
+- **operation_sites** (5a35295): bare Commit()/Error() interleaved in the unified op0..opN-1
+  counter — 591/591. (Key: operation_sites mirrors every record_op + adds commit/error.) HARD GATE.
+- **call_sites** (6a21058): cs0..csM order; Error()=op+callsite, Commit()=op-only — 591/591. HARD GATE.
+- Lowerer improvement: parenless call statements (`Modify;`) normalized to Call (matches engine).
+
+THE BIGGEST RISK (op-counter desync from chained-receiver/with/visit-order) IS RETIRED. A natural
+pre-order IR DFS reproduces legacy's exact op/cs order.
+
+REMAINING cutover (layered, lower-risk, sequenced):
+- L3: field_accesses, identifier_references, var_assignments, condition_references (expression descent).
+- L4: CFN statement_tree + control-context.
+- Assemble full PFeatures from the IR walk; gate full serde-PFeatures equality vs legacy_l2_features.
+- Then CUT L2 over: build engine-side project_routine_features_ir consuming the IR, delete legacy
+  body_walk. Then Phase 3 (L3), Phase 4 (LSP + retire queries), Phase 5 (seal: drop engine tree-sitter).
