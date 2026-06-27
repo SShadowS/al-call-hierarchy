@@ -243,6 +243,7 @@ fn ir_branching_routines(source: &str) -> Vec<String> {
 struct Trace {
     ops: Vec<String>,
     calls: Vec<String>,
+    fields: Vec<String>,
 }
 
 /// Per-routine [`Trace`]s in IR DFS visit order (pre-order at each call).
@@ -260,15 +261,30 @@ fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
         globals.insert("xrec".to_string());
         // A table/tableext method (procedure OR trigger) has an implicit record `Rec`.
         let table_method = matches!(o.kind, al_syntax::ir::ObjectKind::Table | al_syntax::ir::ObjectKind::TableExtension);
+        // `globals` (with rec/xrec convention) is the record-OP receiver set; the
+        // FIELD-access set uses record_var_names semantics (rec only for tables).
+        let explicit_globals: std::collections::HashSet<String> =
+            o.globals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()).collect();
         for r in &o.routines {
+            let params_locals = r
+                .params
+                .iter()
+                .filter(|p| p.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false))
+                .map(|p| p.name.to_ascii_lowercase())
+                .chain(r.locals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()))
+                .collect::<Vec<_>>();
             let mut rvars = globals.clone();
-            rvars.extend(r.params.iter().filter(|p| p.ty.as_deref().map(|t| t.to_ascii_lowercase().starts_with("record")).unwrap_or(false)).map(|p| p.name.to_ascii_lowercase()));
-            rvars.extend(r.locals.iter().filter(|v| is_rec(v)).map(|v| v.name.to_ascii_lowercase()));
+            rvars.extend(params_locals.iter().cloned());
+            let mut frvars = explicit_globals.clone();
+            if table_method {
+                frvars.insert("rec".to_string());
+            }
+            frvars.extend(params_locals);
             let mut trace = Trace::default();
             // implicit-receiver stack: top = is-current-implicit-receiver-a-record.
             let mut implicit = vec![table_method];
             if let Some(b) = r.body {
-                rec_walk_block(&f, b, &rvars, &mut implicit, &mut trace);
+                rec_walk_block(&f, b, &rvars, &frvars, &mut implicit, &mut trace);
             }
             out.push((r.name.clone(), trace));
         }
@@ -276,20 +292,20 @@ fn ir_op_trace(source: &str) -> Vec<(String, Trace)> {
     out
 }
 
-fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_block(f: &al_syntax::ir::AlFile, bid: al_syntax::ir::BlockId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_syntax::ir::BlockItem;
     for item in &f.ir.block(bid).items {
         match item {
-            BlockItem::Stmt(s) => rec_walk_stmt(f, *s, rvars, implicit, out),
-            BlockItem::Preproc(g) => for b in &g.branches { rec_walk_block(f, *b, rvars, implicit, out); },
+            BlockItem::Stmt(s) => rec_walk_stmt(f, *s, rvars, frvars, implicit, out),
+            BlockItem::Preproc(g) => for b in &g.branches { rec_walk_block(f, *b, rvars, frvars, implicit, out); },
         }
     }
 }
 
-fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_syntax::ir::{ExprKind, StmtKind::*};
-    macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, implicit, out) }; }
-    macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, implicit, out) }; }
+    macro_rules! e { ($x:expr) => { rec_walk_expr(f, $x, rvars, frvars, implicit, out) }; }
+    macro_rules! b { ($x:expr) => { rec_walk_block(f, $x, rvars, frvars, implicit, out) }; }
     match &f.ir.stmt(sid).kind {
         Assignment { target, value } => { e!(*target); e!(*value); }
         Call(x) => e!(*x),
@@ -318,7 +334,7 @@ fn rec_walk_stmt(f: &al_syntax::ir::AlFile, sid: al_syntax::ir::StmtId, rvars: &
     }
 }
 
-fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
+fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &std::collections::HashSet<String>, frvars: &std::collections::HashSet<String>, implicit: &mut Vec<bool>, out: &mut Trace) {
     use al_call_hierarchy::engine::l2::record_op::record_op_type;
     use al_syntax::ir::ExprKind::*;
     let e = f.ir.expr(eid);
@@ -349,18 +365,36 @@ fn rec_walk_expr(f: &al_syntax::ir::AlFile, eid: al_syntax::ir::ExprId, rvars: &
         if !is_record_op && !is_commit {
             out.calls.push(anchor);
         }
-        rec_walk_expr(f, *function, rvars, implicit, out);
-        for a in args { rec_walk_expr(f, *a, rvars, implicit, out); }
+        // Recurse the CALLEE's receiver (a Member function is a callee, not a field
+        // access); recurse identifiers (noop) / chained calls directly. Then args.
+        match &fe.kind {
+            Member { object, .. } => rec_walk_expr(f, *object, rvars, frvars, implicit, out),
+            _ => rec_walk_expr(f, *function, rvars, frvars, implicit, out),
+        }
+        for a in args { rec_walk_expr(f, *a, rvars, frvars, implicit, out); }
         return;
     }
     match &e.kind {
-        Member { object, .. } => rec_walk_expr(f, *object, rvars, implicit, out),
-        Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, implicit, out); rec_walk_expr(f, *rhs, rvars, implicit, out); }
-        Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, implicit, out),
-        Parenthesized(x) => rec_walk_expr(f, *x, rvars, implicit, out),
-        Index { base, index } => { rec_walk_expr(f, *base, rvars, implicit, out); rec_walk_expr(f, *index, rvars, implicit, out); }
-        QualifiedEnum { enum_type, .. } => rec_walk_expr(f, *enum_type, rvars, implicit, out),
-        RangeExpr { start, end } => { rec_walk_expr(f, *start, rvars, implicit, out); rec_walk_expr(f, *end, rvars, implicit, out); }
+        // Value-position member: `X.Field` where X is a record var → field access.
+        Member { object, .. } => {
+            if let Identifier(x) | QuotedIdentifier(x) = &f.ir.expr(*object).kind {
+                if frvars.contains(&x.to_ascii_lowercase()) {
+                    out.fields.push(format!("{}:{}", e.origin.start.row, e.origin.start.column));
+                }
+            }
+            rec_walk_expr(f, *object, rvars, frvars, implicit, out);
+        }
+        // Enum scope (`Rec.Status::Open`): the enum_type member is NOT a field access;
+        // recurse its receiver only.
+        QualifiedEnum { enum_type, .. } => match &f.ir.expr(*enum_type).kind {
+            Member { object, .. } => rec_walk_expr(f, *object, rvars, frvars, implicit, out),
+            _ => rec_walk_expr(f, *enum_type, rvars, frvars, implicit, out),
+        },
+        Binary { lhs, rhs, .. } => { rec_walk_expr(f, *lhs, rvars, frvars, implicit, out); rec_walk_expr(f, *rhs, rvars, frvars, implicit, out); }
+        Unary { operand, .. } => rec_walk_expr(f, *operand, rvars, frvars, implicit, out),
+        Parenthesized(x) => rec_walk_expr(f, *x, rvars, frvars, implicit, out),
+        Index { base, index } => { rec_walk_expr(f, *base, rvars, frvars, implicit, out); rec_walk_expr(f, *index, rvars, frvars, implicit, out); }
+        RangeExpr { start, end } => { rec_walk_expr(f, *start, rvars, frvars, implicit, out); rec_walk_expr(f, *end, rvars, frvars, implicit, out); }
         _ => {}
     }
 }
@@ -666,6 +700,47 @@ fn callsite_trace_measure() {
     }
     assert!(total > 0);
     assert_eq!(matching, total, "call-site trace divergences (see report)");
+}
+
+/// L2 cutover — field-access ORDER trace. `X.Field` in expression position where X
+/// is a record var (legacy field_accesses, visit order).
+#[test]
+fn field_access_trace_measure() {
+    use al_call_hierarchy::dual_run_support::legacy_l2_features;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus");
+    if !root.is_dir() {
+        return;
+    }
+    let mut total = 0usize;
+    let mut matching = 0usize;
+    let mut divs: Vec<(String, String, Vec<String>, Vec<String>)> = Vec::new();
+
+    for fpath in collect_al_files(&root) {
+        let Ok(src) = std::fs::read_to_string(&fpath) else { continue };
+        let legacy = legacy_l2_features(&src);
+        let ir = ir_op_trace(&src);
+        for ((ln, lf), (_in, itrace)) in legacy.iter().zip(ir.iter()) {
+            total += 1;
+            let lanchors: Vec<String> = lf
+                .field_accesses
+                .iter()
+                .map(|fa| format!("{}:{}", fa.source_anchor.start_line, fa.source_anchor.start_column))
+                .collect();
+            if lanchors == itrace.fields {
+                matching += 1;
+            } else if divs.len() < 20 {
+                let rel = fpath.strip_prefix(&root).unwrap_or(&fpath).display().to_string();
+                divs.push((rel, ln.clone(), lanchors, itrace.fields.clone()));
+            }
+        }
+    }
+    let pct = if total > 0 { matching as f64 * 100.0 / total as f64 } else { 0.0 };
+    eprintln!("\n=== L2 cutover: field-access trace ===\n{matching}/{total} routines match ({pct:.1}%)");
+    for (file, routine, l, i) in divs.iter().take(12) {
+        eprintln!("  {file} :: {routine}\n    legacy: {l:?}\n    ir:     {i:?}");
+    }
+    assert!(total > 0);
+    assert_eq!(matching, total, "field-access trace divergences (see report)");
 }
 
 #[test]
