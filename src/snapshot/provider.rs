@@ -2,6 +2,7 @@
 
 use crate::snapshot::embedded::{SourceFile, app_content_hash, extract_embedded_source};
 use crate::snapshot::identity::{AppId, TrustTier};
+use crate::snapshot::verify::{IdentityCheck, verify_local_source};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -86,6 +87,88 @@ impl SourceProvider for EmbeddedAppProvider {
             content_hash: app_content_hash(&self.app_path)?,
         }))
     }
+}
+
+/// No source available — marks the app symbol-only (honest boundary).
+pub struct SymbolOnlyProvider;
+
+impl SourceProvider for SymbolOnlyProvider {
+    fn try_provide(&self, _app: &AppId) -> Result<Option<SourceRoot>> {
+        Ok(None)
+    }
+}
+
+/// A local source repository configured to represent a specific app.
+///
+/// Walks `root` for `.al` files (same rules as `WorkspaceProvider`) but
+/// applies identity verification: if the configured `app` identity does not
+/// match the requested app, fails closed and returns `Ok(None)`.
+pub struct LocalRepoProvider {
+    /// The identity this local repo claims to represent.
+    pub app: AppId,
+    /// Root directory of the local source checkout.
+    pub root: PathBuf,
+}
+
+impl SourceProvider for LocalRepoProvider {
+    fn try_provide(&self, requested: &AppId) -> Result<Option<SourceRoot>> {
+        // Collect AL files exactly as WorkspaceProvider does.
+        let mut files: Vec<SourceFile> = Vec::new();
+        for entry in WalkDir::new(&self.root).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("al") {
+                continue;
+            }
+            if path.components().any(|c| {
+                matches!(
+                    c.as_os_str().to_str(),
+                    Some(".alpackages") | Some(".snapshots") | Some("node_modules")
+                )
+            }) {
+                continue;
+            }
+            let text = std::fs::read_to_string(path)
+                .with_context(|| format!("reading local repo source {}", path.display()))?;
+            let virtual_path = path
+                .strip_prefix(&self.root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.push(SourceFile { virtual_path, text });
+        }
+        if files.is_empty() {
+            return Ok(None);
+        }
+        files.sort_by(|a, b| a.virtual_path.cmp(&b.virtual_path));
+        let mut hasher = blake3::Hasher::new();
+        for f in &files {
+            hasher.update(f.text.as_bytes());
+        }
+        let content_hash = hasher.finalize().to_hex().to_string();
+        let root = SourceRoot {
+            files,
+            tier: TrustTier::LocalSourceApproximate,
+            content_hash,
+        };
+        // Fail closed on identity mismatch.
+        if let IdentityCheck::Mismatch(_) = verify_local_source(requested, &root, Some(&self.app)) {
+            return Ok(None);
+        }
+        Ok(Some(root))
+    }
+}
+
+/// First provider (in priority order) that yields source wins.
+pub fn select_source(
+    app: &AppId,
+    providers: &[Box<dyn SourceProvider>],
+) -> Result<Option<SourceRoot>> {
+    for p in providers {
+        if let Some(root) = p.try_provide(app)? {
+            return Ok(Some(root));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

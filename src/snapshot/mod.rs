@@ -6,5 +6,6 @@
 pub mod embedded;
 pub mod identity;
 pub mod provider;
+pub mod verify;
 
 pub use identity::{AppId, Provenance, TrustTier};
