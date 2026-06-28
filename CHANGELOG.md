@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Report dataitems modelled in the owned IR.** `ObjectDecl.report_dataitems`
+  (`(name, source-table)` pairs) and `RoutineDecl.dataitem_source_table` (a dataitem
+  trigger's implicit-`Rec` table) let the IR-driven L2 path seed a report dataitem
+  trigger's implicit `Rec` (typed to its enclosing dataitem's source table) and the
+  dataitem-name record vars across all the report's routines — parity with the legacy
+  `report_dataitem_source_table` / `report_dataitem_record_vars`. Nested dataitems use
+  innermost-wins (None when the innermost dataitem's table is absent, matching legacy).
+
 ### Changed
 - **L2 emitter is now fully owned-IR-driven — no tree-sitter CST walk.**
   `l2_workspace::project_file` and `project_named_routine` iterate the owned AL

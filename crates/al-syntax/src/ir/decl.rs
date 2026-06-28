@@ -17,6 +17,13 @@ pub struct ObjectDecl {
     /// order. Needed by the engine to seed implicit-`Rec` table resolution and object
     /// classification; the value is the raw value text (trimmed).
     pub properties: Vec<ObjectProperty>,
+    /// Report `dataitem(Name; "Source Table")` declarations (name, source-table), both
+    /// unquoted, document order — Report/ReportExtension only (empty otherwise). A
+    /// dataitem name is in scope as a record var across ALL the report's routines, so
+    /// the engine seeds each as a record variable in every routine. Distinct from a
+    /// dataitem trigger's per-dataitem implicit `Rec` (see
+    /// [`RoutineDecl::dataitem_source_table`]).
+    pub report_dataitems: Vec<(String, String)>,
     pub origin: Origin,
 }
 
@@ -82,6 +89,11 @@ pub struct RoutineDecl {
     /// `has_error`). Mirrors the legacy `parseIncomplete` / drives the IR-vs-legacy
     /// feature-extraction choice (malformed routines use legacy ERROR-recovery).
     pub parse_incomplete: bool,
+    /// For a trigger nested inside a report `dataitem(Name; "Source Table")`, the
+    /// enclosing (innermost) dataitem's SOURCE TABLE name (unquoted) — the type of the
+    /// dataitem trigger's implicit `Rec`. `None` for any non-dataitem routine. Mirrors
+    /// the legacy `report_dataitem_source_table`.
+    pub dataitem_source_table: Option<String>,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,

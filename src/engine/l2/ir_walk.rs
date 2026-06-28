@@ -1795,6 +1795,11 @@ pub fn ir_record_variables(
     } else {
         None
     };
+    // A report DATAITEM trigger's implicit `Rec` is typed to its enclosing dataitem's
+    // source table (set directly, like codeunit TableNo). The two are mutually
+    // exclusive (a routine is in a codeunit OR a report); mirror legacy precedence
+    // (dataitem first) for `direct_rec_table`.
+    let direct_rec_table = routine.dataitem_source_table.clone().or(codeunit_tableno);
     // Page implicit Rec is gated on the RESOLVED source_table_name (as in
     // `implicit_base_receiver`), not merely the SourceTable property's presence —
     // mirroring `project_routine_features`'s `source_table_name` arg.
@@ -1802,17 +1807,38 @@ pub fn ir_record_variables(
         o.kind,
         ObjectKind::Table | ObjectKind::TableExtension | ObjectKind::PageExtension
     ) || (o.kind == ObjectKind::Page && source_table_name.is_some())
-        || codeunit_tableno.is_some();
+        || direct_rec_table.is_some();
     if has_implicit_rec && !out.iter().any(|v| v.name.eq_ignore_ascii_case("Rec")) {
         out.push(PRecordVariable {
             id: format!("{}/rv/rec", routine_id),
             name: "Rec".to_string(),
-            table_name: codeunit_tableno,
+            table_name: direct_rec_table,
             temp_state: ts_known(false),
             is_parameter: false,
             parameter_index: None,
             scope: None,
         });
+    }
+
+    // Report dataitem NAMES are in scope as record vars across ALL the report's
+    // routines (a dataitem may be referenced by name as a record typed to its source
+    // table). Seed each, skipping any name already declared (never shadow). Mirrors
+    // `project_routine_features`'s report_dataitem_record_vars block.
+    if matches!(o.kind, ObjectKind::Report | ObjectKind::ReportExtension) {
+        for (di_name, di_table) in &o.report_dataitems {
+            if out.iter().any(|v| v.name.eq_ignore_ascii_case(di_name)) {
+                continue;
+            }
+            out.push(PRecordVariable {
+                id: format!("{}/rv/dataitem/{}", routine_id, di_name),
+                name: di_name.clone(),
+                table_name: Some(di_table.clone()),
+                temp_state: ts_known(false),
+                is_parameter: false,
+                parameter_index: None,
+                scope: None,
+            });
+        }
     }
 
     out

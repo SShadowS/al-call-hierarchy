@@ -225,3 +225,92 @@ fn no_panic_on_garbage() {
         let _ = project_named_routine(src, "P", "app", "ws:g.al");
     }
 }
+
+/// Report dataitems are modelled in the owned IR (Phase-3 prep). A dataitem trigger's
+/// implicit `Rec` is typed to its enclosing dataitem's source table, and every report
+/// routine sees the dataitem NAMES as record vars typed to their source tables. This
+/// exercises `project_routine_features_ir` directly (the IR-driven L2 path), so the
+/// modeling is validated independent of the L3 emitter.
+#[test]
+fn report_dataitem_implicit_rec_and_name_vars_seeded() {
+    use al_call_hierarchy::engine::l2::ir_walk;
+    use al_call_hierarchy::engine::l2::scope::{compute_routine_id, ParameterSymbol};
+    let src = concat!(
+        "report 50100 \"My Report\"\n{\n",
+        "    dataset\n    {\n",
+        "        dataitem(Cust; Customer)\n        {\n",
+        "            trigger OnAfterGetRecord() begin Rec.TableCaption(); end;\n",
+        "        }\n    }\n",
+        "    procedure Helper() begin end;\n",
+        "}\n",
+    );
+    let f = al_syntax::parse(src);
+    let o = &f.objects[0];
+    // The report carries its dataitem (name, source-table) in the IR.
+    assert_eq!(
+        o.report_dataitems,
+        vec![("Cust".to_string(), "Customer".to_string())]
+    );
+
+    let oi = 0usize;
+    let no_params: Vec<ParameterSymbol> = vec![];
+    // The dataitem trigger: implicit `Rec` typed to Customer + a `Cust` dataitem-name var.
+    let trig = o
+        .routines
+        .iter()
+        .find(|r| r.name == "OnAfterGetRecord")
+        .expect("trigger");
+    assert_eq!(trig.dataitem_source_table.as_deref(), Some("Customer"));
+    let rid = compute_routine_id(
+        "a", "Report", 50100, "trigger", &trig.name, &no_params, None, "a",
+    );
+    let feats = ir_walk::project_routine_features_ir(&f, oi, trig, &rid, src, "a", None);
+    let rec = feats
+        .record_variables
+        .iter()
+        .find(|rv| rv.name.eq_ignore_ascii_case("Rec"))
+        .expect("implicit Rec seeded in the dataitem trigger");
+    assert_eq!(
+        rec.table_name.as_deref(),
+        Some("Customer"),
+        "dataitem trigger Rec typed to the dataitem source table"
+    );
+    assert!(
+        feats
+            .record_variables
+            .iter()
+            .any(|rv| rv.name == "Cust" && rv.table_name.as_deref() == Some("Customer")),
+        "dataitem name `Cust` seeded as a record var typed to Customer"
+    );
+
+    // A report-level procedure (NOT a dataitem trigger): no implicit dataitem Rec, but
+    // the dataitem NAME var is still in scope across the whole report.
+    let helper = o
+        .routines
+        .iter()
+        .find(|r| r.name == "Helper")
+        .expect("Helper");
+    assert_eq!(helper.dataitem_source_table, None);
+    let rid2 = compute_routine_id(
+        "a",
+        "Report",
+        50100,
+        "procedure",
+        &helper.name,
+        &no_params,
+        None,
+        "a",
+    );
+    let feats2 = ir_walk::project_routine_features_ir(&f, oi, helper, &rid2, src, "a", None);
+    assert!(
+        !feats2
+            .record_variables
+            .iter()
+            .any(|rv| rv.name.eq_ignore_ascii_case("Rec")),
+        "a report-level procedure has no implicit dataitem Rec"
+    );
+    assert!(
+        feats2.record_variables.iter().any(|rv| rv.name == "Cust"),
+        "the dataitem name var is in scope in report-level procedures too"
+    );
+}

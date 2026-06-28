@@ -100,13 +100,21 @@ fn lower_object(
         .unwrap_or_default();
 
     // Routines: every procedure/trigger anywhere in the object subtree (incl. field
-    // /action triggers nested in sections, and both #if/#else branches).
+    // /action triggers nested in sections, and both #if/#else branches). A dataitem
+    // trigger carries its enclosing dataitem's source table (implicit-`Rec` type).
     let mut routine_nodes = Vec::new();
-    collect_routines(node, &mut routine_nodes);
+    collect_routines(node, None, source, &mut routine_nodes);
     let routines = routine_nodes
         .into_iter()
-        .map(|(r, attr_items)| lower_routine(r, attr_items, source, ir, issues))
+        .map(|(r, attr_items, di_table)| lower_routine(r, attr_items, di_table, source, ir, issues))
         .collect();
+
+    // Report dataitems (name, source-table) — a dataitem name is in scope as a record
+    // var across all the report's routines. Reports only (empty otherwise).
+    let mut report_dataitems = Vec::new();
+    if matches!(kind, ObjectKind::Report | ObjectKind::ReportExtension) {
+        collect_report_dataitems(node, source, &mut report_dataitems);
+    }
 
     // Object globals: var_sections under the declaration_body (not inside routines).
     // Object-level properties (SourceTable / TableNo / PageType / …) are siblings.
@@ -130,7 +138,29 @@ fn lower_object(
         routines,
         globals,
         properties,
+        report_dataitems,
         origin: origin_of(node),
+    }
+}
+
+/// Collect every report `dataitem(Name; "Source Table")` (incl. nested) as
+/// `(name, source-table)`, both unquoted, document order. Mirrors the legacy
+/// `report_dataitem_record_vars`.
+fn collect_report_dataitems(node: RawNode, source: &str, out: &mut Vec<(String, String)>) {
+    for child in node.named_children() {
+        if child.kind() == RawKind::ReportDataitem {
+            let name = child
+                .field(FieldName::Name)
+                .map(|n| ident_text(n, source))
+                .unwrap_or_default();
+            let table = dataitem_table_name(child, source).unwrap_or_default();
+            if !name.is_empty() && !table.is_empty() {
+                out.push((name, table));
+            }
+        }
+        // Descend (nested dataitems live under a dataitem's body); routine bodies hold
+        // no dataitems so the extra recursion is harmless.
+        collect_report_dataitems(child, source, out);
     }
 }
 
@@ -153,24 +183,52 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
     })
 }
 
-/// DFS collecting `(routine, attribute names)` pairs. AL has no nested routines, so
-/// we do not descend into a routine once found. `attribute_item` nodes are SIBLINGS
-/// preceding the routine (grammar v2+); accumulate their names (lowercased) and
-/// attach to the next routine, resetting on any other node.
-fn collect_routines<'t>(node: RawNode<'t>, out: &mut Vec<(RawNode<'t>, Vec<RawNode<'t>>)>) {
+/// DFS collecting `(routine, attribute items, enclosing-dataitem-source-table)`
+/// triples. AL has no nested routines, so we do not descend into a routine once found.
+/// `attribute_item` nodes are SIBLINGS preceding the routine (grammar v2+); accumulate
+/// them and attach to the next routine, resetting on any other node. When the walk
+/// crosses into a report `dataitem(Name; "Source Table")`, the (innermost) dataitem's
+/// source table is threaded down so a dataitem trigger gets its implicit-`Rec` type.
+fn collect_routines<'t>(
+    node: RawNode<'t>,
+    dataitem_table: Option<&str>,
+    source: &str,
+    out: &mut Vec<(RawNode<'t>, Vec<RawNode<'t>>, Option<String>)>,
+) {
     let mut pending: Vec<RawNode<'t>> = Vec::new();
     for child in node.named_children() {
         match child.kind() {
             RawKind::AttributeItem => pending.push(child),
             RawKind::Procedure | RawKind::TriggerDeclaration => {
-                out.push((child, std::mem::take(&mut pending)));
+                out.push((
+                    child,
+                    std::mem::take(&mut pending),
+                    dataitem_table.map(str::to_string),
+                ));
+            }
+            RawKind::ReportDataitem => {
+                pending.clear();
+                // The innermost enclosing dataitem wins — including when its own source
+                // table is absent/unparseable (→ None, NOT the outer table). Mirrors the
+                // legacy `report_dataitem_source_table`, which takes the first (innermost)
+                // enclosing dataitem's `table_name?` and stops (never inherits an outer).
+                let inner = dataitem_table_name(child, source);
+                collect_routines(child, inner.as_deref(), source, out);
             }
             _ => {
                 pending.clear();
-                collect_routines(child, out);
+                collect_routines(child, dataitem_table, source, out);
             }
         }
     }
+}
+
+/// The unquoted source-table name of a `report_dataitem(Name; "Source Table")` node
+/// (its `table_name` field). `None` if absent.
+fn dataitem_table_name(node: RawNode, source: &str) -> Option<String> {
+    node.field(FieldName::TableName)
+        .map(|n| ident_text(n, source))
+        .filter(|s| !s.is_empty())
 }
 
 /// Collect object-level var declarations, descending preproc wrappers (both
@@ -190,6 +248,7 @@ fn collect_globals(node: RawNode, source: &str, out: &mut Vec<VarDecl>) {
 fn lower_routine<'t>(
     node: RawNode<'t>,
     attr_items: Vec<RawNode<'t>>,
+    dataitem_source_table: Option<String>,
     source: &str,
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
@@ -280,6 +339,7 @@ fn lower_routine<'t>(
         attributes_parsed,
         access_modifier,
         parse_incomplete: node.has_error(),
+        dataitem_source_table,
         body,
         origin: origin_of(node),
     }
