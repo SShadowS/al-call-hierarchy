@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`al_syntax::lookup_symbol_properties` facade (Phase 4, step 3).** A semantic,
+  owned-types CST-backed lookup for a table field's / page action's properties
+  (`SymbolDeclKind`, `SymbolProperties`). The IR models a field's number/name/type/
+  class but not arbitrary per-field properties, and doesn't model actions — so these
+  two niche LSP requests (`fieldProperties` / `actionProperties`) call this facade
+  rather than bloating the always-parsed IR. tree-sitter stays inside `al-syntax`; no
+  `tree_sitter` type crosses the boundary.
 - **Owned-IR projection of the LSP front-end `ParsedFile` (Phase 4, step 1).**
   `parser::parse_file_ir(source)` produces the same `ParsedFile` (definitions / calls /
   variables / event subscribers+publishers / framework-invoked / object) as the legacy
@@ -23,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `selection_range` (e.g. an event publisher's procedure-name range).
 
 ### Changed
+- **LSP front-end production paths now run on the owned IR (Phase 4, step 3).**
+  `handlers::field_properties`/`action_properties` call the al-syntax facade;
+  the CLI `--analyze` per-procedure metrics (`main::extract_metrics_ir`) iterate the
+  IR and use the canonical IR cyclomatic-complexity walker
+  (`parser::routine_complexity_ir`); `analysis`'s complexity unit tests assert against
+  that IR walker. The tree-sitter `analysis::calculate_complexity` + the legacy
+  `AlParser` (and its 6 S-expr queries) remain ONLY as the differential-test oracle
+  behind `#[allow(dead_code)]`, deleted next (Phase 4.4) when the differential becomes
+  an IR-output snapshot golden.
 - **L3 is now tree-sitter-free (Phase 3 complete).** `l3_workspace::project_file` no
   longer takes a tree-sitter `root` — it iterates the owned IR directly
   (`ir_file.objects` → `o.routines`), sourcing every routine's kind / attributes /

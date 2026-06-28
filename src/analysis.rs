@@ -47,13 +47,13 @@ pub struct AnalysisResult {
 
 use crate::config::DiagnosticConfig;
 
-/// Calculate cyclomatic complexity by walking the AST subtree
+/// Calculate cyclomatic complexity by walking the AST subtree.
 ///
-/// Counts decision points:
-/// - if statements (+1 for if, +1 for else)
-/// - case branches (+1 per branch)
-/// - loops: while, for, foreach, repeat (+1 each)
-/// - logical operators: and, or (+1 each)
+/// LEGACY / INTERIM: the canonical complexity metric is now
+/// [`crate::parser::routine_complexity_ir`] (IR-based). This tree-sitter version is
+/// retained only as a dependency of the legacy `AlParser` differential-test oracle
+/// and is deleted alongside it (Phase 4.4).
+#[allow(dead_code)]
 pub fn calculate_complexity(node: &Node) -> u32 {
     let mut complexity = 1; // Base complexity (single path)
     let mut cursor = node.walk();
@@ -61,6 +61,7 @@ pub fn calculate_complexity(node: &Node) -> u32 {
     complexity
 }
 
+#[allow(dead_code)]
 fn count_decision_points(cursor: &mut TreeCursor, complexity: &mut u32) {
     let node = cursor.node();
     let kind = node.kind();
@@ -249,37 +250,18 @@ pub fn build_summary(metrics: &[ProcedureMetrics], findings: &[Finding]) -> Anal
 mod tests {
     use super::*;
 
-    /// Helper to find procedure nodes in the AST for testing
-    fn find_procedure_node<'a>(
-        cursor: &mut tree_sitter::TreeCursor<'a>,
-        name: &str,
-        source: &str,
-    ) -> Option<tree_sitter::Node<'a>> {
-        let node = cursor.node();
-        if node.kind() == "procedure" {
-            // Check if this procedure has the name we're looking for
-            // The field is named "name" in the grammar
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let proc_name = &source[name_node.byte_range()];
-                if proc_name == name {
-                    return Some(node);
+    /// Cyclomatic complexity of a named routine, via the owned IR (the canonical
+    /// complexity walker — the tree-sitter `calculate_complexity` is retired).
+    fn complexity_of(al_code: &str, proc_name: &str) -> u32 {
+        let f = al_syntax::parse(al_code);
+        for obj in &f.objects {
+            for r in &obj.routines {
+                if r.name == proc_name {
+                    return crate::parser::routine_complexity_ir(&f.ir, r);
                 }
             }
         }
-
-        if cursor.goto_first_child() {
-            loop {
-                if let Some(found) = find_procedure_node(cursor, name, source) {
-                    cursor.goto_parent();
-                    return Some(found);
-                }
-                if !cursor.goto_next_sibling() {
-                    break;
-                }
-            }
-            cursor.goto_parent();
-        }
-        None
+        panic!("procedure {proc_name} not found");
     }
 
     #[test]
@@ -324,19 +306,7 @@ mod tests {
     end;
 }"#;
 
-        // Parse the AL code
-        let lang = crate::language::language();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).expect("Failed to set language");
-        let tree = parser.parse(al_code, None).expect("Failed to parse");
-
-        // Find the ComplexProcedure node
-        let mut cursor = tree.walk();
-        let proc_node = find_procedure_node(&mut cursor, "ComplexProcedure", al_code)
-            .expect("Could not find ComplexProcedure");
-
-        // Calculate complexity
-        let complexity = calculate_complexity(&proc_node);
+        let complexity = complexity_of(al_code, "ComplexProcedure");
 
         // Expected 9 (1 + if + nested if/else + while + if + `and` + 2 case branches).
         // The tree-sitter-al grammar fix (owned-IR consumer: named in/is/as expressions,
@@ -361,16 +331,7 @@ mod tests {
     end;
 }"#;
 
-        let lang = crate::language::language();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).expect("Failed to set language");
-        let tree = parser.parse(al_code, None).expect("Failed to parse");
-
-        let mut cursor = tree.walk();
-        let proc_node = find_procedure_node(&mut cursor, "IfElseProcedure", al_code)
-            .expect("Could not find IfElseProcedure");
-
-        let complexity = calculate_complexity(&proc_node);
+        let complexity = complexity_of(al_code, "IfElseProcedure");
         // Base: 1, if: +1, else: +1 = 3
         assert_eq!(
             complexity, 3,
@@ -390,16 +351,7 @@ mod tests {
     end;
 }"#;
 
-        let lang = crate::language::language();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).expect("Failed to set language");
-        let tree = parser.parse(al_code, None).expect("Failed to parse");
-
-        let mut cursor = tree.walk();
-        let proc_node = find_procedure_node(&mut cursor, "SimpleProcedure", al_code)
-            .expect("Could not find SimpleProcedure");
-
-        let complexity = calculate_complexity(&proc_node);
+        let complexity = complexity_of(al_code, "SimpleProcedure");
         assert_eq!(complexity, 1, "Simple procedure should have complexity 1");
     }
 
@@ -428,16 +380,7 @@ mod tests {
     end;
 }"#;
 
-        let lang = crate::language::language();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).expect("Failed to set language");
-        let tree = parser.parse(al_code, None).expect("Failed to parse");
-
-        let mut cursor = tree.walk();
-        let proc_node = find_procedure_node(&mut cursor, "LoopProcedure", al_code)
-            .expect("Could not find LoopProcedure");
-
-        let complexity = calculate_complexity(&proc_node);
+        let complexity = complexity_of(al_code, "LoopProcedure");
         // Base: 1, for: +1, foreach: +1, repeat: +1, while: +1 = 5
         assert_eq!(
             complexity, 5,
@@ -468,16 +411,7 @@ mod tests {
     end;
 }"#;
 
-        let lang = crate::language::language();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).expect("Failed to set language");
-        let tree = parser.parse(al_code, None).expect("Failed to parse");
-
-        let mut cursor = tree.walk();
-        let proc_node = find_procedure_node(&mut cursor, "LogicalProcedure", al_code)
-            .expect("Could not find LogicalProcedure");
-
-        let complexity = calculate_complexity(&proc_node);
+        let complexity = complexity_of(al_code, "LogicalProcedure");
         // Base: 1
         // if a and b: +1 (if) +1 (and)
         // if a or b: +1 (if) +1 (or)

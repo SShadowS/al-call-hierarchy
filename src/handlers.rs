@@ -71,8 +71,7 @@ pub fn handle_request(
             Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/eventPublishersInFile" => {
-            let params: EventPublishersInFileParams =
-                serde_json::from_value(req.params.clone())?;
+            let params: EventPublishersInFileParams = serde_json::from_value(req.params.clone())?;
             let result = event_publishers_in_file(indexer, params)?;
             Ok(serde_json::to_value(result)?)
         }
@@ -547,161 +546,49 @@ struct PropertyEntry {
     value: String,
 }
 
-/// Parse a file with tree-sitter and extract all properties for a field
+/// Extract all properties for a table field, via the owned `al-syntax` facade.
 fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
-    let (tree, source) = parse_file_from_uri(&params.uri)?;
-    let target = params.field_name.trim().trim_matches('"').to_lowercase();
-    let mut cursor = tree.root_node().walk();
-    Ok(
-        find_node_properties(&mut cursor, &source, "field_declaration", &target, true)
-            .unwrap_or_default(),
+    let source = read_source_from_uri(&params.uri)?;
+    Ok(al_syntax::lookup_symbol_properties(
+        &source,
+        al_syntax::SymbolDeclKind::Field,
+        &params.field_name,
     )
+    .map(to_symbol_properties_result)
+    .unwrap_or_default())
 }
 
-/// Parse a file with tree-sitter and extract all properties for an action
+/// Extract all properties for a page action, via the owned `al-syntax` facade.
 fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
-    let (tree, source) = parse_file_from_uri(&params.uri)?;
-    let target = params.action_name.trim().trim_matches('"').to_lowercase();
-    let mut cursor = tree.root_node().walk();
-    Ok(
-        find_node_properties(&mut cursor, &source, "action_declaration", &target, false)
-            .unwrap_or_default(),
+    let source = read_source_from_uri(&params.uri)?;
+    Ok(al_syntax::lookup_symbol_properties(
+        &source,
+        al_syntax::SymbolDeclKind::Action,
+        &params.action_name,
     )
+    .map(to_symbol_properties_result)
+    .unwrap_or_default())
 }
 
-/// Parse an AL file from a URI and return the tree + source
-fn parse_file_from_uri(uri_str: &str) -> Result<(tree_sitter::Tree, String)> {
-    use crate::language;
-    use tree_sitter::Parser;
-
+/// Read an AL file's source from a `file:` URI (no parsing — al-syntax owns that).
+fn read_source_from_uri(uri_str: &str) -> Result<String> {
     let uri: lsp_types::Uri = uri_str.parse().context("Invalid URI")?;
     let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
-
-    let source = std::fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    let lang = language::language();
-    let mut parser = Parser::new();
-    parser
-        .set_language(&lang)
-        .context("Failed to set language")?;
-
-    let tree = parser
-        .parse(&source, None)
-        .context("Failed to parse file")?;
-
-    Ok((tree, source))
+    std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
-/// Recursively search for a declaration node matching the target name,
-/// then extract all properties from it.
-fn find_node_properties(
-    cursor: &mut tree_sitter::TreeCursor,
-    source: &str,
-    node_kind: &str,
-    target_name: &str,
-    extract_field_id: bool,
-) -> Option<SymbolPropertiesResult> {
-    loop {
-        let node = cursor.node();
-
-        if node.kind() == node_kind {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name = &source[name_node.byte_range()];
-                let clean = name.trim().trim_matches('"').to_lowercase();
-                if clean == target_name {
-                    return Some(extract_all_properties(&node, source, extract_field_id));
-                }
-            }
-        }
-
-        if cursor.goto_first_child() {
-            if let Some(result) =
-                find_node_properties(cursor, source, node_kind, target_name, extract_field_id)
-            {
-                return Some(result);
-            }
-            cursor.goto_parent();
-        }
-
-        if !cursor.goto_next_sibling() {
-            return None;
-        }
-    }
-}
-
-/// Extract ALL properties from a declaration node.
-/// Any child node whose kind ends with "_property" is collected.
-fn extract_all_properties(
-    decl_node: &tree_sitter::Node,
-    source: &str,
-    extract_field_id: bool,
-) -> SymbolPropertiesResult {
-    let mut result = SymbolPropertiesResult::default();
-
-    // Extract field ID if requested (for field_declaration nodes)
-    if extract_field_id {
-        if let Some(id_node) = decl_node.child_by_field_name("id") {
-            if let Ok(id) = source[id_node.byte_range()].trim().parse::<u32>() {
-                result.field_id = Some(id);
-            }
-        }
-    }
-
-    // tree-sitter-al v3 wraps a declaration's properties/triggers in a
-    // `body` field (a `declaration_body` node) instead of leaving them as
-    // direct children. Descend into it when present; fall back to iterating
-    // the declaration's own children for older grammars.
-    let container = decl_node
-        .child_by_field_name("body")
-        .unwrap_or_else(|| *decl_node);
-
-    let mut cursor = container.walk();
-    if !cursor.goto_first_child() {
-        return result;
-    }
-
-    loop {
-        let child = cursor.node();
-        let kind = child.kind();
-
-        // V2: all properties are `property` nodes with `name` and `value` fields
-        if kind == "property" {
-            if let Some(name_node) = child.child_by_field_name("name") {
-                let prop_name = source[name_node.byte_range()].trim().to_string();
-                let prop_value = if let Some(value_node) = child.child_by_field_name("value") {
-                    source[value_node.byte_range()].trim().to_string()
-                } else {
-                    // Fallback: extract value after '='
-                    extract_property_value(&child, source)
-                };
-                result.properties.push(PropertyEntry {
-                    name: prop_name,
-                    value: prop_value,
-                });
-            }
-        }
-
-        if !cursor.goto_next_sibling() {
-            break;
-        }
-    }
-
-    result
-}
-
-/// Extract the value portion of a property node (everything after the '=')
-fn extract_property_value(node: &tree_sitter::Node, source: &str) -> String {
-    let text = source[node.byte_range()].trim();
-    // Properties follow the pattern: PropertyName = value;
-    // Extract everything after '=' and before the trailing ';'
-    if let Some(eq_pos) = text.find('=') {
-        let value = text[eq_pos + 1..].trim();
-        // Remove trailing semicolon
-        let value = value.strip_suffix(';').unwrap_or(value).trim();
-        value.to_string()
-    } else {
-        text.to_string()
+/// Map the al-syntax facade result into the LSP response shape.
+fn to_symbol_properties_result(p: al_syntax::SymbolProperties) -> SymbolPropertiesResult {
+    SymbolPropertiesResult {
+        field_id: p.field_id,
+        properties: p
+            .properties
+            .into_iter()
+            .map(|e| PropertyEntry {
+                name: e.name,
+                value: e.value,
+            })
+            .collect(),
     }
 }
 
@@ -749,9 +636,6 @@ mod tests {
 
     #[test]
     fn test_field_properties_extraction() {
-        use crate::language;
-        use tree_sitter::Parser;
-
         let source = r#"
 table 50000 "TEST Customer"
 {
@@ -781,12 +665,6 @@ table 50000 "TEST Customer"
 }
 "#;
 
-        let lang = language::language();
-        let mut parser = Parser::new();
-        parser.set_language(&lang).unwrap();
-        let tree = parser.parse(source, None).unwrap();
-        let root = tree.root_node();
-
         // Helper to find a property by name in the result
         fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
             result
@@ -795,12 +673,19 @@ table 50000 "TEST Customer"
                 .find(|p| p.name == name)
                 .map(|p| p.value.clone())
         }
+        let lookup = |target: &str| {
+            to_symbol_properties_result(
+                al_syntax::lookup_symbol_properties(
+                    source,
+                    al_syntax::SymbolDeclKind::Field,
+                    target,
+                )
+                .unwrap(),
+            )
+        };
 
         // Test Balance field (FlowField with CalcFormula)
-        let mut cursor = root.walk();
-        let result =
-            find_node_properties(&mut cursor, source, "field_declaration", "balance", true)
-                .unwrap();
+        let result = lookup("balance");
         assert_eq!(result.field_id, Some(11));
         assert_eq!(prop(&result, "Caption").as_deref(), Some("'Balance'"));
         assert_eq!(prop(&result, "Editable").as_deref(), Some("false"));
@@ -811,15 +696,7 @@ table 50000 "TEST Customer"
             .contains("Cust. Ledger Entry"));
 
         // Test Payment Terms Code field (with TableRelation)
-        let mut cursor = root.walk();
-        let result = find_node_properties(
-            &mut cursor,
-            source,
-            "field_declaration",
-            "payment terms code",
-            true,
-        )
-        .unwrap();
+        let result = lookup("payment terms code");
         assert_eq!(result.field_id, Some(20));
         assert!(prop(&result, "TableRelation").is_some());
         assert!(prop(&result, "TableRelation")
@@ -827,9 +704,7 @@ table 50000 "TEST Customer"
             .contains("Payment Terms"));
 
         // Test No. field (basic field)
-        let mut cursor = root.walk();
-        let result =
-            find_node_properties(&mut cursor, source, "field_declaration", "no.", true).unwrap();
+        let result = lookup("no.");
         assert_eq!(result.field_id, Some(1));
         assert_eq!(prop(&result, "Caption").as_deref(), Some("'No.'"));
         assert_eq!(
@@ -842,9 +717,6 @@ table 50000 "TEST Customer"
 
     #[test]
     fn test_action_properties_extraction() {
-        use crate::language;
-        use tree_sitter::Parser;
-
         let source = r#"
 page 50001 "TEST Customer Card"
 {
@@ -883,12 +755,6 @@ page 50001 "TEST Customer Card"
 }
 "#;
 
-        let lang = language::language();
-        let mut parser = Parser::new();
-        parser.set_language(&lang).unwrap();
-        let tree = parser.parse(source, None).unwrap();
-        let root = tree.root_node();
-
         // Helper to find a property by name
         fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
             result
@@ -897,17 +763,19 @@ page 50001 "TEST Customer Card"
                 .find(|p| p.name == name)
                 .map(|p| p.value.clone())
         }
+        let lookup = |target: &str| {
+            to_symbol_properties_result(
+                al_syntax::lookup_symbol_properties(
+                    source,
+                    al_syntax::SymbolDeclKind::Action,
+                    target,
+                )
+                .unwrap(),
+            )
+        };
 
         // Test LedgerEntries action (with RunObject)
-        let mut cursor = root.walk();
-        let result = find_node_properties(
-            &mut cursor,
-            source,
-            "action_declaration",
-            "ledgerentries",
-            false,
-        )
-        .unwrap();
+        let result = lookup("ledgerentries");
         assert_eq!(
             prop(&result, "Caption").as_deref(),
             Some("'Ledger E&ntries'")
@@ -926,15 +794,7 @@ page 50001 "TEST Customer Card"
             .contains("history of transactions"));
 
         // Test CheckCreditLimit action (no RunObject, has trigger)
-        let mut cursor = root.walk();
-        let result = find_node_properties(
-            &mut cursor,
-            source,
-            "action_declaration",
-            "checkcreditlimit",
-            false,
-        )
-        .unwrap();
+        let result = lookup("checkcreditlimit");
         assert_eq!(
             prop(&result, "Caption").as_deref(),
             Some("'Check Credit Limit'")
@@ -1612,12 +1472,16 @@ fn parse_al_preview_uri(uri: &str) -> Option<(String, ObjectType, String)> {
         return None;
     }
 
-    let object_type: ObjectType = ObjectType::try_from(urldecode(segments[type_idx]).as_str()).ok()?;
+    let object_type: ObjectType =
+        ObjectType::try_from(urldecode(segments[type_idx]).as_str()).ok()?;
     let app_parts: Vec<String> = segments[1..type_idx].iter().map(|s| urldecode(s)).collect();
     let app = app_parts.join("/");
 
     // Skip Id segment, take rest as Name (may contain slashes if Microsoft ever does that).
-    let name_parts: Vec<String> = segments[type_idx + 2..].iter().map(|s| urldecode(s)).collect();
+    let name_parts: Vec<String> = segments[type_idx + 2..]
+        .iter()
+        .map(|s| urldecode(s))
+        .collect();
     let mut name = name_parts.join("/");
     // The original Name segment may also have included the trailing ".dal";
     // we already stripped it once from the whole URI, but if it landed inside
@@ -1658,8 +1522,8 @@ fn method_kind_to_lsp_kind(kind: DependencyMethodKind) -> u32 {
         DependencyMethodKind::IntegrationEvent
         | DependencyMethodKind::BusinessEvent
         | DependencyMethodKind::InternalEvent => 24, // Event
-        DependencyMethodKind::EventSubscriber => 6,  // Method (still a method, just tagged)
-        DependencyMethodKind::Procedure => 6,        // Method
+        DependencyMethodKind::EventSubscriber => 6, // Method (still a method, just tagged)
+        DependencyMethodKind::Procedure => 6,       // Method
     }
 }
 
@@ -1764,8 +1628,7 @@ mod dependency_doc_symbol_tests {
             &indexer_arc,
             super::DependencyDocumentSymbolParams {
                 uri: Some(
-                    "al-preview:/allang/Base Application/Codeunit/1535/Approvals Mgmt..dal"
-                        .into(),
+                    "al-preview:/allang/Base Application/Codeunit/1535/Approvals Mgmt..dal".into(),
                 ),
                 app: None,
                 object_type: None,
@@ -1775,15 +1638,29 @@ mod dependency_doc_symbol_tests {
         )
         .expect("rpc");
 
-        assert!(result.len() > 100, "Expected many methods; got {}", result.len());
+        assert!(
+            result.len() > 100,
+            "Expected many methods; got {}",
+            result.len()
+        );
 
         let event_count = result.iter().filter(|s| s.kind == 24).count();
-        assert!(event_count > 50, "Expected many event publishers; got {}", event_count);
+        assert!(
+            event_count > 50,
+            "Expected many event publishers; got {}",
+            event_count
+        );
 
         // Sanity: an event entry should have a tagged detail string and a real signature.
         let any_event = result.iter().find(|s| s.kind == 24).unwrap();
-        assert!(any_event.detail.starts_with("[IntegrationEvent]") || any_event.detail.starts_with("[BusinessEvent]"));
-        assert!(any_event.detail.contains('('), "Detail must contain signature");
+        assert!(
+            any_event.detail.starts_with("[IntegrationEvent]")
+                || any_event.detail.starts_with("[BusinessEvent]")
+        );
+        assert!(
+            any_event.detail.contains('('),
+            "Detail must contain signature"
+        );
 
         eprintln!(
             "rpc_on_approvals_mgmt: total={} events={} sample-detail={}",
@@ -1927,10 +1804,12 @@ fn event_reference_at_position(
     let graph = indexer.graph();
 
     // Resolve publisher_object_type → ObjectType (best effort)
-    let otype: Option<ObjectType> = ObjectType::try_from(parsed_ref.publisher_object_type.as_str()).ok();
+    let otype: Option<ObjectType> =
+        ObjectType::try_from(parsed_ref.publisher_object_type.as_str()).ok();
 
     // Find a dependency object matching (type, name); search across apps.
-    let dep = otype.and_then(|t| graph.find_dependency_object_by_type_name(t, &parsed_ref.publisher_object));
+    let dep = otype
+        .and_then(|t| graph.find_dependency_object_by_type_name(t, &parsed_ref.publisher_object));
 
     let (signature, kind_tag, app_name, app_version) = match dep {
         Some(obj) => {
@@ -1941,10 +1820,24 @@ fn event_reference_at_position(
             match m {
                 Some(m) => {
                     let tag = m.kind.tag();
-                    let tag_opt = if tag.is_empty() { None } else { Some(tag.to_string()) };
-                    (Some(m.signature.clone()), tag_opt, Some(obj.app_name.clone()), Some(obj.app_version.clone()))
+                    let tag_opt = if tag.is_empty() {
+                        None
+                    } else {
+                        Some(tag.to_string())
+                    };
+                    (
+                        Some(m.signature.clone()),
+                        tag_opt,
+                        Some(obj.app_name.clone()),
+                        Some(obj.app_version.clone()),
+                    )
                 }
-                None => (None, None, Some(obj.app_name.clone()), Some(obj.app_version.clone())),
+                None => (
+                    None,
+                    None,
+                    Some(obj.app_name.clone()),
+                    Some(obj.app_version.clone()),
+                ),
             }
         }
         None => (None, None, None, None),
@@ -2113,7 +2006,8 @@ fn find_matching_close(s: &str, start: usize) -> Option<usize> {
                         b'*' => {
                             // block comment runs to */ or end
                             i += 2;
-                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/')
+                            {
                                 i += 1;
                             }
                             if i + 1 < bytes.len() {
@@ -2234,7 +2128,8 @@ fn strip_al_comments(s: &str) -> String {
                         }
                         b'*' => {
                             i += 2;
-                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/')
+                            {
                                 i += 1;
                             }
                             if i + 1 < bytes.len() {
@@ -2293,7 +2188,8 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
                         }
                         b'*' => {
                             i += 2;
-                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/')
+                            {
                                 i += 1;
                             }
                             if i + 1 < bytes.len() {
@@ -2341,7 +2237,10 @@ mod event_ref_tests {
     fn finds_event_name_on_cursor() {
         // Cursor in the middle of 'OnAfterPostApprovalEntries'.
         // The literal starts at col ~80; aim for col 95.
-        let pos = lsp_types::Position { line: 2, character: 95 };
+        let pos = lsp_types::Position {
+            line: 2,
+            character: 95,
+        };
         let r = find_event_subscriber_arg_at(SUBSCRIBER_SRC, pos).expect("hit");
         assert_eq!(r.publisher_object_type, "Codeunit");
         assert_eq!(r.publisher_object, "Approvals Mgmt.");
@@ -2350,7 +2249,10 @@ mod event_ref_tests {
 
     #[test]
     fn returns_none_outside_attribute() {
-        let pos = lsp_types::Position { line: 4, character: 4 };
+        let pos = lsp_types::Position {
+            line: 4,
+            character: 4,
+        };
         assert!(find_event_subscriber_arg_at(SUBSCRIBER_SRC, pos).is_none());
     }
 
@@ -2362,7 +2264,10 @@ mod event_ref_tests {
     local procedure X() begin end;
 }
 "#;
-        let pos = lsp_types::Position { line: 2, character: 80 };
+        let pos = lsp_types::Position {
+            line: 2,
+            character: 80,
+        };
         let r = find_event_subscriber_arg_at(src, pos).expect("hit");
         assert_eq!(r.publisher_object_type, "Table");
         assert_eq!(r.publisher_object, "Sales Header");
@@ -2386,7 +2291,10 @@ mod event_ref_tests {
 }
 "#;
         // Cursor on the event name (line 5, 0-based; the literal starts ~col 9).
-        let pos = lsp_types::Position { line: 5, character: 20 };
+        let pos = lsp_types::Position {
+            line: 5,
+            character: 20,
+        };
         let r = find_event_subscriber_arg_at(src, pos).expect("hit");
         assert_eq!(r.event_name, "OnAfterPostApprovalEntries");
         assert_eq!(r.publisher_object, "Approvals Mgmt.");
@@ -2402,7 +2310,10 @@ mod event_ref_tests {
     local procedure X() begin end;
 }
 "#;
-        let pos = lsp_types::Position { line: 2, character: 102 }; // mid 'OnAfterPost'
+        let pos = lsp_types::Position {
+            line: 2,
+            character: 102,
+        }; // mid 'OnAfterPost'
         let r = find_event_subscriber_arg_at(src, pos).expect("hit");
         assert_eq!(r.publisher_object_type, "Codeunit");
         assert_eq!(r.publisher_object, "Approvals Mgmt.");
@@ -2420,7 +2331,10 @@ mod event_ref_tests {
 }
 "#;
         // Cursor anywhere inside attribute should still find the event.
-        let pos = lsp_types::Position { line: 2, character: 95 };
+        let pos = lsp_types::Position {
+            line: 2,
+            character: 95,
+        };
         let r = find_event_subscriber_arg_at(src, pos).expect("hit");
         assert_eq!(r.event_name, "OnFoo");
     }
@@ -2435,7 +2349,10 @@ mod event_ref_tests {
     local procedure X() begin end;
 }
 "#;
-        let pos = lsp_types::Position { line: 2, character: 65 };
+        let pos = lsp_types::Position {
+            line: 2,
+            character: 65,
+        };
         let r = find_event_subscriber_arg_at(src, pos).expect("hit");
         assert_eq!(r.event_name, "OnFoo");
     }

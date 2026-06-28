@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use log::info;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod analysis;
 mod app_package;
@@ -117,10 +117,8 @@ fn main() -> Result<()> {
 fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
     use analysis::{build_summary, generate_findings, AnalysisResult, ProcedureMetrics};
     use rayon::prelude::*;
-    use std::cell::RefCell;
     use std::fs;
     use std::time::Instant;
-    use tree_sitter::Parser as TsParser;
     use walkdir::WalkDir;
 
     let start = Instant::now();
@@ -141,38 +139,12 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
 
     info!("Found {} AL files", al_files.len());
 
-    // Thread-local parser for parallel processing
-    thread_local! {
-        static PARSER: RefCell<Option<TsParser>> = const { RefCell::new(None) };
-    }
-
-    // Parse files and collect metrics in parallel
+    // Parse + collect per-procedure metrics in parallel, from the owned IR.
     let all_metrics: Vec<ProcedureMetrics> = al_files
         .par_iter()
-        .flat_map(|path| {
-            let source = match fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => return vec![],
-            };
-
-            PARSER.with(|cell| {
-                let mut parser_opt = cell.borrow_mut();
-                if parser_opt.is_none() {
-                    let mut parser = TsParser::new();
-                    if parser.set_language(&language::language()).is_err() {
-                        return vec![];
-                    }
-                    *parser_opt = Some(parser);
-                }
-
-                let parser = parser_opt.as_mut().unwrap();
-                let tree = match parser.parse(&source, None) {
-                    Some(t) => t,
-                    None => return vec![],
-                };
-
-                extract_metrics_from_tree(&tree.root_node(), &source, path)
-            })
+        .flat_map(|path| match fs::read_to_string(path) {
+            Ok(source) => extract_metrics_ir(&source, path),
+            Err(_) => vec![],
         })
         .collect();
 
@@ -214,167 +186,79 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// Extract metrics from a parsed tree
-fn extract_metrics_from_tree(
-    root: &tree_sitter::Node,
-    source: &str,
-    path: &PathBuf,
-) -> Vec<analysis::ProcedureMetrics> {
+/// Extract per-procedure quality metrics for one file from the owned IR. Each
+/// routine is attributed to its enclosing object (object type/name). Replaces the
+/// former tree-sitter walk; complexity comes from the canonical IR walker.
+fn extract_metrics_ir(source: &str, path: &Path) -> Vec<analysis::ProcedureMetrics> {
+    use al_syntax::ir::RoutineKind;
+    use analysis::calculate_quality_score;
+
+    let f = al_syntax::parse(source);
+    let file_str = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.display().to_string());
+
     let mut metrics = Vec::new();
-    let mut object_type = String::new();
-    let mut object_name = String::new();
+    for obj in &f.objects {
+        let object_type = object_kind_label(obj.kind);
+        let object_name = obj.name.trim_matches('"').to_string();
+        for r in &obj.routines {
+            let procedure_name = if r.name.is_empty() {
+                match r.kind {
+                    RoutineKind::Procedure => "procedure",
+                    RoutineKind::Trigger => "trigger_declaration",
+                }
+                .to_string()
+            } else {
+                r.name.trim_matches('"').to_string()
+            };
+            let complexity = parser::routine_complexity_ir(&f.ir, r);
+            let line_count = r.origin.end.row.saturating_sub(r.origin.start.row) + 1;
+            let parameter_count = r.params.len() as u32;
+            let quality_score = calculate_quality_score(complexity, line_count, parameter_count);
 
-    // Find object declaration and procedures
-    let mut cursor = root.walk();
-    extract_object_and_procedures(
-        &mut cursor,
-        source,
-        path,
-        &mut object_type,
-        &mut object_name,
-        &mut metrics,
-    );
-
+            metrics.push(analysis::ProcedureMetrics {
+                object_type: object_type.clone(),
+                object_name: object_name.clone(),
+                procedure_name,
+                file: file_str.clone(),
+                line: r.origin.start.row + 1,
+                complexity,
+                line_count,
+                parameter_count,
+                quality_score,
+            });
+        }
+    }
     metrics
 }
 
-fn extract_object_and_procedures(
-    cursor: &mut tree_sitter::TreeCursor,
-    source: &str,
-    path: &PathBuf,
-    object_type: &mut String,
-    object_name: &mut String,
-    metrics: &mut Vec<analysis::ProcedureMetrics>,
-) {
-    use analysis::{calculate_complexity, calculate_quality_score};
-
-    let node = cursor.node();
-    let kind = node.kind();
-
-    // Detect object declarations (top-level AL object types only)
-    // These are the main object declarations, not variable/parameter declarations
-    let is_object_declaration = matches!(
-        kind,
-        "codeunit_declaration"
-            | "table_declaration"
-            | "page_declaration"
-            | "report_declaration"
-            | "query_declaration"
-            | "xmlport_declaration"
-            | "enum_declaration"
-            | "interface_declaration"
-            | "controladdin_declaration"
-            | "pageextension_declaration"
-            | "tableextension_declaration"
-            | "enumextension_declaration"
-            | "permissionset_declaration"
-            | "permissionsetextension_declaration"
-            | "preproc_split_declaration"
-    );
-
-    if is_object_declaration {
-        if let Some(name_node) = node.child_by_field_name("object_name") {
-            *object_name = node_text(&name_node, source).trim_matches('"').to_string();
-        }
-        // Extract type from kind (e.g., "codeunit_declaration" -> "Codeunit")
-        *object_type = kind
-            .strip_suffix("_declaration")
-            .unwrap_or(kind)
-            .replace("preproc_split_", "")
-            .split('_')
-            .map(|s| {
-                let mut c = s.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("");
+/// Human-readable object-type label (e.g. `Codeunit`, `Pageextension`), matching
+/// the former kind-string capitalization used in the CLI metrics output.
+fn object_kind_label(k: al_syntax::ir::ObjectKind) -> String {
+    use al_syntax::ir::ObjectKind as K;
+    match k {
+        K::Codeunit => "Codeunit",
+        K::Table => "Table",
+        K::TableExtension => "Tableextension",
+        K::Page => "Page",
+        K::PageExtension => "Pageextension",
+        K::Report => "Report",
+        K::ReportExtension => "Reportextension",
+        K::Query => "Query",
+        K::XmlPort => "Xmlport",
+        K::Enum => "Enum",
+        K::EnumExtension => "Enumextension",
+        K::Interface => "Interface",
+        K::ControlAddIn => "Controladdin",
+        K::Entitlement => "Entitlement",
+        K::PermissionSet => "Permissionset",
+        K::PermissionSetExtension => "Permissionsetextension",
+        K::Profile => "Profile",
+        K::Other => "",
     }
-
-    // Detect procedures and triggers
-    if kind == "procedure" || kind == "trigger_declaration" {
-        let proc_name = extract_procedure_name(&node, source);
-        let complexity = calculate_complexity(&node);
-        let line_count = (node.end_position().row - node.start_position().row + 1) as u32;
-        let param_count = count_parameters(&node, source);
-        let quality_score = calculate_quality_score(complexity, line_count, param_count);
-
-        // Use relative path for cleaner output
-        let file_str = path
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.display().to_string());
-
-        metrics.push(analysis::ProcedureMetrics {
-            object_type: object_type.clone(),
-            object_name: object_name.clone(),
-            procedure_name: proc_name,
-            file: file_str,
-            line: node.start_position().row as u32 + 1,
-            complexity,
-            line_count,
-            parameter_count: param_count,
-            quality_score,
-        });
-    }
-
-    // Recurse into children
-    if cursor.goto_first_child() {
-        loop {
-            extract_object_and_procedures(cursor, source, path, object_type, object_name, metrics);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
-}
-
-fn extract_procedure_name(node: &tree_sitter::Node, source: &str) -> String {
-    // Try name field first
-    if let Some(name_node) = node.child_by_field_name("name") {
-        return node_text(&name_node, source).trim_matches('"').to_string();
-    }
-
-    node.kind().to_string()
-}
-
-fn count_parameters(node: &tree_sitter::Node, _source: &str) -> u32 {
-    // Find parameter_list child and count parameters
-    let mut count = 0;
-    let mut cursor = node.walk();
-
-    if cursor.goto_first_child() {
-        loop {
-            let child = cursor.node();
-            if child.kind() == "parameter_list" {
-                // Count parameter children
-                let mut param_cursor = child.walk();
-                if param_cursor.goto_first_child() {
-                    loop {
-                        if param_cursor.node().kind() == "parameter" {
-                            count += 1;
-                        }
-                        if !param_cursor.goto_next_sibling() {
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-    }
-
-    count
-}
-
-fn node_text<'a>(node: &tree_sitter::Node, source: &'a str) -> &'a str {
-    &source[node.byte_range()]
+    .to_string()
 }
 
 /// Print results in CSV format

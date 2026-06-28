@@ -1107,10 +1107,10 @@ fn push_variables_ir(result: &mut ParsedFile, vars: &[VarDecl], containing: Opti
     }
 }
 
-/// Cyclomatic complexity over the IR body — the IR analogue of
-/// `analysis::count_decision_points`. Base 1; +1 per if (+1 more if it has an
-/// else), +1 per loop, +1 per case branch, +1 per `and`/`or`.
-fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
+/// Cyclomatic complexity over the IR body. Base 1; +1 per if (+1 more if it has an
+/// else), +1 per loop, +1 per case branch, +1 per `and`/`or`. The canonical
+/// complexity metric (the tree-sitter `analysis::calculate_complexity` is retired).
+pub(crate) fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
     let mut c = 1u32;
     if let Some(body) = r.body {
         complexity_block(ir, body, &mut c);
