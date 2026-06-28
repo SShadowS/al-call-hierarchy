@@ -529,3 +529,50 @@ L3 still walks tree-sitter heavily (its own `project_file`, plus `collect_attrib
 `classify_kind`/`classify_access_modifier` and `project_routine_features` via the l2
 legacy fns). Port it onto the IR the same way (the l2 legacy fns stay as the dual_run
 oracle). Then Phase 4 (LSP front-end) + Phase 5 (seal: drop engine tree-sitter dep).
+
+---
+
+## UPDATE 9 — Phase 3 start: report-dataitem IR + tree-sitter-al `call_statement` grammar node
+
+Two committed, green, dual-model-reviewed increments + one deferred:
+
+1. **`feat(al-syntax)` 999fd00 — report dataitems in the IR.** `ObjectDecl.report_dataitems`
+   + `RoutineDecl.dataitem_source_table`; lowerer threads the innermost dataitem source
+   table (None when absent — mirrors legacy `report_dataitem_source_table`); `ir_record_variables`
+   seeds the dataitem-trigger implicit `Rec` + dataitem-name vars. Closes the report gap in
+   `project_routine_features_ir`. Test `report_dataitem_implicit_rec_and_name_vars_seeded`.
+
+2. **`feat(syntax)` ee9d25a — `call_statement` grammar node (THE grammar fix the user approved).**
+   PROBLEM: the IR lowered a bare identifier in statement position to a parenless Call, but
+   ERROR-recovery debris (`@@@ broken`) is the SAME bare-identifier shape → spurious call edges
+   (moat-polluting). Also found: legacy/al-sem MISSED parenless calls (`Foo;`) entirely — the IR
+   captures them (more correct). The corpus had zero parenless calls so L2's 591/591 never saw it.
+   FIX (designed + plan-reviewed by gpt-5.5 + gemini-3.1-pro, then impl-reviewed by both —
+   "structurally flawless"): grammar `call_statement: prec(13, seq(field('function',
+   choice(identifier, quoted_identifier)), ';'))` — a strict-`;` node so debris (no terminator)
+   never reduces to it; a direct `_statement` branch (owns its `;`, no double-consume). The `;`
+   requirement is THE discriminator (a bare wrapper would be wrapped around debris by recovery —
+   Gemini's CRUX). Integration: IR lowers `call_statement` → parenless Call anchored on the callee
+   (byte-identical anchor); skips bare identifier/quoted_identifier (debris/semicolon-less) +
+   error'd call_statement. Legacy oracle (dual_run + current L3) treats call_statement transparently
+   (unwrap to function child) in body_walk visit() + node_util::block_statements +
+   dual_run_support::is_statement_position. Submodule bumped to grammar c4d2cb2 (canonical
+   U:\Git\tree-sitter-al, branch owned-ir-grammar-fixes). FULL SUITE GREEN. Empirics: debris→0 cs,
+   `Foo()`→1, `Modify;` record op captured by both. Known residual (accepted): a parenless call
+   WITHOUT a trailing `;` (semicolon-less final statement, rare) is not captured — never a false
+   edge, ≥ legacy. Member/subscript debris (`@@@ Rec.Find`) is a minor Option-B residual (untested).
+
+3. **DEFERRED — L3 routine-loop swap (route L3 features through `project_routine_features_ir`).**
+   Re-applying it (now unblocked — IR no longer fabricates debris callsites) fails
+   `differential_r3a2_summary_core`: 11 divergences in L5 cross-call field-load analysis
+   (`requiredLoadedFieldsAtEntry` / `requiresLoadedAtEntry` / `dirtyAtExit`) across 4 fixtures
+   (ws-d11-no-get, ws-event-ishandled-conditional-set, ws-event-read-after-write, ws-path-facts),
+   BOTH MISSING and EXTRA. DIAGNOSIS SO FAR (decisive dumps): per-routine L2 features are FULLY
+   identical IR-vs-legacy for these routines — field_accesses, var_assignments, condition_references,
+   record_operations (incl. field_arguments, run_trigger, in_until_condition serde-skip fields) all
+   match; routine_id computation is identical (validated params/kind). So it is NOT a per-routine
+   feature diff. The cause is an L5-PIPELINE interaction with the swap — NEXT: dump the L5 derived
+   read/write event stream + the per-summary `parameterRoles`/requiredLoadedFieldsAtEntry inputs
+   for HR/HW in legacy-L3 vs IR-L3 (per gpt + gemini Step 4); candidates left: cross-routine
+   order into event-subscriber inheritance, or an L5 input not in the dual_run comparison set.
+   Tree reverted to legacy L3 (green). Reviewer continuation_ids: Gemini ed13b51c, GPT 1ebeb285.
