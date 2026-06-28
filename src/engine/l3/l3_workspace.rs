@@ -751,6 +751,73 @@ fn index_table(
     }
 }
 
+/// `index_table` over the owned IR (fields/keys/TableType from `ObjectDecl`). The
+/// rare `TableType = Temporary` runtime-contract guard (`if not Rec.IsTemporary then
+/// Error` in a table trigger) is still matched over the tree-sitter `decl` body — a
+/// body-pattern not yet IR-ported. Mirrors `index_table` byte-for-byte otherwise.
+#[allow(clippy::too_many_arguments)]
+fn index_table_ir(
+    o: &al_syntax::ir::ObjectDecl,
+    decl: Node,
+    object_id: &str,
+    app_guid: &str,
+    table_number: i64,
+    table_name: &str,
+    source: &str,
+    is_extension_stub: bool,
+) -> L3Table {
+    let table_id = format!("{app_guid}/table/{table_number}");
+    let fields: Vec<L3Field> = o
+        .fields
+        .iter()
+        .map(|f| L3Field {
+            id: format!("{table_id}/{}", f.number),
+            physical_table_id: table_id.clone(),
+            declaring_object_id: object_id.to_string(),
+            declaring_app_id: app_guid.to_string(),
+            field_number: f.number,
+            name: f.name.clone(),
+            field_class: f.field_class.clone(),
+            data_type: f.data_type.clone(),
+            is_blob_like: f.is_blob_like,
+        })
+        .collect();
+    let fields_by_name: std::collections::HashMap<String, String> = fields
+        .iter()
+        .map(|f| (f.name.to_lowercase(), f.id.clone()))
+        .collect();
+    let keys: Vec<L3Key> = o
+        .keys
+        .iter()
+        .enumerate()
+        .map(|(index, members)| L3Key {
+            id: format!("{table_id}/key/{index}"),
+            // `members` are already unquoted + lowercased by the lowerer.
+            fields: members
+                .iter()
+                .filter_map(|name| fields_by_name.get(name).cloned())
+                .collect(),
+        })
+        .collect();
+    let is_temporary = o
+        .properties
+        .iter()
+        .find(|p| p.name == "tabletype")
+        .map(|p| p.value.trim().to_lowercase() == "temporary")
+        .unwrap_or(false)
+        || table_has_temp_contract_guard(decl, source);
+    L3Table {
+        id: table_id,
+        app_guid: app_guid.to_string(),
+        table_number,
+        name: table_name.to_string(),
+        fields,
+        keys,
+        is_temporary,
+        is_extension_stub,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // G-2 (runtime-implied tempness): structural matching of the EXACT guard
 // `if not <recv>.IsTemporary[()] then Error(...)`.
@@ -1062,7 +1129,10 @@ fn project_file(
         usize,
         (usize, &al_syntax::ir::RoutineDecl),
     > = std::collections::HashMap::new();
+    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
+        std::collections::HashMap::new();
     for (oi, o) in ir_file.objects.iter().enumerate() {
+        ir_obj_by_byte.insert(o.origin.byte.start, o);
         for r in &o.routines {
             ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
         }
@@ -1072,25 +1142,53 @@ fn project_file(
         let Some(object_type) = scope::object_type_for(decl.kind()) else {
             continue;
         };
-        let object_number = extract_object_number(decl, source);
-        let name = extract_object_name(decl, source);
+        // Object metadata from the owned IR (matched by start byte); legacy
+        // tree-sitter extractors only as a defensive fallback for an unmatched decl.
+        let ir_obj = ir_obj_by_byte.get(&decl.start_byte()).copied();
+        let object_number = match ir_obj {
+            Some(o) => o.id.unwrap_or(0),
+            None => extract_object_number(decl, source),
+        };
+        let name = match ir_obj {
+            Some(o) => o.name.clone(),
+            None => extract_object_name(decl, source),
+        };
         let object_id = encode_object_id(app_guid, object_type, object_number);
+
+        // Read an object-level property value from the IR (lowercased name match),
+        // else the legacy tree-sitter reader.
+        let ir_prop = |name_lc: &str| -> Option<String> {
+            match ir_obj {
+                Some(o) => o
+                    .properties
+                    .iter()
+                    .find(|p| p.name == name_lc)
+                    .map(|p| p.value.clone()),
+                None => read_object_property(decl, name_lc, source),
+            }
+        };
 
         // Object metadata (object-indexer.ts parity).
         let source_table_name = if object_type == "Page" || object_type == "PageExtension" {
-            read_object_property(decl, "SourceTable", source).map(|s| strip_quotes(&s).to_string())
+            ir_prop("sourcetable").map(|s| strip_quotes(&s).to_string())
         } else {
             None
         };
         let extends_target_name =
             if object_type == "TableExtension" || object_type == "PageExtension" {
-                extract_extends_target_name(decl, source)
+                match ir_obj {
+                    Some(o) => o.extends_target.clone(),
+                    None => extract_extends_target_name(decl, source),
+                }
             } else {
                 None
             };
         let implements_interfaces =
             if object_type == "Codeunit" || object_type == "Enum" || object_type == "Interface" {
-                Some(extract_implements_interfaces(decl, source))
+                Some(match ir_obj {
+                    Some(o) => o.implements.clone(),
+                    None => extract_implements_interfaces(decl, source),
+                })
             } else {
                 None
             };
@@ -1098,7 +1196,7 @@ fn project_file(
         // `extract_object_metadata`). d46 reads this to classify Install/Upgrade
         // lifecycle codeunits.
         let object_subtype = if object_type == "Codeunit" {
-            read_object_property(decl, "Subtype", source)
+            ir_prop("subtype")
         } else {
             None
         };
@@ -1106,7 +1204,7 @@ fn project_file(
         // `pageType` parity). R4-F `root_classification` reads this to classify
         // `api-page` roots (PageType == "API", case-insensitive).
         let page_type = if object_type == "Page" || object_type == "PageExtension" {
-            read_object_property(decl, "PageType", source)
+            ir_prop("pagetype")
         } else {
             None
         };
@@ -1118,7 +1216,7 @@ fn project_file(
             || object_type == "Table"
             || object_type == "TableExtension"
         {
-            read_object_property(decl, "InherentCommitBehavior", source).and_then(|raw| {
+            ir_prop("inherentcommitbehavior").and_then(|raw| {
                 let sep = raw.rfind("::").map(|i| i + 2).unwrap_or(0);
                 let member = raw[sep..].to_lowercase();
                 match member.as_str() {
@@ -1133,21 +1231,32 @@ fn project_file(
         };
         // Object `SourceTableTemporary` — Page / PageExtension only (Task 5 / G4).
         // Structural boolean property: `SourceTableTemporary = true;` means the
-        // page's implicit `Rec` and `xRec` are always temporary. The value node is
-        // an `identifier` (`true` / `false`); exact case-insensitive match against
-        // "true" — anything else (missing / "false" / unrecognised) → `Some(false)`
-        // when the property is present but non-"true", or `None` when absent.
-        // EXACT match — no string-sniffing. Engine never throws; missing → None.
+        // page's implicit `Rec` and `xRec` are always temporary. EXACT case-insensitive
+        // match against "true" — anything else present → Some(false); absent → None.
         let source_table_temporary = if object_type == "Page" || object_type == "PageExtension" {
-            read_object_property(decl, "SourceTableTemporary", source)
-                .map(|v| v.trim().to_lowercase() == "true")
+            ir_prop("sourcetabletemporary").map(|v| v.trim().to_lowercase() == "true")
         } else {
             None
         };
-        // Page controls (`part`/`systempart`/`usercontrol`) — extracted from the
-        // layout tree. Used to resolve `CurrPage.<control>…` member calls (Task 6+).
+        // Page controls (`part`/`systempart`/`usercontrol`) — used to resolve
+        // `CurrPage.<control>…` member calls (Task 6+).
         let page_controls = if object_type == "Page" || object_type == "PageExtension" {
-            extract_page_controls(decl, source)
+            match ir_obj {
+                Some(o) => o
+                    .page_controls
+                    .iter()
+                    .map(|pc| L3PageControl {
+                        name: pc.name.clone(),
+                        kind: match pc.kind.as_str() {
+                            "systempart" => PageControlKind::SystemPart,
+                            "usercontrol" => PageControlKind::UserControl,
+                            _ => PageControlKind::Part,
+                        },
+                        target: pc.target.clone(),
+                    })
+                    .collect(),
+                None => extract_page_controls(decl, source),
+            }
         } else {
             Vec::new()
         };
@@ -1172,15 +1281,27 @@ fn project_file(
             // G-5: a TableExtension's indexed table is a STUB whose id reuses the
             // EXTENSION's own object number — it must never win an id collision
             // against a real table sharing that number (see `is_extension_stub`).
-            workspace.tables.push(index_table(
-                decl,
-                &object_id,
-                app_guid,
-                object_number,
-                &name,
-                source,
-                object_type == "TableExtension",
-            ));
+            workspace.tables.push(match ir_obj {
+                Some(o) => index_table_ir(
+                    o,
+                    decl,
+                    &object_id,
+                    app_guid,
+                    object_number,
+                    &name,
+                    source,
+                    object_type == "TableExtension",
+                ),
+                None => index_table(
+                    decl,
+                    &object_id,
+                    app_guid,
+                    object_number,
+                    &name,
+                    source,
+                    object_type == "TableExtension",
+                ),
+            });
         }
 
         // Object globals + per-routine features (reuse the L2 body walk verbatim).

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **L3 object & table metadata are now owned-IR-driven.** `l3_workspace::project_file`
+  sources object name/number, properties (SourceTable/PageType/Subtype/
+  InherentCommitBehavior/SourceTableTemporary/TableNo), `extends` target,
+  `implements` interfaces, page controls, and table fields/keys/TableType from the
+  owned IR (matched by start byte; legacy tree-sitter extractors only as a defensive
+  fallback). New IR: `ObjectDecl.{extends_target, implements, page_controls, fields,
+  keys}` + `PageControl` / `FieldDecl`. Validated byte-identical via the L3 goldens.
+  (Residual tree-sitter in L3: per-routine params/attrs/kind/access metadata, object
+  globals, and two body-pattern guards — `entry_temp_guard` + the table temp-contract
+  `IsTemporary` guard — still walk the CST; next increment.)
 - **L3 routine features are now owned-IR-driven (the last production `body_walk`
   caller is gone).** `l3_workspace::project_file` sources each routine's `PFeatures`
   from `project_routine_features_ir` (matched by start byte; a defensive legacy

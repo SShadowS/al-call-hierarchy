@@ -116,6 +116,36 @@ fn lower_object(
         collect_report_dataitems(node, source, &mut report_dataitems);
     }
 
+    // Extension `extends` target (the grammar's `base_object` field) — None for
+    // non-extension objects (no such field).
+    let extends_target = node
+        .field(FieldName::BaseObject)
+        .map(|n| ident_text(n, source))
+        .filter(|s| !s.is_empty());
+
+    // `implements` interface names (Codeunit / Enum / Interface).
+    let implements = if matches!(
+        kind,
+        ObjectKind::Codeunit | ObjectKind::Enum | ObjectKind::Interface
+    ) {
+        extract_implements(node, source)
+    } else {
+        Vec::new()
+    };
+
+    // Page controls (Page / PageExtension).
+    let mut page_controls = Vec::new();
+    if matches!(kind, ObjectKind::Page | ObjectKind::PageExtension) {
+        collect_page_controls(node, source, &mut page_controls);
+    }
+
+    // Table fields + keys (Table / TableExtension).
+    let mut fields = Vec::new();
+    let mut keys = Vec::new();
+    if matches!(kind, ObjectKind::Table | ObjectKind::TableExtension) {
+        collect_table_fields_keys(node, source, &mut fields, &mut keys);
+    }
+
     // Object globals: var_sections under the declaration_body (not inside routines).
     // Object-level properties (SourceTable / TableNo / PageType / …) are siblings.
     let mut globals = Vec::new();
@@ -139,7 +169,145 @@ fn lower_object(
         globals,
         properties,
         report_dataitems,
+        extends_target,
+        implements,
+        page_controls,
+        fields,
+        keys,
         origin: origin_of(node),
+    }
+}
+
+/// `implements` interface names (unquoted, document order). Mirrors the legacy
+/// `extract_implements_interfaces`: names after the `implements` keyword, or the
+/// members of an `implements_clause` wrapper.
+fn extract_implements(node: RawNode, source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut saw_implements = false;
+    for child in node.named_children() {
+        match child.kind() {
+            RawKind::ImplementsKeyword => saw_implements = true,
+            RawKind::ImplementsClause => {
+                for sub in child.named_children() {
+                    if matches!(sub.kind(), RawKind::Identifier | RawKind::QuotedIdentifier) {
+                        out.push(ident_text(sub, source));
+                    }
+                }
+            }
+            RawKind::Identifier | RawKind::QuotedIdentifier if saw_implements => {
+                out.push(ident_text(child, source));
+            }
+            // Stop at the object body / a routine body.
+            RawKind::DeclarationBody | RawKind::CodeBlock if saw_implements => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Collect page `part` / `systempart` / `usercontrol` sections (name, kind, target),
+/// document order. Recurses the layout but NOT into routine bodies. Mirrors the legacy
+/// `extract_page_controls`.
+fn collect_page_controls(node: RawNode, source: &str, out: &mut Vec<crate::ir::PageControl>) {
+    let kind = match node.kind() {
+        RawKind::PartSection => Some("part"),
+        RawKind::SystempartSection => Some("systempart"),
+        RawKind::UsercontrolSection => Some("usercontrol"),
+        _ => None,
+    };
+    if let Some(kind) = kind {
+        if let (Some(name), Some(src)) =
+            (node.field(FieldName::Name), node.field(FieldName::Source))
+        {
+            out.push(crate::ir::PageControl {
+                name: ident_text(name, source),
+                kind: kind.to_string(),
+                target: ident_text(src, source),
+            });
+        }
+    }
+    if node.kind() == RawKind::CodeBlock {
+        return;
+    }
+    for c in node.named_children() {
+        collect_page_controls(c, source, out);
+    }
+}
+
+/// Collect table `field(...)` declarations + `key(...)` member-name lists (prune at
+/// match, document order). Mirrors the legacy `index_table` / `classify_field`.
+fn collect_table_fields_keys(
+    node: RawNode,
+    source: &str,
+    fields: &mut Vec<crate::ir::FieldDecl>,
+    keys: &mut Vec<Vec<String>>,
+) {
+    for child in node.named_children() {
+        match child.kind() {
+            RawKind::FieldDeclaration => fields.push(lower_field(child, source)),
+            RawKind::KeyDeclaration => {
+                let mut members = Vec::new();
+                if let Some(list) = child.field(FieldName::Fields) {
+                    for m in list.named_children() {
+                        if matches!(m.kind(), RawKind::Identifier | RawKind::QuotedIdentifier) {
+                            members.push(ident_text(m, source).to_ascii_lowercase());
+                        }
+                    }
+                }
+                keys.push(members);
+            }
+            _ => collect_table_fields_keys(child, source, fields, keys),
+        }
+    }
+}
+
+/// Lower a `field(<no>; <Name>; <Type>) { ... }` declaration.
+fn lower_field(node: RawNode, source: &str) -> crate::ir::FieldDecl {
+    let number = node
+        .field(FieldName::Id)
+        .and_then(|n| n.text(source).trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    let name = node
+        .field(FieldName::Name)
+        .map(|n| ident_text(n, source))
+        .unwrap_or_default();
+    let data_type = node
+        .field(FieldName::Type)
+        .map(|n| n.text(source).trim().to_string())
+        .unwrap_or_default();
+    // FieldClass property (in the field's declaration_body): FlowField / FlowFilter /
+    // Normal. Mirrors classify_field.
+    let mut field_class = "Normal".to_string();
+    if let Some(body) = node.field(FieldName::Body) {
+        for member in body.named_children() {
+            if member.kind() != RawKind::Property {
+                continue;
+            }
+            let Some(pname) = member.field(FieldName::Name) else {
+                continue;
+            };
+            if pname.text(source).trim().to_ascii_lowercase() != "fieldclass" {
+                continue;
+            }
+            let v = member
+                .field(FieldName::Value)
+                .map(|n| n.text(source).to_ascii_lowercase())
+                .unwrap_or_default();
+            if v.contains("flowfield") {
+                field_class = "FlowField".to_string();
+            } else if v.contains("flowfilter") {
+                field_class = "FlowFilter".to_string();
+            }
+        }
+    }
+    let dt_lc = data_type.to_ascii_lowercase();
+    let is_blob_like = dt_lc == "blob" || dt_lc == "media" || dt_lc == "mediaset";
+    crate::ir::FieldDecl {
+        number,
+        name,
+        data_type,
+        field_class,
+        is_blob_like,
     }
 }
 

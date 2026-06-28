@@ -24,7 +24,41 @@ pub struct ObjectDecl {
     /// dataitem trigger's per-dataitem implicit `Rec` (see
     /// [`RoutineDecl::dataitem_source_table`]).
     pub report_dataitems: Vec<(String, String)>,
+    /// The `extends <Target>` target name (unquoted) for an extension object
+    /// (Table/Page/Report/Enum/PermissionSet extension), else `None`.
+    pub extends_target: Option<String>,
+    /// Interface names from an `implements` clause (unquoted, document order) — for
+    /// Codeunit / Enum / Interface objects; empty otherwise.
+    pub implements: Vec<String>,
+    /// Page controls (`part` / `systempart` / `usercontrol` sections) in document
+    /// order — Page / PageExtension only. Resolves `CurrPage.<control>…` member calls.
+    pub page_controls: Vec<PageControl>,
+    /// Table fields (Table / TableExtension only), document order. The engine assigns
+    /// the internal/stable ids; the IR carries the raw extracted shape.
+    pub fields: Vec<FieldDecl>,
+    /// Table keys (Table / TableExtension only) — each the member field NAMES (unquoted,
+    /// lowercased) in declaration order; the engine resolves them to field ids.
+    pub keys: Vec<Vec<String>>,
     pub origin: Origin,
+}
+
+/// A page control section (`part` / `systempart` / `usercontrol`).
+pub struct PageControl {
+    pub name: String,
+    /// Raw kind: `"part"` / `"systempart"` / `"usercontrol"`.
+    pub kind: String,
+    pub target: String,
+}
+
+/// A table `field(<no>; <Name>; <Type>) { ... }` declaration. `data_type` is the raw
+/// type text; `field_class` is `Normal` / `FlowField` / `FlowFilter` (from the
+/// `FieldClass` property); `is_blob_like` flags Blob/Media/MediaSet.
+pub struct FieldDecl {
+    pub number: i64,
+    pub name: String,
+    pub data_type: String,
+    pub field_class: String,
+    pub is_blob_like: bool,
 }
 
 /// A single object-level `property` node (`name = value`). `name` is lowercased;
