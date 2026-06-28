@@ -1,5 +1,14 @@
 # V2 Grammar Migration Guide — al-call-hierarchy
 
+> **SUPERSEDED — historical record only.** This documents the one-time V1→V2 grammar
+> port. The grammar is now **v3** with owned field-pollution fixes, and the engine no
+> longer uses the tree-sitter parser directly: it consumes the owned `al-syntax` IR
+> (`al_syntax::parse`), so the legacy modules referenced below (`src/language.rs`, the
+> `extract_trigger_name`/`parser.rs` query plumbing) have been **deleted**. The
+> file/line pointers here will not resolve in the current tree. For current grammar
+> structure see the "tree-sitter-al grammar migrations" section in `CLAUDE.md`; for the
+> IR architecture see `docs/superpowers/specs/`. Kept for provenance only.
+
 The tree-sitter-al grammar was rewritten (V1→V2). This document lists all code changes needed in this repo.
 
 ## Breaking Changes
