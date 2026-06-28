@@ -1922,6 +1922,120 @@ pub fn ir_object_global_record_vars(
     out
 }
 
+// ---- entry temp-contract guard (G-2): `if not X.IsTemporary then Error(...)` ----
+
+fn ir_unwrap_parens(file: &AlFile, eid: ExprId) -> ExprId {
+    let mut e = eid;
+    while let ExprKind::Parenthesized(inner) = &file.ir.expr(e).kind {
+        e = *inner;
+    }
+    e
+}
+
+/// `<X>.IsTemporary` / `<X>.IsTemporary()` with `<X>` a BARE identifier / quoted id →
+/// the receiver name (unquoted, lowercased). Mirrors `istemporary_receiver`.
+fn ir_istemporary_receiver(file: &AlFile, eid: ExprId) -> Option<String> {
+    let eid = ir_unwrap_parens(file, eid);
+    let member_eid = match &file.ir.expr(eid).kind {
+        // `IsTemporary()` takes no arguments.
+        ExprKind::Call { function, args } if args.is_empty() => *function,
+        ExprKind::Member { .. } => eid,
+        _ => return None,
+    };
+    let ExprKind::Member { object, member, .. } = &file.ir.expr(member_eid).kind else {
+        return None;
+    };
+    if member.trim().trim_matches('"').to_ascii_lowercase() != "istemporary" {
+        return None;
+    }
+    match &file.ir.expr(*object).kind {
+        ExprKind::Identifier(n) | ExprKind::QuotedIdentifier(n) => {
+            Some(n.trim().to_ascii_lowercase())
+        }
+        _ => None,
+    }
+}
+
+/// IR port of `is_temporary_error_guard` / `entry_temp_guard_receiver_of` (the receiver
+/// only — the caller verifies it is a record var). The FIRST body statement is
+/// `if not <X>.IsTemporary[()] then Error(...)` (or `<X>.IsTemporary = false`), `<X>` a
+/// bare identifier, the then-branch a single PARENFUL `Error(...)` call.
+pub fn ir_entry_temp_guard_receiver(file: &AlFile, routine: &RoutineDecl) -> Option<String> {
+    use al_syntax::ir::{BinaryOp, Literal, UnaryOp};
+    let body = routine.body?;
+    let first = file.ir.block(body).items.iter().find_map(|it| match it {
+        al_syntax::ir::BlockItem::Stmt(s) => Some(*s),
+        _ => None,
+    })?;
+    let StmtKind::If {
+        cond,
+        then_block,
+        else_block,
+    } = &file.ir.stmt(first).kind
+    else {
+        return None;
+    };
+    if else_block.is_some() {
+        return None;
+    }
+    let cond_eid = ir_unwrap_parens(file, *cond);
+    let receiver = match &file.ir.expr(cond_eid).kind {
+        ExprKind::Unary {
+            op: UnaryOp::Not,
+            operand,
+        } => ir_istemporary_receiver(file, *operand)?,
+        ExprKind::Binary {
+            op: BinaryOp::Eq,
+            lhs,
+            rhs,
+        } => {
+            let is_false = |e: ExprId| {
+                matches!(
+                    &file.ir.expr(ir_unwrap_parens(file, e)).kind,
+                    ExprKind::Literal(Literal::Bool(false))
+                )
+            };
+            if is_false(*rhs) {
+                ir_istemporary_receiver(file, *lhs)?
+            } else if is_false(*lhs) {
+                ir_istemporary_receiver(file, *rhs)?
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    // then-branch: a single PARENFUL `Error(...)` call (call_expression, not a parenless
+    // call statement — matching legacy `is_error_call`'s `kind == "call_expression"`).
+    let stmts: Vec<_> = file
+        .ir
+        .block(*then_block)
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            al_syntax::ir::BlockItem::Stmt(s) => Some(*s),
+            _ => None,
+        })
+        .collect();
+    if stmts.len() != 1 {
+        return None;
+    }
+    let StmtKind::Call(call_eid) = &file.ir.stmt(stmts[0]).kind else {
+        return None;
+    };
+    let call = file.ir.expr(*call_eid);
+    if call.origin.kind_text != "call_expression" {
+        return None;
+    }
+    let ExprKind::Call { function, .. } = &call.kind else {
+        return None;
+    };
+    match &file.ir.expr(*function).kind {
+        ExprKind::Identifier(n) if n.eq_ignore_ascii_case("error") => Some(receiver),
+        _ => None,
+    }
+}
+
 // ---- variables (PVariableSymbol: params + locals + object globals) ----
 
 /// Classify a variable initializer's RHS expression into the legacy ValueSource

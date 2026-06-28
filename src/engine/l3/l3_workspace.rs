@@ -1497,8 +1497,17 @@ fn project_file(
             // temporary for the whole body; `record_types.rs` consumes this.
             // Computed AFTER global promotion so a guarded object-global
             // receiver also qualifies.
-            let entry_temp_guard_receiver =
-                entry_temp_guard_receiver_of(routine, &record_variables, source);
+            let entry_temp_guard_receiver = match ir_routine_opt {
+                Some(r) => crate::engine::l2::ir_walk::ir_entry_temp_guard_receiver(&ir_file, r)
+                    .filter(|receiver| {
+                        receiver == "rec"
+                            || receiver == "xrec"
+                            || record_variables
+                                .iter()
+                                .any(|rv| rv.name.eq_ignore_ascii_case(receiver))
+                    }),
+                None => entry_temp_guard_receiver_of(routine, &record_variables, source),
+            };
             let record_operations = features
                 .record_operations
                 .iter()
