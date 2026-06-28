@@ -1321,21 +1321,32 @@ fn project_file(
             });
         }
 
-        // Object globals + per-routine features (reuse the L2 body walk verbatim).
+        // Object globals — used ONLY by the legacy project_routine_features fallback
+        // (the IR feature path supplies its own scope). Kept per-object.
         let object_globals = scope::extract_object_globals(decl, source_unit_id, source);
         // Task 3 (temp-state): object-global RECORD vars carry the temp signal the
-        // L2 body walk never saw (it only knew params + locals). Capture them once
-        // per object and promote (below) into each routine's `record_variables`,
-        // honoring AL shadowing — a routine's OWN param/local of the same name wins.
-        let object_global_record_vars =
-            scope::extract_object_global_record_vars(decl, &object_id, source);
+        // L2 body walk never saw (it only knew params + locals). From the owned IR when
+        // the object is matched (else legacy). Promoted (below) into each routine's
+        // `record_variables`, honoring AL shadowing (a routine's own var wins).
+        let object_global_record_vars = match ir_obj {
+            Some(o) => crate::engine::l2::ir_walk::ir_object_global_record_vars(o, &object_id),
+            None => scope::extract_object_global_record_vars(decl, &object_id, source),
+        };
         let routine_nodes = collect_routine_nodes(decl);
-        let mut object_procedure_names = std::collections::HashSet::new();
-        for (_parent, n) in &routine_nodes {
-            if let Some(nm) = n.child_by_field_name("name") {
-                object_procedure_names.insert(strip_quotes(node_text(nm, source)).to_lowercase());
+        // Object procedure-name collision set (implicit-receiver §3.3) — from the IR's
+        // routine names when matched, else the tree-sitter routine nodes.
+        let object_procedure_names: std::collections::HashSet<String> = match ir_obj {
+            Some(o) => o.routines.iter().map(|r| r.name.to_lowercase()).collect(),
+            None => {
+                let mut s = std::collections::HashSet::new();
+                for (_parent, n) in &routine_nodes {
+                    if let Some(nm) = n.child_by_field_name("name") {
+                        s.insert(strip_quotes(node_text(nm, source)).to_lowercase());
+                    }
+                }
+                s
             }
-        }
+        };
         let id_ctx = IdentityCtx {
             app_guid,
             model_instance_id,

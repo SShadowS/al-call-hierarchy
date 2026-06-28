@@ -1888,6 +1888,40 @@ pub fn ir_record_variables(
     out
 }
 
+/// Object-global RECORD variables (`PRecordVariable`, scope=global) from the IR's
+/// object globals — mirrors `scope::extract_object_global_record_vars`. The L3 emitter
+/// promotes these into each routine's record_variables (honoring shadowing). First-wins
+/// by lowercased name across `#if`/`#else` branches (the IR carries both).
+pub fn ir_object_global_record_vars(
+    o: &al_syntax::ir::ObjectDecl,
+    object_id: &str,
+) -> Vec<super::features::PRecordVariable> {
+    use super::features::PRecordVariable;
+    use super::scope::ts_known;
+    let mut out = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for v in &o.globals {
+        let Some(ty) = v.ty.as_deref() else { continue };
+        if !is_record_type_str(ty) {
+            continue;
+        }
+        let name_lc = v.name.to_ascii_lowercase();
+        if !seen.insert(name_lc.clone()) {
+            continue;
+        }
+        out.push(PRecordVariable {
+            id: format!("{}/grv/{}", object_id, name_lc),
+            name: v.name.clone(),
+            table_name: parse_record_table_name(ty),
+            temp_state: ts_known(v.temporary),
+            is_parameter: false,
+            parameter_index: None,
+            scope: Some("global".to_string()),
+        });
+    }
+    out
+}
+
 // ---- variables (PVariableSymbol: params + locals + object globals) ----
 
 /// Classify a variable initializer's RHS expression into the legacy ValueSource
