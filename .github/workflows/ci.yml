@@ -31,10 +31,17 @@ jobs:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
         run: cargo clippy --release -- -D warnings
 
+      - name: Generated vocab is fresh
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: |
+          cargo run -p xtask -- gen-syntax
+          git diff --exit-code crates/al-syntax/src/raw/generated
+
       - name: Test
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: cargo test
+        run: cargo test --workspace
 
       - name: Build
         env:
