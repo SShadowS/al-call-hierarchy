@@ -21,9 +21,10 @@ jobs:
           path: tree-sitter-al
 
       - name: Install Rust
-        # No `toolchain:` input → the action reads the pinned channel + components
-        # from rust-toolchain.toml (single source of truth, matches local dev).
-        uses: dtolnay/rust-toolchain@master
+        # `@stable` installs a base stable + rustfmt/clippy; the actual version every
+        # `cargo` command runs under is pinned by rust-toolchain.toml (rustup override),
+        # so that file stays the single source of truth.
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Check formatting
         run: cargo fmt --check
