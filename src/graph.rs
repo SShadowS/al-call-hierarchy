@@ -7,6 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+// ObjectType is defined in the library crate's `types` module and re-exported
+// here so all binary-crate modules can continue using `crate::graph::ObjectType`.
+pub use al_call_hierarchy::types::ObjectType;
+
 use crate::protocol::normalize_path;
 use std::sync::Arc;
 use string_interner::backend::StringBackend;
@@ -22,70 +26,6 @@ pub type SharedPath = Arc<PathBuf>;
 /// Index into the call_sites vector
 /// Using u32 saves memory vs usize on 64-bit systems
 pub type CallSiteIdx = u32;
-
-/// Type of AL object
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ObjectType {
-    Codeunit,
-    Table,
-    Page,
-    Report,
-    Query,
-    XmlPort,
-    Enum,
-    Interface,
-    ControlAddIn,
-    PageExtension,
-    TableExtension,
-    EnumExtension,
-    PermissionSet,
-    PermissionSetExtension,
-}
-
-impl TryFrom<&str> for ObjectType {
-    type Error = ();
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        match s.to_lowercase().as_str() {
-            "codeunit" => Ok(Self::Codeunit),
-            "table" => Ok(Self::Table),
-            "page" => Ok(Self::Page),
-            "report" => Ok(Self::Report),
-            "query" => Ok(Self::Query),
-            "xmlport" => Ok(Self::XmlPort),
-            "enum" => Ok(Self::Enum),
-            "interface" => Ok(Self::Interface),
-            "controladdin" => Ok(Self::ControlAddIn),
-            "pageextension" => Ok(Self::PageExtension),
-            "tableextension" => Ok(Self::TableExtension),
-            "enumextension" => Ok(Self::EnumExtension),
-            "permissionset" => Ok(Self::PermissionSet),
-            "permissionsetextension" => Ok(Self::PermissionSetExtension),
-            _ => Err(()),
-        }
-    }
-}
-
-impl fmt::Display for ObjectType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Codeunit => write!(f, "Codeunit"),
-            Self::Table => write!(f, "Table"),
-            Self::Page => write!(f, "Page"),
-            Self::Report => write!(f, "Report"),
-            Self::Query => write!(f, "Query"),
-            Self::XmlPort => write!(f, "XmlPort"),
-            Self::Enum => write!(f, "Enum"),
-            Self::Interface => write!(f, "Interface"),
-            Self::ControlAddIn => write!(f, "ControlAddIn"),
-            Self::PageExtension => write!(f, "PageExtension"),
-            Self::TableExtension => write!(f, "TableExtension"),
-            Self::EnumExtension => write!(f, "EnumExtension"),
-            Self::PermissionSet => write!(f, "PermissionSet"),
-            Self::PermissionSetExtension => write!(f, "PermissionSetExtension"),
-        }
-    }
-}
 
 /// Kind of definition
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

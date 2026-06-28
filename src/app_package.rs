@@ -4,7 +4,7 @@
 //! - NavxManifest.xml: App metadata (ID, name, publisher, version)
 //! - SymbolReference.json: All symbol definitions (codeunits, tables, etc.)
 
-use crate::graph::ObjectType;
+use crate::types::ObjectType;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::io::{Read, Seek, SeekFrom};
@@ -83,7 +83,7 @@ pub struct ExternalObject {
 }
 
 /// Parsed contents of a .app package.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedAppPackage {
     pub metadata: AppMetadata,
     pub objects: Vec<ExternalObject>,

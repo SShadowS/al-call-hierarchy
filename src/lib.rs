@@ -9,7 +9,9 @@
 //! references `crate::config::TelemetryFileConfig`. Without it, the lib
 //! crate cannot compile.
 
+pub mod app_package;
 pub mod config;
+pub mod dependencies;
 pub mod engine;
 /// Tree-sitter AL language bindings. Exposed from the library so additive
 /// binaries (e.g. the R0 `aldump`) can parse without duplicating the `extern`
@@ -18,3 +20,5 @@ pub mod engine;
 pub mod language;
 pub mod snapshot;
 pub mod telemetry;
+/// Core AL object-type enum shared between lib and binary targets.
+pub mod types;

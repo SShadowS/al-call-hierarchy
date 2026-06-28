@@ -4,8 +4,6 @@ use log::info;
 use std::path::{Path, PathBuf};
 
 mod analysis;
-mod app_package;
-mod dependencies;
 mod graph;
 mod handlers;
 mod indexer;
@@ -14,11 +12,11 @@ mod protocol;
 mod server;
 mod watcher;
 
-// `config` and `telemetry` live in `lib.rs` so benches and other library
-// consumers can use them. Re-export them under `crate::*` so the binary's
-// other modules (handlers, server, analysis) can keep referring to
-// `crate::config::*` / `crate::telemetry::*` without churn.
-pub use al_call_hierarchy::{config, telemetry};
+// `config`, `telemetry`, `app_package`, and `dependencies` live in `lib.rs`
+// so library consumers (benches, snapshot) can use them. Re-export here so
+// binary modules (handlers, indexer, server, etc.) can keep referring to
+// `crate::app_package::*` / `crate::dependencies::*` without churn.
+pub use al_call_hierarchy::{app_package, config, dependencies, telemetry};
 
 use indexer::Indexer;
 use server::run_server;
