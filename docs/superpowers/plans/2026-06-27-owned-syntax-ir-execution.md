@@ -649,3 +649,39 @@ Then Phase 4 (LSP front-end, retire 6 queries) + Phase 5 (seal: drop engine tree
 SESSION TALLY: Phase 2 complete; Phase 3 ~80% (all object/table + routine metadata +
 features on IR; body_walk gone). ~14 commits this session, full suite green throughout,
 grammar + key cutovers reviewed by gpt-5.5 + gemini-3.1-pro.
+
+---
+
+## UPDATE 12 — L3 object-globals + both body-pattern guards ported to the owned IR
+
+Commits (this session, continuing UPDATE 11):
+- **object-global record vars + procedure-name set** → IR (`ir_object_global_record_vars`
+  over ObjectDecl.globals; object_procedure_names from o.routines names).
+- **entry temp-contract guard** (`if not X.IsTemporary then Error`) → IR
+  (`ir_entry_temp_guard_receiver`, helpers ir_unwrap_parens/ir_istemporary_receiver;
+  then-branch a single parenful Error call via call_expression origin).
+- **table temp-contract guard** (G-2 Part 1) → IR (`ir_table_has_temp_contract_guard`,
+  sharing `ir_is_temporary_error_guard`); `index_table_ir` now derives is_temporary
+  entirely from the IR and dropped its tree-sitter decl/source params.
+All full-suite green.
+
+### Phase 3 status: ~90% — all GOLDEN-VALIDATED L3 data is now owned-IR-driven.
+Residual tree-sitter in `l3_workspace::project_file`:
+1. **the routine ITERATION** — the loop still iterates tree-sitter `collect_routine_nodes`,
+   matching each to its IR routine/object by start byte (the data all comes from IR).
+2. **`object_globals`** — fallback-only (legacy project_routine_features, unreachable on
+   well-formed code).
+3. **`enclosing_member_of`** (E1) — page/field/action/dataitem-trigger enclosing-member
+   name + wrapper range + originatingObject. This is "additive — NEVER serialized into a
+   golden", so porting it is the one piece the differential goldens CANNOT validate — it
+   needs (a) a RoutineDecl IR extension carrying the enclosing-member name (unescaped, via
+   `unescape_al_identifier`, NOT just strip_quotes) + wrapper origin, threaded by
+   `collect_routines`; (b) a DEDICATED E1 unit test (since goldens are blind); then (c)
+   switch the L3 loop to iterate IR objects/routines and drop the legacy fallback.
+
+After that L3 is fully tree-sitter-free → Phase 4 (LSP front-end, retire the 6 queries)
+→ Phase 5 (seal: drop the engine's tree-sitter dep; al-syntax remains the sole linker).
+
+SESSION TALLY (so far): Phase 2 done; Phase 3 ~90%; ~19 commits, full suite green
+throughout; grammar `call_statement` + key cutovers reviewed by gpt-5.5 + gemini-3.1-pro;
+4 latent serde-skip/grammar-blind-spot bugs found + fixed.
