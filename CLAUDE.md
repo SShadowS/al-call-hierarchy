@@ -113,6 +113,18 @@ wrapper nodes that broke the v2 assumptions above.
     inline, preserving trailing trivia).
   - Object/field properties: `decl.child_by_field_name("body")` then iterate.
   - A member-trigger's parent is now a `*_body` wrapper, not the named member.
+- **Owned grammar fixes (we maintain `tree-sitter-al`).** Two field-pollution fixes
+  landed on grammar `main` and changed node shapes the lowerer relies on:
+  - `trigger_declaration name:` is no longer only `(identifier)`/`(quoted_identifier)` —
+    a scoped member trigger (`Object::Member`) is a single named `member_trigger_name`
+    node (`object` / `member` fields). The `name` field is `multiple:false` (no `::`
+    token in its type set). `lower::routine_name_text` joins it to `Object::Member`.
+  - The case `pattern` field binds ONE `_single_pattern` value, never the `,`/`:`
+    separators (rule `_case_pattern_item`); an `in`-as-case-pattern is the named
+    `in_expression`, not an inline `seq` leaking `left`/`operator`/`right`. The lowerer
+    keeps a defensive `is_named()` filter on `children_by_field("pattern")`.
+  - Editor consumers: `queries/highlights.scm` + `queries/tags.scm` capture
+    `member_trigger_name`. The engine does NOT use `.scm` queries (IR-only).
 - **Validate a migration with the al-sem differential goldens** (`cargo test`):
   zero divergences = behaviour-preserving. The goldens are the al-sem **TS
   reference** output, not Rust's — they are the source of truth.
