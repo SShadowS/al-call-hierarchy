@@ -23,8 +23,10 @@ pub struct SourceFile {
 
 /// Open a `.app`'s embedded zip by seeking past the NAVX header.
 ///
-/// Returns `None` if the file cannot be opened or is not a valid zip
-/// (e.g. a truncated / corrupt `.app`).
+/// Returns `None` for symbol-only / runtime apps that contain no embedded zip
+/// (indicated by `ZipError::InvalidArchive`). All other errors — I/O failures,
+/// unsupported archive formats — are propagated so callers see real failures
+/// rather than a silent empty result.
 fn open_zip(path: &Path) -> Result<Option<zip::ZipArchive<BufReader<std::fs::File>>>> {
     let file =
         std::fs::File::open(path).with_context(|| format!("open .app: {}", path.display()))?;
@@ -32,7 +34,8 @@ fn open_zip(path: &Path) -> Result<Option<zip::ZipArchive<BufReader<std::fs::Fil
     reader.seek(SeekFrom::Start(NAVX_HEADER_SIZE))?;
     match zip::ZipArchive::new(reader) {
         Ok(a) => Ok(Some(a)),
-        Err(_) => Ok(None),
+        Err(zip::result::ZipError::InvalidArchive(_)) => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading zip in .app: {}", path.display())),
     }
 }
 
@@ -101,7 +104,11 @@ mod tests {
             "ShowMyCode app should yield many .al files, got {}",
             files.len()
         );
-        assert!(files.iter().all(|f| f.virtual_path.ends_with(".al")));
+        assert!(
+            files
+                .iter()
+                .all(|f| f.virtual_path.to_ascii_lowercase().ends_with(".al"))
+        );
         assert!(
             files
                 .iter()

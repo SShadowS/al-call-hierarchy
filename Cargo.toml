@@ -52,8 +52,9 @@ serde_yaml = "0.9"
 # (`new RegExp('^'+escaped+'$','i')`) faithfully (see policy `glob_compile`).
 regex = "1"
 
-# Hashing (R0 identity encoders)
+# Hashing (R0 identity encoders and snapshot content identity)
 sha2 = "0.10"
+blake3 = { version = "1" }
 
 # File system
 walkdir = "2"
@@ -100,7 +101,6 @@ clap = { version = "4", features = ["derive"] }
 # pulls a second copy of the crate and breaks the trait bounds at the
 # global::set_tracer_provider call site). tracing-opentelemetry 0.27 is the
 # bridge version that targets opentelemetry 0.26.
-blake3 = { version = "1" }
 opentelemetry = { version = "0.26", optional = true }
 opentelemetry_sdk = { version = "0.26", features = ["rt-tokio-current-thread"], optional = true }
 opentelemetry-application-insights = { version = "0.36", features = ["reqwest-blocking-client"], optional = true }

@@ -247,10 +247,10 @@ struct SymbolMethodProperty {
     value: Option<serde_json::Value>,
 }
 
-/// Open a `.app` file's embedded zip by skipping the 40-byte NAVX header.
-///
-/// Shared by [`extract_app_package`] and [`crate::snapshot::embedded`] so the
-/// NAVX-offset + zip-open logic is not duplicated.
+/// Open a `.app` file's embedded zip by seeking past the 40-byte NAVX header.
+/// Factored out of `extract_app_package` for readability; callable by other
+/// binary-scope modules. (The library-crate `snapshot::embedded` cannot use
+/// it across the lib/bin boundary, so it has its own copy.)
 pub(crate) fn open_app_zip(
     path: &Path,
 ) -> Result<zip::ZipArchive<std::io::BufReader<std::fs::File>>> {
