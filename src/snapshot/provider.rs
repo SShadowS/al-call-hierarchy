@@ -2,7 +2,7 @@
 
 use crate::snapshot::embedded::{SourceFile, app_content_hash, extract_embedded_source};
 use crate::snapshot::identity::{AppId, TrustTier};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
@@ -42,7 +42,8 @@ impl SourceProvider for WorkspaceProvider {
             }) {
                 continue;
             }
-            let text = std::fs::read_to_string(path).unwrap_or_default();
+            let text = std::fs::read_to_string(path)
+                .with_context(|| format!("reading workspace source {}", path.display()))?;
             let virtual_path = path
                 .strip_prefix(&self.root)
                 .unwrap_or(path)
