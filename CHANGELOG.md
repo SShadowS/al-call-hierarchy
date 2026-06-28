@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **App-set snapshot ingestion substrate** (`src/snapshot/`) — per-app source
+  acquisition with identity verification + trust tiers (Spec 1 / Plan 1A).
+
 ### Changed
 - **Pinned the toolchain (`rust-toolchain.toml` → 1.96.0).** CI floated `dtolnay/
   rust-toolchain@stable` while gating on `cargo clippy -- -D warnings`, so every new

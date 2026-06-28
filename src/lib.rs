@@ -16,4 +16,5 @@ pub mod engine;
 /// declaration. `main.rs` keeps its own `mod language;` for the LSP binary;
 /// the duplicate compilation is benign and pre-existing in this repo.
 pub mod language;
+pub mod snapshot;
 pub mod telemetry;
