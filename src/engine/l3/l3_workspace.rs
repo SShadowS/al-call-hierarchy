@@ -1334,6 +1334,13 @@ fn project_file(
                 continue;
             }
 
+            // The matched IR routine (byte-exact) — drives the routine-envelope
+            // metadata below; legacy tree-sitter extractors only as a defensive
+            // fallback for an unmatched (parse-error) routine.
+            let ir_routine_opt: Option<&al_syntax::ir::RoutineDecl> = ir_routine_by_byte
+                .get(&routine.start_byte())
+                .map(|&(_, r)| r);
+
             let (routine_id, mut features) = match ir_routine_by_byte.get(&routine.start_byte()) {
                 Some(&(oi, ir_routine)) => {
                     let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
@@ -1617,11 +1624,17 @@ fn project_file(
             // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
             let source_anchor = anchor_from_node(routine, source_unit_id, cols);
 
-            // L2 bodyAvailable / parseIncomplete — computed the SAME way the L2
-            // projection does (routine-indexer.ts parity): a code_block body is
-            // present; the routine subtree carries a tree-sitter ERROR node.
-            let body_available = crate::engine::l2::find_code_block(routine).is_some();
-            let parse_incomplete = routine.has_error();
+            // L2 bodyAvailable / parseIncomplete — from the owned IR when matched
+            // (a body block present; the routine subtree carried a tree-sitter ERROR),
+            // else the legacy tree-sitter computation.
+            let body_available = match ir_routine_opt {
+                Some(r) => r.body.is_some(),
+                None => crate::engine::l2::find_code_block(routine).is_some(),
+            };
+            let parse_incomplete = match ir_routine_opt {
+                Some(r) => r.parse_incomplete,
+                None => routine.has_error(),
+            };
 
             // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
             // The hash reuses the same param/kind/return extraction as the internal
@@ -1634,17 +1647,24 @@ fn project_file(
             // SAME L2 attribute indexing that produces the L2 projection's
             // `attributesParsed`, so the AttributeInfo arg shape (kind/value/qualifier/
             // member) cannot drift from R1.
-            let kind = crate::engine::l2::l2_workspace::classify_kind(routine, source).to_string();
-            let (_, attributes_parsed_json) =
-                crate::engine::l2::l2_workspace::collect_attributes(routine, source);
+            let kind = match ir_routine_opt {
+                Some(r) => crate::engine::l2::ir_walk::ir_routine_kind(r).to_string(),
+                None => crate::engine::l2::l2_workspace::classify_kind(routine, source).to_string(),
+            };
+            let attributes_parsed_json = match ir_routine_opt {
+                Some(r) => crate::engine::l2::ir_walk::ir_attributes(r, &ir_file, source).1,
+                None => crate::engine::l2::l2_workspace::collect_attributes(routine, source).1,
+            };
             let attributes_parsed: Vec<super::al_attributes::AttributeInfo> =
                 attributes_parsed_json
                     .into_iter()
                     .filter_map(|v| serde_json::from_value(v).ok())
                     .collect();
             // d32 scope gate: access modifier (`local`/`internal`/`protected`; None = public).
-            let access_modifier =
-                crate::engine::l2::l2_workspace::classify_access_modifier(routine, source);
+            let access_modifier = match ir_routine_opt {
+                Some(r) => r.access_modifier.clone(),
+                None => crate::engine::l2::l2_workspace::classify_access_modifier(routine, source),
+            };
 
             // E1: enclosing-member capture (additive — never serialized into a golden).
             // A member-trigger (parent is a member-bearing wrapper) gets the unescaped
