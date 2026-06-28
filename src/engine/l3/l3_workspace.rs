@@ -22,11 +22,7 @@ use super::extension_fields::merge_extension_fields;
 use super::record_types::resolve_routine_record_types;
 use super::symbol_table::SymbolTable;
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
-use crate::engine::l2::node_util::{
-    block_statements, named_children, node_text, strip_quotes, Utf16Cols,
-};
-use crate::engine::l2::scope;
-use tree_sitter::Node;
+use crate::engine::l2::node_util::{strip_quotes, Utf16Cols};
 
 // ---------------------------------------------------------------------------
 // L3 model types — workspace-level, in-memory (NOT the serde projection shape).
