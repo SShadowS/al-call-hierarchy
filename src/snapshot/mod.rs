@@ -6,10 +6,12 @@
 pub mod compilation;
 pub mod embedded;
 pub mod identity;
+pub mod parse;
 pub mod provider;
 #[allow(clippy::module_inception)]
 pub mod snapshot;
 pub mod verify;
 
 pub use identity::{AppId, Provenance, TrustTier};
+pub use parse::{ParsedFile, ParsedUnit, parse_snapshot};
 pub use snapshot::{AppSetSnapshot, AppUnit, SnapshotBuilder, World};
