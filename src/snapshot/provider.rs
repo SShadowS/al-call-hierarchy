@@ -1,7 +1,7 @@
 //! Source providers: acquire per-app source by the best available means.
 
 use crate::snapshot::cache::cached_source;
-use crate::snapshot::embedded::{SourceFile, app_content_hash};
+use crate::snapshot::embedded::SourceFile;
 use crate::snapshot::identity::{AppId, TrustTier};
 use crate::snapshot::verify::{IdentityCheck, verify_local_source};
 use anyhow::{Context, Result};
@@ -84,14 +84,14 @@ pub struct EmbeddedAppProvider {
 
 impl SourceProvider for EmbeddedAppProvider {
     fn try_provide(&self, _app: &AppId) -> Result<Option<SourceRoot>> {
-        let files = cached_source(&self.app_path)?;
+        let (files, content_hash) = cached_source(&self.app_path)?;
         if files.is_empty() {
             return Ok(None); // symbol-only app
         }
         Ok(Some(SourceRoot {
             files,
             tier: TrustTier::EmbeddedSource,
-            content_hash: app_content_hash(&self.app_path)?,
+            content_hash,
         }))
     }
 }
