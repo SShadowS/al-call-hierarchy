@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **L3 routine features are now owned-IR-driven (the last production `body_walk`
+  caller is gone).** `l3_workspace::project_file` sources each routine's `PFeatures`
+  from `project_routine_features_ir` (matched by start byte; a defensive legacy
+  fallback only on a corpus-impossible byte-miss). The legacy `body_walk` /
+  `project_routine_features` now survive ONLY as the dual-run validation oracle.
+
+### Fixed
+- **IR CFN nodes carry `source_range`** (was always `None`). The L4 branch-aware
+  field-load walker reads this serde-skipped field to attribute field accesses to the
+  right block level; without it, the walker reconstructed a too-narrow range from
+  op/callsite leaves only and dropped statement-level field reads — diverging the L4
+  cross-call `requiredLoadedFieldsAtEntry` / `dirtyAtExit` summaries. Now populated
+  from each statement/block/branch IR origin, byte-identical to the legacy `cfn.rs`.
+- **`RecordRef` / `RecordId` are no longer misclassified as `Record` variables.** The
+  IR's record-variable test used `type.starts_with("record")`, which wrongly matched
+  the distinct `RecordRef` type — seeding its record ops a spurious `Known(false)`
+  temp_state via the backfill. The record-VARIABLE test now requires `Record`
+  followed by whitespace/`"` (or exactly `Record`); the record-OP RECEIVER set stays
+  inclusive (so `RecRef.DeleteAll` is still captured as a record op, as in legacy).
+
 ### Added
 - **tree-sitter-al `call_statement` grammar node + engine integration.** A parenless
   no-arg call (`Initialize;`) — a bare identifier in statement position that owns its

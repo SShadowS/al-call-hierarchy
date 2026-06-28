@@ -121,10 +121,17 @@ struct Scope {
     object_procedure_names: HashSet<String>,
 }
 
+/// Record-OP / field-access RECEIVER eligibility (the `rvars`/`frvars` sets): a `X.`
+/// receiver whose ops are captured as `PRecordOperation` / field accesses. This is
+/// INCLUSIVE of `RecordRef` (legacy captures `RecRef.DeleteAll` as a record op) —
+/// unlike [`is_record_type_str`], which is the stricter record-VARIABLE test (temp
+/// state / table resolution) that excludes `RecordRef`.
+fn is_record_receiver_ty(ty: &str) -> bool {
+    ty.trim().to_ascii_lowercase().starts_with("record")
+}
+
 fn is_record_ty(v: &VarDecl) -> bool {
-    v.ty.as_deref()
-        .map(|t| t.to_ascii_lowercase().starts_with("record"))
-        .unwrap_or(false)
+    v.ty.as_deref().map(is_record_receiver_ty).unwrap_or(false)
 }
 
 /// Does the object expose an implicit `Rec` (legacy `implicit_base_receiver` +
@@ -172,11 +179,7 @@ fn build_scope(
     let params_locals: Vec<String> = routine
         .params
         .iter()
-        .filter(|p| {
-            p.ty.as_deref()
-                .map(|t| t.to_ascii_lowercase().starts_with("record"))
-                .unwrap_or(false)
-        })
+        .filter(|p| p.ty.as_deref().map(is_record_receiver_ty).unwrap_or(false))
         .map(|p| p.name.to_ascii_lowercase())
         .chain(
             routine
@@ -1191,11 +1194,29 @@ fn cfn_node(kind: &str) -> PCFNNode {
 pub struct IrCfn<'a> {
     pub file: &'a AlFile,
     pub spine: &'a IrSpine,
+    pub cols: &'a Utf16Cols<'a>,
 }
 
 impl<'a> IrCfn<'a> {
     fn ir(&self) -> &al_syntax::ir::Ir {
         &self.file.ir
+    }
+
+    /// The node's TRUE source range `(startLine, startColumn, endLine, endColumn)` in
+    /// the PAnchor basis (0-based row, utf16 column) — the SAME basis the legacy
+    /// `cfn.rs` `range_of` produces. The L4 branch-aware walker reads this (serde-skip
+    /// `PCFNNode.source_range`) to attribute field accesses to the right block level;
+    /// WITHOUT it, `node_range` reconstructs a too-narrow range from op/cs leaves only
+    /// and drops statement-level field reads (the L3-swap r3a2 divergence).
+    fn range_of(&self, origin: &Origin) -> Option<(u32, u32, u32, u32)> {
+        Some((
+            origin.start.row,
+            self.cols
+                .col(origin.start.row as usize, origin.start.column as usize),
+            origin.end.row,
+            self.cols
+                .col(origin.end.row as usize, origin.end.column as usize),
+        ))
     }
 
     fn block_items(&self, bid: BlockId) -> Vec<PCFNNode> {
@@ -1219,6 +1240,7 @@ impl<'a> IrCfn<'a> {
 
     pub fn build_block(&self, bid: BlockId) -> PCFNNode {
         let mut n = cfn_node("block");
+        n.source_range = self.range_of(&self.ir().block(bid).origin);
         n.children = Some(self.block_items(bid));
         n
     }
@@ -1393,7 +1415,7 @@ impl<'a> IrCfn<'a> {
         use StmtKind::*;
         let st = self.ir().stmt(sid);
         let some_if = |v: Vec<PCFNNode>| if v.is_empty() { None } else { Some(v) };
-        Some(match &st.kind {
+        let mut node = match &st.kind {
             Call(e) => self.build_stmt_call(*e),
             If {
                 cond,
@@ -1415,12 +1437,14 @@ impl<'a> IrCfn<'a> {
                 let mut branch_cfns = Vec::new();
                 for br in branches {
                     let mut b = cfn_node("case-branch");
+                    b.source_range = self.range_of(&br.origin);
                     b.children = Some(vec![self.build_block(br.body)]);
                     branch_cfns.push(b);
                 }
                 if let Some(eb) = else_block {
                     let mut b = cfn_node("case-branch");
                     b.is_case_else = true;
+                    b.source_range = self.range_of(&self.ir().block(*eb).origin);
                     b.children = Some(vec![self.build_block(*eb)]);
                     branch_cfns.push(b);
                 }
@@ -1479,7 +1503,14 @@ impl<'a> IrCfn<'a> {
             }
             Block(b) => self.build_block(*b),
             Break | Continue | Unknown => cfn_node("other"),
-        })
+        };
+        // The L4 walker reads `source_range` (serde-skip) to attribute field accesses
+        // to the right block level. Set it to the statement's range for any node that
+        // did not already carry its own (build_block sets the block's origin).
+        if node.source_range.is_none() {
+            node.source_range = self.range_of(&st.origin);
+        }
+        Some(node)
     }
 }
 
@@ -1529,6 +1560,7 @@ pub fn routine_features_partial(
         let cfn = IrCfn {
             file,
             spine: &spine,
+            cols: &cols,
         };
         cfn.build_block(b)
     });
@@ -1701,7 +1733,7 @@ pub fn project_routine_features_ir(
 /// no subtype.
 fn parse_record_table_name(ty: &str) -> Option<String> {
     let t = ty.trim();
-    if !t.to_ascii_lowercase().starts_with("record") {
+    if !is_record_type_str(t) {
         return None;
     }
     let rest = t[6..].trim_start();
@@ -1716,8 +1748,20 @@ fn parse_record_table_name(ty: &str) -> Option<String> {
     }
 }
 
+/// True when `ty` is an AL `Record` variable type (`Record`, `Record Customer`,
+/// `Record "Sales Header" temporary`). MUST NOT match the distinct built-in types
+/// `RecordRef` / `RecordId` — legacy keys off the grammar's `record_type` node, which
+/// those don't produce; a naive `starts_with("record")` wrongly classifies them as
+/// record variables (then their record ops get a spurious Known(false) temp_state via
+/// the backfill — the L3 RecordRef-flow divergence). The discriminator: after the
+/// `record` prefix the next char must be whitespace or `"` (a table follows), or the
+/// type is exactly `record`.
 fn is_record_type_str(ty: &str) -> bool {
-    ty.trim().to_ascii_lowercase().starts_with("record")
+    let lc = ty.trim().to_ascii_lowercase();
+    match lc.strip_prefix("record") {
+        Some(rest) => rest.is_empty() || rest.starts_with(' ') || rest.starts_with('"'),
+        None => false,
+    }
 }
 
 /// Per-routine `record_variables` (`PRecordVariable`) from the owned IR: record
@@ -2200,7 +2244,7 @@ pub fn ir_parameter_symbols(routine: &RoutineDecl) -> Vec<super::scope::Paramete
         .enumerate()
         .map(|(i, p)| {
             let ty = p.ty.clone().unwrap_or_default();
-            let is_record = ty.to_ascii_lowercase().starts_with("record");
+            let is_record = is_record_type_str(&ty);
             let table_name = if is_record {
                 parse_record_table_name(&ty)
             } else {

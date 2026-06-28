@@ -1057,6 +1057,17 @@ fn project_file(
     cols: &Utf16Cols,
     workspace: &mut L3Workspace,
 ) {
+    let ir_file = al_syntax::parse(source);
+    let mut ir_routine_by_byte: std::collections::HashMap<
+        usize,
+        (usize, &al_syntax::ir::RoutineDecl),
+    > = std::collections::HashMap::new();
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        for r in &o.routines {
+            ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
+        }
+    }
+
     for decl in named_children(root) {
         let Some(object_type) = scope::object_type_for(decl.kind()) else {
             continue;
@@ -1202,19 +1213,47 @@ fn project_file(
                 continue;
             }
 
-            let Some((routine_id, mut features)) = project_routine_features(
-                decl,
-                routine,
-                object_type,
-                object_number,
-                source_table_name.as_deref(),
-                &object_procedure_names,
-                &object_globals,
-                &id_ctx,
-                source,
-                cols,
-            ) else {
-                continue;
+            let (routine_id, mut features) = match ir_routine_by_byte.get(&routine.start_byte()) {
+                Some(&(oi, ir_routine)) => {
+                    let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
+                    let params_for_id =
+                        crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
+                    let rid = crate::engine::l2::scope::compute_routine_id(
+                        app_guid,
+                        object_type,
+                        object_number,
+                        kind_for_id,
+                        &rname,
+                        &params_for_id,
+                        ir_routine.return_type.as_deref(),
+                        model_instance_id,
+                    );
+                    let feats = crate::engine::l2::ir_walk::project_routine_features_ir(
+                        &ir_file,
+                        oi,
+                        ir_routine,
+                        &rid,
+                        source,
+                        source_unit_id,
+                        source_table_name.as_deref(),
+                    );
+                    (rid, feats)
+                }
+                None => match project_routine_features(
+                    decl,
+                    routine,
+                    object_type,
+                    object_number,
+                    source_table_name.as_deref(),
+                    &object_procedure_names,
+                    &object_globals,
+                    &id_ctx,
+                    source,
+                    cols,
+                ) {
+                    Some(x) => x,
+                    None => continue,
+                },
             };
 
             // R1b control-context lattice (the SAME pass `aldump --l2` applies):
