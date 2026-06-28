@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **App-set snapshot ingestion substrate** (`src/snapshot/`) — per-app source
   acquisition with identity verification + trust tiers (Spec 1 / Plan 1A).
+- **`snapshot::parse_snapshot`** — deep-parse of snapshot source into the owned
+  IR. `parse_snapshot(&AppSetSnapshot) -> Vec<ParsedUnit>` walks every
+  source-bearing `AppUnit` in parallel (local rayon pool, 32 MiB worker stack —
+  the `al_syntax` lowerer recurses deeper than the default Windows thread stack
+  on large BC packages) and yields `ParsedUnit { app, files: Vec<ParsedFile> }`
+  holding the owned `al_syntax::ir::AlFile` per source file. Symbol-only boundary
+  units contribute no output; their ABI feeds later resolution.
 
 ### Changed
 - **Pinned the toolchain (`rust-toolchain.toml` → 1.96.0).** CI floated `dtolnay/

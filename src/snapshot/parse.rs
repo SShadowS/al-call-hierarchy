@@ -29,17 +29,27 @@ pub struct ParsedUnit {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// Worker stack for the snapshot deep-parse pool.
+///
+/// The `al_syntax` lowerer recurses on nested AL statements. Rayon worker
+/// threads default to the OS thread stack — ~1 MiB on Windows — which is too
+/// shallow for the deepest files in large BC packages (observed stack overflow
+/// on Base Application source). 32 MiB is ~32× that failing default, leaving
+/// generous headroom. The exact maximum depth is unmeasured; revisit if BC
+/// codebase complexity grows substantially.
+const SNAPSHOT_PARSE_STACK_SIZE: usize = 32 * 1024 * 1024;
+
 /// Parse every source file of every source-bearing app in `snap` in parallel.
 ///
 /// Units whose `source` is `None` (symbol-only boundary apps) are skipped;
 /// their ABI is used for resolution in later phases.
 ///
-/// A local rayon thread pool is built with an explicit 32 MB stack per worker.
-/// The `al_syntax` lowerer recurses into nested AL statements; the rayon
-/// global-pool default is too shallow on Windows for large BC app packages.
+/// A local rayon thread pool is built with [`SNAPSHOT_PARSE_STACK_SIZE`] per
+/// worker (see that constant for why the global pool's default is insufficient).
+#[must_use]
 pub fn parse_snapshot(snap: &AppSetSnapshot) -> Vec<ParsedUnit> {
     let pool = rayon::ThreadPoolBuilder::new()
-        .stack_size(32 * 1024 * 1024)
+        .stack_size(SNAPSHOT_PARSE_STACK_SIZE)
         .build()
         .expect("rayon pool for snapshot parse");
     pool.install(|| {
@@ -75,6 +85,8 @@ mod tests {
 
     #[test]
     fn parses_all_source_units_zero_panics() {
+        // Integration test: requires the CDO_WS env var pointing at a real
+        // BC workspace with `.alpackages`; skipped (no-op) when unset.
         let Some(ws) = std::env::var_os("CDO_WS")
             .map(std::path::PathBuf::from)
             .filter(|p| p.exists())
