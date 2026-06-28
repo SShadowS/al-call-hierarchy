@@ -22,7 +22,7 @@
 - CI gates on `cargo clippy --release -- -D warnings`, `cargo fmt --check`, `cargo test --workspace` — leave all three green every task.
 - No `unwrap()`/`expect()` on fallible paths reachable from a real workspace.
 - Determinism: every collection that feeds output ordering is sorted by a stable key (`NodeId`), per the charter's determinism requirement. (The final-review follow-up "AppSetSnapshot.apps order is filesystem-dependent" is addressed here by sorting nodes by `NodeId`.)
-- `AppId.guid` is empty for deps built by `SnapshotBuilder` today — node identity MUST therefore key on the full `AppId` (guid+name+publisher+version) as an opaque tuple, not guid alone, so empty-guid deps still get distinct identities by (name, publisher, version).
+- Dependency `AppId`s now carry their real unique GUID (from the `.app` NavxManifest `App@Id`; the `SnapshotBuilder` guid fix). Node identity still keys on the full `AppId` tuple (guid+name+publisher+version) as defensive identity — this is unique by guid in practice and still distinct by (name, publisher, version) for any residual empty-guid case.
 - Real-IR facts (use verbatim): `AlFile{ objects: Vec<ObjectDecl>, ir: Ir, .. }`; `ObjectDecl{ kind: ObjectKind, id: Option<i64>, name: String, routines: Vec<RoutineDecl>, extends_target: Option<String>, implements: Vec<String>, .. }`; `RoutineDecl{ kind: RoutineKind, name: String, access_modifier: Option<String>, params: Vec<Param>, return_type: Option<String>, body: Option<BlockId>, .. }`; `ObjectKind{ Codeunit, Table, TableExtension, Page, .. , Interface, .. }`; `RoutineKind{ Procedure, Trigger }`.
 
 ---
