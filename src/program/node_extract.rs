@@ -24,6 +24,7 @@ impl Access {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ObjectNode {
     pub id: ObjectNodeId,
     pub name: String,
@@ -33,6 +34,7 @@ pub struct ObjectNode {
     pub tier: TrustTier,
 }
 
+#[derive(Debug, Clone)]
 pub struct RoutineNode {
     pub id: RoutineNodeId,
     pub name: String,
