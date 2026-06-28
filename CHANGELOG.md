@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`ProgramGraph` + topology-scoped object index** (`src/program/graph.rs`,
+  `src/program/build.rs`) — `build_program_graph(&AppSetSnapshot)` interns all
+  apps, extracts object/routine nodes via `parse_snapshot`, wires real dependency
+  topology from `declared_deps` (GUID-match preferred, name+version fallback), and
+  exposes `resolve_object(from, kind, name)` that searches only `from`'s transitive
+  dependency closure — never flat-global. Adds `AppRegistry::find_by_name` helper.
 - **Whole-program node graph** (`src/program/`) — app-qualified canonical
   `NodeId`s + topology index over the snapshot (Plan 1B.1). Also adds
   `Hash, Ord, PartialOrd` to `al_syntax::ir::ObjectKind` (plain C-like enum,

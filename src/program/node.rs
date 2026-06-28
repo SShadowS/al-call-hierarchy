@@ -36,6 +36,14 @@ impl AppRegistry {
     pub fn resolve(&self, r: AppRef) -> &AppId {
         &self.apps[r.0 as usize]
     }
+
+    /// Find the first interned app whose `name` matches case-insensitively.
+    pub fn find_by_name(&self, name: &str) -> Option<AppRef> {
+        self.apps
+            .iter()
+            .position(|id| id.name.eq_ignore_ascii_case(name))
+            .map(|i| AppRef(i as u32))
+    }
 }
 
 /// Object key: prefer the numeric id; fall back to the (lowercased) name for
