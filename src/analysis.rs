@@ -1,7 +1,6 @@
 //! Code quality analysis - cyclomatic complexity and metrics
 
 use serde::Serialize;
-use tree_sitter::{Node, TreeCursor};
 
 /// Metrics for a single procedure/trigger
 #[derive(Debug, Clone, Serialize)]
@@ -46,66 +45,6 @@ pub struct AnalysisResult {
 }
 
 use crate::config::DiagnosticConfig;
-
-/// Calculate cyclomatic complexity by walking the AST subtree.
-///
-/// LEGACY / INTERIM: the canonical complexity metric is now
-/// [`crate::parser::routine_complexity_ir`] (IR-based). This tree-sitter version is
-/// retained only as a dependency of the legacy `AlParser` differential-test oracle
-/// and is deleted alongside it (Phase 4.4).
-#[allow(dead_code)]
-pub fn calculate_complexity(node: &Node) -> u32 {
-    let mut complexity = 1; // Base complexity (single path)
-    let mut cursor = node.walk();
-    count_decision_points(&mut cursor, &mut complexity);
-    complexity
-}
-
-#[allow(dead_code)]
-fn count_decision_points(cursor: &mut TreeCursor, complexity: &mut u32) {
-    let node = cursor.node();
-    let kind = node.kind();
-
-    match kind {
-        // Control flow statements
-        "if_statement" => {
-            *complexity += 1;
-            // Check if there's an else branch
-            if node.child_by_field_name("else_branch").is_some() {
-                *complexity += 1;
-            }
-        }
-        "while_statement" | "for_statement" | "foreach_statement" | "repeat_statement" => {
-            *complexity += 1;
-        }
-        // Case branches (each branch adds a path)
-        "case_branch" => {
-            *complexity += 1;
-        }
-        // Logical operators add decision points
-        "logical_expression" => {
-            // Check the operator field for and/or
-            if let Some(op_node) = node.child_by_field_name("operator") {
-                let op = op_node.kind().to_lowercase();
-                if op == "and" || op == "or" {
-                    *complexity += 1;
-                }
-            }
-        }
-        _ => {}
-    }
-
-    // Recurse into children
-    if cursor.goto_first_child() {
-        loop {
-            count_decision_points(cursor, complexity);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
-}
 
 /// Calculate quality score on a 0-10 scale
 /// Based on tree-sitter-mcp's quality score formula

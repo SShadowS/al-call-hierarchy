@@ -69,6 +69,14 @@ impl<'t> RawNode<'t> {
         self.node.child_by_field_name(f.as_raw()).map(RawNode::new)
     }
 
+    /// Whether this is a *named* node (vs an anonymous token like `,`/`;`/a keyword).
+    /// Only named nodes have a [`RawKind`] in the generated vocabulary, so callers
+    /// that iterate field children which may include anonymous separators must filter
+    /// on this before reading [`RawNode::kind`] (which panics on an unknown kind).
+    pub(crate) fn is_named(self) -> bool {
+        self.node.is_named()
+    }
+
     /// All children held in `field` (for `multiple: true` fields), document order.
     pub(crate) fn children_by_field(self, f: FieldName) -> Vec<RawNode<'t>> {
         let mut cursor = self.node.walk();

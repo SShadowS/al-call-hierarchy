@@ -1,14 +1,12 @@
-//! Tree-sitter based AL parser
+//! AL "parsed file" projection over the owned `al-syntax` IR.
+//!
+//! `parse_file_ir` is the single entry point: it parses via `al_syntax::parse` and
+//! projects a [`ParsedFile`] (definitions / calls / variables / events) for the LSP
+//! call-graph indexer. No tree-sitter — `al-syntax` is the only crate that links it.
 
-use anyhow::{Context, Result};
 use lsp_types::{Position, Range};
-use std::path::Path;
-use streaming_iterator::StreamingIterator;
-use tree_sitter::{Node, Parser, Query, QueryCursor};
 
-use crate::analysis;
 use crate::graph::{DefinitionKind, ObjectType};
-use crate::language;
 
 /// Parsed definitions and calls from a single file
 #[derive(Debug, Default)]
@@ -125,479 +123,6 @@ pub struct ParsedEventSubscriber {
     pub publisher_event: String,
 }
 
-/// AL file parser using tree-sitter.
-///
-/// LEGACY / INTERIM: production now parses via [`parse_file_ir`] (the owned-IR
-/// projection). `AlParser` is retained ONLY as the oracle for the
-/// `ir_projection_matches_legacy_over_r0_corpus` differential test, which proves
-/// the IR path byte-identical. It is deleted (along with the 6 S-expr queries) once
-/// `handlers.rs` + `main.rs` are also ported off tree-sitter, at which point the
-/// differential is replaced by an IR-output snapshot golden.
-#[allow(dead_code)]
-pub struct AlParser {
-    parser: Parser,
-    definitions_query: Query,
-    calls_query: Query,
-    variables_query: Query,
-    event_subscribers_query: Query,
-    event_publishers_query: Query,
-    attributed_procedures_query: Query,
-}
-
-#[allow(dead_code)]
-impl AlParser {
-    pub fn new() -> Result<Self> {
-        let lang = language::language();
-
-        let mut parser = Parser::new();
-        parser
-            .set_language(&lang)
-            .context("Failed to set language")?;
-
-        let definitions_query = Query::new(&lang, language::queries::DEFINITIONS)
-            .context("Failed to compile definitions query")?;
-
-        let calls_query =
-            Query::new(&lang, language::queries::CALLS).context("Failed to compile calls query")?;
-
-        let variables_query = Query::new(&lang, language::queries::VARIABLES)
-            .context("Failed to compile variables query")?;
-
-        let event_subscribers_query = Query::new(&lang, language::queries::EVENT_SUBSCRIBERS)
-            .context("Failed to compile event subscribers query")?;
-
-        let event_publishers_query = Query::new(&lang, language::queries::EVENT_PUBLISHERS)
-            .context("Failed to compile event publishers query")?;
-
-        let attributed_procedures_query =
-            Query::new(&lang, language::queries::ATTRIBUTED_PROCEDURES)
-                .context("Failed to compile attributed procedures query")?;
-
-        Ok(Self {
-            parser,
-            definitions_query,
-            calls_query,
-            variables_query,
-            event_subscribers_query,
-            event_publishers_query,
-            attributed_procedures_query,
-        })
-    }
-
-    /// Parse an AL file and extract definitions and calls
-    pub fn parse_file(&mut self, _path: &Path, source: &str) -> Result<ParsedFile> {
-        let tree = self
-            .parser
-            .parse(source, None)
-            .context("Failed to parse file")?;
-
-        let root = tree.root_node();
-
-        #[cfg(feature = "telemetry")]
-        {
-            if root.has_error() {
-                crate::telemetry::record_parser_error(
-                    crate::telemetry::ParserErrorKind::TreeError,
-                    _path,
-                );
-            }
-        }
-
-        let mut result = ParsedFile::default();
-
-        // Extract object info and definitions
-        self.extract_definitions(&root, source, &mut result);
-
-        // Extract calls
-        self.extract_calls(&root, source, &mut result);
-
-        // Extract variable declarations
-        self.extract_variables(&root, source, &mut result);
-
-        // Extract event subscribers
-        self.extract_event_subscribers(&root, source, &mut result);
-
-        // Extract event publishers ([IntegrationEvent]/[BusinessEvent]/[InternalEvent])
-        self.extract_event_publishers(&root, source, &mut result);
-
-        // Extract framework-invoked procedures ([Test], [*Handler])
-        self.extract_framework_invoked(&root, source, &mut result);
-
-        Ok(result)
-    }
-
-    fn extract_definitions(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-
-        let mut matches = cursor.matches(&self.definitions_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            for capture in m.captures {
-                let node = capture.node;
-                let capture_name = &self.definitions_query.capture_names()[capture.index as usize];
-                let text = node_text(&node, source);
-
-                match capture_name.as_ref() {
-                    // Object declarations
-                    "codeunit.name" => {
-                        result.object_type = Some(ObjectType::Codeunit);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "table.name" => {
-                        result.object_type = Some(ObjectType::Table);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "page.name" => {
-                        result.object_type = Some(ObjectType::Page);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "report.name" => {
-                        result.object_type = Some(ObjectType::Report);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "query.name" => {
-                        result.object_type = Some(ObjectType::Query);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "xmlport.name" => {
-                        result.object_type = Some(ObjectType::XmlPort);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "enum.name" => {
-                        result.object_type = Some(ObjectType::Enum);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "interface.name" => {
-                        result.object_type = Some(ObjectType::Interface);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "controladdin.name" => {
-                        result.object_type = Some(ObjectType::ControlAddIn);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "pageext.name" => {
-                        result.object_type = Some(ObjectType::PageExtension);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "tableext.name" => {
-                        result.object_type = Some(ObjectType::TableExtension);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "enumext.name" => {
-                        result.object_type = Some(ObjectType::EnumExtension);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "permissionset.name" => {
-                        result.object_type = Some(ObjectType::PermissionSet);
-                        result.object_name = Some(clean_name(text));
-                    }
-                    "permissionsetext.name" => {
-                        result.object_type = Some(ObjectType::PermissionSetExtension);
-                        result.object_name = Some(clean_name(text));
-                    }
-
-                    // Procedure definitions
-                    "proc.name" => {
-                        if let Some(parent) = node.parent() {
-                            let complexity = analysis::calculate_complexity(&parent);
-                            let parameter_count = count_parameters(&parent, source);
-                            result.definitions.push(ParsedDefinition {
-                                name: clean_name(text),
-                                range: node_range(&parent),
-                                kind: DefinitionKind::Procedure,
-                                complexity,
-                                parameter_count,
-                            });
-                        }
-                    }
-
-                    // Trigger definitions
-                    "trigger.name" => {
-                        if let Some(parent) = node.parent() {
-                            let complexity = analysis::calculate_complexity(&parent);
-                            // Triggers don't have parameters in the same way
-                            result.definitions.push(ParsedDefinition {
-                                name: clean_name(text),
-                                range: node_range(&parent),
-                                kind: DefinitionKind::Trigger,
-                                complexity,
-                                parameter_count: 0,
-                            });
-                        }
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn extract_calls(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-
-        let mut matches = cursor.matches(&self.calls_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            let mut object: Option<String> = None;
-            let mut method: Option<String> = None;
-            let mut range: Option<Range> = None;
-            let mut call_node: Option<Node> = None;
-
-            for capture in m.captures {
-                let node = capture.node;
-                let capture_name = &self.calls_query.capture_names()[capture.index as usize];
-                let text = node_text(&node, source);
-
-                match capture_name.as_ref() {
-                    "call.simple" => {
-                        method = Some(clean_name(text));
-                    }
-                    "call.object" => {
-                        object = Some(clean_name(text));
-                    }
-                    "call.method" => {
-                        method = Some(clean_name(text));
-                    }
-                    "call" | "call.member" => {
-                        range = Some(node_range(&node));
-                        call_node = Some(node);
-                    }
-                    _ => {}
-                }
-            }
-
-            if let (Some(method), Some(range)) = (method, range) {
-                // Find the containing procedure by walking up the tree
-                let containing_procedure =
-                    call_node.and_then(|n| find_containing_procedure(&n, source));
-
-                result.calls.push(ParsedCall {
-                    object,
-                    method,
-                    range,
-                    containing_procedure,
-                });
-            }
-        }
-    }
-
-    fn extract_variables(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-
-        let mut matches = cursor.matches(&self.variables_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            for capture in m.captures {
-                let node = capture.node;
-                let capture_name = &self.variables_query.capture_names()[capture.index as usize];
-
-                if *capture_name == "var.decl" {
-                    // Extract name and type from the variable_declaration node
-                    if let (Some(name), Some(type_text)) = (
-                        extract_var_name(&node, source),
-                        extract_var_type(&node, source),
-                    ) {
-                        let (type_kind, type_name) = parse_type_specification(&type_text);
-                        let containing_procedure = find_containing_procedure(&node, source);
-
-                        result.variables.push(ParsedVariable {
-                            name,
-                            type_name,
-                            type_kind,
-                            containing_procedure,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    fn extract_event_subscribers(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-
-        let mut matches = cursor.matches(&self.event_subscribers_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            let mut attr_args: Option<String> = None;
-            let mut attr_node: Option<Node> = None;
-
-            for capture in m.captures {
-                let node = capture.node;
-                let capture_name =
-                    &self.event_subscribers_query.capture_names()[capture.index as usize];
-
-                match capture_name.as_ref() {
-                    "attr.args" => {
-                        attr_args = Some(node_text(&node, source).to_string());
-                    }
-                    "attr.item" => {
-                        attr_node = Some(node);
-                    }
-                    _ => {}
-                }
-            }
-
-            if let (Some(args), Some(attr)) = (attr_args, attr_node) {
-                // V2: attribute is a sibling — find the next sibling procedure
-                let mut next = attr.next_sibling();
-                while let Some(sib) = next {
-                    if sib.kind() == "procedure" {
-                        let proc_name = sib
-                            .child_by_field_name("name")
-                            .map(|n| clean_name(node_text(&n, source)));
-                        let proc_range = node_range(&sib);
-
-                        if let Some(name) = proc_name {
-                            if let Some((obj_type, obj_name, event_name)) =
-                                parse_event_subscriber_args(&args)
-                            {
-                                result.event_subscribers.push(ParsedEventSubscriber {
-                                    subscriber_name: name,
-                                    range: proc_range,
-                                    publisher_object_type: obj_type,
-                                    publisher_object: obj_name,
-                                    publisher_event: event_name,
-                                });
-                            }
-                        }
-                        break;
-                    }
-                    // Skip other attribute_item nodes (multiple attributes before one procedure)
-                    if sib.kind() != "attribute_item" {
-                        break;
-                    }
-                    next = sib.next_sibling();
-                }
-            }
-        }
-    }
-
-    fn extract_event_publishers(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-        let mut matches = cursor.matches(&self.event_publishers_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            let mut attr_name: Option<String> = None;
-            let mut attr_node: Option<Node> = None;
-            for capture in m.captures {
-                let node = capture.node;
-                let cname = &self.event_publishers_query.capture_names()[capture.index as usize];
-                match cname.as_ref() {
-                    "attr.name" => attr_name = Some(node_text(&node, source).to_string()),
-                    "attr.item" => attr_node = Some(node),
-                    _ => {}
-                }
-            }
-            let (Some(name), Some(attr)) = (attr_name, attr_node) else {
-                continue;
-            };
-            let kind = match name.as_str() {
-                "IntegrationEvent" => EventPublisherKind::IntegrationEvent,
-                "BusinessEvent" => EventPublisherKind::BusinessEvent,
-                "InternalEvent" => EventPublisherKind::InternalEvent,
-                _ => continue,
-            };
-
-            // Walk forward siblings until we hit the procedure declaration.
-            // Other attribute_items between this one and the procedure are skipped
-            // (a procedure can carry multiple attributes — Obsolete, Scope, etc.).
-            let mut next = attr.next_sibling();
-            while let Some(sib) = next {
-                if sib.kind() == "procedure" {
-                    if let Some(pub_info) = self.parse_publisher_procedure(&sib, source, kind) {
-                        result.event_publishers.push(pub_info);
-                    }
-                    break;
-                }
-                if sib.kind() != "attribute_item" {
-                    break;
-                }
-                next = sib.next_sibling();
-            }
-        }
-    }
-
-    /// Collect names of procedures decorated with a framework-invocation
-    /// attribute (test methods and test handlers). These are called by the
-    /// test runner / framework, never directly, so the unused-procedure
-    /// diagnostic must skip them (issue #20). Reuses the generic attribute
-    /// query (same one that finds event publishers).
-    fn extract_framework_invoked(&self, root: &Node, source: &str, result: &mut ParsedFile) {
-        let mut cursor = QueryCursor::new();
-        let source_bytes = source.as_bytes();
-        let mut matches = cursor.matches(&self.attributed_procedures_query, *root, source_bytes);
-
-        while let Some(m) = matches.next() {
-            let mut attr_name: Option<String> = None;
-            let mut attr_node: Option<Node> = None;
-            for capture in m.captures {
-                let node = capture.node;
-                let cname =
-                    &self.attributed_procedures_query.capture_names()[capture.index as usize];
-                match cname.as_ref() {
-                    "attr.name" => attr_name = Some(node_text(&node, source).to_string()),
-                    "attr.item" => attr_node = Some(node),
-                    _ => {}
-                }
-            }
-            let (Some(name), Some(attr)) = (attr_name, attr_node) else {
-                continue;
-            };
-            if !is_framework_invocation_attribute(&name) {
-                continue;
-            }
-
-            // Walk forward siblings to the procedure this attribute decorates,
-            // skipping any other attribute_items in between.
-            let mut next = attr.next_sibling();
-            while let Some(sib) = next {
-                if sib.kind() == "procedure" {
-                    if let Some(name_node) = sib.child_by_field_name("name") {
-                        result
-                            .implicitly_invoked
-                            .push(clean_name(node_text(&name_node, source)));
-                    }
-                    break;
-                }
-                if sib.kind() != "attribute_item" {
-                    break;
-                }
-                next = sib.next_sibling();
-            }
-        }
-    }
-
-    /// Pull the published-procedure details out of a `procedure` AST node.
-    /// Returns None when the node lacks a usable name.
-    fn parse_publisher_procedure(
-        &self,
-        proc_node: &Node,
-        source: &str,
-        kind: EventPublisherKind,
-    ) -> Option<ParsedEventPublisher> {
-        let name_node = proc_node.child_by_field_name("name")?;
-        let name = clean_name(node_text(&name_node, source));
-        let range = node_range(proc_node);
-        let selection_range = node_range(&name_node);
-        let is_local = detect_local_procedure(proc_node, source);
-        let signature = extract_procedure_signature(proc_node, source);
-
-        Some(ParsedEventPublisher {
-            name,
-            range,
-            selection_range,
-            kind,
-            is_local,
-            signature,
-        })
-    }
-}
-
 /// True for AL attributes whose procedure is invoked by a framework (the test
 /// runner or test framework) rather than by an explicit call, so the procedure
 /// must not be reported as unused. AL attribute names are case-insensitive.
@@ -675,63 +200,6 @@ fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
     !next.is_ascii_alphanumeric() && next != b'_'
 }
 
-/// Detect whether a `procedure` node is declared as `local procedure`.
-/// tree-sitter-al includes the `local`/`internal`/`protected` modifier
-/// keyword as the first token of the procedure node itself, so we just
-/// peek at the first few non-whitespace bytes of the node text.
-fn detect_local_procedure(proc_node: &Node, source: &str) -> bool {
-    let text = node_text(proc_node, source);
-    text.trim_start().starts_with("local ")
-}
-
-/// Render the procedure header (modifiers + name + params + return) by slicing
-/// from the procedure node start up to the start of its body (var section or
-/// begin block). Falls back to a textual search for the `begin` keyword if
-/// tree-sitter-al doesn't expose a body node we recognize.
-fn extract_procedure_signature(proc_node: &Node, source: &str) -> String {
-    let proc_start = proc_node.start_byte();
-    let mut end_byte = proc_node.end_byte();
-
-    // Walk children for any node that looks like a body or `var` section.
-    // Different grammar revisions name these differently — we accept a few.
-    let mut cursor = proc_node.walk();
-    if cursor.goto_first_child() {
-        loop {
-            let kind = cursor.node().kind();
-            if matches!(
-                kind,
-                "var_section"
-                    | "compound_statement"
-                    | "block"
-                    | "statement_list"
-                    | "procedure_body"
-                    | "begin_end"
-            ) {
-                end_byte = cursor.node().start_byte().min(end_byte);
-                break;
-            }
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-    }
-
-    // Textual fallback: if we still have the whole procedure (including body),
-    // walk the bytes from proc_start onward and stop at the first standalone
-    // `begin` or `var` keyword (preceded by whitespace).
-    if end_byte == proc_node.end_byte() {
-        let text = &source[proc_start..end_byte];
-        if let Some(off) = find_body_start(text) {
-            end_byte = proc_start + off;
-        }
-    }
-
-    let raw = &source[proc_start..end_byte];
-    // The procedure node already includes its modifier keywords
-    // (`local`/`internal`/`protected`), so we don't need to prepend.
-    normalize_signature_ws(raw)
-}
-
 /// Collapse runs of whitespace to single spaces and trim — the procedure-header
 /// rendering shared by the legacy tree-sitter path and the owned-IR projection.
 fn normalize_signature_ws(raw: &str) -> String {
@@ -796,54 +264,6 @@ fn extract_object_name(expr: &str) -> String {
     }
 }
 
-/// Extract variable name from a variable_declaration node
-fn extract_var_name(node: &Node, source: &str) -> Option<String> {
-    // Try 'name' field first
-    if let Some(name_node) = node.child_by_field_name("name") {
-        return Some(clean_name(node_text(&name_node, source)));
-    }
-    // Try 'names' field (for comma-separated declarations)
-    if let Some(names_node) = node.child_by_field_name("names") {
-        // Just get the first name
-        for i in 0..names_node.child_count() as u32 {
-            if let Some(child) = names_node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "quoted_identifier" {
-                    return Some(clean_name(node_text(&child, source)));
-                }
-            }
-        }
-    }
-    // Walk children to find identifier
-    for i in 0..node.child_count() as u32 {
-        if let Some(child) = node.child(i) {
-            if child.kind() == "identifier" || child.kind() == "quoted_identifier" {
-                return Some(clean_name(node_text(&child, source)));
-            }
-        }
-    }
-    None
-}
-
-/// Extract variable type from a variable_declaration node
-fn extract_var_type(node: &Node, source: &str) -> Option<String> {
-    // Try 'type' field
-    if let Some(type_node) = node.child_by_field_name("type") {
-        return Some(node_text(&type_node, source).to_string());
-    }
-    // Walk children to find type-related nodes
-    for i in 0..node.child_count() as u32 {
-        if let Some(child) = node.child(i) {
-            match child.kind() {
-                "type_specification" | "basic_type" => {
-                    return Some(node_text(&child, source).to_string());
-                }
-                _ => {}
-            }
-        }
-    }
-    None
-}
-
 /// Parse a type specification like "Record \"Customer\"" into (kind, name)
 fn parse_type_specification(type_text: &str) -> (Option<String>, String) {
     let trimmed = type_text.trim();
@@ -891,85 +311,9 @@ fn extract_quoted_name(text: &str) -> Option<String> {
     }
 }
 
-/// Find the name of the procedure or trigger containing this node
-fn find_containing_procedure(node: &Node, source: &str) -> Option<String> {
-    let mut current = node.parent();
-
-    while let Some(n) = current {
-        match n.kind() {
-            "procedure" => {
-                // Find the name child
-                if let Some(name_node) = n.child_by_field_name("name") {
-                    return Some(clean_name(node_text(&name_node, source)));
-                }
-            }
-            "trigger_declaration" => {
-                if let Some(name_node) = n.child_by_field_name("name") {
-                    return Some(clean_name(node_text(&name_node, source)));
-                }
-            }
-            _ => {}
-        }
-        current = n.parent();
-    }
-
-    None
-}
-
-/// Convert a tree-sitter node to LSP Range
-fn node_range(node: &Node) -> Range {
-    Range {
-        start: Position {
-            line: node.start_position().row as u32,
-            character: node.start_position().column as u32,
-        },
-        end: Position {
-            line: node.end_position().row as u32,
-            character: node.end_position().column as u32,
-        },
-    }
-}
-
-/// Get the text of a node
-fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
-    &source[node.byte_range()]
-}
-
 /// Clean up a name (remove quotes, trim whitespace)
 fn clean_name(name: &str) -> String {
     name.trim().trim_matches('"').trim_matches('\'').to_string()
-}
-
-/// Count parameters in a procedure node
-fn count_parameters(proc_node: &Node, _source: &str) -> u32 {
-    // Find parameter_list child and count parameters
-    let mut count = 0;
-    let mut cursor = proc_node.walk();
-
-    if cursor.goto_first_child() {
-        loop {
-            let child = cursor.node();
-            if child.kind() == "parameter_list" {
-                // Count parameter children
-                let mut param_cursor = child.walk();
-                if param_cursor.goto_first_child() {
-                    loop {
-                        if param_cursor.node().kind() == "parameter" {
-                            count += 1;
-                        }
-                        if !param_cursor.goto_next_sibling() {
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-    }
-    count
 }
 
 // ===========================================================================
@@ -1503,14 +847,10 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    #[test]
-    fn test_parser_creation() {
-        let parser = AlParser::new();
-        if let Err(ref e) = parser {
-            eprintln!("Parser creation failed: {:?}", e);
-        }
-        assert!(parser.is_ok(), "Parser creation failed: {:?}", parser.err());
-    }
+    // Behaviour tests exercise the owned-IR projection (`parse_file_ir`). The legacy
+    // tree-sitter `AlParser` it replaced was validated byte-for-byte by a differential
+    // over the whole r0-corpus before deletion; the forward regression gate is now the
+    // `projection_snapshot_over_r0_corpus` digest golden at the end of this module.
 
     #[test]
     fn test_variable_extraction() {
@@ -1530,51 +870,34 @@ codeunit 50000 "Test Codeunit"
     end;
 }
 "#;
+        let result = parse_file_ir(source);
 
-        let mut parser = AlParser::new().expect("Parser creation failed");
-        let result = parser
-            .parse_file(Path::new("test.al"), source)
-            .expect("Parse failed");
-
-        println!("Variables found: {}", result.variables.len());
-        for var in &result.variables {
-            println!(
-                "  {} : {:?} {:?} (in {:?})",
-                var.name, var.type_kind, var.type_name, var.containing_procedure
-            );
-        }
-
-        // We should find 4 variables
         assert!(
             result.variables.len() >= 3,
             "Expected at least 3 variables, got {}",
             result.variables.len()
         );
 
-        // Check we found Record types
         let record_vars: Vec<_> = result
             .variables
             .iter()
-            .filter(|v| v.type_kind.as_ref().map(|k| k == "Record").unwrap_or(false))
+            .filter(|v| v.type_kind.as_deref() == Some("Record"))
             .collect();
         assert!(
             record_vars.len() >= 2,
             "Expected at least 2 Record variables"
         );
 
-        // Check specific variables
         let email_var = result.variables.iter().find(|v| v.name == "EMailLine");
         assert!(email_var.is_some(), "Should find EMailLine variable");
-        if let Some(v) = email_var {
-            assert_eq!(v.type_kind.as_deref(), Some("Record"));
-            assert_eq!(v.type_name, "CDO E-Mail Template Line");
-            assert_eq!(v.containing_procedure.as_deref(), Some("TestProc"));
-        }
+        let v = email_var.unwrap();
+        assert_eq!(v.type_kind.as_deref(), Some("Record"));
+        assert_eq!(v.type_name, "CDO E-Mail Template Line");
+        assert_eq!(v.containing_procedure.as_deref(), Some("TestProc"));
     }
 
     #[test]
     fn test_type_specification_parsing() {
-        // Test the parse_type_specification function
         let (kind, name) = parse_type_specification("Record \"Customer\"");
         assert_eq!(kind.as_deref(), Some("Record"));
         assert_eq!(name, "Customer");
@@ -1621,16 +944,11 @@ codeunit 50000 "Test Codeunit"
             ),
         ];
 
-        let mut parser = AlParser::new().expect("Failed to create parser");
         for (expected_type, source) in test_cases {
-            let result = parser
-                .parse_file(Path::new("test.al"), source)
-                .expect("Parse failed");
+            let result = parse_file_ir(source);
             assert!(
                 result.object_type.is_some(),
-                "Object type should be detected for {} source: {}",
-                expected_type,
-                source
+                "Object type should be detected for {expected_type} source: {source}"
             );
             assert_eq!(
                 result
@@ -1640,14 +958,11 @@ codeunit 50000 "Test Codeunit"
                     .to_string()
                     .to_lowercase(),
                 expected_type,
-                "Wrong object type for source: {}",
-                source
+                "Wrong object type for source: {source}"
             );
             assert!(
                 result.object_name.is_some(),
-                "Object name should be detected for {} source: {}",
-                expected_type,
-                source
+                "Object name should be detected for {expected_type} source: {source}"
             );
         }
     }
@@ -1661,39 +976,17 @@ codeunit 50000 "Test Codeunit"
     begin
     end;
 }"#;
-
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(std::path::Path::new("test.al"), al_code)
-            .expect("Parse failed");
-
-        println!(
-            "Event subscribers found: {:?}",
-            result
-                .event_subscribers
-                .iter()
-                .map(|s| &s.subscriber_name)
-                .collect::<Vec<_>>()
-        );
-        println!(
-            "Definitions found: {:?}",
-            result
-                .definitions
-                .iter()
-                .map(|d| &d.name)
-                .collect::<Vec<_>>()
-        );
+        let result = parse_file_ir(al_code);
 
         assert!(
             !result.event_subscribers.is_empty(),
-            "Should find event subscriber. Definitions found: {:?}",
+            "Should find event subscriber. Definitions: {:?}",
             result
                 .definitions
                 .iter()
                 .map(|d| &d.name)
                 .collect::<Vec<_>>()
         );
-
         let sub = &result.event_subscribers[0];
         assert_eq!(sub.subscriber_name, "HandleOnBeforePost");
         assert_eq!(sub.publisher_object_type.as_deref(), Some("Codeunit"));
@@ -1712,40 +1005,27 @@ codeunit 50000 "Test Codeunit"
     begin
     end;
 }"#;
+        let result = parse_file_ir(al_code);
 
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(std::path::Path::new("test.al"), al_code)
-            .expect("Parse failed");
-
-        // Should find variables with different type kinds
         assert!(
             result.variables.len() >= 2,
             "Should find at least 2 typed variables, got {}: {:?}",
             result.variables.len(),
             result.variables
         );
-
-        // Check Record type variable
-        let record_vars: Vec<_> = result
-            .variables
-            .iter()
-            .filter(|v| v.type_kind.as_deref() == Some("Record"))
-            .collect();
         assert!(
-            !record_vars.is_empty(),
+            result
+                .variables
+                .iter()
+                .any(|v| v.type_kind.as_deref() == Some("Record")),
             "Should find Record variables. All vars: {:?}",
             result.variables
         );
-
-        // Check Codeunit type variable
-        let cu_vars: Vec<_> = result
-            .variables
-            .iter()
-            .filter(|v| v.type_kind.as_deref() == Some("Codeunit"))
-            .collect();
         assert!(
-            !cu_vars.is_empty(),
+            result
+                .variables
+                .iter()
+                .any(|v| v.type_kind.as_deref() == Some("Codeunit")),
             "Should find Codeunit variables. All vars: {:?}",
             result.variables
         );
@@ -1764,11 +1044,7 @@ codeunit 50000 "Test Codeunit"
     begin
     end;
 }"#;
-
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(std::path::Path::new("test.al"), al_code)
-            .expect("Parse failed");
+        let result = parse_file_ir(al_code);
 
         let helper_calls: Vec<_> = result
             .calls
@@ -1803,139 +1079,13 @@ codeunit 50000 "Test Codeunit"
     begin
     end;
 }"#;
-
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(std::path::Path::new("test.al"), al_code)
-            .expect("Parse failed");
+        let result = parse_file_ir(al_code);
 
         assert_eq!(result.definitions.len(), 3, "Should find 3 procedures");
-
-        let no_params = result
-            .definitions
-            .iter()
-            .find(|d| d.name == "NoParams")
-            .unwrap();
-        assert_eq!(no_params.parameter_count, 0);
-
-        let two_params = result
-            .definitions
-            .iter()
-            .find(|d| d.name == "TwoParams")
-            .unwrap();
-        assert_eq!(two_params.parameter_count, 2);
-
-        let five_params = result
-            .definitions
-            .iter()
-            .find(|d| d.name == "FiveParams")
-            .unwrap();
-        assert_eq!(five_params.parameter_count, 5);
-    }
-
-    #[test]
-    fn test_parse_real_bc_codeunit() {
-        let test_path = std::path::Path::new(
-            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Posting/SalesPost.Codeunit.al",
-        );
-        if !test_path.exists() {
-            eprintln!("Skipping test: BC.History not available");
-            return;
-        }
-
-        let source = std::fs::read_to_string(test_path).expect("Failed to read file");
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(test_path, &source)
-            .expect("Failed to parse");
-
-        assert!(result.object_type.is_some(), "Should detect object type");
-        assert!(result.object_name.is_some(), "Should extract object name");
-        assert!(
-            !result.definitions.is_empty(),
-            "Real codeunit should have procedures"
-        );
-        assert!(
-            !result.calls.is_empty(),
-            "Real codeunit should have call sites"
-        );
-        assert!(
-            !result.variables.is_empty(),
-            "Real codeunit should have variables"
-        );
-
-        println!(
-            "Parsed {} definitions, {} calls, {} variables from {:?}",
-            result.definitions.len(),
-            result.calls.len(),
-            result.variables.len(),
-            test_path.file_name()
-        );
-    }
-
-    #[test]
-    fn test_parse_real_bc_table() {
-        let test_path = std::path::Path::new(
-            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Customer/Customer.Table.al",
-        );
-        if !test_path.exists() {
-            eprintln!("Skipping test: BC.History not available");
-            return;
-        }
-
-        let source = std::fs::read_to_string(test_path).expect("Failed to read file");
-        let mut parser = AlParser::new().expect("Failed to create parser");
-        let result = parser
-            .parse_file(test_path, &source)
-            .expect("Failed to parse");
-
-        assert!(result.object_type.is_some());
-        assert!(result.object_name.is_some());
-        let triggers: Vec<_> = result
-            .definitions
-            .iter()
-            .filter(|d| d.kind == DefinitionKind::Trigger)
-            .collect();
-        assert!(
-            !triggers.is_empty(),
-            "Table should have triggers. Defs: {:?}",
-            result
-                .definitions
-                .iter()
-                .map(|d| (&d.name, &d.kind))
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn test_parse_real_bc_page_extension() {
-        let base = std::path::Path::new("U:/Git/BC.History/BaseApp/Source/Base Application");
-        if !base.exists() {
-            eprintln!("Skipping test: BC.History not available");
-            return;
-        }
-
-        let page_ext = std::fs::read_dir(base)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .find(|e| e.file_name().to_string_lossy().ends_with(".PageExt.al"));
-
-        if let Some(entry) = page_ext {
-            let source = std::fs::read_to_string(entry.path()).expect("Failed to read");
-            let mut parser = AlParser::new().expect("Failed to create parser");
-            let result = parser
-                .parse_file(&entry.path(), &source)
-                .expect("Failed to parse");
-
-            assert!(result.object_type.is_some());
-            let obj_type = format!("{}", result.object_type.as_ref().unwrap());
-            assert_eq!(
-                obj_type.to_lowercase(),
-                "pageextension",
-                "Should detect PageExtension type for {:?}",
-                entry.file_name()
-            );
-        }
+        let by = |n: &str| result.definitions.iter().find(|d| d.name == n).unwrap();
+        assert_eq!(by("NoParams").parameter_count, 0);
+        assert_eq!(by("TwoParams").parameter_count, 2);
+        assert_eq!(by("FiveParams").parameter_count, 5);
     }
 
     #[test]
@@ -1964,12 +1114,8 @@ codeunit 50100 "Sample Publisher"
     end;
 }
 "#;
-        let mut parser = AlParser::new().expect("parser");
-        let result = parser
-            .parse_file(Path::new("test.al"), source)
-            .expect("parse");
+        let result = parse_file_ir(source);
 
-        // Three event publishers (two IntegrationEvent + one BusinessEvent).
         assert_eq!(
             result.event_publishers.len(),
             3,
@@ -1977,7 +1123,6 @@ codeunit 50100 "Sample Publisher"
             result.event_publishers
         );
 
-        // First publisher: IntegrationEvent OnAfterDoSomething
         let p0 = &result.event_publishers[0];
         assert_eq!(p0.name, "OnAfterDoSomething");
         assert_eq!(p0.kind, EventPublisherKind::IntegrationEvent);
@@ -1985,29 +1130,73 @@ codeunit 50100 "Sample Publisher"
         assert!(p0.signature.contains("OnAfterDoSomething"));
         assert!(p0.signature.contains("Record"));
 
-        // Second: BusinessEvent + local
         let p1 = &result.event_publishers[1];
         assert_eq!(p1.name, "OnBusinessThing");
         assert_eq!(p1.kind, EventPublisherKind::BusinessEvent);
         assert!(p1.is_local, "OnBusinessThing should be detected as local");
         assert!(p1.signature.contains("Decimal"));
 
-        // Third: IntegrationEvent attached to a procedure with [Obsolete] above it
         let p2 = &result.event_publishers[2];
         assert_eq!(p2.name, "OnLegacyThing");
         assert_eq!(p2.kind, EventPublisherKind::IntegrationEvent);
     }
 
-    // ===================================================================
-    // Owned-IR projection differential (Phase 4)
-    //
-    // Proves `parse_file_ir` is byte-identical to the legacy tree-sitter
-    // `AlParser::parse_file` over the in-repo r0-corpus, for every ParsedFile
-    // field (definitions / calls / variables / events / implicitly_invoked /
-    // object). Collections are compared as sorted multisets (the graph builder
-    // indexes them by name, so document order is not semantically meaningful).
-    // When this is green, the legacy queries can be deleted.
-    // ===================================================================
+    fn parse_real_bc(path: &str) -> Option<ParsedFile> {
+        let p = Path::new(path);
+        if !p.exists() {
+            eprintln!("Skipping test: BC.History not available ({path})");
+            return None;
+        }
+        let source = std::fs::read_to_string(p).expect("Failed to read file");
+        Some(parse_file_ir(&source))
+    }
+
+    #[test]
+    fn test_parse_real_bc_codeunit() {
+        let Some(result) = parse_real_bc(
+            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Posting/SalesPost.Codeunit.al",
+        ) else {
+            return;
+        };
+        assert!(result.object_type.is_some(), "Should detect object type");
+        assert!(result.object_name.is_some(), "Should extract object name");
+        assert!(
+            !result.definitions.is_empty(),
+            "Real codeunit should have procedures"
+        );
+        assert!(
+            !result.calls.is_empty(),
+            "Real codeunit should have call sites"
+        );
+        assert!(
+            !result.variables.is_empty(),
+            "Real codeunit should have variables"
+        );
+    }
+
+    #[test]
+    fn test_parse_real_bc_table() {
+        let Some(result) = parse_real_bc(
+            "U:/Git/BC.History/BaseApp/Source/Base Application/Sales/Customer/Customer.Table.al",
+        ) else {
+            return;
+        };
+        assert!(result.object_type.is_some());
+        assert!(result.object_name.is_some());
+        let triggers: Vec<_> = result
+            .definitions
+            .iter()
+            .filter(|d| d.kind == DefinitionKind::Trigger)
+            .collect();
+        assert!(!triggers.is_empty(), "Table should have triggers");
+    }
+
+    // ----------------------------------------------------------------------
+    // Forward regression gate: a digest snapshot of the owned-IR projection over
+    // the whole in-repo r0-corpus. Replaces the AlParser differential (the legacy
+    // oracle is deleted). Each line is `<relpath>\t<fnv1a-hex>` of the normalized
+    // ParsedFile. Regenerate intentional changes with `REGEN_TEMP_GOLDENS=1`.
+    // ----------------------------------------------------------------------
 
     fn collect_al_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -2023,88 +1212,105 @@ codeunit 50100 "Sample Publisher"
         }
     }
 
-    /// Render a ParsedFile into per-category SORTED string vectors for comparison.
-    fn normalize(pf: &ParsedFile) -> Vec<(String, Vec<String>)> {
-        let mut defs: Vec<String> = pf
-            .definitions
-            .iter()
-            .map(|d| {
-                format!(
-                    "{}|{:?}|{:?}|cx={}|p={}",
-                    d.name, d.range, d.kind, d.complexity, d.parameter_count
-                )
-            })
-            .collect();
-        defs.sort();
-        let mut calls: Vec<String> = pf
-            .calls
-            .iter()
-            .map(|c| {
-                format!(
-                    "{:?}|{}|{:?}|{:?}",
-                    c.object, c.method, c.range, c.containing_procedure
-                )
-            })
-            .collect();
-        calls.sort();
-        let mut vars: Vec<String> = pf
-            .variables
-            .iter()
-            .map(|v| {
-                format!(
-                    "{}|{:?}|{}|{:?}",
-                    v.name, v.type_kind, v.type_name, v.containing_procedure
-                )
-            })
-            .collect();
-        vars.sort();
-        let mut subs: Vec<String> = pf
-            .event_subscribers
-            .iter()
-            .map(|s| {
-                format!(
-                    "{}|{:?}|{:?}|{}|{}",
-                    s.subscriber_name,
-                    s.range,
-                    s.publisher_object_type,
-                    s.publisher_object,
-                    s.publisher_event
-                )
-            })
-            .collect();
-        subs.sort();
-        let mut pubs: Vec<String> = pf
-            .event_publishers
-            .iter()
-            .map(|p| {
-                format!(
-                    "{}|{:?}|{:?}|{:?}|local={}|{}",
-                    p.name, p.range, p.selection_range, p.kind, p.is_local, p.signature
-                )
-            })
-            .collect();
-        pubs.sort();
-        let mut imp = pf.implicitly_invoked.clone();
-        imp.sort();
-        vec![
-            (
-                "object".to_string(),
-                vec![format!("{:?}|{:?}", pf.object_type, pf.object_name)],
-            ),
-            ("definitions".to_string(), defs),
-            ("calls".to_string(), calls),
-            ("variables".to_string(), vars),
-            ("event_subscribers".to_string(), subs),
-            ("event_publishers".to_string(), pubs),
-            ("implicitly_invoked".to_string(), imp),
-        ]
+    fn fnv1a(s: &str) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in s.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x00000100000001b3);
+        }
+        h
+    }
+
+    /// Stable, order-insensitive textual rendering of a ParsedFile for digesting.
+    fn render(pf: &ParsedFile) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        parts.push(format!(
+            "object\t{:?}\t{:?}",
+            pf.object_type, pf.object_name
+        ));
+        let mut push_sorted = |label: &str, mut v: Vec<String>| {
+            v.sort();
+            for x in v {
+                parts.push(format!("{label}\t{x}"));
+            }
+        };
+        push_sorted(
+            "def",
+            pf.definitions
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{}|{:?}|{:?}|{}|{}",
+                        d.name, d.range, d.kind, d.complexity, d.parameter_count
+                    )
+                })
+                .collect(),
+        );
+        push_sorted(
+            "call",
+            pf.calls
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{:?}|{}|{:?}|{:?}",
+                        c.object, c.method, c.range, c.containing_procedure
+                    )
+                })
+                .collect(),
+        );
+        push_sorted(
+            "var",
+            pf.variables
+                .iter()
+                .map(|v| {
+                    format!(
+                        "{}|{:?}|{}|{:?}",
+                        v.name, v.type_kind, v.type_name, v.containing_procedure
+                    )
+                })
+                .collect(),
+        );
+        push_sorted(
+            "sub",
+            pf.event_subscribers
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{}|{:?}|{:?}|{}|{}",
+                        s.subscriber_name,
+                        s.range,
+                        s.publisher_object_type,
+                        s.publisher_object,
+                        s.publisher_event
+                    )
+                })
+                .collect(),
+        );
+        push_sorted(
+            "pub",
+            pf.event_publishers
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{}|{:?}|{:?}|{:?}|{}|{}",
+                        p.name, p.range, p.selection_range, p.kind, p.is_local, p.signature
+                    )
+                })
+                .collect(),
+        );
+        push_sorted("impl", pf.implicitly_invoked.clone());
+        parts.join("\n")
     }
 
     #[test]
-    fn ir_projection_matches_legacy_over_r0_corpus() {
-        let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+    fn projection_snapshot_over_r0_corpus() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let corpus = root.join("tests").join("r0-corpus");
+        let golden = root
             .join("tests")
-            .join("r0-corpus");
+            .join("parser-ir-goldens")
+            .join("projection.snapshot");
+
         let mut files = Vec::new();
         collect_al_files(&corpus, &mut files);
         assert!(
@@ -2114,46 +1320,50 @@ codeunit 50100 "Sample Publisher"
         );
         files.sort();
 
-        let mut parser = AlParser::new().expect("parser");
-        let mut diffs: Vec<String> = Vec::new();
-        let mut compared = 0usize;
-
+        let mut out = String::new();
         for path in &files {
             let Ok(source) = std::fs::read_to_string(path) else {
                 continue;
             };
-            let legacy = parser.parse_file(path, &source).expect("legacy parse");
-            let owned = parse_file_ir(&source);
-            compared += 1;
+            let rel = path.strip_prefix(&corpus).unwrap_or(path);
+            let digest = fnv1a(&render(&parse_file_ir(&source)));
+            // Forward-slash the relpath so the golden is OS-independent.
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            out.push_str(&format!("{rel}\t{digest:016x}\n"));
+        }
 
-            let ln = normalize(&legacy);
-            let on = normalize(&owned);
-            for ((cat, lv), (_, ov)) in ln.iter().zip(on.iter()) {
-                if lv != ov {
-                    let only_legacy: Vec<_> = lv.iter().filter(|x| !ov.contains(x)).collect();
-                    let only_ir: Vec<_> = ov.iter().filter(|x| !lv.contains(x)).collect();
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
+            std::fs::write(&golden, &out).unwrap();
+            return;
+        }
+
+        let expected = std::fs::read_to_string(&golden).unwrap_or_else(|_| {
+            panic!(
+                "missing golden {}; regenerate with REGEN_TEMP_GOLDENS=1",
+                golden.display()
+            )
+        });
+        // Normalize EOLs so a CRLF checkout doesn't spuriously fail.
+        if expected.replace("\r\n", "\n") != out.replace("\r\n", "\n") {
+            let exp: Vec<&str> = expected.lines().collect();
+            let act: Vec<&str> = out.lines().collect();
+            let mut diffs = Vec::new();
+            for (i, a) in act.iter().enumerate() {
+                if exp.get(i) != Some(a) {
                     diffs.push(format!(
-                        "{}::{}\n  only-legacy: {:?}\n  only-ir:     {:?}",
-                        path.strip_prefix(&corpus).unwrap_or(path).display(),
-                        cat,
-                        only_legacy,
-                        only_ir
+                        "  line {}: golden={:?} actual={:?}",
+                        i + 1,
+                        exp.get(i),
+                        a
                     ));
                 }
             }
+            panic!(
+                "parse_file_ir projection drifted from the golden on {} line(s):\n{}\n(regenerate with REGEN_TEMP_GOLDENS=1 if intended)",
+                diffs.len(),
+                diffs.into_iter().take(30).collect::<Vec<_>>().join("\n")
+            );
         }
-
-        assert!(
-            diffs.is_empty(),
-            "IR projection diverged from legacy on {} of {} files:\n{}",
-            diffs.len(),
-            compared,
-            diffs
-                .iter()
-                .take(40)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
     }
 }

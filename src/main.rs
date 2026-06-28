@@ -9,7 +9,6 @@ mod dependencies;
 mod graph;
 mod handlers;
 mod indexer;
-mod language;
 mod parser;
 mod protocol;
 mod server;

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **The legacy tree-sitter LSP parser is gone (Phase 4 complete).** Deleted `AlParser`
+  + the 6 S-expr queries' consumers in `parser.rs`, the tree-sitter
+  `analysis::calculate_complexity`, and the legacy CST metric walk in `main.rs`. The
+  entire LSP front-end (parser / handlers / indexer / analysis / CLI metrics) now runs
+  on the owned `al-syntax` IR. The AlParser differential is replaced by a forward
+  digest snapshot golden of `parse_file_ir` over the r0-corpus
+  (`tests/parser-ir-goldens/projection.snapshot`, regen via `REGEN_TEMP_GOLDENS=1`);
+  the parser unit tests now exercise `parse_file_ir`.
+
+### Fixed
+- **`al_syntax::parse` no longer panics on a multi-value `case` branch.** tree-sitter-al
+  v3 tags the `,` separators between a case branch's values with the `pattern` field, so
+  `children_by_field(Pattern)` returned anonymous `,` tokens; lowering one as an
+  expression hit `RawKind::from_raw(",")` and panicked ("unknown node kind") — a real
+  crash reachable from the production parser on real BC code (e.g. `SalesPost`). The
+  case-pattern lowering now filters to named nodes (added `RawNode::is_named`).
+
 ### Added
 - **`al_syntax::lookup_symbol_properties` facade (Phase 4, step 3).** A semantic,
   owned-types CST-backed lookup for a table field's / page action's properties

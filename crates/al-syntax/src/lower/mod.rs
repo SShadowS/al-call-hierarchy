@@ -869,9 +869,13 @@ fn lower_case_body(
     if let Some(body) = case_node.field(FieldName::Body) {
         for child in body.named_children() {
             if child.kind() == RawKind::CaseBranch {
+                // The grammar tags the `,` separators between branch values with the
+                // `pattern` field too, so filter to NAMED nodes — patterns are
+                // expressions; an anonymous `,` token has no `RawKind` and would panic.
                 let patterns = child
                     .children_by_field(FieldName::Pattern)
                     .into_iter()
+                    .filter(|p| p.is_named())
                     .map(|p| lower_expr(p, ir, issues, source))
                     .collect();
                 let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
