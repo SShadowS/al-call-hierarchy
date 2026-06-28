@@ -103,10 +103,12 @@ fn lower_object(
     // /action triggers nested in sections, and both #if/#else branches). A dataitem
     // trigger carries its enclosing dataitem's source table (implicit-`Rec` type).
     let mut routine_nodes = Vec::new();
-    collect_routines(node, None, source, &mut routine_nodes);
+    collect_routines(node, None, None, source, &mut routine_nodes);
     let routines = routine_nodes
         .into_iter()
-        .map(|(r, attr_items, di_table)| lower_routine(r, attr_items, di_table, source, ir, issues))
+        .map(|(r, attr_items, di_table, member)| {
+            lower_routine(r, attr_items, di_table, member, source, ir, issues)
+        })
         .collect();
 
     // Report dataitems (name, source-table) — a dataitem name is in scope as a record
@@ -357,11 +359,18 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
 /// them and attach to the next routine, resetting on any other node. When the walk
 /// crosses into a report `dataitem(Name; "Source Table")`, the (innermost) dataitem's
 /// source table is threaded down so a dataitem trigger gets its implicit-`Rec` type.
+#[allow(clippy::type_complexity)]
 fn collect_routines<'t>(
     node: RawNode<'t>,
     dataitem_table: Option<&str>,
+    member: Option<RawNode<'t>>,
     source: &str,
-    out: &mut Vec<(RawNode<'t>, Vec<RawNode<'t>>, Option<String>)>,
+    out: &mut Vec<(
+        RawNode<'t>,
+        Vec<RawNode<'t>>,
+        Option<String>,
+        Option<RawNode<'t>>,
+    )>,
 ) {
     let mut pending: Vec<RawNode<'t>> = Vec::new();
     for child in node.named_children() {
@@ -372,6 +381,7 @@ fn collect_routines<'t>(
                     child,
                     std::mem::take(&mut pending),
                     dataitem_table.map(str::to_string),
+                    member,
                 ));
             }
             RawKind::ReportDataitem => {
@@ -380,12 +390,25 @@ fn collect_routines<'t>(
                 // table is absent/unparseable (→ None, NOT the outer table). Mirrors the
                 // legacy `report_dataitem_source_table`, which takes the first (innermost)
                 // enclosing dataitem's `table_name?` and stops (never inherits an outer).
+                // A dataitem is also a named member → its triggers' enclosing member.
                 let inner = dataitem_table_name(child, source);
-                collect_routines(child, inner.as_deref(), source, out);
+                collect_routines(child, inner.as_deref(), Some(child), source, out);
             }
             _ => {
                 pending.clear();
-                collect_routines(child, dataitem_table, source, out);
+                // A named, non-object, non-`_body` node becomes the enclosing MEMBER for
+                // routines in its subtree (mirrors `enclosing_member_of`: a trigger's
+                // parent — stepping up a `_body` wrapper — is the member, unless that is
+                // the object). Sections (no `name`) and `_body` wrappers inherit.
+                let child_member = if child.field(FieldName::Name).is_some()
+                    && object_kind_of(child.kind()).is_none()
+                    && !child.kind_str().ends_with("_body")
+                {
+                    Some(child)
+                } else {
+                    member
+                };
+                collect_routines(child, dataitem_table, child_member, source, out);
             }
         }
     }
@@ -417,10 +440,17 @@ fn lower_routine<'t>(
     node: RawNode<'t>,
     attr_items: Vec<RawNode<'t>>,
     dataitem_source_table: Option<String>,
+    member: Option<RawNode<'t>>,
     source: &str,
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
 ) -> RoutineDecl {
+    // Enclosing-member capture (E1): a member wrapper with a `name` → its (stripped)
+    // name + the wrapper's origin (range). The engine unescapes the name + anchors.
+    let enclosing_member = member.and_then(|m| {
+        m.field(FieldName::Name)
+            .map(|n| (ident_text(n, source), origin_of(m)))
+    });
     let kind = if node.kind() == RawKind::TriggerDeclaration {
         RoutineKind::Trigger
     } else {
@@ -508,6 +538,7 @@ fn lower_routine<'t>(
         access_modifier,
         parse_incomplete: node.has_error(),
         dataitem_source_table,
+        enclosing_member,
         body,
         origin: origin_of(node),
     }

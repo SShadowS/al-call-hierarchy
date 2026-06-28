@@ -1740,13 +1740,25 @@ fn project_file(
             // object-level triggers (OnRun / OnOpenPage) carry a non-member parent → all
             // `None`.
             let (enclosing_member, enclosing_member_range, originating_object) =
-                match enclosing_member_of(member_parent, source) {
-                    Some((member_name, wrapper)) => (
-                        Some(member_name),
-                        Some(anchor_from_node(wrapper, source_unit_id, cols)),
-                        Some(stable_object_id.clone()),
-                    ),
-                    None => (None, None, None),
+                match ir_routine_opt {
+                    Some(r) => match &r.enclosing_member {
+                        // IR carries the (outer-quote-stripped) member name + wrapper origin;
+                        // the unescape + range anchoring match the legacy enclosing_member_of.
+                        Some((member_name, wrapper_origin)) => (
+                            Some(unescape_al_identifier(member_name)),
+                            Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
+                            Some(stable_object_id.clone()),
+                        ),
+                        None => (None, None, None),
+                    },
+                    None => match enclosing_member_of(member_parent, source) {
+                        Some((member_name, wrapper)) => (
+                            Some(member_name),
+                            Some(anchor_from_node(wrapper, source_unit_id, cols)),
+                            Some(stable_object_id.clone()),
+                        ),
+                        None => (None, None, None),
+                    },
                 };
 
             workspace.routines.push(L3Routine {

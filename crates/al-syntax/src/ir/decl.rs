@@ -128,6 +128,13 @@ pub struct RoutineDecl {
     /// dataitem trigger's implicit `Rec`. `None` for any non-dataitem routine. Mirrors
     /// the legacy `report_dataitem_source_table`.
     pub dataitem_source_table: Option<String>,
+    /// For a MEMBER-trigger (a trigger nested in a named member: table/page field,
+    /// page part, action, report dataitem, query element, …), the enclosing member's
+    /// name (outer-quote-stripped — the engine applies `unescape_al_identifier`) and the
+    /// member wrapper's `Origin` (for `enclosingMemberRange` + `originatingObject`).
+    /// `None` for a procedure or an object-level trigger (OnRun / OnOpenPage). Mirrors
+    /// the legacy `enclosing_member_of` (E1 — additive, never serialized into a golden).
+    pub enclosing_member: Option<(String, Origin)>,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,
