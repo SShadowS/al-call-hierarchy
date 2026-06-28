@@ -89,10 +89,10 @@ fn main() -> Result<()> {
             indexer.index_directory(&project)?;
 
             // Index external dependencies from .app packages
-            if project.join("app.json").exists() {
-                if let Err(e) = indexer.index_dependencies(&project) {
-                    log::warn!("Failed to index dependencies: {}", e);
-                }
+            if project.join("app.json").exists()
+                && let Err(e) = indexer.index_dependencies(&project)
+            {
+                log::warn!("Failed to index dependencies: {}", e);
             }
 
             let graph = indexer.into_graph();
@@ -114,7 +114,7 @@ fn main() -> Result<()> {
 
 /// Run code quality analysis on a project
 fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
-    use analysis::{build_summary, generate_findings, AnalysisResult, ProcedureMetrics};
+    use analysis::{AnalysisResult, ProcedureMetrics, build_summary, generate_findings};
     use rayon::prelude::*;
     use std::fs;
     use std::time::Instant;
@@ -262,7 +262,9 @@ fn object_kind_label(k: al_syntax::ir::ObjectKind) -> String {
 
 /// Print results in CSV format
 fn print_csv(result: &analysis::AnalysisResult) {
-    println!("object_type,object_name,procedure_name,file,line,complexity,line_count,parameter_count,quality_score");
+    println!(
+        "object_type,object_name,procedure_name,file,line,complexity,line_count,parameter_count,quality_score"
+    );
     for m in &result.metrics {
         println!(
             "{},{},{},{},{},{},{},{},{:.1}",
@@ -282,7 +284,7 @@ fn print_csv(result: &analysis::AnalysisResult) {
 /// Print results in human-readable text format
 fn print_text(
     result: &analysis::AnalysisResult,
-    project: &PathBuf,
+    project: &std::path::Path,
     config: &config::DiagnosticConfig,
 ) {
     println!("\nCode Quality Analysis: {}\n", project.display());

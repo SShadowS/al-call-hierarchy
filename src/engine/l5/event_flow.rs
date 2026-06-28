@@ -652,10 +652,10 @@ fn chain_stats(node: &ChainNode, depth: usize, acc: &mut ChainStatsAcc) {
 }
 
 fn tree_touches_primary(node: &ChainNode, primary: &BTreeSet<String>) -> bool {
-    if let Some(rid) = &node.routine_id {
-        if primary.contains(rid) {
-            return true;
-        }
+    if let Some(rid) = &node.routine_id
+        && primary.contains(rid)
+    {
+        return true;
     }
     node.children
         .iter()

@@ -19,12 +19,12 @@ use crate::engine::l2::features::{PAnchor, PCallSite, POperationSite};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l4::summary::Uncertainty;
-use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
+use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::path_walker::{
-    walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop,
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 

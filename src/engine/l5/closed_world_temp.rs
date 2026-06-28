@@ -44,7 +44,7 @@ use crate::engine::l2::features::{PCallee, PTempState};
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::CombinedGraph;
 use crate::engine::l4::effect_lattice::TempStateKind;
-use crate::engine::l5::reverse_call_graph::{callers_of, ReverseCallGraph};
+use crate::engine::l5::reverse_call_graph::{ReverseCallGraph, callers_of};
 
 /// The proven set: `(internal RoutineId, parameter index)` pairs whose
 /// keyword-less by-var record param is closed-world proven `Known(true)`.
@@ -132,10 +132,11 @@ pub fn prove_closed_world_temp_params(
             continue;
         }
         for rv in &r.record_variables {
-            if rv.is_parameter && rv.temp_state.kind == "parameter-dependent" {
-                if let Some(i) = rv.temp_state.parameter_index {
-                    queries.push((r.id.clone(), i));
-                }
+            if rv.is_parameter
+                && rv.temp_state.kind == "parameter-dependent"
+                && let Some(i) = rv.temp_state.parameter_index
+            {
+                queries.push((r.id.clone(), i));
             }
         }
     }

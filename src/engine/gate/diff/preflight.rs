@@ -3,7 +3,7 @@
 
 use crate::engine::gate::cbor::CborValue;
 
-use super::{get_array, get_str, CoveragePolicy, DiffDiagnostic};
+use super::{CoveragePolicy, DiffDiagnostic, get_array, get_str};
 
 pub struct PreflightResult {
     pub diagnostics: Vec<DiffDiagnostic>,
@@ -84,21 +84,21 @@ pub fn run_preflight(
     // App identity mismatch — always fatal.
     let old_app = primary_app_id(old_snap);
     let new_app = primary_app_id(new_snap);
-    if let (Some(o), Some(n)) = (&old_app, &new_app) {
-        if o != n {
-            diagnostics.push(DiffDiagnostic {
-                kind: "app-identity-mismatch".into(),
-                fields: vec![
-                    (
-                        "kind".into(),
-                        CborValue::Text("app-identity-mismatch".into()),
-                    ),
-                    ("oldAppId".into(), CborValue::Text(o.clone())),
-                    ("newAppId".into(), CborValue::Text(n.clone())),
-                ],
-            });
-            fatal = true;
-        }
+    if let (Some(o), Some(n)) = (&old_app, &new_app)
+        && o != n
+    {
+        diagnostics.push(DiffDiagnostic {
+            kind: "app-identity-mismatch".into(),
+            fields: vec![
+                (
+                    "kind".into(),
+                    CborValue::Text("app-identity-mismatch".into()),
+                ),
+                ("oldAppId".into(), CborValue::Text(o.clone())),
+                ("newAppId".into(), CborValue::Text(n.clone())),
+            ],
+        });
+        fatal = true;
     }
 
     PreflightResult { diagnostics, fatal }

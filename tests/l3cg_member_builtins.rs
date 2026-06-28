@@ -29,7 +29,10 @@ fn all_edges(p: &L3CallGraphProjection) -> Vec<&PCallEdge> {
 }
 
 fn count_resolution(p: &L3CallGraphProjection, resolution: &str) -> usize {
-    all_edges(p).iter().filter(|e| e.resolution == resolution).count()
+    all_edges(p)
+        .iter()
+        .filter(|e| e.resolution == resolution)
+        .count()
 }
 
 const CUST_TABLE: &str = "table 50000 Customer { fields { field(1; \"No.\"; Code[20]) { } } keys { key(PK; \"No.\") { } } }";
@@ -44,9 +47,16 @@ fn record_builtin_member_is_builtin_not_unknown() {
          C.FieldNo(\"No.\"); C.TableCaption(); C.GetFilter(\"No.\"); end; }}"
     );
     let p = project_ws(&[("src/a.al", &src)]);
-    assert!(count_resolution(&p, "builtin") >= 3, "Record intrinsics -> builtin; edges: {:#?}", all_edges(&p));
+    assert!(
+        count_resolution(&p, "builtin") >= 3,
+        "Record intrinsics -> builtin; edges: {:#?}",
+        all_edges(&p)
+    );
     assert_eq!(
-        all_edges(&p).iter().filter(|e| e.dispatch_kind == "method" && e.resolution == "unknown").count(),
+        all_edges(&p)
+            .iter()
+            .filter(|e| e.dispatch_kind == "method" && e.resolution == "unknown")
+            .count(),
         0,
         "no Record intrinsic stays unknown"
     );
@@ -57,14 +67,22 @@ fn framework_builtin_members_are_builtin() {
     let src = "codeunit 50101 B { procedure Go() var J: JsonObject; T: TextBuilder; L: List of [Text]; begin \
                J.Add('k', 1); T.Append('x'); L.Add('y'); end; }";
     let p = project_ws(&[("src/b.al", src)]);
-    assert!(count_resolution(&p, "builtin") >= 3, "framework intrinsics -> builtin; edges: {:#?}", all_edges(&p));
+    assert!(
+        count_resolution(&p, "builtin") >= 3,
+        "framework intrinsics -> builtin; edges: {:#?}",
+        all_edges(&p)
+    );
 }
 
 #[test]
 fn recordref_builtin_members_are_builtin() {
     let src = "codeunit 50102 C { procedure Go() var R: RecordRef; begin R.Open(18); R.FieldCount(); end; }";
     let p = project_ws(&[("src/c.al", src)]);
-    assert!(count_resolution(&p, "builtin") >= 2, "RecordRef intrinsics -> builtin; edges: {:#?}", all_edges(&p));
+    assert!(
+        count_resolution(&p, "builtin") >= 2,
+        "RecordRef intrinsics -> builtin; edges: {:#?}",
+        all_edges(&p)
+    );
 }
 
 #[test]
@@ -74,10 +92,17 @@ fn non_catalog_record_method_stays_unknown() {
     );
     let p = project_ws(&[("src/d.al", &src)]);
     assert_eq!(
-        all_edges(&p).iter().filter(|e| e.resolution == "unknown").count(),
+        all_edges(&p)
+            .iter()
+            .filter(|e| e.resolution == "unknown")
+            .count(),
         1,
         "a non-builtin Record method stays unknown; edges: {:#?}",
         all_edges(&p)
     );
-    assert_eq!(count_resolution(&p, "builtin"), 0, "no false builtin for a user method");
+    assert_eq!(
+        count_resolution(&p, "builtin"),
+        0,
+        "no false builtin for a user method"
+    );
 }

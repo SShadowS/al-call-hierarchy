@@ -12,7 +12,7 @@
 //!   - NO scalar/numeric risk score; NO embedded version (byte-stable).
 
 use crate::engine::gate::app_attribution::{
-    app_for_finding, blame_for_finding, App, AttributionIndex,
+    App, AttributionIndex, app_for_finding, blame_for_finding,
 };
 use crate::engine::gate::projection::FindingSummary;
 use crate::engine::l5::finding::Finding;

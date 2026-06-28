@@ -14,9 +14,9 @@
 //! identity shape, now a Rust-owned baseline).
 
 use crate::engine::ids::{
-    canonical_routine_signature, encode_object_id, normalized_signature_hash,
+    ParamSpec, canonical_routine_signature, encode_object_id, normalized_signature_hash,
     object_signature_fingerprint, routine_signature_fingerprint, to_stable_object_id,
-    to_stable_routine_id_from_parts, ParamSpec,
+    to_stable_routine_id_from_parts,
 };
 use al_syntax::ir::{ObjectKind, RoutineDecl, RoutineKind};
 use serde::{Deserialize, Serialize};

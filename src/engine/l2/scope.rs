@@ -7,7 +7,7 @@
 //! constructors, type-text canonicalization, and routine-id computation.
 
 use super::features::PTempState;
-use crate::engine::ids::{encode_routine_id, CanonicalRoutineKey, ParamSpec};
+use crate::engine::ids::{CanonicalRoutineKey, ParamSpec, encode_routine_id};
 
 #[derive(Clone)]
 pub struct ParameterSymbol {

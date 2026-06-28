@@ -33,7 +33,7 @@
 use std::collections::HashMap;
 
 use super::call_resolver::{
-    resolve_calls, CallEdge, DeclaredDependency, ResolvedCalls, UpgradedBinding,
+    CallEdge, DeclaredDependency, ResolvedCalls, UpgradedBinding, resolve_calls,
 };
 use super::l3_workspace::L3Resolved;
 use super::symbol_table::SymbolTable;

@@ -46,12 +46,11 @@ const D50_UNTRUSTED_ROOT_KINDS: &[&str] = &[
 /// Hand-rolled `^(Post|Apply|Release)[A-Z]` check — mirrors al-sem's `POSTING_NAME_RE`.
 fn posting_name_matches(name: &str) -> bool {
     for prefix in &["Post", "Apply", "Release"] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            if let Some(next) = rest.chars().next() {
-                if next.is_ascii_uppercase() {
-                    return true;
-                }
-            }
+        if let Some(rest) = name.strip_prefix(prefix)
+            && let Some(next) = rest.chars().next()
+            && next.is_ascii_uppercase()
+        {
+            return true;
         }
     }
     false
@@ -144,12 +143,11 @@ fn is_explicit_commit_proven_effective(
     } else {
         // No routine-level attr → object-level InherentCommitBehavior applies.
         let obj = objects_by_id.get(r.object_id.as_str()).copied();
-        if let Some(o) = obj {
-            if let Some(icb) = &o.inherent_commit_behavior {
-                if icb == "ignore" || icb == "error" {
-                    return false;
-                }
-            }
+        if let Some(o) = obj
+            && let Some(icb) = &o.inherent_commit_behavior
+            && (icb == "ignore" || icb == "error")
+        {
+            return false;
         }
     }
 

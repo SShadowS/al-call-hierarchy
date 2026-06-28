@@ -34,10 +34,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::deps::dep_artifact_l4::{
-    build_dep_artifact_l4, collect_cited_dep_evidence, collect_dep_order_index,
-    inject_intra_app_call_edges, is_dep_order_index_stamp_fresh, ConsumerModel, DepCallEdge,
-    DepOperationEvidence, DepReturnSummaryRecord, DepRoutineOrderEntry, DependencyArtifactL4,
-    InjectedTypedEdge, TriBool,
+    ConsumerModel, DepCallEdge, DepOperationEvidence, DepReturnSummaryRecord, DepRoutineOrderEntry,
+    DependencyArtifactL4, InjectedTypedEdge, TriBool, build_dep_artifact_l4,
+    collect_cited_dep_evidence, collect_dep_order_index, inject_intra_app_call_edges,
+    is_dep_order_index_stamp_fresh,
 };
 use crate::engine::deps::merged_index::collect_app_paths;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
@@ -502,7 +502,7 @@ fn build_stabilizer(
     use crate::engine::deps::app_manifest::parse_app_manifest_xml;
     use crate::engine::deps::app_package_zip::extract_navx_manifest_xml;
     use crate::engine::deps::dep_artifact_l4::iterate_embedded_source;
-    use crate::engine::l3::l3_workspace::{assemble_workspace_units, resolve, L3Workspace};
+    use crate::engine::l3::l3_workspace::{L3Workspace, assemble_workspace_units, resolve};
 
     let _ = artifacts; // membership of stab is derived from the same .app bytes.
     let mut pairs: Vec<(String, String)> = Vec::new();

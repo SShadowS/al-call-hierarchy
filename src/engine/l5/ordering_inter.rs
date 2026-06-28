@@ -15,8 +15,8 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::l2::operation_order::{OperationOrder, ScopeFrame};
 use crate::engine::l5::digest::QueryWitnessHop;
 use crate::engine::l5::ordering::{
-    dom, dominates_return, may_co_execute, may_precede_success_return, ordered_before, OrderedOp,
-    Quantifier,
+    OrderedOp, Quantifier, dom, dominates_return, may_co_execute, may_precede_success_return,
+    ordered_before,
 };
 use crate::engine::l5::snapshot::{
     CapabilitySnapshot, SnapshotCallsiteEvidence, SnapshotCallsiteResolution,
@@ -252,31 +252,31 @@ pub fn reconstruct_call_chains(
 
                 // Rule 5 §3: look-ahead — next hop event-dispatch.
                 let mut broadcast_event_id: Option<String> = None;
-                if let Some(next_hop) = hops.get(hop_idx + 1) {
-                    if next_hop.kind == "event-dispatch" {
-                        match next_hop.event_id.as_deref() {
-                            None => {
+                if let Some(next_hop) = hops.get(hop_idx + 1)
+                    && next_hop.kind == "event-dispatch"
+                {
+                    match next_hop.event_id.as_deref() {
+                        None => {
+                            dispatch_sequencing = "barrier";
+                        }
+                        Some(eid) => {
+                            if isolated_event_ids.map(|s| s.contains(eid)).unwrap_or(false) {
                                 dispatch_sequencing = "barrier";
-                            }
-                            Some(eid) => {
-                                if isolated_event_ids.map(|s| s.contains(eid)).unwrap_or(false) {
-                                    dispatch_sequencing = "barrier";
-                                } else {
-                                    dispatch_sequencing = "unordered-broadcast";
-                                    broadcast_event_id = Some(eid.to_string());
-                                }
+                            } else {
+                                dispatch_sequencing = "unordered-broadcast";
+                                broadcast_event_id = Some(eid.to_string());
                             }
                         }
                     }
                 }
 
                 // Rule 5 §0.5: isolated event-dispatch hop carrying a callsiteId (rare).
-                if dispatch_sequencing == "unordered-broadcast" && hop.kind == "event-dispatch" {
-                    if let (Some(set), Some(eid)) = (isolated_event_ids, hop.event_id.as_deref()) {
-                        if set.contains(eid) {
-                            dispatch_sequencing = "barrier";
-                        }
-                    }
+                if dispatch_sequencing == "unordered-broadcast"
+                    && hop.kind == "event-dispatch"
+                    && let (Some(set), Some(eid)) = (isolated_event_ids, hop.event_id.as_deref())
+                    && set.contains(eid)
+                {
+                    dispatch_sequencing = "barrier";
                 }
 
                 // dependency-export barrier → sequential when callee has fresh dep frames.
@@ -792,10 +792,11 @@ pub fn inter_hb(
     let mut has_event_broadcast_on_path = false;
 
     if ka_is_broadcast && kb_is_broadcast {
-        if let (Some(ka_), Some(kb_)) = (ka, kb) {
-            if ka_.event_id.is_some() && ka_.event_id == kb_.event_id {
-                return None;
-            }
+        if let (Some(ka_), Some(kb_)) = (ka, kb)
+            && ka_.event_id.is_some()
+            && ka_.event_id == kb_.event_id
+        {
+            return None;
         }
         has_event_broadcast_on_path = true;
     } else if ka_is_broadcast || kb_is_broadcast {
@@ -870,18 +871,16 @@ pub fn inter_hb(
         }
     }
 
-    if !b_is_in_l {
-        if let Some(k) = kb {
-            if k.control_placement != "top-level"
-                || k.invocation_multiplicity != "exactly_once_on_success"
-                || k.callsite_order
-                    .as_ref()
-                    .map(|o| o.dominates_success_return)
-                    != Some(true)
-            {
-                is_must = false;
-            }
-        }
+    if !b_is_in_l
+        && let Some(k) = kb
+        && (k.control_placement != "top-level"
+            || k.invocation_multiplicity != "exactly_once_on_success"
+            || k.callsite_order
+                .as_ref()
+                .map(|o| o.dominates_success_return)
+                != Some(true))
+    {
+        is_must = false;
     }
 
     // callPathLinks.
@@ -889,10 +888,10 @@ pub fn inter_hb(
     if let Some(k) = ka {
         call_path_links.push(k.callsite_id.clone());
     }
-    if let Some(k) = kb {
-        if Some(&k.callsite_id) != ka.map(|x| &x.callsite_id) {
-            call_path_links.push(k.callsite_id.clone());
-        }
+    if let Some(k) = kb
+        && Some(&k.callsite_id) != ka.map(|x| &x.callsite_id)
+    {
+        call_path_links.push(k.callsite_id.clone());
     }
 
     // Intermediate links on a's path.
@@ -1030,16 +1029,14 @@ pub fn error_escapes_chain(
         return false;
     }
     // B1: underAsserterror on the terminal op.
-    if let Some(op_id) = evidence_operation_id {
-        if let Some(op_ev) = snap
+    if let Some(op_id) = evidence_operation_id
+        && let Some(op_ev) = snap
             .operation_index
             .iter()
             .find(|o| o.operation_id == op_id)
-        {
-            if op_ev.under_asserterror == Some(true) {
-                return false;
-            }
-        }
+        && op_ev.under_asserterror == Some(true)
+    {
+        return false;
     }
     // B10 global floor.
     let Some(summaries) = routine_return_summaries else {

@@ -14,7 +14,7 @@
 
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::detector_context::{
-    build_detector_context, build_detector_context_cross_app, DetectorContext,
+    DetectorContext, build_detector_context, build_detector_context_cross_app,
 };
 use crate::engine::l5::finding::Finding;
 

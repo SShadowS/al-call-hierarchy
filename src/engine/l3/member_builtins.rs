@@ -412,43 +412,35 @@ pub fn framework_method_return_type(
         (JsonToken | JsonValue | JsonObject | JsonArray, "asarray") => Some(JsonArray),
         (JsonObject | JsonArray | JsonValue, "astoken") => Some(JsonToken),
         // Xml* conversions — `As*` returns an Xml node (single shared Xml kind).
-        (Xml, m)
-            if matches!(
-                m,
-                "asxmlelement"
-                    | "asxmlattribute"
-                    | "asxmltext"
-                    | "asxmlcomment"
-                    | "asxmlcdata"
-                    | "asxmldocument"
-                    | "asxmlnode"
-                    | "asxmldeclaration"
-                    | "asxmlprocessinginstruction"
-                    | "asxmldocumenttype"
-            ) =>
-        {
-            Some(Xml)
-        }
+        (
+            Xml,
+            "asxmlelement"
+            | "asxmlattribute"
+            | "asxmltext"
+            | "asxmlcomment"
+            | "asxmlcdata"
+            | "asxmldocument"
+            | "asxmlnode"
+            | "asxmldeclaration"
+            | "asxmlprocessinginstruction"
+            | "asxmldocumenttype",
+        ) => Some(Xml),
         // Xml* STATIC factory methods — `XmlElement.Create(...)`,
         // `XmlDeclaration.Create(...)`, etc. each return an Xml node (the shared Xml
         // kind), so a chained `XmlElement.Create(Name).AsXmlNode()` resolves. These
         // factories deterministically return an Xml type.
-        (Xml, m)
-            if matches!(
-                m,
-                "create"
-                    | "createelement"
-                    | "createattribute"
-                    | "createtext"
-                    | "createcomment"
-                    | "createcdata"
-                    | "createdeclaration"
-                    | "createprocessinginstruction"
-                    | "createnamespacedeclaration"
-            ) =>
-        {
-            Some(Xml)
-        }
+        (
+            Xml,
+            "create"
+            | "createelement"
+            | "createattribute"
+            | "createtext"
+            | "createcomment"
+            | "createcdata"
+            | "createdeclaration"
+            | "createprocessinginstruction"
+            | "createnamespacedeclaration",
+        ) => Some(Xml),
         // Enum / Option value — `Names()` and `Ordinals()` return a List (of Text /
         // Integer respectively), so `Rec."eSeal Service".Ordinals().Count()` resolves;
         // `AsInteger()` returns Integer, so `Enum::"X"::Value.AsInteger().ToText()`

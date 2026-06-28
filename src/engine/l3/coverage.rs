@@ -45,7 +45,7 @@
 use std::collections::HashMap;
 
 use super::call_graph_projection::cmp_stable;
-use super::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
+use super::call_resolver::{CallEdge, DeclaredDependency, resolve_calls};
 use super::l3_workspace::{L3Resolved, L3Routine};
 use super::symbol_table::SymbolTable;
 use super::taxonomy::{DispatchKind, Resolution};

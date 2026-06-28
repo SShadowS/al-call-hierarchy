@@ -72,7 +72,7 @@ pub fn calculate_quality_score(complexity: u32, line_count: u32, params: u32) ->
         score -= (params - 2) as f32 * 0.5;
     }
 
-    score.max(0.0).min(10.0)
+    score.clamp(0.0, 10.0)
 }
 
 /// Generate findings based on metrics
@@ -402,9 +402,11 @@ mod tests {
         };
         let config = DiagnosticConfig::default();
         let findings = generate_findings(&metrics, &config);
-        assert!(findings
-            .iter()
-            .any(|f| f.category == "high_complexity" && f.severity == "critical"));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.category == "high_complexity" && f.severity == "critical")
+        );
     }
 
     #[test]
@@ -473,9 +475,11 @@ mod tests {
             quality_score: 5.0,
         };
         let findings = generate_findings(&metrics, &config);
-        assert!(findings
-            .iter()
-            .any(|f| f.category == "long_method" && f.severity == "critical"));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.category == "long_method" && f.severity == "critical")
+        );
     }
 
     #[test]
@@ -513,9 +517,11 @@ mod tests {
             quality_score: 5.0,
         };
         let findings = generate_findings(&metrics, &config);
-        assert!(findings
-            .iter()
-            .any(|f| f.category == "too_many_parameters" && f.severity == "critical"));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.category == "too_many_parameters" && f.severity == "critical")
+        );
     }
 
     #[test]

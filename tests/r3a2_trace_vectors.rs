@@ -44,7 +44,10 @@ fn load_vectors() -> VectorsDoc {
 }
 
 fn files_of(files: &[Vec<String>]) -> Vec<(String, String)> {
-    files.iter().map(|pair| (pair[0].clone(), pair[1].clone())).collect()
+    files
+        .iter()
+        .map(|pair| (pair[0].clone(), pair[1].clone()))
+        .collect()
 }
 
 /// Assert that the Rust JACOBI trace (per-SCC iteration count + per-pass fingerprints

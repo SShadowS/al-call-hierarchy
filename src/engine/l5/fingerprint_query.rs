@@ -29,8 +29,8 @@ use std::collections::HashMap;
 use crate::engine::gate::format_json::serialize_document_value;
 use crate::engine::ids::sha256_hex;
 use crate::engine::l5::digest::{
-    build_fingerprint_indexes_pub, reconstruct_witness_paths_pub, FingerprintIndexesPub, HumanHop,
-    ProjectedPath, QueryWitnessHop, TerminalHopInfo,
+    FingerprintIndexesPub, HumanHop, ProjectedPath, QueryWitnessHop, TerminalHopInfo,
+    build_fingerprint_indexes_pub, reconstruct_witness_paths_pub,
 };
 use crate::engine::l5::snapshot::{CapabilitySnapshot, SnapCapabilityExtra, SnapValueSource};
 
@@ -287,10 +287,10 @@ fn resolve_selector_fp(
     // Form 3: two-segment.
     let mut two: Vec<String> = Vec::new();
     for (bucket_key, ids) in display_to_stable_ids {
-        if let Some(stripped) = strip_type_word_prefix(bucket_key) {
-            if stripped == key {
-                two.extend(ids.iter().cloned());
-            }
+        if let Some(stripped) = strip_type_word_prefix(bucket_key)
+            && stripped == key
+        {
+            two.extend(ids.iter().cloned());
         }
     }
     if !two.is_empty() {
@@ -820,10 +820,10 @@ pub fn fingerprint_query(
                     return false;
                 }
             }
-            if !filters.routine_selectors.is_empty() {
-                if !resolved_set.contains(r.routine_id.as_str()) {
-                    return false;
-                }
+            if !filters.routine_selectors.is_empty()
+                && !resolved_set.contains(r.routine_id.as_str())
+            {
+                return false;
             }
             true
         })
@@ -958,7 +958,7 @@ fn project_witness_json(
     serde_json::Value::Object(w)
 }
 
-fn query_hop_to_json(hop: &QueryWitnessHop, workspace_root: &str) -> serde_json::Value {
+fn query_hop_to_json(hop: &QueryWitnessHop, _workspace_root: &str) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     m.insert("kind".into(), hop.kind.into());
     m.insert("fromRoutineId".into(), hop.from_routine_id.clone().into());
@@ -1018,6 +1018,7 @@ fn serialize_fingerprint_envelope(v: serde_json::Value) -> String {
 }
 
 /// Full `projectFingerprintQuery` with all parameters injected.
+#[allow(clippy::too_many_arguments)] // query-document fields; grouping would obscure
 pub fn project_fingerprint_query_full(
     result: &FingerprintQueryResult,
     snap: &CapabilitySnapshot,
@@ -1460,11 +1461,7 @@ fn render_permissions(block: &FingerprintBlock, lines: &mut Vec<String>) {
 }
 
 fn hop_arrow(depth: usize) -> &'static str {
-    if depth == 0 {
-        ""
-    } else {
-        "→ "
-    }
+    if depth == 0 { "" } else { "→ " }
 }
 
 /// `formatHop` (format-fingerprint.ts:270). Renders a raw-derived `HumanHop`.

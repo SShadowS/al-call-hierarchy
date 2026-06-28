@@ -10,7 +10,11 @@ fn aldump_bin() -> std::path::PathBuf {
     if p.ends_with("deps") {
         p.pop();
     }
-    p.push(if cfg!(windows) { "aldump.exe" } else { "aldump" });
+    p.push(if cfg!(windows) {
+        "aldump.exe"
+    } else {
+        "aldump"
+    });
     p
 }
 
@@ -35,10 +39,17 @@ fn l3_call_graph_stats_emits_histogram() {
         .arg(src.to_str().unwrap())
         .output()
         .expect("run aldump");
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
     assert!(json.get("total").is_some(), "histogram has total");
     assert!(json.get("builtin").is_some(), "histogram has builtin");
     assert!(json.get("unknown").is_some(), "histogram has unknown");
-    assert!(json.get("realUnknownRate").is_some(), "histogram has realUnknownRate");
+    assert!(
+        json.get("realUnknownRate").is_some(),
+        "histogram has realUnknownRate"
+    );
 }

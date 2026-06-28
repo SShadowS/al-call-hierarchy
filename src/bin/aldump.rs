@@ -818,7 +818,7 @@ fn main() -> ExitCode {
         // by ResolutionClass + report the real-`unknown` rate. Read-only over the
         // resolved edges (the same capture `--l3-call-graph` uses). Fail-closed →
         // an all-zero histogram (never throws).
-        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
         use al_call_hierarchy::engine::l3::resolution_class::Histogram;
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
@@ -839,7 +839,7 @@ fn main() -> ExitCode {
                 Histogram::default()
             }
         };
-        let mut value = serde_json::to_value(&histogram).unwrap_or(serde_json::json!({}));
+        let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
         if let Some(obj) = value.as_object_mut() {
             obj.insert(
                 "realUnknownRate".to_string(),
@@ -870,7 +870,7 @@ fn main() -> ExitCode {
         // the same JSON shape as `--l3-call-graph-stats` plus `depAppsLoaded`.
         // If the workspace has no deps / fails to build, emits a clear message and
         // exits cleanly (fail-closed). ADDITIVE — does not change source-only path.
-        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
         use al_call_hierarchy::engine::l3::resolution_class::Histogram;
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
         use std::collections::HashSet;
@@ -939,7 +939,7 @@ fn main() -> ExitCode {
                 let histogram =
                     Histogram::of_edges(&primary_edges.into_iter().cloned().collect::<Vec<_>>());
 
-                let mut value = serde_json::to_value(&histogram).unwrap_or(serde_json::json!({}));
+                let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
                 if let Some(obj) = value.as_object_mut() {
                     obj.insert(
                         "realUnknownRate".to_string(),
@@ -970,8 +970,8 @@ fn main() -> ExitCode {
         // Attribute every TRUE-`unknown` edge to its resolver cause (UnknownReason)
         // — the work-list for the typed-resolution phases. Read-only; fail-closed
         // → empty breakdown.
-        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
-        use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_call_hierarchy::engine::l3::resolution_class::{Histogram, unknown_breakdown};
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
         let (histogram, breakdown, framework_detail, shape_detail, bare_detail) =
@@ -993,9 +993,9 @@ fn main() -> ExitCode {
                 }
                 None => {
                     eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty breakdown",
-                    workspace.display()
-                );
+                        "aldump: warning: fail-closed/empty layout at {} — emitting empty breakdown",
+                        workspace.display()
+                    );
                     (
                         Histogram::default(),
                         std::collections::BTreeMap::new(),
@@ -1034,8 +1034,8 @@ fn main() -> ExitCode {
         // `UnknownReason` so the real (whole-program) holes can be targeted directly
         // rather than inferred from the source-only breakdown. Fail-closed → message
         // + empty breakdown JSON; never throws.
-        use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
-        use al_call_hierarchy::engine::l3::resolution_class::{unknown_breakdown, Histogram};
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_call_hierarchy::engine::l3::resolution_class::{Histogram, unknown_breakdown};
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
         use std::collections::HashSet;
 
@@ -1098,7 +1098,7 @@ fn main() -> ExitCode {
 
                 if std::env::var("ALDUMP_DEBUG_UNKNOWN").is_ok() {
                     use al_call_hierarchy::engine::l3::resolution_class::{
-                        classify, ResolutionClass,
+                        ResolutionClass, classify,
                     };
                     let rt_by_id: std::collections::HashMap<&str, &_> =
                         ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();

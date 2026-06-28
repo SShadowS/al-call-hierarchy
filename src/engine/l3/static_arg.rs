@@ -73,20 +73,16 @@ pub fn infer_record_field_type(
     let mut table_id: Option<String> = rec_var.and_then(|v| v.table_id.clone());
 
     // Fallback: resolve via features.variables + tableByName.
-    if table_id.is_none() {
-        if let Some(v) = caller
+    if table_id.is_none()
+        && let Some(v) = caller
             .variables
             .iter()
             .find(|x| x.name.to_lowercase() == rec_name)
-        {
-            if !v.declared_type.is_empty() {
-                if let Some(t_name) = extract_record_table_name(&v.declared_type) {
-                    if let Some(table) = symbols.table_by_name(&t_name) {
-                        table_id = Some(table.id.clone());
-                    }
-                }
-            }
-        }
+        && !v.declared_type.is_empty()
+        && let Some(t_name) = extract_record_table_name(&v.declared_type)
+        && let Some(table) = symbols.table_by_name(&t_name)
+    {
+        table_id = Some(table.id.clone());
     }
 
     let table_id = table_id?;
@@ -116,23 +112,23 @@ fn extract_record_table_name(declared_type: &str) -> Option<String> {
     }
     // `\b` after "record": next char (if any) must not be a word char.
     let after = &trimmed["record".len()..];
-    if let Some(c) = after.chars().next() {
-        if c.is_alphanumeric() || c == '_' {
-            return None; // e.g. "RecordRef" — no word boundary
-        }
+    if let Some(c) = after.chars().next()
+        && (c.is_alphanumeric() || c == '_')
+    {
+        return None; // e.g. "RecordRef" — no word boundary
     }
     // Drop a trailing " temporary" (case-insensitive), then trim.
     let mut name_part = after.trim();
     let name_lower = name_part.to_lowercase();
     // The regex's optional `(\s+temporary)?` is greedy-anchored at end: a trailing
     // whitespace + "temporary" is stripped.
-    if let Some(stripped) = name_lower.strip_suffix("temporary") {
-        if stripped.len() < name_lower.len() {
-            let prefix_len = stripped.len();
-            // require at least one whitespace char before "temporary"
-            if name_part[..prefix_len].ends_with(char::is_whitespace) {
-                name_part = name_part[..prefix_len].trim_end();
-            }
+    if let Some(stripped) = name_lower.strip_suffix("temporary")
+        && stripped.len() < name_lower.len()
+    {
+        let prefix_len = stripped.len();
+        // require at least one whitespace char before "temporary"
+        if name_part[..prefix_len].ends_with(char::is_whitespace) {
+            name_part = name_part[..prefix_len].trim_end();
         }
     }
     let mut t_name = name_part.trim().to_string();
@@ -163,14 +159,12 @@ pub fn static_arg_type(
         binding.source_kind.as_str(),
         "parameter" | "local" | "global" | "implicit-rec"
     );
-    if named {
-        if let Some(name) = &binding.source_variable_name {
-            if let Some(v) = caller.variables.iter().find(|x| &x.name == name) {
-                if !v.declared_type.is_empty() {
-                    return Some(v.declared_type.clone());
-                }
-            }
-        }
+    if named
+        && let Some(name) = &binding.source_variable_name
+        && let Some(v) = caller.variables.iter().find(|x| &x.name == name)
+        && !v.declared_type.is_empty()
+    {
+        return Some(v.declared_type.clone());
     }
     let info = call_site.argument_infos.get(i);
     if let Some(info) = info {

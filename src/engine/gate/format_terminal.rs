@@ -62,6 +62,8 @@ fn safety_rank(safety: &str) -> i32 {
 
 /// A single finding (no rollup) or a multi-contributor rolled group.
 #[derive(Debug, Clone)]
+// Variant size spread is inherent (Single vs the richer Rolled); boxing would churn callers.
+#[allow(clippy::large_enum_variant)]
 pub enum RolledOrSingle {
     Single(FindingSummary),
     Rolled {

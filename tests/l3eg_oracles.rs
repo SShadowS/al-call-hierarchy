@@ -55,7 +55,7 @@
 //!     the event graph does NOT compute → L4.
 
 use al_call_hierarchy::engine::ids::{sha256_hex, to_stable_object_id};
-use al_call_hierarchy::engine::l3::event_graph::{build_event_graph, EventEdge, EventGraph};
+use al_call_hierarchy::engine::l3::event_graph::{EventEdge, EventGraph, build_event_graph};
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 

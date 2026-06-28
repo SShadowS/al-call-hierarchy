@@ -117,11 +117,12 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
                 // G-13: skip Known(true) TEMPORARY source records — a temp
                 // record left dirty has no SQL consequence (same gate as d40).
-                if let Some(ts) = &binding.source_temp_state {
-                    if ts.kind == "known" && ts.value == Some(true) {
-                        skipped_temp_record += 1;
-                        continue;
-                    }
+                if let Some(ts) = &binding.source_temp_state
+                    && ts.kind == "known"
+                    && ts.value == Some(true)
+                {
+                    skipped_temp_record += 1;
+                    continue;
                 }
 
                 let source_name_lc = match &binding.source_variable_name {

@@ -21,8 +21,8 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, before_anchor, is_platform_loaded_trigger_rec, record_loaded_by_assignment_before,
-    record_loaded_by_call_before, RECORD_LOAD_OPS,
+    RECORD_LOAD_OPS, anchor_of, before_anchor, is_platform_loaded_trigger_rec,
+    record_loaded_by_assignment_before, record_loaded_by_call_before,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;

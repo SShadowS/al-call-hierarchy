@@ -107,6 +107,8 @@ impl fmt::Display for DefinitionKind {
 
 /// A procedure or trigger definition
 #[derive(Debug, Clone)]
+// Several fields (e.g. `object_type`) are carried for future consumers / Debug.
+#[allow(dead_code)]
 pub struct Definition {
     /// File containing the definition (shared across multiple definitions)
     pub file: SharedPath,
@@ -128,6 +130,8 @@ pub struct Definition {
 
 /// Source of an external definition (from a .app package)
 #[derive(Debug, Clone, Copy)]
+// `app_version` carried for future consumers / Debug.
+#[allow(dead_code)]
 pub struct ExternalSource {
     /// App name (interned)
     pub app_name: Symbol,
@@ -137,6 +141,8 @@ pub struct ExternalSource {
 
 /// An external definition from a .app package (no file/range available)
 #[derive(Debug, Clone)]
+// `object_type` / `kind` carried for future consumers / Debug.
+#[allow(dead_code)]
 pub struct ExternalDefinition {
     /// Source app metadata
     pub source: ExternalSource,
@@ -164,6 +170,8 @@ pub enum DependencyMethodKind {
 }
 
 impl DependencyMethodKind {
+    // Classification/label helpers kept for future consumers (dependency doc symbols).
+    #[allow(dead_code)]
     pub fn is_publisher(&self) -> bool {
         matches!(
             self,
@@ -171,6 +179,7 @@ impl DependencyMethodKind {
         )
     }
 
+    #[allow(dead_code)]
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Procedure => "",
@@ -248,6 +257,8 @@ pub struct QualifiedName {
 
 /// A variable binding (variable name → type)
 #[derive(Debug, Clone)]
+// Not yet constructed — future design (variable-type resolution).
+#[allow(dead_code)]
 pub struct VariableBinding {
     /// Variable name (interned)
     pub name: Symbol,
@@ -259,6 +270,8 @@ pub struct VariableBinding {
 
 /// An event subscription linking a subscriber procedure to a publisher event
 #[derive(Debug, Clone)]
+// `publisher_object_type` carried for future consumers / Debug.
+#[allow(dead_code)]
 pub struct EventSubscription {
     /// The subscriber procedure (the one with [EventSubscriber] attribute)
     pub subscriber: QualifiedName,
@@ -358,6 +371,8 @@ pub struct LocalEventPublisher {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// The `Event` suffix is the AL domain term, not noise.
+#[allow(clippy::enum_variant_names)]
 pub enum LocalEventPublisherKind {
     IntegrationEvent,
     BusinessEvent,
@@ -365,6 +380,7 @@ pub enum LocalEventPublisherKind {
 }
 
 impl LocalEventPublisherKind {
+    #[allow(dead_code)] // label helper kept for future consumers
     pub fn tag(&self) -> &'static str {
         match self {
             Self::IntegrationEvent => "[IntegrationEvent]",
@@ -462,6 +478,7 @@ impl CallGraph {
             .find(|o| o.object_type == object_type && o.object_name.to_lowercase() == name_lc)
     }
 
+    #[allow(dead_code)] // accessor kept for future consumers / diagnostics
     pub fn dependency_object_count(&self) -> usize {
         self.dependency_objects.len()
     }
@@ -666,7 +683,7 @@ impl CallGraph {
                     CallPattern, CalleeSource, CallerContext, ObjectType as TelObjectType,
                     ResolutionFailure,
                 };
-                use crate::telemetry::{record_resolution_miss, CallContext};
+                use crate::telemetry::{CallContext, record_resolution_miss};
                 let object_name = self.interner.resolve(obj).unwrap_or("");
                 let procedure_name = self.interner.resolve(call.callee_method).unwrap_or("");
                 record_resolution_miss(&CallContext {
@@ -702,7 +719,7 @@ impl CallGraph {
                         CallPattern, CalleeSource, CallerContext, ObjectType as TelObjectType,
                         ResolutionFailure,
                     };
-                    use crate::telemetry::{record_resolution_miss, CallContext};
+                    use crate::telemetry::{CallContext, record_resolution_miss};
                     let procedure_name = self.interner.resolve(call.callee_method).unwrap_or("");
                     record_resolution_miss(&CallContext {
                         failure: ResolutionFailure::UnresolvedUnqualified,
@@ -761,14 +778,13 @@ impl CallGraph {
         let qnames = self.file_definitions.get(shared_path)?;
 
         for qname in qnames {
-            if let Some(def) = self.definitions.get(qname) {
-                if def.range.start.line <= line
-                    && def.range.end.line >= line
-                    && (def.range.start.line < line || def.range.start.character <= character)
-                    && (def.range.end.line > line || def.range.end.character >= character)
-                {
-                    return Some(def);
-                }
+            if let Some(def) = self.definitions.get(qname)
+                && def.range.start.line <= line
+                && def.range.end.line >= line
+                && (def.range.start.line < line || def.range.start.character <= character)
+                && (def.range.end.line > line || def.range.end.character >= character)
+            {
+                return Some(def);
             }
         }
         None
@@ -1520,7 +1536,7 @@ mod tests {
             CallSite {
                 file: file.clone(),
                 range: make_range(15, 15),
-                caller: caller,
+                caller,
                 callee_object: None,
                 callee_method: callee1,
             },
@@ -1531,7 +1547,7 @@ mod tests {
             CallSite {
                 file,
                 range: make_range(16, 16),
-                caller: caller,
+                caller,
                 callee_object: None,
                 callee_method: callee2,
             },
@@ -1606,9 +1622,11 @@ mod tests {
 
         graph.add_variable_binding(file, proc_qname, var_name, type_name);
 
-        assert!(graph
-            .lookup_variable_type(&proc_qname, unknown_var)
-            .is_none());
+        assert!(
+            graph
+                .lookup_variable_type(&proc_qname, unknown_var)
+                .is_none()
+        );
     }
 
     #[test]
@@ -1771,7 +1789,7 @@ mod tests {
             CallSite {
                 file: file.clone(),
                 range: make_range(15, 15),
-                caller: caller,
+                caller,
                 callee_object: None,
                 callee_method: callee,
             },
@@ -1902,7 +1920,7 @@ mod tests {
             CallSite {
                 file: file1.clone(),
                 range: make_range(15, 15),
-                caller: caller,
+                caller,
                 callee_object: Some(obj2),
                 callee_method: callee,
             },
@@ -2124,7 +2142,7 @@ mod tests {
             range: make_range(10, 20),
             publisher_object_type: Some(ObjectType::Codeunit),
             publisher_object: publisher_obj,
-            publisher_event: publisher_event,
+            publisher_event,
         };
 
         graph.add_event_subscription(subscription);
@@ -2168,7 +2186,7 @@ mod tests {
             range: make_range(10, 20),
             publisher_object_type: Some(ObjectType::Codeunit),
             publisher_object: publisher_obj,
-            publisher_event: publisher_event,
+            publisher_event,
         });
 
         let publisher_qname = QualifiedName {

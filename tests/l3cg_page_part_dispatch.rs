@@ -1,7 +1,7 @@
 //! Page-control extraction + CurrPage.<Part> resolution (Rust-owned).
 use al_call_hierarchy::engine::deps::symbol_reference::parse_symbol_reference;
 use al_call_hierarchy::engine::l3::l3_workspace::{
-    assemble_and_resolve_default, assemble_workspace_units, PageControlKind,
+    PageControlKind, assemble_and_resolve_default, assemble_workspace_units,
 };
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 

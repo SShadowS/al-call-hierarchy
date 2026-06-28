@@ -58,7 +58,7 @@ impl<'t> RawNode<'t> {
     }
 
     /// Source text of this node.
-    pub fn text<'s>(self, src: &'s str) -> &'s str {
+    pub fn text(self, src: &str) -> &str {
         &src[self.node.byte_range()]
     }
 

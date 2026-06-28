@@ -24,13 +24,13 @@
 use std::collections::HashMap;
 
 use crate::engine::gate::format_json::serialize_document_value;
-use crate::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
+use crate::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace};
 use crate::engine::l5::conditionality::UNCONDITIONAL;
 use crate::engine::l5::detector_context::build_detector_context;
 use crate::engine::l5::digest::compute_digest_effects_cli;
 use crate::engine::l5::digest_cli::{
-    build_envelope_diagnostics_json, resolve_changed_roots, run_digest_query_full_from_entries,
-    ChangedInput, DigestEffectFull, DigestEntryFull, FullAnchor,
+    ChangedInput, DigestEffectFull, DigestEntryFull, FullAnchor, build_envelope_diagnostics_json,
+    resolve_changed_roots, run_digest_query_full_from_entries,
 };
 use crate::engine::l5::snapshot::compose_snapshot;
 use crate::engine::l5::transaction_spans::SeedKind;
@@ -357,21 +357,21 @@ fn resource_name_matches(detail: &[(String, String)], query: &str) -> bool {
         }
     }
 
-    if let Some(disp) = resource_display {
-        if disp.to_lowercase() == target {
-            return true;
-        }
+    if let Some(disp) = resource_display
+        && disp.to_lowercase() == target
+    {
+        return true;
     }
 
-    if let Some(rid) = resource_id {
-        if !rid.is_empty() {
-            let trailing = match rid.rfind('/') {
-                Some(sep) => &rid[sep + 1..],
-                None => rid,
-            };
-            if trailing.to_lowercase() == target {
-                return true;
-            }
+    if let Some(rid) = resource_id
+        && !rid.is_empty()
+    {
+        let trailing = match rid.rfind('/') {
+            Some(sep) => &rid[sep + 1..],
+            None => rid,
+        };
+        if trailing.to_lowercase() == target {
+            return true;
         }
     }
 
@@ -662,23 +662,23 @@ pub fn project_prove_document(args: ProveDocumentArgs<'_>) -> String {
     result_obj.insert("answer".into(), prove_result.answer.as_str().into());
 
     // evidence — only when present (and non-empty)
-    if let Some(ref indices) = prove_result.evidence {
-        if !indices.is_empty() {
-            // Re-use digest effect_to_value to produce the same DigestEffectContract shape.
-            let ev: Vec<serde_json::Value> = indices
-                .iter()
-                .map(|&i| crate::engine::l5::digest_cli::effect_to_value(&effects[i]))
-                .collect();
-            result_obj.insert("evidence".into(), serde_json::Value::Array(ev));
-        }
+    if let Some(ref indices) = prove_result.evidence
+        && !indices.is_empty()
+    {
+        // Re-use digest effect_to_value to produce the same DigestEffectContract shape.
+        let ev: Vec<serde_json::Value> = indices
+            .iter()
+            .map(|&i| crate::engine::l5::digest_cli::effect_to_value(&effects[i]))
+            .collect();
+        result_obj.insert("evidence".into(), serde_json::Value::Array(ev));
     }
 
     // blockedBy — only when present (and non-empty)
-    if let Some(ref blockers) = prove_result.blocked_by {
-        if !blockers.is_empty() {
-            let bv: Vec<serde_json::Value> = blockers.iter().map(blocker_to_value).collect();
-            result_obj.insert("blockedBy".into(), serde_json::Value::Array(bv));
-        }
+    if let Some(ref blockers) = prove_result.blocked_by
+        && !blockers.is_empty()
+    {
+        let bv: Vec<serde_json::Value> = blockers.iter().map(blocker_to_value).collect();
+        result_obj.insert("blockedBy".into(), serde_json::Value::Array(bv));
     }
 
     result_obj.insert(
@@ -748,51 +748,51 @@ pub fn format_prove_human(
     lines.push(format!("  answer:   {}", prove_result.answer.as_str()));
 
     // Evidence
-    if let Some(ref indices) = prove_result.evidence {
-        if !indices.is_empty() {
-            lines.push(format!("  evidence: {} effect(s)", indices.len()));
-            for &i in indices {
-                let eff = &effects[i];
-                let ev_file = eff.evidence.file.as_deref().unwrap_or("(unavailable)");
-                let ev_line = eff
-                    .evidence
-                    .line
-                    .map(|l| format!(":{}", l))
-                    .unwrap_or_default();
-                // Mirror TS: `[${eff.type}] ${eff.provenance} — ${evFile}${evLine}`
-                // The em-dash is U+2014. `conditionality` is already a &'static str.
-                lines.push(format!(
-                    "    [{}] {} \u{2014} {}{}",
-                    eff.effect_type, eff.provenance, ev_file, ev_line
-                ));
-                if eff.conditionality != "unknown" {
-                    lines.push(format!("      conditionality: {}", eff.conditionality));
-                }
+    if let Some(ref indices) = prove_result.evidence
+        && !indices.is_empty()
+    {
+        lines.push(format!("  evidence: {} effect(s)", indices.len()));
+        for &i in indices {
+            let eff = &effects[i];
+            let ev_file = eff.evidence.file.as_deref().unwrap_or("(unavailable)");
+            let ev_line = eff
+                .evidence
+                .line
+                .map(|l| format!(":{}", l))
+                .unwrap_or_default();
+            // Mirror TS: `[${eff.type}] ${eff.provenance} — ${evFile}${evLine}`
+            // The em-dash is U+2014. `conditionality` is already a &'static str.
+            lines.push(format!(
+                "    [{}] {} \u{2014} {}{}",
+                eff.effect_type, eff.provenance, ev_file, ev_line
+            ));
+            if eff.conditionality != "unknown" {
+                lines.push(format!("      conditionality: {}", eff.conditionality));
             }
         }
     }
 
     // Blockers
-    if let Some(ref blockers) = prove_result.blocked_by {
-        if !blockers.is_empty() {
-            lines.push(format!("  blockedBy: {} blocker(s)", blockers.len()));
-            for b in blockers {
-                // TS (prove.ts:60-63) gates on `anchor?.file !== undefined` — present
-                // (even if "", which never occurs in practice), NOT on non-empty.
-                let anchor_str = match b.anchor.as_ref().and_then(|a| a.file.as_ref()) {
-                    Some(f) => {
-                        let line_str = b
-                            .anchor
-                            .as_ref()
-                            .and_then(|a| a.line)
-                            .map(|l| format!(":{}", l))
-                            .unwrap_or_default();
-                        format!(" @ {}{}", f, line_str)
-                    }
-                    None => String::new(),
-                };
-                lines.push(format!("    [{}] {}{}", b.kind, b.detail, anchor_str));
-            }
+    if let Some(ref blockers) = prove_result.blocked_by
+        && !blockers.is_empty()
+    {
+        lines.push(format!("  blockedBy: {} blocker(s)", blockers.len()));
+        for b in blockers {
+            // TS (prove.ts:60-63) gates on `anchor?.file !== undefined` — present
+            // (even if "", which never occurs in practice), NOT on non-empty.
+            let anchor_str = match b.anchor.as_ref().and_then(|a| a.file.as_ref()) {
+                Some(f) => {
+                    let line_str = b
+                        .anchor
+                        .as_ref()
+                        .and_then(|a| a.line)
+                        .map(|l| format!(":{}", l))
+                        .unwrap_or_default();
+                    format!(" @ {}{}", f, line_str)
+                }
+                None => String::new(),
+            };
+            lines.push(format!("    [{}] {}{}", b.kind, b.detail, anchor_str));
         }
     }
 
@@ -950,8 +950,12 @@ pub fn run_prove_pipeline(
     let all_s4_entries = compute_digest_effects_cli(&snap, &resolved);
 
     // Run full digest query for this single root
-    let query_full =
-        run_digest_query_full_from_entries(&snap, &[root_id.clone()], &all_s4_entries, &tx_ctx_map);
+    let query_full = run_digest_query_full_from_entries(
+        &snap,
+        std::slice::from_ref(root_id),
+        &all_s4_entries,
+        &tx_ctx_map,
+    );
 
     if query_full.entries.is_empty() {
         return Err("prove: internal error — entry missing after resolution".to_string());

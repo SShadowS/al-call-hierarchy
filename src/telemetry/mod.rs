@@ -258,10 +258,10 @@ pub fn record_resolution_miss(ctx: &CallContext<'_>) {
         }),
     };
 
-    if let Ok(guard) = rt.pipeline.read() {
-        if let Some(p) = guard.as_ref() {
-            p.clone_sender().send(env);
-        }
+    if let Ok(guard) = rt.pipeline.read()
+        && let Some(p) = guard.as_ref()
+    {
+        p.clone_sender().send(env);
     }
 }
 
@@ -304,10 +304,10 @@ pub fn record_parser_error(kind: ParserErrorKind, file: &std::path::Path) {
             repeat_count: 0,
         }),
     };
-    if let Ok(guard) = rt.pipeline.read() {
-        if let Some(p) = guard.as_ref() {
-            p.clone_sender().send(env);
-        }
+    if let Ok(guard) = rt.pipeline.read()
+        && let Some(p) = guard.as_ref()
+    {
+        p.clone_sender().send(env);
     }
 }
 
@@ -348,10 +348,10 @@ pub fn record_indexer_issue(kind: IndexerIssueKind, detail_code: u16, app_id: Op
             detail_code,
         }),
     };
-    if let Ok(guard) = rt.pipeline.read() {
-        if let Some(p) = guard.as_ref() {
-            p.clone_sender().send(env);
-        }
+    if let Ok(guard) = rt.pipeline.read()
+        && let Some(p) = guard.as_ref()
+    {
+        p.clone_sender().send(env);
     }
 }
 
@@ -365,7 +365,10 @@ pub fn record_handler_empty(
 ) {
     use std::sync::atomic::{AtomicU32, Ordering};
     static SAMPLE_COUNTER: AtomicU32 = AtomicU32::new(0);
-    if SAMPLE_COUNTER.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
+    if !SAMPLE_COUNTER
+        .fetch_add(1, Ordering::Relaxed)
+        .is_multiple_of(10)
+    {
         return;
     }
     let Some(rt) = runtime::get() else { return };
@@ -391,10 +394,10 @@ pub fn record_handler_empty(
             repeat_count: 0,
         }),
     };
-    if let Ok(guard) = rt.pipeline.read() {
-        if let Some(p) = guard.as_ref() {
-            p.clone_sender().send(env);
-        }
+    if let Ok(guard) = rt.pipeline.read()
+        && let Some(p) = guard.as_ref()
+    {
+        p.clone_sender().send(env);
     }
 }
 
@@ -431,10 +434,10 @@ pub fn record_session_start(
             previous_session_unclean: rt.previous_session_unclean,
         }),
     };
-    if let Ok(guard) = rt.pipeline.read() {
-        if let Some(p) = guard.as_ref() {
-            p.clone_sender().send(env);
-        }
+    if let Ok(guard) = rt.pipeline.read()
+        && let Some(p) = guard.as_ref()
+    {
+        p.clone_sender().send(env);
     }
 }
 

@@ -12,9 +12,9 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::engine::gate::cbor::CborValue;
 
-use super::fingerprint::{compute_diff_fingerprint, DiffCategory, DiffKind};
+use super::fingerprint::{DiffCategory, DiffKind, compute_diff_fingerprint};
 use super::indexes::DiffIndexes;
-use super::{get_array, get_str, DiffFinding, DiffSubject, Severity};
+use super::{DiffFinding, DiffSubject, Severity, get_array, get_str};
 
 // ── shared finding construction ─────────────────────────────────────────────
 
@@ -347,35 +347,35 @@ pub fn diff_schema(indexes: &DiffIndexes) -> Vec<DiffFinding> {
 
             let old_dc = get_str(old_fact, "dataClassification");
             let new_dc = get_str(new_fact, "dataClassification");
-            if let (Some(o), Some(n)) = (old_dc, new_dc) {
-                if o != n {
-                    let or = data_class_rank(o);
-                    let nr = data_class_rank(n);
-                    if nr > or {
-                        let kind = DiffKind::TableFieldDataClassificationTightened;
-                        out.push(make_finding(
-                            DiffCategory::Schema,
-                            kind,
-                            schema_severity(kind),
-                            stable_id,
-                            None,
-                            vec![stable_id.clone()],
-                            data_class_details(kind, o, n),
-                            indexes,
-                        ));
-                    } else if nr < or {
-                        let kind = DiffKind::TableFieldDataClassificationRelaxed;
-                        out.push(make_finding(
-                            DiffCategory::Schema,
-                            kind,
-                            schema_severity(kind),
-                            stable_id,
-                            None,
-                            vec![stable_id.clone()],
-                            data_class_details(kind, o, n),
-                            indexes,
-                        ));
-                    }
+            if let (Some(o), Some(n)) = (old_dc, new_dc)
+                && o != n
+            {
+                let or = data_class_rank(o);
+                let nr = data_class_rank(n);
+                if nr > or {
+                    let kind = DiffKind::TableFieldDataClassificationTightened;
+                    out.push(make_finding(
+                        DiffCategory::Schema,
+                        kind,
+                        schema_severity(kind),
+                        stable_id,
+                        None,
+                        vec![stable_id.clone()],
+                        data_class_details(kind, o, n),
+                        indexes,
+                    ));
+                } else if nr < or {
+                    let kind = DiffKind::TableFieldDataClassificationRelaxed;
+                    out.push(make_finding(
+                        DiffCategory::Schema,
+                        kind,
+                        schema_severity(kind),
+                        stable_id,
+                        None,
+                        vec![stable_id.clone()],
+                        data_class_details(kind, o, n),
+                        indexes,
+                    ));
                 }
             }
         } else if old_kind == "enum-value" && old_fp != new_fp {
@@ -820,10 +820,10 @@ fn writes_of(
 
 fn detail_str(details: &[(String, CborValue)], key: &str) -> String {
     for (k, v) in details {
-        if k == key {
-            if let CborValue::Text(s) = v {
-                return s.clone();
-            }
+        if k == key
+            && let CborValue::Text(s) = v
+        {
+            return s.clone();
         }
     }
     String::new()

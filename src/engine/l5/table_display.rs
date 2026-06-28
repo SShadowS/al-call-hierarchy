@@ -41,10 +41,10 @@ pub fn describe_table(
     table_by_id: &HashMap<&str, &L3Table>,
 ) -> String {
     // Tier 1: resolved tableId → the table's NAME.
-    if let Some(tid) = op.table_id {
-        if let Some(table) = table_by_id.get(tid) {
-            return table.name.clone();
-        }
+    if let Some(tid) = op.table_id
+        && let Some(table) = table_by_id.get(tid)
+    {
+        return table.name.clone();
     }
     // Tier 2: declared record-variable type text → `<type> (type not loaded)`.
     if let Some(routine) = routine {
@@ -53,12 +53,10 @@ pub fn describe_table(
             .record_variables
             .iter()
             .find(|v| v.name.to_lowercase() == lc)
+            && let Some(table_name) = &rv.table_name
+            && !table_name.is_empty()
         {
-            if let Some(table_name) = &rv.table_name {
-                if !table_name.is_empty() {
-                    return format!("{table_name} (type not loaded)");
-                }
-            }
+            return format!("{table_name} (type not loaded)");
         }
     }
     // Tier 3: `var <name>`.

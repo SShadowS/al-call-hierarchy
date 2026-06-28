@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 
 use super::combined_graph::CombinedGraph;
-use super::effect_lattice::{join_presence, EffectPresence};
+use super::effect_lattice::{EffectPresence, join_presence};
 use super::summary::{FieldList, RoutineSummary};
 use crate::engine::l2::features::{PAnchor, PCFNNode, PCallSite, PFieldAccess};
 use crate::engine::l3::call_resolver::UpgradedBinding;
@@ -99,11 +99,7 @@ impl PerParamState {
 // ----- lattice joins (mirror control-flow-walker.ts) ------------------------
 
 fn join_loaded(a: Loaded, b: Loaded) -> Loaded {
-    if a == b {
-        a
-    } else {
-        Loaded::Unknown
-    }
+    if a == b { a } else { Loaded::Unknown }
 }
 
 fn join_dirty(a: Dirty, b: Dirty) -> Dirty {
@@ -795,10 +791,10 @@ fn apply_condition_leaves(
 // ---------------------------------------------------------------------------
 
 fn op_affects_param(op: &L3RecordOperation, param: &ParamCtx) -> bool {
-    if let (Some(pid), Some(oid)) = (param.rec_var_id, op.record_variable_id.as_deref()) {
-        if pid == oid {
-            return true;
-        }
+    if let (Some(pid), Some(oid)) = (param.rec_var_id, op.record_variable_id.as_deref())
+        && pid == oid
+    {
+        return true;
     }
     op.record_variable_name.to_lowercase() == param.name_lc
 }
@@ -1084,10 +1080,10 @@ fn apply_field_read(state: PerParamState, fa: &PFieldAccess, param: &ParamCtx) -
     }
     let mut out = state;
     out.requires_loaded_at_entry = EffectPresence::Yes;
-    if let RequiredFields::Set(set) = &mut out.required_fields {
-        if !set.contains(&fa.field_name) {
-            set.push(fa.field_name.clone());
-        }
+    if let RequiredFields::Set(set) = &mut out.required_fields
+        && !set.contains(&fa.field_name)
+    {
+        set.push(fa.field_name.clone());
     }
     out
 }
@@ -1115,15 +1111,15 @@ fn node_start_pos(node: &PCFNNode, idx: &WalkIndexes) -> (u32, u32) {
         }
     }
     fn walk(node: &PCFNNode, idx: &WalkIndexes, best: &mut Option<(u32, u32)>) {
-        if let Some(op_id) = &node.operation_id {
-            if let Some(op) = idx.op_by_id.get(op_id.as_str()) {
-                consider(best, &op.source_anchor);
-            }
+        if let Some(op_id) = &node.operation_id
+            && let Some(op) = idx.op_by_id.get(op_id.as_str())
+        {
+            consider(best, &op.source_anchor);
         }
-        if let Some(cs_id) = &node.callsite_id {
-            if let Some(cs) = idx.call_by_id.get(cs_id.as_str()) {
-                consider(best, &cs.source_anchor);
-            }
+        if let Some(cs_id) = &node.callsite_id
+            && let Some(cs) = idx.call_by_id.get(cs_id.as_str())
+        {
+            consider(best, &cs.source_anchor);
         }
         if let Some(leaves) = &node.condition_leaves {
             for l in leaves {
@@ -1174,15 +1170,15 @@ fn node_range(node: &PCFNNode, idx: &WalkIndexes) -> Option<(u32, u32, u32, u32)
         min: &mut Option<(u32, u32)>,
         max: &mut Option<(u32, u32)>,
     ) {
-        if let Some(op_id) = &node.operation_id {
-            if let Some(op) = idx.op_by_id.get(op_id.as_str()) {
-                consider(min, max, &op.source_anchor);
-            }
+        if let Some(op_id) = &node.operation_id
+            && let Some(op) = idx.op_by_id.get(op_id.as_str())
+        {
+            consider(min, max, &op.source_anchor);
         }
-        if let Some(cs_id) = &node.callsite_id {
-            if let Some(cs) = idx.call_by_id.get(cs_id.as_str()) {
-                consider(min, max, &cs.source_anchor);
-            }
+        if let Some(cs_id) = &node.callsite_id
+            && let Some(cs) = idx.call_by_id.get(cs_id.as_str())
+        {
+            consider(min, max, &cs.source_anchor);
         }
         for group in [&node.condition_leaves, &node.children, &node.else_children]
             .into_iter()
@@ -1245,10 +1241,10 @@ fn collect_field_accesses_in_block<'a>(
     for fa in &param_field_accesses(idx, param) {
         let fr = &fa.source_anchor;
         // Must lie inside the block range (when known).
-        if let Some((sl, sc, el, ec)) = block_range {
-            if !falls_in_range(fr.start_line, fr.start_column, sl, sc, el, ec) {
-                continue;
-            }
+        if let Some((sl, sc, el, ec)) = block_range
+            && !falls_in_range(fr.start_line, fr.start_column, sl, sc, el, ec)
+        {
+            continue;
         }
         // Must NOT lie inside any recursive child range.
         let in_recursive_child = recursive_ranges.iter().any(|(sl, sc, el, ec)| {

@@ -25,11 +25,11 @@ use indexmap::IndexMap;
 
 use crate::engine::gate::cbor::CborValue;
 use crate::engine::ids::{
-    canonical_routine_signature, locale_compare, object_signature_fingerprint, sha256_hex,
-    to_stable_routine_id_from_parts, ParamSpec,
+    ParamSpec, canonical_routine_signature, locale_compare, object_signature_fingerprint,
+    sha256_hex, to_stable_routine_id_from_parts,
 };
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l4::capability_cone::{build_r3a3_source_only_base, CapabilityFact};
+use crate::engine::l4::capability_cone::{CapabilityFact, build_r3a3_source_only_base};
 use crate::engine::l5::snapshot::compose_snapshot;
 
 mod to_cbor;
@@ -353,15 +353,15 @@ fn to_cbor_inputs(inputs: &[SnapshotInput]) -> CborValue {
 
 fn project_apps(resolved: &L3Resolved) -> CborValue {
     let mut apps: Vec<(String, String, String, String)> = Vec::new();
-    if let Some(app) = &resolved.primary_app {
-        if !app.app_guid.is_empty() {
-            apps.push((
-                app.app_guid.clone(),
-                app.publisher.clone(),
-                app.name.clone(),
-                app.version.clone(),
-            ));
-        }
+    if let Some(app) = &resolved.primary_app
+        && !app.app_guid.is_empty()
+    {
+        apps.push((
+            app.app_guid.clone(),
+            app.publisher.clone(),
+            app.name.clone(),
+            app.version.clone(),
+        ));
     }
     // al-sem `projectApps`: `.sort((x,y) => x.appGuid.localeCompare(y.appGuid))`.
     apps.sort_by(|a, b| locale_compare(&a.0, &b.0));
@@ -778,31 +778,31 @@ fn derive_inputs(workspace_dir: &std::path::Path) -> Vec<SnapshotInput> {
 
     // app.json.
     let app_json = workspace_dir.join("app.json");
-    if app_json.exists() {
-        if let Some(hash) = hash_file(&app_json) {
-            out.push(SnapshotInput {
-                kind: "app-json".into(),
-                path: rel(workspace_dir, &app_json),
-                content_hash: hash,
-            });
-        }
+    if app_json.exists()
+        && let Some(hash) = hash_file(&app_json)
+    {
+        out.push(SnapshotInput {
+            kind: "app-json".into(),
+            path: rel(workspace_dir, &app_json),
+            content_hash: hash,
+        });
     }
 
     // .alpackages/*.app.
     let alpackages = workspace_dir.join(".alpackages");
-    if alpackages.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&alpackages) {
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.extension().and_then(|x| x.to_str()) == Some("app") {
-                    if let Some(hash) = hash_file(&p) {
-                        out.push(SnapshotInput {
-                            kind: "dep-package".into(),
-                            path: rel(workspace_dir, &p),
-                            content_hash: hash,
-                        });
-                    }
-                }
+    if alpackages.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&alpackages)
+    {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("app")
+                && let Some(hash) = hash_file(&p)
+            {
+                out.push(SnapshotInput {
+                    kind: "dep-package".into(),
+                    path: rel(workspace_dir, &p),
+                    content_hash: hash,
+                });
             }
         }
     }
@@ -812,25 +812,24 @@ fn derive_inputs(workspace_dir: &std::path::Path) -> Vec<SnapshotInput> {
     let roots_path = workspace_dir.join("roots.config.json");
     if roots_path.exists()
         && crate::engine::root_classification::roots_config_was_loaded(workspace_dir)
+        && let Some(hash) = hash_file(&roots_path)
     {
-        if let Some(hash) = hash_file(&roots_path) {
-            out.push(SnapshotInput {
-                kind: "roots-config".into(),
-                path: rel(workspace_dir, &roots_path),
-                content_hash: hash,
-            });
-        }
+        out.push(SnapshotInput {
+            kind: "roots-config".into(),
+            path: rel(workspace_dir, &roots_path),
+            content_hash: hash,
+        });
     }
     // al-sem.coverage.yaml → "policy".
     let coverage_policy = workspace_dir.join("al-sem.coverage.yaml");
-    if coverage_policy.exists() {
-        if let Some(hash) = hash_file(&coverage_policy) {
-            out.push(SnapshotInput {
-                kind: "policy".into(),
-                path: rel(workspace_dir, &coverage_policy),
-                content_hash: hash,
-            });
-        }
+    if coverage_policy.exists()
+        && let Some(hash) = hash_file(&coverage_policy)
+    {
+        out.push(SnapshotInput {
+            kind: "policy".into(),
+            path: rel(workspace_dir, &coverage_policy),
+            content_hash: hash,
+        });
     }
 
     // al-sem `deriveInputs`: `.sort((a,b) => `${a.kind}|${a.path}`.localeCompare(…))`.
@@ -896,8 +895,8 @@ const GZIP_LEVEL: u32 = 6;
 /// CBOR + gzip — `serializeCborGz(snap)` with the gzip OS header byte normalized
 /// to 0x03 (Unix), level-6 DEFLATE (zlib-ng), header `1f 8b 08 00 00000000 00 03`.
 pub fn serialize_cbor_gz(tree: &CborValue) -> Vec<u8> {
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use std::io::Write;
 
     let cbor = serialize_cbor(tree);
@@ -1316,16 +1315,16 @@ fn slice_identities(v: &CborValue, prefix: &str) -> CborValue {
     let mut out_ids: Vec<CborValue> = Vec::new();
     let mut out_names: Vec<CborValue> = Vec::new();
     for (i, id) in stable_ids.iter().enumerate() {
-        if let CborValue::Text(s) = id {
-            if s.starts_with(prefix) {
-                out_ids.push(id.clone());
-                out_names.push(
-                    display_names
-                        .get(i)
-                        .cloned()
-                        .unwrap_or(CborValue::Text(String::new())),
-                );
-            }
+        if let CborValue::Text(s) = id
+            && s.starts_with(prefix)
+        {
+            out_ids.push(id.clone());
+            out_names.push(
+                display_names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or(CborValue::Text(String::new())),
+            );
         }
     }
     let mut out: IndexMap<String, CborValue> = IndexMap::new();

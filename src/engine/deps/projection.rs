@@ -24,9 +24,9 @@
 
 use crate::engine::deps::symbol_reference::{AbiRoutine, SymbolReferenceAbi};
 use crate::engine::ids::{
-    self, encode_field_id, encode_key_id, encode_object_id, encode_table_id, sha256_hex,
-    sha256_of_strings, to_stable_field_id, to_stable_object_id, to_stable_table_id,
-    CanonicalRoutineKey, ParamSpec,
+    self, CanonicalRoutineKey, ParamSpec, encode_field_id, encode_key_id, encode_object_id,
+    encode_table_id, sha256_hex, sha256_of_strings, to_stable_field_id, to_stable_object_id,
+    to_stable_table_id,
 };
 use crate::engine::l3::al_attributes::AttributeInfo;
 use std::collections::BTreeMap;

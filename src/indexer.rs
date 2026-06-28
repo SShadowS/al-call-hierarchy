@@ -15,7 +15,7 @@ use crate::graph::{
     DependencyObject, EventSubscription, ExternalDefinition, ExternalSource, LocalEventPublisher,
     LocalEventPublisherKind, ObjectType, QualifiedName,
 };
-use crate::parser::{parse_file_ir, EventPublisherKind, ParsedFile};
+use crate::parser::{EventPublisherKind, ParsedFile, parse_file_ir};
 
 /// Project indexer
 pub struct Indexer {
@@ -215,24 +215,23 @@ impl Indexer {
         for var in parsed.variables {
             // Only add variables that have a containing procedure (local vars)
             // and that have a Record/Codeunit type
-            if let Some(ref proc_name) = var.containing_procedure {
-                if var
+            if let Some(ref proc_name) = var.containing_procedure
+                && var
                     .type_kind
                     .as_ref()
                     .map(|k| k == "Record" || k == "Codeunit")
                     .unwrap_or(false)
-                {
-                    let proc_sym = graph.intern(proc_name);
-                    let var_sym = graph.intern(&var.name);
-                    let type_sym = graph.intern(&var.type_name);
+            {
+                let proc_sym = graph.intern(proc_name);
+                let var_sym = graph.intern(&var.name);
+                let type_sym = graph.intern(&var.type_name);
 
-                    let proc_qname = QualifiedName {
-                        object: object_name,
-                        procedure: proc_sym,
-                    };
+                let proc_qname = QualifiedName {
+                    object: object_name,
+                    procedure: proc_sym,
+                };
 
-                    graph.add_variable_binding(shared_path.clone(), proc_qname, var_sym, type_sym);
-                }
+                graph.add_variable_binding(shared_path.clone(), proc_qname, var_sym, type_sym);
             }
         }
 

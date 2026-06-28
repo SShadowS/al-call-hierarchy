@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 
 use crate::engine::l4::combined_graph::CombinedEdge;
-use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
+use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::finding::EvidenceStep;
 
 /// A real op site the walk can terminate at. Policies may carry richer data in

@@ -38,7 +38,7 @@ use std::collections::HashMap;
 
 use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, UnknownReason};
 use al_call_hierarchy::engine::l3::coverage::{
-    build_coverage, AnalysisCoverage, CoverageDiagnostic, CoverageUnit,
+    AnalysisCoverage, CoverageDiagnostic, CoverageUnit, build_coverage,
 };
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
 use al_call_hierarchy::engine::l3::taxonomy::{DispatchKind, Resolution};

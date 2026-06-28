@@ -38,12 +38,12 @@ use serde::Serialize;
 
 use crate::engine::ids::to_stable_object_id;
 use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, POperationSite};
-use crate::engine::l2::operation_order::{apply_operation_order, OperationOrder, ScopeFrame};
+use crate::engine::l2::operation_order::{OperationOrder, ScopeFrame, apply_operation_order};
 use crate::engine::l3::event_graph::EventSymbol;
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l3::taxonomy::DispatchKind;
 use crate::engine::l4::capability_cone::{
-    build_r3a3_source_only_base, CapabilityExtra, CapabilityFact, R3a3SourceBase, ValueSource,
+    CapabilityExtra, CapabilityFact, R3a3SourceBase, ValueSource, build_r3a3_source_only_base,
 };
 
 // ===========================================================================
@@ -1628,7 +1628,9 @@ fn derive_callsite_resolutions(
         let ua = under_asserterror.get(&callsite_key).copied() == Some(true);
 
         // Interface dispatch group → polymorphic.
-        let has_interface = group_edges.iter().any(|e| e.dispatch_kind == DispatchKind::Interface);
+        let has_interface = group_edges
+            .iter()
+            .any(|e| e.dispatch_kind == DispatchKind::Interface);
         if has_interface {
             let empty: Vec<(String, Option<String>)> = Vec::new();
             let iface = iface_edges_by_callsite.get(&callsite_key).unwrap_or(&empty);
@@ -1850,12 +1852,12 @@ fn derive_analysis_gaps(base: &R3a3SourceBase) -> Vec<SnapshotAnalysisGap> {
     // Symbol-only apps: any app guid in a body-unavailable dependency routine.
     let mut opaque_apps: BTreeSet<String> = BTreeSet::new();
     for r in &base.ws_routines {
-        if !r.body_available && is_dependency_role(r) {
-            if let Some(guid) = r.object_id.split('/').next() {
-                if !guid.is_empty() {
-                    opaque_apps.insert(guid.to_string());
-                }
-            }
+        if !r.body_available
+            && is_dependency_role(r)
+            && let Some(guid) = r.object_id.split('/').next()
+            && !guid.is_empty()
+        {
+            opaque_apps.insert(guid.to_string());
         }
     }
     for guid in &opaque_apps {

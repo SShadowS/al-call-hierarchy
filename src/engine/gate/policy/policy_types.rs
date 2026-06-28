@@ -117,7 +117,7 @@ pub struct RuleRunSummary {
 // Built on the shared `gate::ordered_json` insertion-order serializer.
 // ---------------------------------------------------------------------------
 
-use crate::engine::gate::ordered_json::{serialize_jv, Jv};
+use crate::engine::gate::ordered_json::{Jv, serialize_jv};
 
 fn predicate_to_jv(p: &Predicate) -> Jv {
     match p {

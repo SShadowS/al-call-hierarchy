@@ -19,7 +19,7 @@
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
 use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::{run_detectors, DetectorStats};
+use al_call_hierarchy::engine::l5::registry::{DetectorStats, run_detectors};
 
 const APP_GUID: &str = "11111111-0000-0000-0000-0000000d1abc";
 

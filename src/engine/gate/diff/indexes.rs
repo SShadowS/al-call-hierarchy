@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 
 use crate::engine::gate::cbor::CborValue;
 
-use super::renames::{validate_overlay_against_snapshots, RenameTable};
-use super::{get_array, get_str, snapshot_array, DiffDiagnostic};
+use super::renames::{RenameTable, validate_overlay_against_snapshots};
+use super::{DiffDiagnostic, get_array, get_str, snapshot_array};
 
 /// Origin tracking for one normalized subject id.
 #[derive(Debug, Clone, Default)]

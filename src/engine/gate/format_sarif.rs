@@ -55,7 +55,11 @@ fn rule(id: &'static str, name: &'static str, text: &'static str) -> SarifRule {
 
 fn rules() -> Vec<SarifRule> {
     vec![
-        rule("d1-db-op-in-loop", "DbOpInLoop", "Database operation inside a loop"),
+        rule(
+            "d1-db-op-in-loop",
+            "DbOpInLoop",
+            "Database operation inside a loop",
+        ),
         rule(
             "d2-event-fanout-in-loop",
             "EventFanoutInLoop",
@@ -91,8 +95,16 @@ fn rules() -> Vec<SarifRule> {
             "TransactionSpanSummary",
             "Transaction span summary (info)",
         ),
-        rule("d10-self-modifying-loop", "SelfModifyingLoop", "Self-modifying loop"),
-        rule("d11-modify-without-get", "ModifyWithoutGet", "Modify without prior Get"),
+        rule(
+            "d10-self-modifying-loop",
+            "SelfModifyingLoop",
+            "Self-modifying loop",
+        ),
+        rule(
+            "d11-modify-without-get",
+            "ModifyWithoutGet",
+            "Modify without prior Get",
+        ),
         rule(
             "d12-dead-integration-event",
             "DeadIntegrationEvent",
@@ -128,7 +140,11 @@ fn rules() -> Vec<SarifRule> {
             "IoUnsafeTxn",
             "External IO inside an open write transaction / before commit",
         ),
-        rule("d48-io-in-loop", "IoInLoop", "External IO (HTTP/FILE) inside a loop"),
+        rule(
+            "d48-io-in-loop",
+            "IoInLoop",
+            "External IO (HTTP/FILE) inside a loop",
+        ),
         rule(
             "d49-uncommitted-write-before-ui",
             "UncommittedWriteBeforeUi",

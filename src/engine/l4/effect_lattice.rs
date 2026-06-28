@@ -145,11 +145,7 @@ pub fn effect_key_of(
 /// Equal-rank tie-breaker: KEEP the first argument (`a`). (al-sem
 /// `VIA_RANK[a] >= VIA_RANK[b] ? a : b` — `>=` means `a` wins on tie.)
 pub fn merge_via<'a>(a: &'a str, b: &'a str) -> &'a str {
-    if via_rank(a) >= via_rank(b) {
-        a
-    } else {
-        b
-    }
+    if via_rank(a) >= via_rank(b) { a } else { b }
 }
 
 /// Owned-string variant of `merge_via` (for code that doesn't have tied lifetimes).

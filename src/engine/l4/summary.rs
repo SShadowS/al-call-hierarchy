@@ -11,14 +11,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::effect_lattice::{effect_key_of, EffectPresence, TempStateKind};
+use super::effect_lattice::{EffectPresence, TempStateKind, effect_key_of};
 use super::summary_runner::compute_summaries;
-use crate::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
 use crate::engine::l3::event_graph::build_event_graph;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l3::symbol_table::SymbolTable;
 use crate::engine::l4::combined_graph::build_combined_graph;
-use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
+use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 
 // ---------------------------------------------------------------------------
 // Internal summary core types (NOT the serde projection shape). Internal ids.

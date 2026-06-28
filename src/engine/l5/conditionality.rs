@@ -66,18 +66,18 @@ pub fn path_conditionality(
         .chain(std::iter::once(terminal_ctx))
         .collect();
     // Any unknown → contaminate.
-    if all.iter().any(|c| *c == UNKNOWN) {
+    if all.contains(&UNKNOWN) {
         return UNKNOWN;
     }
     // Most restrictive = highest rank.
     let mut max_rank: u32 = 0;
     let mut result: EffectConditionality = UNCONDITIONAL;
     for c in &all {
-        if let Some(r) = rank(c) {
-            if r > max_rank {
-                max_rank = r;
-                result = c;
-            }
+        if let Some(r) = rank(c)
+            && r > max_rank
+        {
+            max_rank = r;
+            result = c;
         }
     }
     result

@@ -92,7 +92,7 @@
 //! change required.
 
 use al_call_hierarchy::engine::l2::operation_order::{
-    analyze_named_routine_order, OperationOrder, RoutineOperationOrder, ScopeFrame,
+    OperationOrder, RoutineOperationOrder, ScopeFrame, analyze_named_routine_order,
 };
 use std::collections::HashMap;
 
@@ -104,14 +104,8 @@ const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
 /// workspace and return the result for `routine` (panics if the routine isn't
 /// found — a missing routine is itself an oracle failure).
 fn analyze(source: &str, routine: &str) -> RoutineOperationOrder {
-    analyze_named_routine_order(
-        source,
-        routine,
-        APP_GUID,
-        MODEL_INSTANCE_ID,
-        SOURCE_UNIT_ID,
-    )
-    .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
+    analyze_named_routine_order(source, routine, APP_GUID, MODEL_INSTANCE_ID, SOURCE_UNIT_ID)
+        .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
 }
 
 /// Frame-id → frame lookup for an analysis.

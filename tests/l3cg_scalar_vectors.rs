@@ -16,7 +16,7 @@
 
 use al_call_hierarchy::engine::l3::al_type::normalize_al_type;
 use al_call_hierarchy::engine::l3::receiver::simple_receiver_name;
-use al_call_hierarchy::engine::l3::type_ref::{parse_object_type_ref, ObjectTypeRef};
+use al_call_hierarchy::engine::l3::type_ref::{ObjectTypeRef, parse_object_type_ref};
 use al_call_hierarchy::engine::l3::type_rel::{
     is_enumish, is_objectish, scalar_family, type_relation,
 };

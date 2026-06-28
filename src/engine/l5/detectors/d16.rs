@@ -9,7 +9,7 @@
 //! `id = d16/{from}/{callsiteId}/{to}` — `from` + `to` are INTERNAL RoutineIds (the
 //! projection rewrites them to stable). Within-detector sort by `compareStrings(id)`.
 
-use crate::engine::l3::al_attributes::{parse_routine_attributes, ObsoleteState};
+use crate::engine::l3::al_attributes::{ObsoleteState, parse_routine_attributes};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;

@@ -37,7 +37,9 @@ pub fn evaluate_preflight(
         } else {
             String::new()
         };
-        format!("analysis coverage degraded — {unresolved_callsites} unresolved callsite(s){opaque_part}")
+        format!(
+            "analysis coverage degraded — {unresolved_callsites} unresolved callsite(s){opaque_part}"
+        )
     } else {
         "dependency coverage complete".to_string()
     };

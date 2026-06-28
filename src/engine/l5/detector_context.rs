@@ -22,24 +22,24 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
-    resolve_calls, CallEdge, DeclaredDependency, UpgradedBinding,
+    CallEdge, DeclaredDependency, UpgradedBinding, resolve_calls,
 };
 use crate::engine::l3::event_graph::build_event_graph;
 use crate::engine::l3::event_graph::{EventGraph, EventSymbol};
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine, L3Table};
 use crate::engine::l3::symbol_table::SymbolTable;
 use crate::engine::l4::capability_cone::{
-    compose_cone_over_graph, direct_facts_for_routine, CapabilityFact,
+    CapabilityFact, compose_cone_over_graph, direct_facts_for_routine,
 };
-use crate::engine::l4::combined_graph::{build_combined_graph, CombinedGraph};
-use crate::engine::l4::scc::{tarjan_scc, SccInputGraph};
-use crate::engine::l4::summary::{dedupe_uncertainties, RecordRoleSummary, Uncertainty};
-use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
+use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
+use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
+use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
+use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
 use crate::engine::l5::entry_points::AccessModifier;
-use crate::engine::l5::event_flow::{build_event_flow_indexes, EventFlowIndexes};
+use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
-use crate::engine::l5::reverse_call_graph::{build_reverse_call_graph, ReverseCallGraph};
-use crate::engine::l5::transaction_spans::{compute_transaction_spans, TransactionSpan};
+use crate::engine::l5::reverse_call_graph::{ReverseCallGraph, build_reverse_call_graph};
+use crate::engine::l5::transaction_spans::{TransactionSpan, compute_transaction_spans};
 
 /// A declared workspace dependency (`model.identity.primaryDependencies[]`): the
 /// `appGuid` / `name` / `minVersion` triple d17 iterates. Mirrors al-sem's
@@ -371,10 +371,10 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // the same pass so we never recompute the core summaries.
     let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
     for r in &ws.routines {
-        if let Some(s) = core_summaries.get(&r.id) {
-            if !s.parameter_roles.is_empty() {
-                parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
-            }
+        if let Some(s) = core_summaries.get(&r.id)
+            && !s.parameter_roles.is_empty()
+        {
+            parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
         }
     }
 
@@ -595,10 +595,10 @@ pub(crate) fn build_detector_context_cross_app(
 
     let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
     for r in ws_routines {
-        if let Some(s) = core_summaries.get(&r.id) {
-            if !s.parameter_roles.is_empty() {
-                parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
-            }
+        if let Some(s) = core_summaries.get(&r.id)
+            && !s.parameter_roles.is_empty()
+        {
+            parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
         }
     }
 

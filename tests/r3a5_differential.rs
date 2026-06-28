@@ -25,7 +25,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l4::capability_cone::{
-    project_r3a5_cross_app, R3a5FullSummaryProjection,
+    R3a5FullSummaryProjection, project_r3a5_cross_app,
 };
 use serde::Deserialize;
 use serde_json::Value;

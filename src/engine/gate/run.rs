@@ -26,17 +26,17 @@ use std::path::Path;
 use crate::engine::gate::app_attribution::App;
 use crate::engine::gate::baseline::{apply_baseline, load_baseline, save_baseline};
 use crate::engine::gate::exit_code::{compute_finding_exit, exit};
-use crate::engine::gate::filter::{filter_findings, scope_filter, FilterOptions, Scope};
-use crate::engine::gate::format_html::{format_html, HtmlFormatInputs};
-use crate::engine::gate::format_json::{build_analyze_json, FindingEvidence, JsonFormatInputs};
+use crate::engine::gate::filter::{FilterOptions, Scope, filter_findings, scope_filter};
+use crate::engine::gate::format_html::{HtmlFormatInputs, format_html};
+use crate::engine::gate::format_json::{FindingEvidence, JsonFormatInputs, build_analyze_json};
 use crate::engine::gate::format_pr_summary::format_pr_summary;
 use crate::engine::gate::format_sarif::format_sarif;
-use crate::engine::gate::format_terminal::{format_terminal, format_terminal_grouped, GroupBy};
+use crate::engine::gate::format_terminal::{GroupBy, format_terminal, format_terminal_grouped};
 use crate::engine::gate::inline_suppression::{apply_inline_suppressions, build_suppression_map};
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::preflight::evaluate_preflight;
 use crate::engine::gate::presets::resolve_analyze_detectors;
-use crate::engine::gate::projection::{project_finding, ProjectionIndex};
+use crate::engine::gate::projection::{ProjectionIndex, project_finding};
 use crate::engine::gate::version::alsem_version;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::registry::run_detectors;
@@ -110,6 +110,7 @@ pub struct AnalyzeArgs {
 /// into the gate `App` registry. Mirrors al-sem `WorkspaceProvider.collect`:
 ///   - defaults: `publisher = "unknown"`, `name = "unknown"`, `version = "0.0.0.0"`.
 ///   - `appGuid` from the `id` (already validated by `compute_gate_model_instance_id`).
+///
 /// SOURCE-ONLY: exactly one app per run. Returns an empty registry if `app.json` is
 /// unreadable (engine-never-throws; attribution then falls back to "(unknown app)").
 fn read_workspace_apps(ws: &Path) -> Vec<App> {

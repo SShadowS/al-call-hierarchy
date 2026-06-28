@@ -16,6 +16,7 @@ const OVERRIDE_ENV_VAR: &str = "AL_SEM_VERSION_OVERRIDE";
 /// Pure resolution: given the (optional) override value, return the effective version.
 ///   - `Some(v)` (the env var was set) → `v`.
 ///   - `None` → `DEFAULT_ALSEM_VERSION`.
+///
 /// This is the unit-testable core — no process-global env state, so tests do not race.
 fn resolve_version(override_value: Option<&str>) -> String {
     match override_value {

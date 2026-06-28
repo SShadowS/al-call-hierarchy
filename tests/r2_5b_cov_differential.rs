@@ -47,7 +47,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::deps::cross_app_l3::{
-    build_cross_app_l3_from_workspace, CrossAppL3,
+    CrossAppL3, build_cross_app_l3_from_workspace,
 };
 use serde::Deserialize;
 use serde_json::Value;

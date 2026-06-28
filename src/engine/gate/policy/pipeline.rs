@@ -15,11 +15,11 @@ use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::policy::format_policy::{
     format_policy_human, format_policy_json, format_policy_sarif,
 };
-use crate::engine::gate::policy::policy_engine::{run_policy_engine, PolicyModel, PolicyRunResult};
+use crate::engine::gate::policy::policy_engine::{PolicyModel, PolicyRunResult, run_policy_engine};
 use crate::engine::gate::policy::policy_loader::{
-    load_policy_from_file, load_policy_from_string, LoadResult, BUNDLED_DEFAULT_POLICY_YAML,
+    BUNDLED_DEFAULT_POLICY_YAML, LoadResult, load_policy_from_file, load_policy_from_string,
 };
-use crate::engine::gate::policy::policy_types::{predicate_to_json, PolicyDoc};
+use crate::engine::gate::policy::policy_types::{PolicyDoc, predicate_to_json};
 use crate::engine::gate::run::compute_analyzer_diagnostics;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::detector_context::build_detector_context;
@@ -140,7 +140,7 @@ pub fn run_policy_check(opts: &PolicyCheckOptions) -> PolicyCheckOutcome {
                 text: None,
                 exit_code: 1,
                 stderr_lines: vec![
-                    "al-sem policy check: could not compute modelInstanceId".to_string()
+                    "al-sem policy check: could not compute modelInstanceId".to_string(),
                 ],
                 out_path: None,
             };

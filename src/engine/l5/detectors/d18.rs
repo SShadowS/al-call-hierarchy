@@ -75,11 +75,12 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             }
 
             // Skip temporary records.
-            if let Some(ts) = &op.temp_state {
-                if ts.kind == "known" && ts.value == Some(true) {
-                    skipped_temp_record += 1;
-                    continue;
-                }
+            if let Some(ts) = &op.temp_state
+                && ts.kind == "known"
+                && ts.value == Some(true)
+            {
+                skipped_temp_record += 1;
+                continue;
             }
 
             let infos = match &op.field_argument_infos {

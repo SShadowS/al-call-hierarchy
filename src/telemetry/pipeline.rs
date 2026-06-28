@@ -5,7 +5,7 @@
 use crate::telemetry::counters::Counters;
 use crate::telemetry::events::EventEnvelope;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, error::TrySendError, Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver, Sender, error::TrySendError};
 
 pub struct Pipeline {
     tx: Sender<EventEnvelope>,

@@ -38,11 +38,11 @@ pub fn record_table_name_of(declared_type: &str) -> Option<String> {
         return None;
     }
     let rest_bytes = &trimmed[6..]; // "record".len() == 6 (ASCII)
-                                    // Word-boundary check: the char after `record` must NOT be alphanumeric/_.
-    if let Some(c) = rest_bytes.chars().next() {
-        if c.is_alphanumeric() || c == '_' {
-            return None;
-        }
+    // Word-boundary check: the char after `record` must NOT be alphanumeric/_.
+    if let Some(c) = rest_bytes.chars().next()
+        && (c.is_alphanumeric() || c == '_')
+    {
+        return None;
     }
     let mut rest = rest_bytes.trim().to_string();
     // Strip a trailing ` temporary` modifier (case-insensitive, with leading ws).
@@ -52,11 +52,7 @@ pub fn record_table_name_of(declared_type: &str) -> Option<String> {
         return None;
     }
     let name = strip_quotes(rest).trim().to_string();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 /// Strip a trailing `\s+temporary\s*$` (case-insensitive) — mirrors TS

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use al_call_hierarchy::engine::ids::to_stable_object_id;
 use al_call_hierarchy::engine::l3::call_resolver::{
-    resolve_calls, CallEdge, DeclaredDependency, UpgradedBinding,
+    CallEdge, DeclaredDependency, UpgradedBinding, resolve_calls,
 };
 use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve, to_stable_table_id};
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;

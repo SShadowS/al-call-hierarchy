@@ -34,11 +34,11 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use al_call_hierarchy::engine::gate::run::compute_analyzer_diagnostics;
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
+use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace};
 use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::snapshot_full::{
-    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_envelope, serialize_json,
-    serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
+    EnvelopeDiagnostic, FullSnapshotOptions, compose_full_snapshot, serialize_cbor,
+    serialize_cbor_gz, serialize_envelope, serialize_json, serialize_sharded,
 };
 
 /// al-sem `DEFAULT_DETECTORS` (34) by name — `analyzeWorkspace` runs this set, so
@@ -224,11 +224,7 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
             return Some(i);
         }
     }
-    if a.len() != b.len() {
-        Some(n)
-    } else {
-        None
-    }
+    if a.len() != b.len() { Some(n) } else { None }
 }
 
 #[test]
@@ -250,7 +246,11 @@ fn envelope_json_matches_goldens() {
         let diags = envelope_diagnostics(&ws_dir, &resolved);
         let got = serialize_envelope(&tree, VERSION_OVERRIDE, true, &diags);
         let golden_path = goldens_dir().join(format!("{fixture}.envelope.json"));
-        check_or_regen(&golden_path, got.as_bytes(), &format!("{fixture}.envelope.json"));
+        check_or_regen(
+            &golden_path,
+            got.as_bytes(),
+            &format!("{fixture}.envelope.json"),
+        );
     }
 }
 
@@ -266,7 +266,10 @@ fn cbor_matches_goldens() {
             }
             std::fs::write(&golden_path, &got)
                 .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
-            assert_eq!(got[0], 0xb9, "{fixture}.cbor must start with the map-16 header");
+            assert_eq!(
+                got[0], 0xb9,
+                "{fixture}.cbor must start with the map-16 header"
+            );
             continue;
         }
         let want = std::fs::read(&golden_path)

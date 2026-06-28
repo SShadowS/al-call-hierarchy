@@ -35,12 +35,12 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    run_fingerprint_pipeline, FingerprintFormat, FingerprintOptions, FingerprintOutput, ShardMode,
+    FingerprintFormat, FingerprintOptions, FingerprintOutput, ShardMode, run_fingerprint_pipeline,
 };
 use al_call_hierarchy::engine::l5::fingerprint_query::WitnessLimit;
 use al_call_hierarchy::engine::l5::snapshot_full::{
-    compose_full_snapshot, serialize_cbor, serialize_cbor_gz, serialize_sharded,
-    FullSnapshotOptions,
+    FullSnapshotOptions, compose_full_snapshot, serialize_cbor, serialize_cbor_gz,
+    serialize_sharded,
 };
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
@@ -117,11 +117,7 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
             return Some(i);
         }
     }
-    if a.len() != b.len() {
-        Some(n)
-    } else {
-        None
-    }
+    if a.len() != b.len() { Some(n) } else { None }
 }
 
 /// Helper: compose full snapshot tree for the B0 path (cbor / cbor.gz / envelope).

@@ -31,7 +31,7 @@
 
 use al_call_hierarchy::engine::l2::features::PAnchor;
 use al_call_hierarchy::engine::l3::l3_workspace::{
-    assemble_and_resolve_default, L3RecordOperation, L3Routine, L3Table, L3Variable,
+    L3RecordOperation, L3Routine, L3Table, L3Variable, assemble_and_resolve_default,
 };
 use al_call_hierarchy::engine::l3::record_types::resolve_routine_record_types;
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;

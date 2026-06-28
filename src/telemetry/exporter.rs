@@ -7,9 +7,8 @@
 use crate::telemetry::counters::Counters;
 use crate::telemetry::events::{EventEnvelope, EventKind, SessionSummary};
 use opentelemetry::{
-    global,
+    KeyValue, global,
     trace::{Span, Tracer, TracerProvider as _},
-    KeyValue,
 };
 use opentelemetry_application_insights::new_pipeline_from_connection_string;
 use std::sync::Arc;

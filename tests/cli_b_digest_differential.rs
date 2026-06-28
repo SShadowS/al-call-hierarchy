@@ -66,7 +66,10 @@ fn fixtures_dir() -> PathBuf {
 
 /// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    repo_root().join("tests").join("cli-b-goldens").join("digest")
+    repo_root()
+        .join("tests")
+        .join("cli-b-goldens")
+        .join("digest")
 }
 
 /// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
@@ -101,12 +104,7 @@ fn collect_al_files(ws_dir: &Path) -> Vec<String> {
                 .map(|x| x.eq_ignore_ascii_case("al"))
                 .unwrap_or(false)
         })
-        .map(|e| {
-            format!(
-                "src/{}",
-                e.file_name().to_string_lossy()
-            )
-        })
+        .map(|e| format!("src/{}", e.file_name().to_string_lossy()))
         .collect();
     files.sort();
     files
@@ -120,11 +118,7 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
             return Some(i);
         }
     }
-    if a.len() != b.len() {
-        Some(n)
-    } else {
-        None
-    }
+    if a.len() != b.len() { Some(n) } else { None }
 }
 
 fn context_around(bytes: &[u8], pos: usize, radius: usize) -> String {
@@ -239,8 +233,12 @@ fn human_matches_goldens() {
         if regen_golden(&golden_path, &got_human) {
             continue;
         }
-        let want = std::fs::read_to_string(&golden_path)
-            .unwrap_or_else(|_| panic!("{fixture}: human golden not found at {}", golden_path.display()));
+        let want = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| {
+            panic!(
+                "{fixture}: human golden not found at {}",
+                golden_path.display()
+            )
+        });
 
         if got_human != want {
             let got_b = got_human.as_bytes();
@@ -264,8 +262,12 @@ fn diff_json_matches_golden() {
     if regen_golden(&golden_path, &got) {
         return;
     }
-    let want = std::fs::read_to_string(&golden_path)
-        .unwrap_or_else(|_| panic!("{DIFF_FIXTURE}: diff.json golden not found at {}", golden_path.display()));
+    let want = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| {
+        panic!(
+            "{DIFF_FIXTURE}: diff.json golden not found at {}",
+            golden_path.display()
+        )
+    });
 
     if got != want {
         let got_b = got.as_bytes();

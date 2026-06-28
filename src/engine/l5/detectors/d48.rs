@@ -29,14 +29,14 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l4::capability_cone::CapabilityExtra;
 use crate::engine::l4::combined_graph::CombinedEdge;
-use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
+use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::path_walker::{
-    walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop,
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
@@ -53,11 +53,7 @@ fn is_io_resource_kind(kind: &str) -> bool {
 }
 
 fn severity_for_io_kind(kind: &str) -> &'static str {
-    if kind == "http" {
-        "high"
-    } else {
-        "medium"
-    }
+    if kind == "http" { "high" } else { "medium" }
 }
 
 /// One LOCAL/DIRECT IO terminal — the Rust analogue of al-sem's

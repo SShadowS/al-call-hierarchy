@@ -254,7 +254,7 @@ pub fn prune_cache(cache_dir_override: Option<&str>, dry_run: bool) -> PruneCach
                 entries,
                 bytes_freed,
                 files_removed,
-            }
+            };
         }
     };
     file_names.sort();
@@ -434,27 +434,27 @@ fn is_dependency_artifact(v: &serde_json::Value) -> bool {
     }
 
     // artifactKey and artifactContentHash must be strings
-    if !header.get("artifactKey").and_then(|v| v.as_str()).is_some() {
+    if header.get("artifactKey").and_then(|v| v.as_str()).is_none() {
         return false;
     }
-    if !header
+    if header
         .get("artifactContentHash")
         .and_then(|v| v.as_str())
-        .is_some()
+        .is_none()
     {
         return false;
     }
 
     // versions must be an object
-    if !header.get("versions").and_then(|v| v.as_object()).is_some() {
+    if header.get("versions").and_then(|v| v.as_object()).is_none() {
         return false;
     }
 
     // directDependencies must be an array
-    if !header
+    if header
         .get("directDependencies")
         .and_then(|v| v.as_array())
-        .is_some()
+        .is_none()
     {
         return false;
     }
@@ -479,25 +479,25 @@ fn is_dependency_artifact(v: &serde_json::Value) -> bool {
         Some(a) => a,
         None => return false,
     };
-    if !abi.get("objects").and_then(|v| v.as_array()).is_some() {
+    if abi.get("objects").and_then(|v| v.as_array()).is_none() {
         return false;
     }
-    if !abi.get("tables").and_then(|v| v.as_array()).is_some() {
+    if abi.get("tables").and_then(|v| v.as_array()).is_none() {
         return false;
     }
-    if !abi.get("routines").and_then(|v| v.as_array()).is_some() {
+    if abi.get("routines").and_then(|v| v.as_array()).is_none() {
         return false;
     }
-    if !abi
+    if abi
         .get("eventPublishers")
         .and_then(|v| v.as_array())
-        .is_some()
+        .is_none()
     {
         return false;
     }
 
     // diagnostics must be an array
-    if !obj.get("diagnostics").and_then(|v| v.as_array()).is_some() {
+    if obj.get("diagnostics").and_then(|v| v.as_array()).is_none() {
         return false;
     }
 

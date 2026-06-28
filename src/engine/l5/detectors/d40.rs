@@ -113,11 +113,12 @@ pub fn detect_d40(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                     continue;
                 }
                 // sourceTempState known/true → temp record, no DB load concept.
-                if let Some(ts) = &binding.source_temp_state {
-                    if ts.kind == "known" && ts.value == Some(true) {
-                        skipped_temp_record += 1;
-                        continue;
-                    }
+                if let Some(ts) = &binding.source_temp_state
+                    && ts.kind == "known"
+                    && ts.value == Some(true)
+                {
+                    skipped_temp_record += 1;
+                    continue;
                 }
                 let callee_role =
                     match ctx

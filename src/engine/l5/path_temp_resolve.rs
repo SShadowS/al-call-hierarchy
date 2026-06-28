@@ -156,10 +156,10 @@ pub fn resolve_temp_along_path_closed_world(
 
         // G-19: PD(i) anchored to a closed-world PROVEN frame is Known(true) for
         // every possible caller — no path context needed.
-        if let Some(f) = frame_routine {
-            if closed_world_temp_params.contains(&(f.to_string(), i)) {
-                return TempStateKind::Known(true);
-            }
+        if let Some(f) = frame_routine
+            && closed_world_temp_params.contains(&(f.to_string(), i))
+        {
+            return TempStateKind::Known(true);
         }
 
         if hop_idx == 0 {
@@ -206,6 +206,7 @@ pub fn resolve_temp_along_path_closed_world(
 ///   - no callsite with that id in the parent;
 ///   - no binding whose `parameter_index == callee_param_index`;
 ///   - `source_temp_state` is `Some(Unknown)` or `None`.
+///
 /// `Some(Known(v))` → `Known(v)`; `Some(PD(j))` → `ParameterDependent(j)` (re-anchored
 /// to the PARENT frame at L2 — the same UPWARD re-symbolization Task 8 does — which
 /// the next loop turn then chases through the parent's own caller hop).

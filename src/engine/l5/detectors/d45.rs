@@ -19,7 +19,7 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::capability_query::{reachable_coverage, writes_physical_tables_of};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::event_flow::{
-    build_cross_extension_subscribers, collect_relay_subscribers, event_kind_of, RelayWalkOptions,
+    RelayWalkOptions, build_cross_extension_subscribers, collect_relay_subscribers, event_kind_of,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -127,11 +127,11 @@ pub fn detect_d45(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             // direct = at least one writer is at chain depth <= 1.
             let mut coverage_reach = "transitive";
             for sub in &writer_subs {
-                if let Some(&d) = subscribers_by_depth.get(*sub) {
-                    if d <= 1 {
-                        coverage_reach = "direct";
-                        break;
-                    }
+                if let Some(&d) = subscribers_by_depth.get(*sub)
+                    && d <= 1
+                {
+                    coverage_reach = "direct";
+                    break;
                 }
             }
 

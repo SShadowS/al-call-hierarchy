@@ -6,11 +6,11 @@
 use std::path::Path;
 
 use crate::engine::gate::cbor::CborValue;
-use crate::engine::gate::snapshot_deserialize::{deserialize_snapshot, SnapshotFormat};
+use crate::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
 
 use super::format::format_diff;
 use super::renames::parse_rename_overlay;
-use super::{run_diff_engine, CoveragePolicy, DiffEngineOptions, Severity};
+use super::{CoveragePolicy, DiffEngineOptions, Severity, run_diff_engine};
 
 /// The outcome of a diff run: the text to write (stdout or --out), the lines to
 /// write to stderr (analyzer diagnostics + the ws-mode note), and the exit code.
@@ -85,7 +85,7 @@ fn load_snapshot_from_workspace(
 ) -> Result<CborValue, String> {
     use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
     use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
-    use crate::engine::l5::snapshot_full::{compose_full_snapshot, FullSnapshotOptions};
+    use crate::engine::l5::snapshot_full::{FullSnapshotOptions, compose_full_snapshot};
 
     let ws = Path::new(dir);
     let model_id = compute_gate_model_instance_id(ws)

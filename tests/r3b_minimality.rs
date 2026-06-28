@@ -97,10 +97,10 @@ fn template_facts() -> RoutineFacts {
         let dir = repo_root().join("tests").join("r0-corpus").join(fixture);
         if let Some(resolved) = assemble_and_resolve_workspace_default(&dir) {
             let model = input_model_r3a3_source_only(&resolved);
-            if let Some(id) = model.routine_ids.first() {
-                if let Some(f) = model.routines.get(id) {
-                    return f.clone();
-                }
+            if let Some(id) = model.routine_ids.first()
+                && let Some(f) = model.routines.get(id)
+            {
+                return f.clone();
             }
         }
     }
@@ -680,11 +680,11 @@ fn r3b_stage3_recursive_scc_trace_matches_through_salsa() {
         // is reproduced, not stale-cached incorrectly).
         let mut em2 = model.build_incremental();
         let _ = em2.demand();
-        if let Some(id) = model.routine_ids.first() {
-            if let Some(f) = em2.model.routines.get(id) {
-                let same = f.base_summary.clone();
-                em2.set_base_summary(id, same); // no-op set
-            }
+        if let Some(id) = model.routine_ids.first()
+            && let Some(f) = em2.model.routines.get(id)
+        {
+            let same = f.base_summary.clone();
+            em2.set_base_summary(id, same); // no-op set
         }
         let after_traces = em2.demand_scc_traces();
         let after_set: BTreeSet<String> = after_traces

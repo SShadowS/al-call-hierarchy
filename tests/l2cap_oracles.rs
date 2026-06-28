@@ -70,7 +70,7 @@
 //! `src/engine/l2/capability/**`. As of this gate every case passes with no
 //! `src/engine/l2/capability/**` change required.
 
-use al_call_hierarchy::engine::l2::capability::{extract_capabilities, CapabilityFact};
+use al_call_hierarchy::engine::l2::capability::{CapabilityFact, extract_capabilities};
 use al_call_hierarchy::engine::l2::features::PRoutine;
 use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
 

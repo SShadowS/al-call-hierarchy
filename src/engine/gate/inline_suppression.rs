@@ -42,6 +42,7 @@ pub type SuppressionMap = HashMap<String, Vec<InlineSuppression>>;
 ///   - the literal `al-sem-ignore`,
 ///   - ≥1 whitespace, then the detector id `[\w-]+` (word chars + hyphen),
 ///   - optionally `:` (with surrounding whitespace) then a non-empty reason `(.+)`.
+///
 /// The regex is UNANCHORED (matches anywhere in the line) and takes the FIRST match,
 /// exactly like `DIRECTIVE_RE.exec(line)`.
 pub fn parse_inline_suppressions_from_source(source: &str) -> Vec<InlineSuppression> {
@@ -64,7 +65,7 @@ fn match_directive(line: &str, line_no: u32) -> Option<InlineSuppression> {
     while let Some(rel) = line[search_from..].find("//") {
         let slash = search_from + rel;
         let mut p = slash + 2; // past "//"
-                               // \s* — optional whitespace (Unicode-aware: JS \s covers NBSP etc.).
+        // \s* — optional whitespace (Unicode-aware: JS \s covers NBSP etc.).
         p = skip_js_ws(line, p);
         // literal "al-sem-ignore"
         const LIT: &str = "al-sem-ignore";

@@ -31,8 +31,8 @@ use crate::engine::l5::detector_context::build_detector_context;
 use crate::engine::l5::detectors::registered_detectors;
 use crate::engine::l5::digest_cli::DEFAULT_DETECTOR_NAMES;
 use crate::engine::l5::event_flow::{
-    compute_chain_report, compute_fanout_report, ChainNode, ChainReport, ChainWalkOptions,
-    FanoutCoverage, FanoutReport, Scope,
+    ChainNode, ChainReport, ChainWalkOptions, FanoutCoverage, FanoutReport, Scope,
+    compute_chain_report, compute_fanout_report,
 };
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ use crate::engine::l5::event_flow::{
 // source of truth for the cli-c hand-built envelopes; see that module's docs).
 // ---------------------------------------------------------------------------
 
-use crate::engine::gate::ordered_json::{serialize_jv, Jv};
+use crate::engine::gate::ordered_json::{Jv, serialize_jv};
 
 // ---------------------------------------------------------------------------
 // FanoutEntry → Jv
@@ -356,7 +356,7 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
                 text: String::new(),
                 exit_code: 1,
                 stderr_lines: vec![
-                    "al-sem events fanout: could not compute modelInstanceId".to_string()
+                    "al-sem events fanout: could not compute modelInstanceId".to_string(),
                 ],
             };
         }
@@ -499,7 +499,7 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
                 text: String::new(),
                 exit_code: 1,
                 stderr_lines: vec![
-                    "al-sem events chains: could not compute modelInstanceId".to_string()
+                    "al-sem events chains: could not compute modelInstanceId".to_string(),
                 ],
             };
         }
@@ -560,8 +560,8 @@ mod tests {
     use super::*;
     use crate::engine::l3::event_graph::{EventEdge, EventGraph, EventSymbol, Evidence};
     use crate::engine::l5::event_flow::{
-        build_event_flow_indexes, compute_chain_report, compute_fanout_report, ChainWalkOptions,
-        Scope,
+        ChainWalkOptions, Scope, build_event_flow_indexes, compute_chain_report,
+        compute_fanout_report,
     };
     use std::collections::{BTreeSet, HashMap};
 

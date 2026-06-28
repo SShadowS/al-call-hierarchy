@@ -24,7 +24,7 @@
 //!   - files            = [[name, source], ...]  →  sourceUnitId = "ws:<name>"
 
 use al_call_hierarchy::engine::l3::al_attributes::{
-    bool_arg, find_attribute, qualified_arg, string_arg, AttributeInfo,
+    AttributeInfo, bool_arg, find_attribute, qualified_arg, string_arg,
 };
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
 use serde_json::Value;

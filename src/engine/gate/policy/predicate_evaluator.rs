@@ -9,7 +9,7 @@
 
 use crate::engine::gate::policy::policy_types::{Predicate, PredicateOperator, PredicateValue};
 use crate::engine::gate::policy::predicate_fields::{
-    evaluate_field, get_field_def, FieldEvalContext, FieldScope, FieldValue,
+    FieldEvalContext, FieldScope, FieldValue, evaluate_field, get_field_def,
 };
 
 /// Kleene tristate. al-sem `Tristate`.

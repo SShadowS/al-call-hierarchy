@@ -27,7 +27,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::deps::r3a4_projection::{
-    project_r3a4_from_workspace, R3a4Projection,
+    R3a4Projection, project_r3a4_from_workspace,
 };
 use serde::Deserialize;
 use serde_json::Value;

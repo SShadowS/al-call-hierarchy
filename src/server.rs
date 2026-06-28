@@ -152,34 +152,34 @@ fn index_workspaces(indexer: &Arc<RwLock<Indexer>>, params: &InitializeParams) -
                 }
 
                 // Index external dependencies from .app packages
-                if path.join("app.json").exists() {
-                    if let Err(e) = idx.index_dependencies(&path) {
-                        warn!("Failed to index dependencies for {}: {}", path.display(), e);
-                    }
+                if path.join("app.json").exists()
+                    && let Err(e) = idx.index_dependencies(&path)
+                {
+                    warn!("Failed to index dependencies for {}: {}", path.display(), e);
                 }
 
                 workspace_roots.push(path);
             }
         }
     // Fallback to deprecated root_uri for backward compatibility with older LSP clients
-    } else if let Some(ref uri) = params.root_uri {
-        if let Some(path) = uri_to_path(uri) {
-            info!("Indexing root: {}", path.display());
-            let mut idx = indexer.write().expect("Indexer lock poisoned");
+    } else if let Some(ref uri) = params.root_uri
+        && let Some(path) = uri_to_path(uri)
+    {
+        info!("Indexing root: {}", path.display());
+        let mut idx = indexer.write().expect("Indexer lock poisoned");
 
-            // Index local AL files
-            if let Err(e) = idx.index_directory(&path) {
-                error!("Failed to index {}: {}", path.display(), e);
-            } else {
-                // Index external dependencies from .app packages
-                if path.join("app.json").exists() {
-                    if let Err(e) = idx.index_dependencies(&path) {
-                        warn!("Failed to index dependencies for {}: {}", path.display(), e);
-                    }
-                }
-
-                workspace_roots.push(path);
+        // Index local AL files
+        if let Err(e) = idx.index_directory(&path) {
+            error!("Failed to index {}: {}", path.display(), e);
+        } else {
+            // Index external dependencies from .app packages
+            if path.join("app.json").exists()
+                && let Err(e) = idx.index_dependencies(&path)
+            {
+                warn!("Failed to index dependencies for {}: {}", path.display(), e);
             }
+
+            workspace_roots.push(path);
         }
     }
 
@@ -353,7 +353,9 @@ fn get_code_quality_diagnostics(
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
-                code: Some(lsp_types::NumberOrString::String("high-complexity".to_string())),
+                code: Some(lsp_types::NumberOrString::String(
+                    "high-complexity".to_string(),
+                )),
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has cyclomatic complexity {} (critical threshold: {}) - consider simplifying",
@@ -396,7 +398,9 @@ fn get_code_quality_diagnostics(
             let diagnostic = Diagnostic {
                 range: def.range,
                 severity: Some(DiagnosticSeverity::WARNING),
-                code: Some(lsp_types::NumberOrString::String("too-many-parameters".to_string())),
+                code: Some(lsp_types::NumberOrString::String(
+                    "too-many-parameters".to_string(),
+                )),
                 source: Some("al-call-hierarchy".to_string()),
                 message: format!(
                     "Procedure '{}.{}' has {} parameters (critical threshold: {}) - consider using a record or reducing parameters",

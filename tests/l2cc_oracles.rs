@@ -60,7 +60,7 @@
 //! passes with no `src/engine/l2/**` change required.
 
 use al_call_hierarchy::engine::l2::control_context::{
-    analyze_named_routine, ControlContext, RoutineControlContexts,
+    ControlContext, RoutineControlContexts, analyze_named_routine,
 };
 use al_call_hierarchy::engine::l2::features::PCallee;
 

@@ -3,7 +3,7 @@
 //! Parses app.json to discover dependencies and locates matching .app files
 //! in the .alpackages folder.
 
-use crate::app_package::{extract_app_package, ParsedAppPackage};
+use crate::app_package::{ParsedAppPackage, extract_app_package};
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use serde::Deserialize;
@@ -26,6 +26,8 @@ struct AppJson {
 
 /// A resolved dependency with its parsed package
 #[derive(Debug)]
+// `dependency` carried for future consumers / Debug.
+#[allow(dead_code)]
 pub struct ResolvedDependency {
     pub dependency: AppDependency,
     pub app_path: PathBuf,
@@ -174,18 +176,17 @@ pub fn find_matching_app(alpackages: &Path, dep: &AppDependency) -> Option<PathB
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().map(|e| e == "app").unwrap_or(false) {
-            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                if filename.starts_with(&expected_prefix) {
-                    // Extract version from filename
-                    // Format: Publisher_Name_Version.app
-                    let version_part = &filename[expected_prefix.len()..];
-                    if let Some(version) = version_part.strip_suffix(".app") {
-                        if is_version_compatible(&dep.version, version) {
-                            candidates.push((path.clone(), version.to_string()));
-                        }
-                    }
-                }
+        if path.extension().map(|e| e == "app").unwrap_or(false)
+            && let Some(filename) = path.file_name().and_then(|n| n.to_str())
+            && filename.starts_with(&expected_prefix)
+        {
+            // Extract version from filename
+            // Format: Publisher_Name_Version.app
+            let version_part = &filename[expected_prefix.len()..];
+            if let Some(version) = version_part.strip_suffix(".app")
+                && is_version_compatible(&dep.version, version)
+            {
+                candidates.push((path.clone(), version.to_string()));
             }
         }
     }
@@ -490,9 +491,10 @@ mod tests {
             "Should find matching .app for Continia Core"
         );
         let path = result.unwrap();
-        assert!(path
-            .to_string_lossy()
-            .contains("Continia Software_Continia Core_"));
+        assert!(
+            path.to_string_lossy()
+                .contains("Continia Software_Continia Core_")
+        );
         println!("Found: {}", path.display());
     }
 

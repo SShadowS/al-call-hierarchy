@@ -92,6 +92,8 @@ pub struct ParsedEventPublisher {
 
 /// Event publisher attribute kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// The `Event` suffix is the AL domain term (IntegrationEvent/BusinessEvent/…), not noise.
+#[allow(clippy::enum_variant_names)]
 pub enum EventPublisherKind {
     IntegrationEvent,
     BusinessEvent,
@@ -99,6 +101,7 @@ pub enum EventPublisherKind {
 }
 
 impl EventPublisherKind {
+    #[allow(dead_code)] // label helper kept for future consumers
     pub fn tag(&self) -> &'static str {
         match self {
             Self::IntegrationEvent => "[IntegrationEvent]",
@@ -281,9 +284,9 @@ fn parse_type_specification(type_text: &str) -> (Option<String>, String) {
     ];
 
     for pattern in type_patterns {
-        if trimmed.starts_with(pattern) {
+        if let Some(rest) = trimmed.strip_prefix(pattern) {
             // Extract the object name after the type keyword
-            let rest = trimmed[pattern.len()..].trim();
+            let rest = rest.trim();
             if let Some(name) = extract_quoted_name(rest) {
                 return (Some(pattern.to_string()), name);
             }
@@ -297,10 +300,10 @@ fn parse_type_specification(type_text: &str) -> (Option<String>, String) {
 /// Extract a quoted name like "\"Customer\"" -> "Customer"
 fn extract_quoted_name(text: &str) -> Option<String> {
     let trimmed = text.trim();
-    if trimmed.starts_with('"') {
+    if let Some(rest) = trimmed.strip_prefix('"') {
         // Find the closing quote
-        if let Some(end) = trimmed[1..].find('"') {
-            return Some(trimmed[1..end + 1].to_string());
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].to_string());
         }
     }
     // May not be quoted (e.g., Record Customer without quotes in some cases)
@@ -804,18 +807,18 @@ fn project_routine_attributes(ir: &ir::Ir, source: &str, r: &RoutineDecl, result
             if let (Some(first), Some(last)) = (attr.args.first(), attr.args.last()) {
                 let lo = ir.expr(*first).origin.byte.start;
                 let hi = ir.expr(*last).origin.byte.end;
-                if lo <= hi && hi <= source.len() {
-                    if let Some((obj_type, obj_name, event_name)) =
+                if lo <= hi
+                    && hi <= source.len()
+                    && let Some((obj_type, obj_name, event_name)) =
                         parse_event_subscriber_args(&source[lo..hi])
-                    {
-                        result.event_subscribers.push(ParsedEventSubscriber {
-                            subscriber_name: rname.clone(),
-                            range: origin_to_range(&r.origin),
-                            publisher_object_type: obj_type,
-                            publisher_object: obj_name,
-                            publisher_event: event_name,
-                        });
-                    }
+                {
+                    result.event_subscribers.push(ParsedEventSubscriber {
+                        subscriber_name: rname.clone(),
+                        range: origin_to_range(&r.origin),
+                        publisher_object_type: obj_type,
+                        publisher_object: obj_name,
+                        publisher_event: event_name,
+                    });
                 }
             }
         } else if let Some(kind) = publisher_kind_ir(aname) {

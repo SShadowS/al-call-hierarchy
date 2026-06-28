@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::inputs::{AppContext, DepStamp, RoutineInput, RoutineRegistry, RoutineUniverse};
-use super::queries::{cones, scc_for_routine, scc_summaries, InternalId};
+use super::queries::{InternalId, cones, scc_for_routine, scc_summaries};
 use super::{L4Database, L4Db};
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::event_graph::EventGraph;
@@ -302,10 +302,10 @@ impl EditableModel {
     /// edit, so the log captures ONLY the edit-driven recomputes). No-op when the DB
     /// is not instrumented.
     pub fn clear_log(&self) {
-        if let Some(log) = &self.log {
-            if let Ok(mut g) = log.lock() {
-                g.clear();
-            }
+        if let Some(log) = &self.log
+            && let Ok(mut g) = log.lock()
+        {
+            g.clear();
         }
     }
 
@@ -344,11 +344,11 @@ impl EditableModel {
         }
         // Undemanded leaves still carry their retained summary.
         for id in order {
-            if let Some(ri) = self.by_id.get(id) {
-                if ri.is_leaf(db) {
-                    core.entry(id.clone())
-                        .or_insert_with(|| (**ri.base_summary(db)).clone());
-                }
+            if let Some(ri) = self.by_id.get(id)
+                && ri.is_leaf(db)
+            {
+                core.entry(id.clone())
+                    .or_insert_with(|| (**ri.base_summary(db)).clone());
             }
         }
 
@@ -369,7 +369,7 @@ impl EditableModel {
     /// proof. Demands every routine's SccKey, collects the distinct recursive traces
     /// (a non-recursive SCC yields `None`), and projects them deterministically.
     pub fn demand_scc_traces(&self) -> Vec<crate::engine::l4::summary::PSccTrace> {
-        use super::queries::{scc_for_routine, scc_trace, InternalId};
+        use super::queries::{InternalId, scc_for_routine, scc_trace};
         let db: &dyn L4Db = &self.db;
         let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
         let mut raws: Vec<crate::engine::l4::summary_runner::RawSccTrace> = Vec::new();

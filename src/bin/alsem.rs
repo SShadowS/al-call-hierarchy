@@ -14,21 +14,21 @@ use std::process::ExitCode;
 
 use al_call_hierarchy::engine::gate::cache_prune::{format_prune_report, prune_cache};
 use al_call_hierarchy::engine::gate::events::{
-    run_events_chains, run_events_fanout, EventsChainsOptions, EventsFanoutOptions,
+    EventsChainsOptions, EventsFanoutOptions, run_events_chains, run_events_fanout,
 };
 use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
-use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
+use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
 use al_call_hierarchy::engine::l5::digest_cli::{
-    auto_detect_changed, run_digest_pipeline, ChangedAutoDetect,
+    ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
 };
 use al_call_hierarchy::engine::l5::event_flow::Scope as EventScope;
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    default_format, normalize_witness, reject_illegal_combos, run_fingerprint_pipeline,
-    validate_roots, write_fingerprint_output, FingerprintOptions, FingerprintOutput, ShardMode,
-    SpecifiedFlags,
+    FingerprintOptions, FingerprintOutput, ShardMode, SpecifiedFlags, default_format,
+    normalize_witness, reject_illegal_combos, run_fingerprint_pipeline, validate_roots,
+    write_fingerprint_output,
 };
 use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
@@ -525,7 +525,7 @@ fn main() -> ExitCode {
 // ── policy check command ─────────────────────────────────────────────────────
 
 fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
-    use al_call_hierarchy::engine::gate::policy::pipeline::{run_policy_check, PolicyCheckOptions};
+    use al_call_hierarchy::engine::gate::policy::pipeline::{PolicyCheckOptions, run_policy_check};
 
     // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
     const VALID_FORMATS: &[&str] = &["human", "json", "sarif"];
@@ -585,7 +585,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
 
 fn run_policy_explain_cmd(e: PolicyExplainCli) -> ExitCode {
     use al_call_hierarchy::engine::gate::policy::pipeline::{
-        run_policy_explain, PolicyExplainOptions,
+        PolicyExplainOptions, run_policy_explain,
     };
 
     // al-sem validates --format against {human, json} but IGNORES it (always human).
@@ -620,7 +620,7 @@ fn run_policy_explain_cmd(e: PolicyExplainCli) -> ExitCode {
 // ── diff command ────────────────────────────────────────────────────────────
 
 fn run_diff_cmd(d: DiffCli) -> ExitCode {
-    use al_call_hierarchy::engine::gate::diff::cli::{run_diff, DiffCliOptions};
+    use al_call_hierarchy::engine::gate::diff::cli::{DiffCliOptions, run_diff};
     use al_call_hierarchy::engine::gate::diff::{CoveragePolicy, Severity};
 
     // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
@@ -705,8 +705,7 @@ const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "fi
 // ── digest command ──────────────────────────────────────────────────────────
 
 /// The exact stderr message emitted when `--order` is used with `digest`.
-const ORDER_REJECTION: &str =
-    "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
+const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
 
 fn run_digest_cmd(d: DigestCli) -> ExitCode {
     // Reject --order (CONFIG_ERROR, matching --dump-model pattern)
@@ -732,13 +731,13 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
     let mut file_inputs: Vec<String> = d.file.clone();
     let mut routine_inputs: Vec<String> = d.routine.clone();
     let mut diff_arg: Option<String> = d.diff.clone();
-    if let Some(changed) = d.changed.as_deref() {
-        if !changed.trim().is_empty() {
-            match auto_detect_changed(changed) {
-                ChangedAutoDetect::Diff(p) => diff_arg = Some(p),
-                ChangedAutoDetect::Files(fs) => file_inputs.extend(fs),
-                ChangedAutoDetect::Routines(rs) => routine_inputs.extend(rs),
-            }
+    if let Some(changed) = d.changed.as_deref()
+        && !changed.trim().is_empty()
+    {
+        match auto_detect_changed(changed) {
+            ChangedAutoDetect::Diff(p) => diff_arg = Some(p),
+            ChangedAutoDetect::Files(fs) => file_inputs.extend(fs),
+            ChangedAutoDetect::Routines(rs) => routine_inputs.extend(rs),
         }
     }
 
@@ -1027,11 +1026,11 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
                 FingerprintOutput::Text(t) => !t.is_empty(),
                 _ => true,
             };
-            if should_write {
-                if let Err(e) = write_fingerprint_output(&result.output, f.out.as_deref()) {
-                    eprintln!("{e}");
-                    return ExitCode::from(1);
-                }
+            if should_write
+                && let Err(e) = write_fingerprint_output(&result.output, f.out.as_deref())
+            {
+                eprintln!("{e}");
+                return ExitCode::from(1);
             }
 
             // Per-mode stderr diagnostics AFTER writing output (human/base-json/cbor).
@@ -1133,11 +1132,11 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
         }
     };
 
-    if let Some(md) = c.max_depth {
-        if md > 256 {
-            eprintln!("al-sem events chains: --max-depth must be in 0..256");
-            return ExitCode::from(1);
-        }
+    if let Some(md) = c.max_depth
+        && md > 256
+    {
+        eprintln!("al-sem events chains: --max-depth must be in 0..256");
+        return ExitCode::from(1);
     }
 
     let workspace = std::path::Path::new(&c.workspace);
@@ -1193,8 +1192,7 @@ fn run_cache_prune_cmd(c: CachePruneCli) -> ExitCode {
 /// The exact stderr message emitted when `--dump-model` is used. The full-model JSON
 /// dump (>500MB) is an intentional, documented out-of-scope divergence — the Rust
 /// engine rejects it rather than porting it.
-const DUMP_MODEL_REJECTION: &str =
-    "al-sem: --dump-model is not supported by the Rust engine; use the TS CLI for full-model debug dumps";
+const DUMP_MODEL_REJECTION: &str = "al-sem: --dump-model is not supported by the Rust engine; use the TS CLI for full-model debug dumps";
 
 /// Resolve `--format auto` (or omitted) to a concrete `OutputFormat`.
 /// Non-TTY stdout → `Json`; TTY stdout → `Terminal`.
@@ -1237,14 +1235,14 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
     }
 
     // --- enum-flag validation (mirrors the al-sem CLI's CONFIG_ERROR exits) ---
-    if let Some(sev) = &a.min_severity {
-        if !SEVERITY_VALUES.contains(&sev.as_str()) {
-            eprintln!(
-                "al-sem: invalid --min-severity '{sev}'. Expected one of: {}",
-                SEVERITY_VALUES.join(", ")
-            );
-            return ExitCode::from(3);
-        }
+    if let Some(sev) = &a.min_severity
+        && !SEVERITY_VALUES.contains(&sev.as_str())
+    {
+        eprintln!(
+            "al-sem: invalid --min-severity '{sev}'. Expected one of: {}",
+            SEVERITY_VALUES.join(", ")
+        );
+        return ExitCode::from(3);
     }
 
     let scope = match a.scope.as_str() {
@@ -1385,7 +1383,7 @@ mod tests {
     #[test]
     fn stub_formats_return_err() {
         use al_call_hierarchy::engine::gate::filter::Scope;
-        use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs};
+        use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, run_analyze_with_exit};
         use std::path::PathBuf;
 
         // A real, resolvable workspace fixture (the SARIF/pr-summary differentials use it).

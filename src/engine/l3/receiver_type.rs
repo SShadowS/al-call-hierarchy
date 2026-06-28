@@ -41,19 +41,19 @@
 
 use super::l3_workspace::{L3Routine, PageControlKind};
 use super::member_builtins::{
-    classify_receiver, framework_method_return_type, framework_property_type,
-    member_builtin_disposition, ReceiverBuiltinKind,
+    ReceiverBuiltinKind, classify_receiver, framework_method_return_type, framework_property_type,
+    member_builtin_disposition,
 };
 use super::receiver::simple_receiver_name;
 use super::symbol_table::SymbolTable;
-use super::type_ref::{parse_object_type_ref, ObjectKind};
+use super::type_ref::{ObjectKind, parse_object_type_ref};
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
+    ArityResolution, BindingState, CallEdge, Diagnostic, ExternalTypeRef, UnknownReason,
     dynamic_method, mark_bindings_ambiguous, resolve_by_name_and_arity,
     resolve_by_name_and_arity_multi, resolve_interface_dispatch, sorted_ids, unknown_method,
-    upgrade_bindings, ArityResolution, BindingState, CallEdge, Diagnostic, ExternalTypeRef,
-    UnknownReason,
+    upgrade_bindings,
 };
 use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 
@@ -979,7 +979,6 @@ fn resolve_record_table_object_id(
 /// noise). Used to recognize a `Variant` receiver as runtime-typed (`dynamic`).
 fn declared_type_first_token_lc(declared_type: &str) -> String {
     declared_type
-        .trim()
         .split_whitespace()
         .next()
         .unwrap_or("")
@@ -1059,10 +1058,10 @@ pub(crate) fn dispatch(
         ReceiverType::Dynamic => dynamic_method(ctx.from, ctx.callsite_id, ctx.operation_id),
         ReceiverType::Unknown { reason } => {
             let mut edges = unknown_method(ctx.from, ctx.callsite_id, ctx.operation_id, *reason);
-            if let Some(shape) = receiver.receiver_shape.clone() {
-                if let Some(e) = edges.first_mut() {
-                    e.receiver_shape = Some(shape);
-                }
+            if let Some(shape) = receiver.receiver_shape.clone()
+                && let Some(e) = edges.first_mut()
+            {
+                e.receiver_shape = Some(shape);
             }
             edges
         }
@@ -1138,17 +1137,16 @@ fn resolve_method_in_object(
             if is_codeunit
                 && method.to_lowercase() == "run"
                 && ctx.call_site.argument_bindings.len() <= 1
+                && let Some(on_run) = ctx.symbols.routine_in_object(obj_id, "OnRun")
             {
-                if let Some(on_run) = ctx.symbols.routine_in_object(obj_id, "OnRun") {
-                    if let Some(d) = upgrade_bindings(ctx.state, on_run, ctx.callsite_id) {
-                        ctx.diagnostics.push(d);
-                    }
-                    let mut e = CallEdge::base(ctx.from, ctx.callsite_id, ctx.operation_id);
-                    e.to = Some(on_run.id.clone());
-                    e.dispatch_kind = DispatchKind::CodeunitRun;
-                    e.resolution = Resolution::Resolved;
-                    return vec![e];
+                if let Some(d) = upgrade_bindings(ctx.state, on_run, ctx.callsite_id) {
+                    ctx.diagnostics.push(d);
                 }
+                let mut e = CallEdge::base(ctx.from, ctx.callsite_id, ctx.operation_id);
+                e.to = Some(on_run.id.clone());
+                e.dispatch_kind = DispatchKind::CodeunitRun;
+                e.resolution = Resolution::Resolved;
+                return vec![e];
             }
             let mut e = CallEdge::base(ctx.from, ctx.callsite_id, ctx.operation_id);
             e.dispatch_kind = DispatchKind::Method;
@@ -1782,11 +1780,13 @@ mod tests {
                 reason: UnknownReason::CompoundReceiver,
             }
         );
-        assert!(inferred
-            .receiver_shape
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("member-of-member"));
+        assert!(
+            inferred
+                .receiver_shape
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("member-of-member")
+        );
     }
 
     #[test]

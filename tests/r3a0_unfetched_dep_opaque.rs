@@ -35,9 +35,9 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, CallEdge, DeclaredDependency};
-use al_call_hierarchy::engine::l3::coverage::{build_coverage, CoverageDiagnostic, CoverageUnit};
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve_default, L3Resolved};
+use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, DeclaredDependency, resolve_calls};
+use al_call_hierarchy::engine::l3::coverage::{CoverageDiagnostic, CoverageUnit, build_coverage};
+use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
 const WS_GUID: &str = "a3a00000-0000-0000-0000-00000000aaaa";

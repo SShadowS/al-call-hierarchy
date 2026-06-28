@@ -32,21 +32,17 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l4::capability_cone::{
-    project_r3a5_cross_app, PRoutineFullSummary, R3a5FullSummaryProjection,
+    PRoutineFullSummary, R3a5FullSummaryProjection, project_r3a5_cross_app,
 };
 
 const FIXTURE: &str = "cross-app-full-summary";
 const MODEL_INSTANCE_ID: &str = "r0";
 
 // Stable ids (from the committed fixture — appGuid:Type:Num#sigHash).
-const PRIMARY_USECHAIN: &str =
-    "33333333-0005-0000-0000-000000000003:Codeunit:71000#cd29682292055c2a9dfd1a910cc9281bbc9e7bb136e230bd4ee9577061070f74";
-const PRIMARY_USESYMBOL: &str =
-    "33333333-0005-0000-0000-000000000003:Codeunit:71001#0248ed06c571be25bd3963f79fc18689e74807aebe0c397abe96e8a45e9dd0bd";
-const DEP_DOWRITE: &str =
-    "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0";
-const DEP_DOSOMETHING: &str =
-    "55555555-0005-0000-0000-000000000001:Codeunit:55300#ddc256ff3ee6e5336bafb4fefca8c26bf703619ff54aac40bf4caeed3a6be15f";
+const PRIMARY_USECHAIN: &str = "33333333-0005-0000-0000-000000000003:Codeunit:71000#cd29682292055c2a9dfd1a910cc9281bbc9e7bb136e230bd4ee9577061070f74";
+const PRIMARY_USESYMBOL: &str = "33333333-0005-0000-0000-000000000003:Codeunit:71001#0248ed06c571be25bd3963f79fc18689e74807aebe0c397abe96e8a45e9dd0bd";
+const DEP_DOWRITE: &str = "cccccccc-0001-0000-0000-000000000001:Codeunit:50300#d1b6bb59d5282d960d0e08b598c8bffee337f14afa790440497610a6e76267c0";
+const DEP_DOSOMETHING: &str = "55555555-0005-0000-0000-000000000001:Codeunit:55300#ddc256ff3ee6e5336bafb4fefca8c26bf703619ff54aac40bf4caeed3a6be15f";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

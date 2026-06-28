@@ -15,7 +15,7 @@
 //! and the fix is in the Rust code (NEVER the vector).
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
-use al_call_hierarchy::engine::l4::effect_lattice::{effect_key_of, merge_via, TempStateKind};
+use al_call_hierarchy::engine::l4::effect_lattice::{TempStateKind, effect_key_of, merge_via};
 use al_call_hierarchy::engine::l4::summary::project_r3a2;
 use serde_json::Value;
 

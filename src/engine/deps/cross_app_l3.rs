@@ -54,8 +54,8 @@ use crate::engine::deps::projection::{ProjectedObject, ProjectedRoutine, Project
 // compiler-enforced on any future `PTempState` shape change). Task 6 (G7, RV-4).
 use crate::engine::l2::scope::{ts_known, ts_param_dependent};
 use crate::engine::l3::l3_workspace::{
-    assemble_l3_workspace_from_disk, resolve, L3Field, L3Object, L3PageControl, L3Parameter,
-    L3Resolved, L3Routine, L3Table, L3Workspace, PageControlKind,
+    L3Field, L3Object, L3PageControl, L3Parameter, L3Resolved, L3Routine, L3Table, L3Workspace,
+    PageControlKind, assemble_l3_workspace_from_disk, resolve,
 };
 
 /// The merged-input context: the assembled+resolved cross-app workspace plus the

@@ -16,7 +16,7 @@
 //!
 //! Never panics.
 
-use super::control_flow::{branch_termination, else_termination, has_explicit_else, Termination};
+use super::control_flow::{Termination, branch_termination, else_termination, has_explicit_else};
 use super::features::{PCFNNode, PCallSite, PFeatures, POperationSite};
 use super::scope::ParameterSymbol;
 use std::collections::HashMap;
@@ -67,11 +67,7 @@ impl ControlContext {
 
 /// Return the more-restrictive (higher-rank) of two contexts.
 pub fn max_ctx(a: ControlContext, b: ControlContext) -> ControlContext {
-    if a.rank() >= b.rank() {
-        a
-    } else {
-        b
-    }
+    if a.rank() >= b.rank() { a } else { b }
 }
 
 // ============================================================================
@@ -547,10 +543,9 @@ pub fn apply_control_contexts(
             if let Some((_, _, cs_id)) = call_anchors
                 .iter()
                 .find(|(l, c, _)| *l == r.start_line && *c == r.start_column)
+                && let Some(ctx) = maps.by_callsite.get(cs_id).copied()
             {
-                if let Some(ctx) = maps.by_callsite.get(cs_id).copied() {
-                    by_operation.insert(op.id.clone(), ctx);
-                }
+                by_operation.insert(op.id.clone(), ctx);
             }
         }
     }
@@ -620,10 +615,9 @@ pub fn analyze_named_routine(
             if let Some(paired) = features.call_sites.iter().find(|cs| {
                 cs.source_anchor.start_line == r.start_line
                     && cs.source_anchor.start_column == r.start_column
-            }) {
-                if let Some(ctx) = maps.by_callsite.get(&paired.id).copied() {
-                    by_operation.insert(op.id.clone(), ctx);
-                }
+            }) && let Some(ctx) = maps.by_callsite.get(&paired.id).copied()
+            {
+                by_operation.insert(op.id.clone(), ctx);
             }
         }
     }

@@ -234,7 +234,7 @@ fn assert_rv2(fixture: &str, original: &str, edited: &str, class: Carveout) {
             let softened = edit.len() < orig.len()
                 || orig
                     .iter()
-                    .any(|(k, ov)| edit.get(k).map_or(false, |ev| sev_rank(ev) < sev_rank(ov)));
+                    .any(|(k, ov)| edit.get(k).is_some_and(|ev| sev_rank(ev) < sev_rank(ov)));
             assert!(
                 softened,
                 "[{fixture}] the suppressing fixture showed NO softening (no removal, no \

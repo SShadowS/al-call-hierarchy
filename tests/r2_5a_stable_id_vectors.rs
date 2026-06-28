@@ -15,11 +15,11 @@
 //! project under both modelInstanceIds, and assert against the recorded
 //! independence values.
 
-use al_call_hierarchy::engine::deps::projection::{project_abi_to_index, ProjectedRoutine};
+use al_call_hierarchy::engine::deps::projection::{ProjectedRoutine, project_abi_to_index};
 use al_call_hierarchy::engine::deps::symbol_reference::{
-    parse_symbol_reference, AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi,
+    AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi, parse_symbol_reference,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 const OBJECT_TYPE: &str = "Codeunit";

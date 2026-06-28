@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::root_classification::{
-    project_r4f_root_classifications, R4FRootClassProjection,
+    R4FRootClassProjection, project_r4f_root_classifications,
 };
 
 /// The R4-F root-classification corpus (mirrors al-sem

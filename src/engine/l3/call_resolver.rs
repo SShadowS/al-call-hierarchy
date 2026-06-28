@@ -15,10 +15,10 @@
 use super::al_builtins::global_builtin_disposition;
 use super::implicit_edges::build_implicit_trigger_edges;
 use super::l3_workspace::{L3Routine, L3Workspace};
-use super::receiver_type::{dispatch, infer_receiver_type, DispatchCtx};
+use super::receiver_type::{DispatchCtx, dispatch, infer_receiver_type};
 use super::static_arg::static_arg_type;
 use super::symbol_table::SymbolTable;
-use super::type_rel::{type_relation, TypeRelation};
+use super::type_rel::{TypeRelation, type_relation};
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 use std::collections::HashMap;
@@ -492,43 +492,43 @@ fn resolve_call_site(
                     // Fallback 1: if the caller is in an extension object, try the
                     // EXTENDS-TARGET base object's procedures (e.g. a PageExtension
                     // bare-calling a procedure defined on its base Page).
-                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id) {
-                        if let Some(base_obj) = extends_base_object(caller_obj, symbols) {
-                            match resolve_by_name_and_arity(
-                                symbols,
-                                &base_obj.id,
-                                name,
-                                routine,
-                                call_site,
-                            ) {
-                                ArityResolution::Resolved(r) => {
-                                    if let Some(d) = upgrade_bindings(state, r, callsite_id) {
-                                        diagnostics.push(d);
-                                    }
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.to = Some(r.id.clone());
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::Resolved;
-                                    return vec![e];
+                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id)
+                        && let Some(base_obj) = extends_base_object(caller_obj, symbols)
+                    {
+                        match resolve_by_name_and_arity(
+                            symbols,
+                            &base_obj.id,
+                            name,
+                            routine,
+                            call_site,
+                        ) {
+                            ArityResolution::Resolved(r) => {
+                                if let Some(d) = upgrade_bindings(state, r, callsite_id) {
+                                    diagnostics.push(d);
                                 }
-                                ArityResolution::NoArityMatch(candidates) => {
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::MemberNotFound;
-                                    e.candidates = Some(sorted_ids(&candidates));
-                                    return vec![e];
-                                }
-                                ArityResolution::Ambiguous(candidates) => {
-                                    mark_bindings_ambiguous(state);
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::Ambiguous;
-                                    e.candidates = Some(sorted_ids(&candidates));
-                                    return vec![e];
-                                }
-                                ArityResolution::NotFound => {
-                                    // Fall through to global-builtin / BareUnresolved below.
-                                }
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.to = Some(r.id.clone());
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::Resolved;
+                                return vec![e];
+                            }
+                            ArityResolution::NoArityMatch(candidates) => {
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::MemberNotFound;
+                                e.candidates = Some(sorted_ids(&candidates));
+                                return vec![e];
+                            }
+                            ArityResolution::Ambiguous(candidates) => {
+                                mark_bindings_ambiguous(state);
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::Ambiguous;
+                                e.candidates = Some(sorted_ids(&candidates));
+                                return vec![e];
+                            }
+                            ArityResolution::NotFound => {
+                                // Fall through to global-builtin / BareUnresolved below.
                             }
                         }
                     }
@@ -538,47 +538,48 @@ fn resolve_call_site(
                     // UNION its TableExtensions (a TableExt proc is callable on the
                     // base record). Own-object procedures were already tried FIRST
                     // (above), so they correctly shadow a same-named table procedure.
-                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id) {
-                        if let Some(tbl_obj_id) = implicit_rec_table_object_id(caller_obj, symbols)
-                        {
-                            let mut ids: Vec<&str> = vec![tbl_obj_id.as_str()];
-                            if let Some(tbl_obj) = symbols.object_by_id(&tbl_obj_id) {
-                                ids.extend(symbols.table_extension_object_ids(
+                    if let Some(caller_obj) = symbols.object_by_id(&routine.object_id)
+                        && let Some(tbl_obj_id) = implicit_rec_table_object_id(caller_obj, symbols)
+                    {
+                        let mut ids: Vec<&str> = vec![tbl_obj_id.as_str()];
+                        if let Some(tbl_obj) = symbols.object_by_id(&tbl_obj_id) {
+                            ids.extend(
+                                symbols.table_extension_object_ids(
                                     &tbl_obj.name,
                                     tbl_obj.object_number,
-                                ));
+                                ),
+                            );
+                        }
+                        match resolve_by_name_and_arity_multi(
+                            symbols, &ids, name, routine, call_site,
+                        ) {
+                            ArityResolution::Resolved(r) => {
+                                if let Some(d) = upgrade_bindings(state, r, callsite_id) {
+                                    diagnostics.push(d);
+                                }
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.to = Some(r.id.clone());
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::Resolved;
+                                return vec![e];
                             }
-                            match resolve_by_name_and_arity_multi(
-                                symbols, &ids, name, routine, call_site,
-                            ) {
-                                ArityResolution::Resolved(r) => {
-                                    if let Some(d) = upgrade_bindings(state, r, callsite_id) {
-                                        diagnostics.push(d);
-                                    }
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.to = Some(r.id.clone());
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::Resolved;
-                                    return vec![e];
-                                }
-                                ArityResolution::NoArityMatch(candidates) => {
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::MemberNotFound;
-                                    e.candidates = Some(sorted_ids(&candidates));
-                                    return vec![e];
-                                }
-                                ArityResolution::Ambiguous(candidates) => {
-                                    mark_bindings_ambiguous(state);
-                                    let mut e = CallEdge::base(from, callsite_id, operation_id);
-                                    e.dispatch_kind = DispatchKind::Direct;
-                                    e.resolution = Resolution::Ambiguous;
-                                    e.candidates = Some(sorted_ids(&candidates));
-                                    return vec![e];
-                                }
-                                ArityResolution::NotFound => {
-                                    // Fall through to global-builtin / BareUnresolved.
-                                }
+                            ArityResolution::NoArityMatch(candidates) => {
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::MemberNotFound;
+                                e.candidates = Some(sorted_ids(&candidates));
+                                return vec![e];
+                            }
+                            ArityResolution::Ambiguous(candidates) => {
+                                mark_bindings_ambiguous(state);
+                                let mut e = CallEdge::base(from, callsite_id, operation_id);
+                                e.dispatch_kind = DispatchKind::Direct;
+                                e.resolution = Resolution::Ambiguous;
+                                e.candidates = Some(sorted_ids(&candidates));
+                                return vec![e];
+                            }
+                            ArityResolution::NotFound => {
+                                // Fall through to global-builtin / BareUnresolved.
                             }
                         }
                     }

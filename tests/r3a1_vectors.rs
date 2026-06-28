@@ -23,7 +23,7 @@
 //!   - files            = [[name, source], ...]  →  sourceUnitId = "ws:<name>"
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const MODEL_INSTANCE_ID: &str = "r0";
 

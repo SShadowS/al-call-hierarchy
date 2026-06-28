@@ -12,13 +12,13 @@
 use std::collections::HashMap;
 
 use al_call_hierarchy::engine::l5::digest::{
-    reconstruct_witness_paths_pub, FingerprintIndexesPub, HumanHop, TerminalHopInfo,
+    FingerprintIndexesPub, HumanHop, TerminalHopInfo, reconstruct_witness_paths_pub,
 };
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    default_format, normalize_witness, reject_illegal_combos, validate_roots, FingerprintFormat,
-    SpecifiedFlags,
+    FingerprintFormat, SpecifiedFlags, default_format, normalize_witness, reject_illegal_combos,
+    validate_roots,
 };
-use al_call_hierarchy::engine::l5::fingerprint_query::{format_hop, WitnessLimit};
+use al_call_hierarchy::engine::l5::fingerprint_query::{WitnessLimit, format_hop};
 use al_call_hierarchy::engine::l5::snapshot::{
     SnapshotCapabilityFact, SnapshotCoverageRecord, SnapshotGraphEdge, SnapshotRange,
     SnapshotSourceAnchor,
@@ -316,25 +316,29 @@ fn item6_cbor_plus_query_flag_message() {
 #[test]
 fn item6_legal_combos_pass() {
     // human + query flags → legal.
-    assert!(reject_illegal_combos(
-        SpecifiedFlags {
-            witness: true,
-            ..Default::default()
-        },
-        &FingerprintFormat::Human,
-        false
-    )
-    .is_ok());
+    assert!(
+        reject_illegal_combos(
+            SpecifiedFlags {
+                witness: true,
+                ..Default::default()
+            },
+            &FingerprintFormat::Human,
+            false
+        )
+        .is_ok()
+    );
     // json + query flags → legal.
-    assert!(reject_illegal_combos(
-        SpecifiedFlags {
-            roots: true,
-            ..Default::default()
-        },
-        &FingerprintFormat::Json,
-        false
-    )
-    .is_ok());
+    assert!(
+        reject_illegal_combos(
+            SpecifiedFlags {
+                roots: true,
+                ..Default::default()
+            },
+            &FingerprintFormat::Json,
+            false
+        )
+        .is_ok()
+    );
     // shard + json, no query → legal.
     assert!(
         reject_illegal_combos(SpecifiedFlags::default(), &FingerprintFormat::Json, true).is_ok()
@@ -508,10 +512,11 @@ fn item7_path_limit_reached_detail_cap() {
     f.witness_callsite_id = Some("cs0".to_string());
     let out = reconstruct_witness_paths_pub("ROOT", &f, &idx, 1);
     assert!(out.truncated);
-    assert!(out
-        .diagnostics
-        .iter()
-        .any(|d| d.kind == "path-limit-reached" && d.detail.as_deref() == Some("cap=1")));
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.kind == "path-limit-reached" && d.detail.as_deref() == Some("cap=1"))
+    );
 }
 
 // ===========================================================================
@@ -625,7 +630,7 @@ fn item12_unresolved_dispatch_sorts_by_witness_callsite_id() {
         witness_callsite_id: cs.map(str::to_string),
     };
     // Insertion order deliberately NOT sorted: cs2, cs0, (none), cs1.
-    let mut v = vec![mk(Some("cs2")), mk(Some("cs0")), mk(None), mk(Some("cs1"))];
+    let mut v = [mk(Some("cs2")), mk(Some("cs0")), mk(None), mk(Some("cs1"))];
     // The EXACT in-engine comparator (witnessCallsiteId, "" when absent).
     v.sort_by(|a, b| {
         a.witness_callsite_id

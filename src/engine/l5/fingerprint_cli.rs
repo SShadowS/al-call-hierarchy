@@ -33,13 +33,13 @@ use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::detectors::registered_detectors;
 use crate::engine::l5::digest_cli::DEFAULT_DETECTOR_NAMES;
 use crate::engine::l5::fingerprint_query::{
-    fingerprint_query, format_fingerprint_human_verbosity, project_fingerprint_query_full,
-    FingerprintFilters, FingerprintQueryDiagnostic, WitnessLimit,
+    FingerprintFilters, FingerprintQueryDiagnostic, WitnessLimit, fingerprint_query,
+    format_fingerprint_human_verbosity, project_fingerprint_query_full,
 };
 use crate::engine::l5::snapshot::compose_snapshot;
 use crate::engine::l5::snapshot_full::{
-    build_inventory_envelope, compose_full_snapshot, serialize_cbor, serialize_cbor_gz,
-    serialize_envelope, serialize_sharded, EnvelopeDiagnostic, FullSnapshotOptions,
+    EnvelopeDiagnostic, FullSnapshotOptions, build_inventory_envelope, compose_full_snapshot,
+    serialize_cbor, serialize_cbor_gz, serialize_envelope, serialize_sharded,
 };
 
 /// The format the fingerprint command outputs.
@@ -203,7 +203,7 @@ pub fn reject_illegal_combos(
     shard: bool,
 ) -> Result<(), String> {
     if shard {
-        for f in specified.specified_query_flags() {
+        if let Some(f) = specified.specified_query_flags().into_iter().next() {
             return Err(format!(
                 "--shard cannot be combined with --{}",
                 flag_name(f)
@@ -213,13 +213,13 @@ pub fn reject_illegal_combos(
             return Err("--shard requires --format=json|cbor|cbor.gz".to_string());
         }
     }
-    if *format == FingerprintFormat::Cbor || *format == FingerprintFormat::CborGz {
-        for f in specified.specified_query_flags() {
-            return Err(format!(
-                "--{} is only valid with --format=human or --format=json",
-                flag_name(f)
-            ));
-        }
+    if (*format == FingerprintFormat::Cbor || *format == FingerprintFormat::CborGz)
+        && let Some(f) = specified.specified_query_flags().into_iter().next()
+    {
+        return Err(format!(
+            "--{} is only valid with --format=human or --format=json",
+            flag_name(f)
+        ));
     }
     Ok(())
 }

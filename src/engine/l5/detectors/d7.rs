@@ -228,10 +228,10 @@ pub fn detect_d7(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
         {
             let mut seen: HashSet<String> = HashSet::new();
             for id in &sorted_scc {
-                if let Some(r) = ctx.routine_by_id.get(id.as_str()) {
-                    if seen.insert(r.object_id.clone()) {
-                        affected_objects.push(r.object_id.clone());
-                    }
+                if let Some(r) = ctx.routine_by_id.get(id.as_str())
+                    && seen.insert(r.object_id.clone())
+                {
+                    affected_objects.push(r.object_id.clone());
                 }
             }
             affected_objects.sort();

@@ -31,7 +31,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l4::effect_lattice::via_for_edge_kind;
-use al_call_hierarchy::engine::l4::summary::{project_r3a2, PRoutineSummaryCore, R3a2Projection};
+use al_call_hierarchy::engine::l4::summary::{PRoutineSummaryCore, R3a2Projection, project_r3a2};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

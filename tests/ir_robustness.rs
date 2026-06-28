@@ -201,7 +201,7 @@ fn no_panic_on_garbage() {
 #[test]
 fn report_dataitem_implicit_rec_and_name_vars_seeded() {
     use al_call_hierarchy::engine::l2::ir_walk;
-    use al_call_hierarchy::engine::l2::scope::{compute_routine_id, ParameterSymbol};
+    use al_call_hierarchy::engine::l2::scope::{ParameterSymbol, compute_routine_id};
     let src = concat!(
         "report 50100 \"My Report\"\n{\n",
         "    dataset\n    {\n",

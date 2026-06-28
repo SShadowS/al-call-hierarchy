@@ -14,12 +14,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use super::inputs::{AppContext, RoutineRegistry, RoutineUniverse};
 use super::L4Db;
+use super::inputs::{AppContext, RoutineRegistry, RoutineUniverse};
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph, UncertaintyEdge};
-use crate::engine::l4::scc::{tarjan_scc, Scc, SccInputGraph, SccResult};
+use crate::engine::l4::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::l4::summary::RoutineSummary;
-use crate::engine::l4::summary_runner::{run_one_scc, FieldIndex, SccComputeCtx};
+use crate::engine::l4::summary_runner::{FieldIndex, SccComputeCtx, run_one_scc};
 
 // ---------------------------------------------------------------------------
 // Tracked-return CARRIERS. Salsa 0.27 requires a tracked fn's return value to be
@@ -324,10 +324,10 @@ pub fn scc_successors<'db>(
     let empty: Vec<CombinedEdge> = Vec::new();
     for m in &my_scc.members {
         for e in cg.graph.edges_by_from.get(m).unwrap_or(&empty) {
-            if let Some(j) = result.scc_id_by_routine.get(&e.to) {
-                if *j != my_idx {
-                    succ.insert(*j);
-                }
+            if let Some(j) = result.scc_id_by_routine.get(&e.to)
+                && *j != my_idx
+            {
+                succ.insert(*j);
             }
         }
     }

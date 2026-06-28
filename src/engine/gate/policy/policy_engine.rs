@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use crate::engine::gate::policy::policy_types::{PolicyDoc, Rule, RuleRunSummary};
 use crate::engine::gate::policy::predicate_evaluator::{
-    evaluate_applicability, evaluate_result, Tristate,
+    Tristate, evaluate_applicability, evaluate_result,
 };
 use crate::engine::gate::policy::predicate_fields::{FieldEvalContext, FieldIndexes};
 use crate::engine::l3::event_graph::EventSymbol;
@@ -212,10 +212,10 @@ pub fn run_policy_engine(model: &PolicyModel, policy: &PolicyDoc) -> RunOutput {
             }
 
             // Structural except skip.
-            if let Some(except) = &rule.except {
-                if evaluate_applicability(except, &app_ctx) == Tristate::True {
-                    continue;
-                }
+            if let Some(except) = &rule.except
+                && evaluate_applicability(except, &app_ctx) == Tristate::True
+            {
+                continue;
             }
 
             // Coverage gate (BEFORE facts).
@@ -263,10 +263,10 @@ pub fn run_policy_engine(model: &PolicyModel, policy: &PolicyDoc) -> RunOutput {
                     }
                     Tristate::True => {
                         // except per-fact.
-                        if let Some(except) = &rule.except {
-                            if evaluate_result(except, &ctx) == Tristate::True {
-                                continue;
-                            }
+                        if let Some(except) = &rule.except
+                            && evaluate_result(except, &ctx) == Tristate::True
+                        {
+                            continue;
                         }
                         matched_facts.push(fact);
                     }

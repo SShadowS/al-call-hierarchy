@@ -96,22 +96,19 @@ pub fn handle_notification(indexer: &Arc<RwLock<Indexer>>, notif: &lsp_server::N
         "textDocument/didSave" => {
             if let Ok(params) =
                 serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params.clone())
+                && let Some(path) = uri_to_path(&params.text_document.uri)
+                && path
+                    .extension()
+                    .map(|e| e.eq_ignore_ascii_case("al"))
+                    .unwrap_or(false)
             {
-                if let Some(path) = uri_to_path(&params.text_document.uri) {
-                    if path
-                        .extension()
-                        .map(|e| e.eq_ignore_ascii_case("al"))
-                        .unwrap_or(false)
-                    {
-                        debug!("Re-indexing saved file: {}", path.display());
-                        if let Err(e) = indexer
-                            .write()
-                            .expect("Indexer lock poisoned")
-                            .reindex_file(&path)
-                        {
-                            error!("Failed to re-index {}: {}", path.display(), e);
-                        }
-                    }
+                debug!("Re-indexing saved file: {}", path.display());
+                if let Err(e) = indexer
+                    .write()
+                    .expect("Indexer lock poisoned")
+                    .reindex_file(&path)
+                {
+                    error!("Failed to re-index {}: {}", path.display(), e);
                 }
             }
         }
@@ -691,17 +688,21 @@ table 50000 "TEST Customer"
         assert_eq!(prop(&result, "Editable").as_deref(), Some("false"));
         assert_eq!(prop(&result, "FieldClass").as_deref(), Some("FlowField"));
         assert!(prop(&result, "CalcFormula").is_some());
-        assert!(prop(&result, "CalcFormula")
-            .unwrap()
-            .contains("Cust. Ledger Entry"));
+        assert!(
+            prop(&result, "CalcFormula")
+                .unwrap()
+                .contains("Cust. Ledger Entry")
+        );
 
         // Test Payment Terms Code field (with TableRelation)
         let result = lookup("payment terms code");
         assert_eq!(result.field_id, Some(20));
         assert!(prop(&result, "TableRelation").is_some());
-        assert!(prop(&result, "TableRelation")
-            .unwrap()
-            .contains("Payment Terms"));
+        assert!(
+            prop(&result, "TableRelation")
+                .unwrap()
+                .contains("Payment Terms")
+        );
 
         // Test No. field (basic field)
         let result = lookup("no.");
@@ -782,16 +783,20 @@ page 50001 "TEST Customer Card"
         );
         assert_eq!(prop(&result, "Image").as_deref(), Some("CustomerLedger"));
         assert!(prop(&result, "RunObject").is_some());
-        assert!(prop(&result, "RunObject")
-            .unwrap()
-            .contains("Customer Ledger Entries"));
+        assert!(
+            prop(&result, "RunObject")
+                .unwrap()
+                .contains("Customer Ledger Entries")
+        );
         assert!(prop(&result, "RunPageLink").is_some());
         assert!(prop(&result, "RunPageView").is_some());
         assert_eq!(prop(&result, "ShortcutKey").as_deref(), Some("'Ctrl+F7'"));
         assert!(prop(&result, "ToolTip").is_some());
-        assert!(prop(&result, "ToolTip")
-            .unwrap()
-            .contains("history of transactions"));
+        assert!(
+            prop(&result, "ToolTip")
+                .unwrap()
+                .contains("history of transactions")
+        );
 
         // Test CheckCreditLimit action (no RunObject, has trigger)
         let result = lookup("checkcreditlimit");
@@ -911,11 +916,13 @@ page 50001 "TEST Customer Card"
             .flat_map(|(_, diags)| diags.iter())
             .collect();
         // unused_proc and caller should have diagnostics (caller is unused too since nobody calls it)
-        assert!(file_diags.len() >= 1);
+        assert!(!file_diags.is_empty());
         // Check that at least one diagnostic mentions "never called"
-        assert!(file_diags
-            .iter()
-            .any(|d| d.message.contains("never called")));
+        assert!(
+            file_diags
+                .iter()
+                .any(|d| d.message.contains("never called"))
+        );
     }
 
     #[test]
@@ -1366,6 +1373,7 @@ pub struct DependencyDocumentSymbolParams {
     #[serde(default)]
     pub object_name: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)] // parsed from request; not yet read (future design)
     pub object_id: Option<i64>,
 }
 
@@ -1426,10 +1434,10 @@ fn resolve_dependency_object<'a>(
     // First try app+type+name (most specific). Then fall back to type+name across
     // all apps (in case the URI's App segment doesn't match the .app manifest name
     // exactly — Microsoft uses "Base Application" while VS Code may say "Base App").
-    if !app.is_empty() {
-        if let Some(obj) = graph.get_dependency_object(&app, otype, &name) {
-            return Some(obj);
-        }
+    if !app.is_empty()
+        && let Some(obj) = graph.get_dependency_object(&app, otype, &name)
+    {
+        return Some(obj);
     }
     graph.find_dependency_object_by_type_name(otype, &name)
 }
@@ -1932,13 +1940,7 @@ fn find_event_subscriber_arg_at(
         }
     }
 
-    let mut combined = String::new();
-    for i in start_back..=end_forward {
-        combined.push_str(lines[i]);
-        if i != end_forward {
-            combined.push('\n');
-        }
-    }
+    let combined = lines[start_back..=end_forward].join("\n");
     let lower = combined.to_lowercase();
     let attr_idx = lower.rfind("[eventsubscriber(")?;
     // Compute the cursor offset within `combined`.
@@ -1951,10 +1953,7 @@ fn find_event_subscriber_arg_at(
     // The attribute opens after `[EventSubscriber(` — locate the matching `)`
     // ignoring parens inside string literals.
     let after_open = attr_idx + "[EventSubscriber(".len();
-    let close_idx = match find_matching_close(&combined, after_open) {
-        Some(i) => i,
-        None => return None,
-    };
+    let close_idx = find_matching_close(&combined, after_open)?;
 
     if cursor_offset < after_open || cursor_offset > close_idx {
         return None;

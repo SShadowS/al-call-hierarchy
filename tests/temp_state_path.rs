@@ -162,14 +162,14 @@ fn terminal(routine_id: &str, op_id: &str) -> EvidenceStep {
     }
 }
 
-fn routine_map<'a>(routines: &'a [L3Routine]) -> HashMap<&'a str, &'a L3Routine> {
+fn routine_map(routines: &[L3Routine]) -> HashMap<&str, &L3Routine> {
     routines.iter().map(|r| (r.id.as_str(), r)).collect()
 }
 
 /// An edge-kind lookup mapping every callsite in `routines` to a binding-carrying
 /// `"direct"` edge — the common case for these stepping tests. Case (c) builds its
 /// own map with a non-allowlisted kind to exercise the guard.
-fn direct_edge_kinds<'a>(routines: &'a [L3Routine]) -> HashMap<&'a str, &'a str> {
+fn direct_edge_kinds(routines: &[L3Routine]) -> HashMap<&str, &str> {
     routines
         .iter()
         .flat_map(|r| r.call_sites.iter().map(|cs| (cs.id.as_str(), "direct")))
@@ -478,7 +478,12 @@ fn edge_kind_guard_dynamic_hop_resolves_unknown() {
         let mut edge_kinds: HashMap<&str, &str> = HashMap::new();
         edge_kinds.insert("A/cs0", kind);
         assert_eq!(
-            resolve_temp_along_path(&path, TempStateKind::ParameterDependent(0), &map, &edge_kinds),
+            resolve_temp_along_path(
+                &path,
+                TempStateKind::ParameterDependent(0),
+                &map,
+                &edge_kinds
+            ),
             TempStateKind::Unknown,
             "PD chased down a `{kind}` hop must be Unknown (NOT suppressed), even with a Known(true) source"
         );

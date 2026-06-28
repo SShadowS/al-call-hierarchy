@@ -48,8 +48,8 @@
 //!     reachability is computed (the L4/combined-graph gate), NOT here.
 
 use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
-use al_call_hierarchy::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve_default, L3Resolved};
+use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
 const APP_GUID: &str = "2b000000-0000-0000-0000-0000000002bb";
@@ -89,10 +89,7 @@ fn all_stable_routine_ids(r: &L3Resolved) -> std::collections::HashSet<String> {
 #[test]
 fn interface_dispatch_emits_one_edge_per_resolved_impl_never_collapsed() {
     let files = &[
-        (
-            "src/iface.al",
-            "interface IProc { procedure Process(); }",
-        ),
+        ("src/iface.al", "interface IProc { procedure Process(); }"),
         (
             "src/a.al",
             "codeunit 50100 \"Proc A\" implements IProc { procedure Process() begin end; }",
@@ -397,10 +394,7 @@ fn upgrade_bindings_runs_once_no_double_upgrade() {
 #[test]
 fn edge_sort_is_deterministic_byte_order_stable() {
     let files = &[
-        (
-            "src/iface.al",
-            "interface IProc { procedure Process(); }",
-        ),
+        ("src/iface.al", "interface IProc { procedure Process(); }"),
         (
             "src/a.al",
             "codeunit 50100 \"Proc A\" implements IProc { procedure Process() begin end; }",

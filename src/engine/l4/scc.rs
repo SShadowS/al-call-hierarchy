@@ -135,14 +135,12 @@ pub fn tarjan_scc(graph: &SccInputGraph) -> SccResult {
         let mut sorted = members;
         sorted.sort();
         let mut recursive = sorted.len() > 1;
-        if !recursive {
-            if let Some(only) = sorted.first() {
-                recursive = graph
-                    .edges_by_from
-                    .get(only)
-                    .map(|tos| tos.iter().any(|t| t == only))
-                    .unwrap_or(false);
-            }
+        if !recursive && let Some(only) = sorted.first() {
+            recursive = graph
+                .edges_by_from
+                .get(only)
+                .map(|tos| tos.iter().any(|t| t == only))
+                .unwrap_or(false);
         }
         let scc_id = sccs.len();
         for m in &sorted {

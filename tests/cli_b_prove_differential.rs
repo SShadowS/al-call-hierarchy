@@ -37,7 +37,10 @@ fn fixtures_dir() -> PathBuf {
 
 /// In-repo Rust-owned goldens, regenerated via `REGEN_TEMP_GOLDENS=1`.
 fn goldens_dir() -> PathBuf {
-    repo_root().join("tests").join("cli-b-goldens").join("prove")
+    repo_root()
+        .join("tests")
+        .join("cli-b-goldens")
+        .join("prove")
 }
 
 /// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
@@ -210,11 +213,7 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
             return Some(i);
         }
     }
-    if a.len() != b.len() {
-        Some(n)
-    } else {
-        None
-    }
+    if a.len() != b.len() { Some(n) } else { None }
 }
 
 fn context_around(bytes: &[u8], pos: usize, radius: usize) -> String {

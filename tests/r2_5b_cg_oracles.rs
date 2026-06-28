@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::deps::cross_app_l3::{
-    build_cross_app_l3_from_workspace, CrossAppL3,
+    CrossAppL3, build_cross_app_l3_from_workspace,
 };
 use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
 

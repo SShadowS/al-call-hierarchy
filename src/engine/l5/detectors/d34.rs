@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::{may_commit, EffectPresence};
+use crate::engine::l5::capability_query::{EffectPresence, may_commit};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;

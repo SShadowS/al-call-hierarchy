@@ -15,5 +15,5 @@ pub mod symbol_props;
 
 pub use parse::parse;
 pub use symbol_props::{
-    lookup_symbol_properties, SymbolDeclKind, SymbolProperties, SymbolProperty,
+    SymbolDeclKind, SymbolProperties, SymbolProperty, lookup_symbol_properties,
 };

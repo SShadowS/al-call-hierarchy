@@ -24,9 +24,9 @@
 //! differential vs the goldens is Task 3.
 
 use al_call_hierarchy::engine::deps::dep_artifact_l4::{
-    build_dep_artifact_l4, collect_cited_dep_evidence, collect_dep_order_index,
-    inject_intra_app_call_edges, is_dep_order_index_stamp_fresh, ConsumerModel, DepOrderIndexStamp,
-    DEP_ORDER_INDEX_SCHEMA_VERSION,
+    ConsumerModel, DEP_ORDER_INDEX_SCHEMA_VERSION, DepOrderIndexStamp, build_dep_artifact_l4,
+    collect_cited_dep_evidence, collect_dep_order_index, inject_intra_app_call_edges,
+    is_dep_order_index_stamp_fresh,
 };
 use serde_json::Value;
 use std::path::PathBuf;

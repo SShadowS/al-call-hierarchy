@@ -398,19 +398,11 @@ fn half_to_f64(h: u16) -> f64 {
     let val = if exp == 0 {
         (frac as f64) * 2f64.powi(-24)
     } else if exp == 0x1f {
-        if frac == 0 {
-            f64::INFINITY
-        } else {
-            f64::NAN
-        }
+        if frac == 0 { f64::INFINITY } else { f64::NAN }
     } else {
         (1.0 + (frac as f64) / 1024.0) * 2f64.powi(exp as i32 - 15)
     };
-    if sign == 1 {
-        -val
-    } else {
-        val
-    }
+    if sign == 1 { -val } else { val }
 }
 
 /// Decode a CBOR byte stream into a [`CborValue`]. Trailing bytes after the

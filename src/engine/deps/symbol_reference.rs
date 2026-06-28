@@ -303,11 +303,7 @@ fn parse_abi_interface_name(raw: &str) -> String {
         if let Some(hash_pos) = stripped.find('#') {
             let rest = &stripped[hash_pos + 1..];
             // `.+` requires at least one char after the closing `#`.
-            if !rest.is_empty() {
-                rest
-            } else {
-                raw
-            }
+            if !rest.is_empty() { rest } else { raw }
         } else {
             raw
         }
@@ -477,32 +473,32 @@ fn classify_abi_arg(raw: &Option<Value>) -> AttributeArg {
     }
 
     // `::`-qualified
-    if let Some(colon_idx) = trimmed.find("::") {
-        if colon_idx > 0 {
-            let qualifier = trimmed[..colon_idx].trim().to_string();
-            let member_raw = trimmed[colon_idx + 2..].trim();
-            let mraw_chars: Vec<char> = member_raw.chars().collect();
-            let member = if mraw_chars.len() >= 2
-                && mraw_chars[0] == '"'
-                && mraw_chars[mraw_chars.len() - 1] == '"'
-            {
-                mraw_chars[1..mraw_chars.len() - 1].iter().collect()
-            } else {
-                member_raw.to_string()
-            };
-            let kind = if is_object_type_keyword(&qualifier.to_lowercase()) {
-                "database_reference"
-            } else {
-                "qualified_enum_value"
-            };
-            return AttributeArg {
-                kind: kind.to_string(),
-                text: trimmed.to_string(),
-                value: Some(member.clone()),
-                qualifier: Some(qualifier),
-                member: Some(member),
-            };
-        }
+    if let Some(colon_idx) = trimmed.find("::")
+        && colon_idx > 0
+    {
+        let qualifier = trimmed[..colon_idx].trim().to_string();
+        let member_raw = trimmed[colon_idx + 2..].trim();
+        let mraw_chars: Vec<char> = member_raw.chars().collect();
+        let member = if mraw_chars.len() >= 2
+            && mraw_chars[0] == '"'
+            && mraw_chars[mraw_chars.len() - 1] == '"'
+        {
+            mraw_chars[1..mraw_chars.len() - 1].iter().collect()
+        } else {
+            member_raw.to_string()
+        };
+        let kind = if is_object_type_keyword(&qualifier.to_lowercase()) {
+            "database_reference"
+        } else {
+            "qualified_enum_value"
+        };
+        return AttributeArg {
+            kind: kind.to_string(),
+            text: trimmed.to_string(),
+            value: Some(member.clone()),
+            qualifier: Some(qualifier),
+            member: Some(member),
+        };
     }
 
     // Bare token → identifier.
@@ -673,10 +669,10 @@ fn raw_objects(map: &serde_json::Map<String, Value>, key: &str) -> Vec<RawObject
 }
 
 fn collect_raw_objects(map: &serde_json::Map<String, Value>, key: &str, out: &mut Vec<RawObject>) {
-    if let Some(v) = map.get(key) {
-        if let Ok(objs) = serde_json::from_value::<Vec<RawObject>>(v.clone()) {
-            out.extend(objs);
-        }
+    if let Some(v) = map.get(key)
+        && let Ok(objs) = serde_json::from_value::<Vec<RawObject>>(v.clone())
+    {
+        out.extend(objs);
     }
     if let Some(Value::Array(namespaces)) = map.get("Namespaces") {
         for ns in namespaces {
@@ -733,10 +729,10 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
                     .collect(),
                 ..Default::default()
             };
-            if object_type == "Codeunit" {
-                if let Some(subtype) = raw_object_property(&o.properties, "Subtype") {
-                    abi_object.object_subtype = Some(subtype);
-                }
+            if object_type == "Codeunit"
+                && let Some(subtype) = raw_object_property(&o.properties, "Subtype")
+            {
+                abi_object.object_subtype = Some(subtype);
             }
             if object_type == "Page" {
                 if let Some(pt) = raw_object_property(&o.properties, "PageType") {

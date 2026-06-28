@@ -26,8 +26,8 @@ use al_call_hierarchy::engine::deps::app_package_zip::{
     extract_navx_manifest_xml, extract_symbol_reference_json,
 };
 use al_call_hierarchy::engine::deps::merged_index::build_merged_index_from_path;
-use al_call_hierarchy::engine::deps::symbol_reference::{parse_symbol_reference, AbiObject};
-use al_call_hierarchy::engine::ids::{canonical_routine_signature, sha256_hex, ParamSpec};
+use al_call_hierarchy::engine::deps::symbol_reference::{AbiObject, parse_symbol_reference};
+use al_call_hierarchy::engine::ids::{ParamSpec, canonical_routine_signature, sha256_hex};
 use serde_json::Value;
 
 fn repo_root() -> PathBuf {
@@ -133,7 +133,9 @@ fn oracle_routines_are_body_unavailable_dependency_empty_features() {
         total > 0,
         "no dependency routines observed across the corpus"
     );
-    eprintln!("R2.5a oracle: {total} dependency routine(s), all bodyAvailable:false / dependency / empty-features.");
+    eprintln!(
+        "R2.5a oracle: {total} dependency routine(s), all bodyAvailable:false / dependency / empty-features."
+    );
 }
 
 #[test]
@@ -335,5 +337,7 @@ fn oracle_table_extension_field_merged_into_base() {
         ext_field.stable_field_id, "aaaaaaaa-0000-0000-0000-000000000001:Table:50700#50",
         "extension's own field keeps the extension-table StableFieldId"
     );
-    eprintln!("R2.5a oracle: TableExtension field merged into base (capture-point invariant) — no double-count.");
+    eprintln!(
+        "R2.5a oracle: TableExtension field merged into base (capture-point invariant) — no double-count."
+    );
 }

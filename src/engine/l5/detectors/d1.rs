@@ -33,9 +33,9 @@ use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l4::effect_lattice::TempStateKind;
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
-use crate::engine::l5::capability_query::{touches_db_of, EffectPresence};
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_of};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
+use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
@@ -49,10 +49,10 @@ use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
 use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
 use crate::engine::l5::path_walker::{
-    walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop,
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, walk_evidence,
 };
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
-use crate::engine::l5::table_display::{describe_table, DescribeOp};
+use crate::engine::l5::table_display::{DescribeOp, describe_table};
 
 const DETECTOR: &str = "d1-db-op-in-loop";
 

@@ -14,8 +14,8 @@
 //! booleans as JSON primitives"), everything else as the already-tokenized AL
 //! `text` string — then run the FULL `parse_symbol_reference` path and assert.
 
-use al_call_hierarchy::engine::deps::symbol_reference::{parse_symbol_reference, AbiEventKind};
-use serde_json::{json, Value};
+use al_call_hierarchy::engine::deps::symbol_reference::{AbiEventKind, parse_symbol_reference};
+use serde_json::{Value, json};
 
 /// Reconstruct the raw `Arguments[].Value` JSON for one expected arg. A boolean
 /// arg becomes a JSON bool primitive; every other kind becomes the recorded

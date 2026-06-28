@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l4::summary::{project_r3a2, R3a2Projection};
+use al_call_hierarchy::engine::l4::summary::{R3a2Projection, project_r3a2};
 use serde::Deserialize;
 use serde_json::Value;
 

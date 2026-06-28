@@ -291,12 +291,12 @@ fn matrices_of(proj: &Value) -> Matrices {
             if o.get("extendsTargetName").is_some() {
                 m.property.extensions_with_target += 1;
             }
-            if let Some(ifaces) = o.get("implementsInterfaces").and_then(|v| v.as_array()) {
-                if !ifaces.is_empty() {
-                    m.property.objects_with_interfaces += 1;
-                    if ifaces.len() >= 2 {
-                        m.property.interfaces_implemented2plus += 1;
-                    }
+            if let Some(ifaces) = o.get("implementsInterfaces").and_then(|v| v.as_array())
+                && !ifaces.is_empty()
+            {
+                m.property.objects_with_interfaces += 1;
+                if ifaces.len() >= 2 {
+                    m.property.interfaces_implemented2plus += 1;
                 }
             }
         }
@@ -343,12 +343,12 @@ fn matrices_of(proj: &Value) -> Matrices {
             .unwrap_or_default();
         for t in ts {
             let tn = t.get("tableNumber").and_then(|v| v.as_i64()).unwrap_or(-1);
-            if ext_table_numbers.contains(&tn) {
-                if let Some(fs) = t.get("fields").and_then(|v| v.as_array()) {
-                    for f in fs {
-                        if let Some(fnum) = f.get("fieldNumber").and_then(|v| v.as_i64()) {
-                            ext_field_keys.insert(fnum);
-                        }
+            if ext_table_numbers.contains(&tn)
+                && let Some(fs) = t.get("fields").and_then(|v| v.as_array())
+            {
+                for f in fs {
+                    if let Some(fnum) = f.get("fieldNumber").and_then(|v| v.as_i64()) {
+                        ext_field_keys.insert(fnum);
                     }
                 }
             }
@@ -360,10 +360,10 @@ fn matrices_of(proj: &Value) -> Matrices {
             }
             if let Some(fs) = t.get("fields").and_then(|v| v.as_array()) {
                 for f in fs {
-                    if let Some(fnum) = f.get("fieldNumber").and_then(|v| v.as_i64()) {
-                        if ext_field_keys.contains(&fnum) {
-                            m.property.merged_extension_fields += 1;
-                        }
+                    if let Some(fnum) = f.get("fieldNumber").and_then(|v| v.as_i64())
+                        && ext_field_keys.contains(&fnum)
+                    {
+                        m.property.merged_extension_fields += 1;
                     }
                 }
             }

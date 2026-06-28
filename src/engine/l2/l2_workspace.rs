@@ -38,8 +38,8 @@
 
 use super::features::{L2Projection, PFeatures, PObject, PRoutine};
 use crate::engine::ids::{
-    encode_object_id, normalized_signature_hash, to_stable_object_id,
-    to_stable_routine_id_from_parts, ParamSpec,
+    ParamSpec, encode_object_id, normalized_signature_hash, to_stable_object_id,
+    to_stable_routine_id_from_parts,
 };
 use crate::engine::l2::scope;
 use std::path::Path;

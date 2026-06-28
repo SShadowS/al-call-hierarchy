@@ -32,7 +32,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::policy::pipeline::{
-    run_policy_check, run_policy_explain, PolicyCheckOptions, PolicyExplainOptions,
+    PolicyCheckOptions, PolicyExplainOptions, run_policy_check, run_policy_explain,
 };
 
 const ALSEM_VERSION: &str = "cli-c-v1";
@@ -213,13 +213,13 @@ fn explain_rule_not_found_exit_1() {
 // ===========================================================================
 
 mod oracles {
-    use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
     use al_call_hierarchy::engine::gate::policy::policy_loader::LoadResult;
+    use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
     use al_call_hierarchy::engine::gate::policy::policy_types::{
         Predicate, PredicateOperator, PredicateValue,
     };
     use al_call_hierarchy::engine::gate::policy::predicate_evaluator::{
-        glob_match, kleene_and, kleene_not, kleene_or, Tristate,
+        Tristate, glob_match, kleene_and, kleene_not, kleene_or,
     };
 
     fn compile_when(yaml_body: &str) -> Predicate {
@@ -533,7 +533,9 @@ mod oracles {
 
     #[test]
     fn loader_rule_id_regex() {
-        let e = load_err("version: 1\nrules:\n  - id: X\n    severity: high\n    when:\n      capability.op: commit\n");
+        let e = load_err(
+            "version: 1\nrules:\n  - id: X\n    severity: high\n    when:\n      capability.op: commit\n",
+        );
         assert!(e.contains("rules[0].id: must match"), "got {e}");
     }
 

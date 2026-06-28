@@ -8,6 +8,8 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// `NoConnectionString` not yet emitted — future design (telemetry transport).
+#[allow(dead_code)]
 pub enum DisabledReason {
     DoNotTrack,
     CliFlag,

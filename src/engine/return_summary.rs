@@ -294,10 +294,10 @@ pub fn parse_commit_behavior(
 
     // Dep ABI shape: bare identifier value (e.g. "Ignore"/"Error"). Fall back to
     // the arg's value/text when the qualified read did not apply.
-    if member.is_none() {
-        if let Some(arg0) = attr.args.first() {
-            member = arg0.value.clone().or_else(|| Some(arg0.text.clone()));
-        }
+    if member.is_none()
+        && let Some(arg0) = attr.args.first()
+    {
+        member = arg0.value.clone().or_else(|| Some(arg0.text.clone()));
     }
 
     let Some(m) = member else {
@@ -324,10 +324,10 @@ pub fn parse_has_error_behavior_collect(
 
     // Dep ABI shape: bare identifier value (e.g. "Collect"). Fall back to
     // the arg's value/text when the qualified read did not apply.
-    if member.is_none() {
-        if let Some(arg0) = attr.args.first() {
-            member = arg0.value.clone().or_else(|| Some(arg0.text.clone()));
-        }
+    if member.is_none()
+        && let Some(arg0) = attr.args.first()
+    {
+        member = arg0.value.clone().or_else(|| Some(arg0.text.clone()));
     }
 
     member

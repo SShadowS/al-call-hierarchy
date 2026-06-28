@@ -20,16 +20,16 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::scc::{tarjan_scc, Scc, SccInputGraph, SccResult};
+use super::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::ids::to_stable_object_id;
 use crate::engine::l2::features::PCallee;
 use crate::engine::l3::call_resolver::{
-    resolve_calls, CallEdge, DeclaredDependency, ResolvedCalls,
+    CallEdge, DeclaredDependency, ResolvedCalls, resolve_calls,
 };
-use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
-use crate::engine::l3::event_graph::{build_event_graph, EventGraph, EventSymbol};
+use crate::engine::l3::event_graph::{EventGraph, EventSymbol, build_event_graph};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l3::symbol_table::SymbolTable;
+use crate::engine::l3::taxonomy::{DispatchKind, Resolution};
 
 // ---------------------------------------------------------------------------
 // Internal combined-graph model (NOT the serde projection shape). Ids INTERNAL.
@@ -174,6 +174,9 @@ fn is_edge_kind_enum(kind: DispatchKind) -> bool {
 
 /// CallGraph dispatchKinds that become resolved routine→routine combined edges
 /// (when `to` is set). Mirrors al-sem `EDGE_KINDS`.
+// Currently unreferenced (al-sem is retired); kept as edge-classification domain
+// logic for the L4 combined-graph design. Remove if a redesign supersedes it.
+#[allow(dead_code)]
 fn is_edge_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -503,7 +506,10 @@ fn build_typed_edges(
     let mut interface_order: Vec<String> = Vec::new();
     let mut interface_edges_by_callsite: HashMap<String, Vec<&CallEdge>> = HashMap::new();
     for ce in &resolved.edges {
-        if ce.dispatch_kind == DispatchKind::Interface && ce.resolution == Resolution::Maybe && ce.to.is_some() {
+        if ce.dispatch_kind == DispatchKind::Interface
+            && ce.resolution == Resolution::Maybe
+            && ce.to.is_some()
+        {
             if !interface_edges_by_callsite.contains_key(&ce.callsite_id) {
                 interface_order.push(ce.callsite_id.clone());
             }
@@ -542,7 +548,9 @@ fn build_typed_edges(
                     object_type: None,
                     target_id_source: None,
                 });
-            } else if ce.dispatch_kind == DispatchKind::Method && ce.resolution == Resolution::Resolved {
+            } else if ce.dispatch_kind == DispatchKind::Method
+                && ce.resolution == Resolution::Resolved
+            {
                 typed_edges.push(TypedEdge {
                     kind: "variable-typed-call".to_string(),
                     from: ce.from.clone(),
@@ -557,7 +565,9 @@ fn build_typed_edges(
                     object_type: None,
                     target_id_source: None,
                 });
-            } else if ce.dispatch_kind == DispatchKind::Interface && ce.resolution == Resolution::Maybe {
+            } else if ce.dispatch_kind == DispatchKind::Interface
+                && ce.resolution == Resolution::Maybe
+            {
                 // Interface dispatch: emit one edge per resolved candidate, once per
                 // callsite (when first encountered), then skip.
                 if interface_typed_emitted.contains(&ce.callsite_id) {
@@ -597,7 +607,8 @@ fn build_typed_edges(
                     });
                 }
             } else if is_object_run_kind(ce.dispatch_kind.as_str()) {
-                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str()) else {
+                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str())
+                else {
                     continue;
                 };
                 let Some(target_object) = object_id_by_routine.get(to.as_str()) else {
@@ -622,7 +633,8 @@ fn build_typed_edges(
         } else {
             // Unresolved edges
             if is_object_run_kind(ce.dispatch_kind.as_str()) {
-                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str()) else {
+                let Some(object_type) = dispatch_kind_to_object_type(ce.dispatch_kind.as_str())
+                else {
                     continue;
                 };
                 let target_id_source = object_run_target_id_source(&call_site.callee);

@@ -59,7 +59,7 @@ pub mod testing {
     //! background exporter. `record_*` calls increment counters but never
     //! block on a network/exporter, and the pipeline remains `None` so the
     //! sender path is a no-op.
-    use super::{Runtime, RUNTIME};
+    use super::{RUNTIME, Runtime};
     use crate::telemetry::counters::Counters;
     use std::sync::{Arc, RwLock};
 

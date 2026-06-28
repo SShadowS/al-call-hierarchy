@@ -214,17 +214,15 @@ pub fn detect_d42(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
                 // Fall back to caller-parameter currentLoadedFieldsAtExit when the
                 // local scan yielded "unknown" and the source IS the routine's param.
                 let is_unknown = matches!(lf, None | Some(Narrow::Unknown));
-                if is_unknown {
-                    if let Some(sp_idx) = binding.source_parameter_index {
-                        let caller_role = own_role.iter().find(|r| r.parameter_index == sp_idx);
-                        lf = Some(
-                            match caller_role.map(|r| &r.current_loaded_fields_at_exit) {
-                                Some(FieldList::Known(names)) => Narrow::Known(names.clone()),
-                                Some(FieldList::Full) => Narrow::Full,
-                                _ => Narrow::Unknown,
-                            },
-                        );
-                    }
+                if is_unknown && let Some(sp_idx) = binding.source_parameter_index {
+                    let caller_role = own_role.iter().find(|r| r.parameter_index == sp_idx);
+                    lf = Some(
+                        match caller_role.map(|r| &r.current_loaded_fields_at_exit) {
+                            Some(FieldList::Known(names)) => Narrow::Known(names.clone()),
+                            Some(FieldList::Full) => Narrow::Full,
+                            _ => Narrow::Unknown,
+                        },
+                    );
                 }
 
                 let loaded = match lf {

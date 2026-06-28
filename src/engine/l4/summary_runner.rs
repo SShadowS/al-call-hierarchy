@@ -21,12 +21,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::combined_graph::CombinedGraph;
 use super::effect_lattice::{
-    effect_key_of, join_presence, merge_via_owned, via_for_edge_kind, EffectPresence,
+    EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
 use super::scc::SccResult;
 use super::summary::{
-    project_routine_summary_core_internal, stable_summary_fingerprint, DbEffect, FieldList,
-    PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, TempState, Uncertainty,
+    DbEffect, FieldList, PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, TempState,
+    Uncertainty, project_routine_summary_core_internal, stable_summary_fingerprint,
 };
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
@@ -227,12 +227,12 @@ fn compute_record_roles(routine: &L3Routine, fields: &FieldIndex) -> Vec<RecordR
             if op.record_variable_name.to_lowercase() != rec_var_name_lc {
                 continue;
             }
-            if op.op == "Validate" {
-                if let Some(args) = &op.field_arguments {
-                    for arg in args {
-                        if let Some(fid) = resolve_field(&table_id, arg, fields) {
-                            writes_fields.push(fid);
-                        }
+            if op.op == "Validate"
+                && let Some(args) = &op.field_arguments
+            {
+                for arg in args {
+                    if let Some(fid) = resolve_field(&table_id, arg, fields) {
+                        writes_fields.push(fid);
                     }
                 }
             }
@@ -665,11 +665,14 @@ fn compose_routine(
 ///      Only `direct | method | implicit-trigger` carry usable bindings.
 ///   3. no binding whose `parameter_index == callee_param_index` → `Unknown`.
 ///   4. apply the SUBSTITUTION TABLE on the binding's `source_temp_state`:
-///        Some(Known(true))  → Known(true)
-///        Some(Known(false)) → Known(false)
-///        Some(PD(j))        → PD(j)   (RE-SYMBOLIZE upward — TASK 8 / RV-7)
-///        Some(Unknown)      → Unknown
-///        None               → Unknown
+///
+/// ```text
+/// Some(Known(true))  → Known(true)
+/// Some(Known(false)) → Known(false)
+/// Some(PD(j))        → PD(j)   (RE-SYMBOLIZE upward — TASK 8 / RV-7)
+/// Some(Unknown)      → Unknown
+/// None               → Unknown
+/// ```
 ///
 /// SOUNDNESS: only NARROWS symbolic → binding-derived, or RE-SYMBOLIZES a
 /// forwarded caller param's PD to the caller's own param index (propagating the
@@ -965,7 +968,7 @@ pub fn run_one_scc(
                 return SccComputeOut {
                     summaries: Vec::new(),
                     trace: None,
-                }
+                };
             }
         };
         // Fixed leaf — already in the predecessor map, never recomputed.
@@ -981,7 +984,7 @@ pub fn run_one_scc(
                 return SccComputeOut {
                     summaries: Vec::new(),
                     trace: None,
-                }
+                };
             }
         };
         let empty_snapshot: HashMap<String, RoutineSummary> = HashMap::new();

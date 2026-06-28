@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use crate::engine::l3::al_attributes::{parse_routine_attributes, ObsoleteState};
+use crate::engine::l3::al_attributes::{ObsoleteState, parse_routine_attributes};
 use crate::engine::l3::event_graph::EventSymbol;
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;

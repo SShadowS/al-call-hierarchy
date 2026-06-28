@@ -15,9 +15,8 @@
 //!      and SORTED (by operationId / routineId).
 
 use al_call_hierarchy::engine::deps::dep_artifact_l4::{
-    build_dep_artifact_l4, collect_cited_dep_evidence, collect_dep_order_index,
-    inject_intra_app_call_edges, is_dep_order_index_stamp_fresh, ConsumerModel,
-    DependencyArtifactL4,
+    ConsumerModel, DependencyArtifactL4, build_dep_artifact_l4, collect_cited_dep_evidence,
+    collect_dep_order_index, inject_intra_app_call_edges, is_dep_order_index_stamp_fresh,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;

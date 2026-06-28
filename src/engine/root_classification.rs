@@ -273,10 +273,10 @@ fn validate_roots_config(parsed: &serde_json::Value) -> Option<RootsConfig> {
         // Canonicalize: dedup (silent) + sort in ROOT_KIND_VALUES order.
         let mut kind_set: BTreeSet<String> = BTreeSet::new();
         for k in kinds_arr {
-            if let Some(ks) = k.as_str() {
-                if valid_kinds.contains(ks) {
-                    kind_set.insert(ks.to_string());
-                }
+            if let Some(ks) = k.as_str()
+                && valid_kinds.contains(ks)
+            {
+                kind_set.insert(ks.to_string());
             }
         }
         let kinds = canonical_kinds(&kind_set);

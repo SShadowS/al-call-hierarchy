@@ -12,6 +12,7 @@
 //!   - `y_of`: `top = (h_total - block_h) / 2 + 20` — `h_total - block_h` is always
 //!     even (both are multiples of ROW=46 plus/minus the even constant 40), so the
 //!     halve is exact.
+//!
 //! Parity holds while those divisors stay even. DO NOT "fix" either to floating
 //! point — that would re-introduce the float-formatting divergence we avoid.
 //! The fixed-literal attributes `stroke-width="1.5"` and `opacity="0.7"` are
@@ -32,7 +33,7 @@ use indexmap::IndexMap;
 use crate::engine::gate::app_attribution::App;
 use crate::engine::gate::projection::FindingSummary;
 use crate::engine::l3::coverage::AnalysisCoverage;
-use crate::engine::l3::event_graph::{build_event_graph, EventGraph, EventSymbol};
+use crate::engine::l3::event_graph::{EventGraph, EventSymbol, build_event_graph};
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine, L3Table};
 use crate::engine::l3::symbol_table::SymbolTable;
 use crate::engine::l5::finding::Finding;
@@ -365,6 +366,7 @@ fn bezier(x1: i64, y1: i64, x2: i64, y2: i64, color: &str) -> String {
 }
 
 /// `node(x, y, w, hgt, label, fill, stroke, tag?, dead?, full?)` — mirrors TS `node`.
+#[allow(clippy::too_many_arguments)] // SVG node geometry+style params; grouping would obscure
 fn node_svg(
     x: i64,
     y: i64,
@@ -1141,7 +1143,7 @@ mod tests {
 
     #[test]
     fn co_location_keys_off_raw_not_projected_primary() {
-        use crate::engine::gate::projection::{project_finding, ProjectionIndex};
+        use crate::engine::gate::projection::{ProjectionIndex, project_finding};
         use crate::engine::l3::coverage::AnalysisCoverage;
         use crate::engine::l3::l3_workspace::{L3Resolved, L3Workspace};
 

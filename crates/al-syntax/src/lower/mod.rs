@@ -155,10 +155,10 @@ fn lower_object(
     if let Some(body) = node.field(FieldName::Body) {
         for member in body.named_children() {
             collect_globals(member, source, &mut globals);
-            if member.kind() == RawKind::Property {
-                if let Some(p) = lower_property(member, source) {
-                    properties.push(p);
-                }
+            if member.kind() == RawKind::Property
+                && let Some(p) = lower_property(member, source)
+            {
+                properties.push(p);
             }
         }
     }
@@ -217,16 +217,15 @@ fn collect_page_controls(node: RawNode, source: &str, out: &mut Vec<crate::ir::P
         RawKind::UsercontrolSection => Some("usercontrol"),
         _ => None,
     };
-    if let Some(kind) = kind {
-        if let (Some(name), Some(src)) =
+    if let Some(kind) = kind
+        && let (Some(name), Some(src)) =
             (node.field(FieldName::Name), node.field(FieldName::Source))
-        {
-            out.push(crate::ir::PageControl {
-                name: ident_text(name, source),
-                kind: kind.to_string(),
-                target: ident_text(src, source),
-            });
-        }
+    {
+        out.push(crate::ir::PageControl {
+            name: ident_text(name, source),
+            kind: kind.to_string(),
+            target: ident_text(src, source),
+        });
     }
     if node.kind() == RawKind::CodeBlock {
         return;
@@ -288,7 +287,7 @@ fn lower_field(node: RawNode, source: &str) -> crate::ir::FieldDecl {
             let Some(pname) = member.field(FieldName::Name) else {
                 continue;
             };
-            if pname.text(source).trim().to_ascii_lowercase() != "fieldclass" {
+            if !pname.text(source).trim().eq_ignore_ascii_case("fieldclass") {
                 continue;
             }
             let v = member
@@ -1144,7 +1143,9 @@ mod tests {
     use crate::parse;
 
     /// Find the first `Case` statement in a parsed file.
-    fn first_case(af: &crate::ir::AlFile) -> (&[crate::ir::CaseBranch], Option<crate::ir::BlockId>) {
+    fn first_case(
+        af: &crate::ir::AlFile,
+    ) -> (&[crate::ir::CaseBranch], Option<crate::ir::BlockId>) {
         for s in af.ir.iter_stmts() {
             if let StmtKind::Case {
                 branches,

@@ -56,10 +56,10 @@ use al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection;
 use al_call_hierarchy::engine::l3::coverage::AnalysisCoverage;
 use al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection;
 use al_call_hierarchy::engine::l3::l3_workspace::{
-    assemble_and_resolve_workspace_default, L3RecordTypeProjection,
+    L3RecordTypeProjection, assemble_and_resolve_workspace_default,
 };
 use al_call_hierarchy::engine::snapshot::{
-    snapshot_workspace, IdentitySnapshot, ObjectIdentity, RoutineIdentity,
+    IdentitySnapshot, ObjectIdentity, RoutineIdentity, snapshot_workspace,
 };
 use serde::Deserialize;
 

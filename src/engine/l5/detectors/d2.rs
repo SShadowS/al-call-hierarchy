@@ -32,9 +32,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Table};
 use crate::engine::l4::combined_graph::CombinedEdge;
-use crate::engine::l4::summary::{dedupe_uncertainties, Uncertainty};
-use crate::engine::l5::capability_query::{touches_db_of, writes_tables_of, EffectPresence};
-use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
+use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_of, writes_tables_of};
+use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
@@ -46,10 +46,10 @@ use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::merge_by_terminal;
 use crate::engine::l5::path_walker::{
-    walk_evidence, PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop,
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
-use crate::engine::l5::table_display::{describe_table, DescribeOp};
+use crate::engine::l5::table_display::{DescribeOp, describe_table};
 
 const DETECTOR: &str = "d2-event-fanout-in-loop";
 
@@ -453,22 +453,17 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
                 for u in &complete.uncertainties {
                     uncertainties.push(u.clone());
                 }
-                if let Some(term) = complete.path.last() {
-                    if let Some(op_id) = &term.operation_id {
-                        if let Some(term_routine) =
-                            ctx.routine_by_id.get(term.routine_id.as_str()).copied()
-                        {
-                            if let Some(term_op) = term_routine
-                                .record_operations
-                                .iter()
-                                .find(|o| &o.id == op_id)
-                            {
-                                if let Some(tid) = &term_op.table_id {
-                                    affected_tables.insert(tid.clone());
-                                }
-                            }
-                        }
-                    }
+                if let Some(term) = complete.path.last()
+                    && let Some(op_id) = &term.operation_id
+                    && let Some(term_routine) =
+                        ctx.routine_by_id.get(term.routine_id.as_str()).copied()
+                    && let Some(term_op) = term_routine
+                        .record_operations
+                        .iter()
+                        .find(|o| &o.id == op_id)
+                    && let Some(tid) = &term_op.table_id
+                {
+                    affected_tables.insert(tid.clone());
                 }
             }
 

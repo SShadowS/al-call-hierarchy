@@ -27,7 +27,7 @@ use al_call_hierarchy::engine::gate::baseline::serialize_baseline;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::DEFAULT_DETECTOR_NAMES;
 use al_call_hierarchy::engine::gate::run::{
-    run_analyze, run_analyze_with_exit, AnalyzeArgs, OutputFormat,
+    AnalyzeArgs, OutputFormat, run_analyze, run_analyze_with_exit,
 };
 
 const PIN_VERSION: &str = "gate-sarif-v1";

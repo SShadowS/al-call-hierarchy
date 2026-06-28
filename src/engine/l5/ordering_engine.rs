@@ -19,12 +19,12 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::ids::sha256_hex;
 use crate::engine::l5::digest::QueryWitnessHop;
 use crate::engine::l5::ordering::{
-    build_hb_edges, dom, dominates_return, may_co_execute, ordered_before, HBEdge, OrderedOp,
-    Quantifier,
+    HBEdge, OrderedOp, Quantifier, build_hb_edges, dom, dominates_return, may_co_execute,
+    ordered_before,
 };
 use crate::engine::l5::ordering_inter::{
-    error_escapes_chain, inter_hb, io_direction, reconstruct_call_chains, reconstruct_frame_chain,
-    CallChain, CallsiteByIdMap, OccurrenceWithChain,
+    CallChain, CallsiteByIdMap, OccurrenceWithChain, error_escapes_chain, inter_hb, io_direction,
+    reconstruct_call_chains, reconstruct_frame_chain,
 };
 use crate::engine::l5::snapshot::{CapabilitySnapshot, SnapCapabilityExtra, SnapTempState};
 use crate::engine::return_summary::RoutineReturnSummary;
@@ -138,54 +138,47 @@ pub fn compute_ordering(
         .map(|eff| {
             let mut ordered_op: Option<OrderedOp> = None;
 
-            if let Some(op_id) = &eff.evidence_operation_id {
-                if let Some(op_ev) = snap
+            if let Some(op_id) = &eff.evidence_operation_id
+                && let Some(op_ev) = snap
                     .operation_index
                     .iter()
                     .find(|o| &o.operation_id == op_id)
-                {
-                    if let Some(order) = op_ev.order {
-                        let owning_frames = snap
-                            .routine_order_frames
-                            .as_ref()
-                            .and_then(|m| m.get(&op_ev.routine));
-                        let frame_chain = reconstruct_frame_chain(order.frame_id, owning_frames);
-                        if !frame_chain.is_empty() {
-                            ordered_op = Some(OrderedOp {
-                                occurrence_id: eff.occurrence_id.clone(),
-                                order_id: order.order_id,
-                                on_success_path: order.on_success_path,
-                                dominates_success_return: order.dominates_success_return,
-                                frame_chain,
-                            });
-                        }
-                    }
+                && let Some(order) = op_ev.order
+            {
+                let owning_frames = snap
+                    .routine_order_frames
+                    .as_ref()
+                    .and_then(|m| m.get(&op_ev.routine));
+                let frame_chain = reconstruct_frame_chain(order.frame_id, owning_frames);
+                if !frame_chain.is_empty() {
+                    ordered_op = Some(OrderedOp {
+                        occurrence_id: eff.occurrence_id.clone(),
+                        order_id: order.order_id,
+                        on_success_path: order.on_success_path,
+                        dominates_success_return: order.dominates_success_return,
+                        frame_chain,
+                    });
                 }
             }
 
-            if ordered_op.is_none() {
-                if let Some(cs_id) = &eff.evidence_callsite_id {
-                    if let Some(cs_ev) =
-                        snap.callsite_index.iter().find(|c| &c.callsite_id == cs_id)
-                    {
-                        if let Some(order) = cs_ev.order {
-                            let owning_frames = snap
-                                .routine_order_frames
-                                .as_ref()
-                                .and_then(|m| m.get(&cs_ev.routine));
-                            let frame_chain =
-                                reconstruct_frame_chain(order.frame_id, owning_frames);
-                            if !frame_chain.is_empty() {
-                                ordered_op = Some(OrderedOp {
-                                    occurrence_id: eff.occurrence_id.clone(),
-                                    order_id: order.order_id,
-                                    on_success_path: order.on_success_path,
-                                    dominates_success_return: order.dominates_success_return,
-                                    frame_chain,
-                                });
-                            }
-                        }
-                    }
+            if ordered_op.is_none()
+                && let Some(cs_id) = &eff.evidence_callsite_id
+                && let Some(cs_ev) = snap.callsite_index.iter().find(|c| &c.callsite_id == cs_id)
+                && let Some(order) = cs_ev.order
+            {
+                let owning_frames = snap
+                    .routine_order_frames
+                    .as_ref()
+                    .and_then(|m| m.get(&cs_ev.routine));
+                let frame_chain = reconstruct_frame_chain(order.frame_id, owning_frames);
+                if !frame_chain.is_empty() {
+                    ordered_op = Some(OrderedOp {
+                        occurrence_id: eff.occurrence_id.clone(),
+                        order_id: order.order_id,
+                        on_success_path: order.on_success_path,
+                        dominates_success_return: order.dominates_success_return,
+                        frame_chain,
+                    });
                 }
             }
 
@@ -219,19 +212,18 @@ pub fn compute_ordering(
 
     // --- resolveOwningRoutine. ---
     let resolve_owning_routine = |eff: &OrderingEffectInput| -> Option<String> {
-        if let Some(op_id) = &eff.evidence_operation_id {
-            if let Some(op_ev) = snap
+        if let Some(op_id) = &eff.evidence_operation_id
+            && let Some(op_ev) = snap
                 .operation_index
                 .iter()
                 .find(|o| &o.operation_id == op_id)
-            {
-                return Some(op_ev.routine.clone());
-            }
+        {
+            return Some(op_ev.routine.clone());
         }
-        if let Some(cs_id) = &eff.evidence_callsite_id {
-            if let Some(cs_ev) = snap.callsite_index.iter().find(|c| &c.callsite_id == cs_id) {
-                return Some(cs_ev.routine.clone());
-            }
+        if let Some(cs_id) = &eff.evidence_callsite_id
+            && let Some(cs_ev) = snap.callsite_index.iter().find(|c| &c.callsite_id == cs_id)
+        {
+            return Some(cs_ev.routine.clone());
         }
         None
     };
@@ -408,11 +400,11 @@ pub fn compute_ordering(
                         let Some(cop) = occurrences[ci].ordered_op.as_ref() else {
                             continue;
                         };
-                        if cop.order_id > write_op_id {
-                            if nearest_id.map(|n| cop.order_id < n).unwrap_or(true) {
-                                nearest_id = Some(cop.order_id);
-                                nearest_occ_id = Some(occurrences[ci].occurrence_id.clone());
-                            }
+                        if cop.order_id > write_op_id
+                            && nearest_id.map(|n| cop.order_id < n).unwrap_or(true)
+                        {
+                            nearest_id = Some(cop.order_id);
+                            nearest_occ_id = Some(occurrences[ci].occurrence_id.clone());
                         }
                     }
                     nearest_occ_id
@@ -700,26 +692,26 @@ pub fn compute_ordering(
                 "ok"
             };
 
-            if ab_check != "no-edge" {
-                if let Some(edge_ab) = inter_hb(occ_a, occ_b, routine_id, snap) {
-                    let is_cross_hop = occ_a.terminal_routine_id != occ_b.terminal_routine_id
-                        || !edge_ab.call_path_links.is_empty();
-                    if is_cross_hop {
-                        let quantifier = if ab_check == "degrade-to-may"
-                            && edge_ab.quantifier == Quantifier::MustAllPaths
-                        {
-                            Quantifier::MaySomePath
-                        } else {
-                            edge_ab.quantifier
-                        };
-                        push_cross_hop(
-                            &mut cross_hop_edges_by_from,
-                            edge_ab.from.clone(),
-                            edge_ab.to.clone(),
-                            quantifier,
-                            edge_ab.edge_condition_reasons.clone(),
-                        );
-                    }
+            if ab_check != "no-edge"
+                && let Some(edge_ab) = inter_hb(occ_a, occ_b, routine_id, snap)
+            {
+                let is_cross_hop = occ_a.terminal_routine_id != occ_b.terminal_routine_id
+                    || !edge_ab.call_path_links.is_empty();
+                if is_cross_hop {
+                    let quantifier = if ab_check == "degrade-to-may"
+                        && edge_ab.quantifier == Quantifier::MustAllPaths
+                    {
+                        Quantifier::MaySomePath
+                    } else {
+                        edge_ab.quantifier
+                    };
+                    push_cross_hop(
+                        &mut cross_hop_edges_by_from,
+                        edge_ab.from.clone(),
+                        edge_ab.to.clone(),
+                        quantifier,
+                        edge_ab.edge_condition_reasons.clone(),
+                    );
                 }
             }
 
@@ -731,26 +723,26 @@ pub fn compute_ordering(
                 "ok"
             };
 
-            if ba_check != "no-edge" {
-                if let Some(edge_ba) = inter_hb(occ_b, occ_a, routine_id, snap) {
-                    let is_cross_hop = occ_b.terminal_routine_id != occ_a.terminal_routine_id
-                        || !edge_ba.call_path_links.is_empty();
-                    if is_cross_hop {
-                        let quantifier = if ba_check == "degrade-to-may"
-                            && edge_ba.quantifier == Quantifier::MustAllPaths
-                        {
-                            Quantifier::MaySomePath
-                        } else {
-                            edge_ba.quantifier
-                        };
-                        push_cross_hop(
-                            &mut cross_hop_edges_by_from,
-                            edge_ba.from.clone(),
-                            edge_ba.to.clone(),
-                            quantifier,
-                            edge_ba.edge_condition_reasons.clone(),
-                        );
-                    }
+            if ba_check != "no-edge"
+                && let Some(edge_ba) = inter_hb(occ_b, occ_a, routine_id, snap)
+            {
+                let is_cross_hop = occ_b.terminal_routine_id != occ_a.terminal_routine_id
+                    || !edge_ba.call_path_links.is_empty();
+                if is_cross_hop {
+                    let quantifier = if ba_check == "degrade-to-may"
+                        && edge_ba.quantifier == Quantifier::MustAllPaths
+                    {
+                        Quantifier::MaySomePath
+                    } else {
+                        edge_ba.quantifier
+                    };
+                    push_cross_hop(
+                        &mut cross_hop_edges_by_from,
+                        edge_ba.from.clone(),
+                        edge_ba.to.clone(),
+                        quantifier,
+                        edge_ba.edge_condition_reasons.clone(),
+                    );
                 }
             }
         }
@@ -1082,19 +1074,17 @@ pub fn compute_ordering(
 
                     // intraBoundaryBetween (same-routine refutation suppression).
                     let mut intra_boundary_between = false;
-                    if same_routine_intra {
-                        if let (Some(write_op), Some(sink_op)) = (write_op, sink_op) {
-                            let sink_callsite_id =
-                                effects[sink_idx].evidence_callsite_id.as_deref();
-                            let write_callsite_id =
-                                effects[write_idx].evidence_callsite_id.as_deref();
-                            intra_boundary_between = boundary_between(
-                                write_op.order_id,
-                                sink_op.order_id,
-                                write_callsite_id,
-                                sink_callsite_id,
-                            );
-                        }
+                    if same_routine_intra
+                        && let (Some(write_op), Some(sink_op)) = (write_op, sink_op)
+                    {
+                        let sink_callsite_id = effects[sink_idx].evidence_callsite_id.as_deref();
+                        let write_callsite_id = effects[write_idx].evidence_callsite_id.as_deref();
+                        intra_boundary_between = boundary_between(
+                            write_op.order_id,
+                            sink_op.order_id,
+                            write_callsite_id,
+                            sink_callsite_id,
+                        );
                     }
 
                     out_labels[sink_idx].push(sink_label);
@@ -1283,39 +1273,36 @@ pub fn compute_ordering(
 
             let mut cross_hop_witness = false;
             let mut cross_hop_boundary_between = false;
-            if !err_is_root_local {
-                if let Some(first_link) = err_chain.chain.links.first() {
-                    if let Some(cs_order) = first_link.callsite_order.as_ref().filter(|_| {
-                        err_chain.chain.path_enumeration == "complete"
-                            && first_link.caller_routine_id == routine_id
-                            && first_link.dispatch_sequencing == "sequential"
-                    }) {
-                        let root_frames = snap
-                            .routine_order_frames
-                            .as_ref()
-                            .and_then(|m| m.get(routine_id));
-                        let cs_frame_chain =
-                            reconstruct_frame_chain(cs_order.frame_id, root_frames);
-                        if !cs_frame_chain.is_empty() {
-                            let callsite_op = OrderedOp {
-                                occurrence_id: first_link.callsite_id.clone(),
-                                order_id: cs_order.order_id,
-                                on_success_path: cs_order.on_success_path,
-                                dominates_success_return: cs_order.dominates_success_return,
-                                frame_chain: cs_frame_chain,
-                            };
-                            if may_co_execute(&io_op, &callsite_op)
-                                && ordered_before(&io_op, &callsite_op)
-                            {
-                                cross_hop_boundary_between = boundary_between(
-                                    io_op.order_id,
-                                    cs_order.order_id,
-                                    Some(&io_callsite_id),
-                                    Some(&first_link.callsite_id),
-                                );
-                                cross_hop_witness = true;
-                            }
-                        }
+            if !err_is_root_local
+                && let Some(first_link) = err_chain.chain.links.first()
+                && let Some(cs_order) = first_link.callsite_order.as_ref().filter(|_| {
+                    err_chain.chain.path_enumeration == "complete"
+                        && first_link.caller_routine_id == routine_id
+                        && first_link.dispatch_sequencing == "sequential"
+                })
+            {
+                let root_frames = snap
+                    .routine_order_frames
+                    .as_ref()
+                    .and_then(|m| m.get(routine_id));
+                let cs_frame_chain = reconstruct_frame_chain(cs_order.frame_id, root_frames);
+                if !cs_frame_chain.is_empty() {
+                    let callsite_op = OrderedOp {
+                        occurrence_id: first_link.callsite_id.clone(),
+                        order_id: cs_order.order_id,
+                        on_success_path: cs_order.on_success_path,
+                        dominates_success_return: cs_order.dominates_success_return,
+                        frame_chain: cs_frame_chain,
+                    };
+                    if may_co_execute(&io_op, &callsite_op) && ordered_before(&io_op, &callsite_op)
+                    {
+                        cross_hop_boundary_between = boundary_between(
+                            io_op.order_id,
+                            cs_order.order_id,
+                            Some(&io_callsite_id),
+                            Some(&first_link.callsite_id),
+                        );
+                        cross_hop_witness = true;
                     }
                 }
             }

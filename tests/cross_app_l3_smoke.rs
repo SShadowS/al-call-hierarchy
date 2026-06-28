@@ -58,12 +58,11 @@ fn member_call_resolves_to_dep_routine_with_named_transitions() {
     for g in &cg.groups {
         for e in &g.edges {
             resolutions.push(e.resolution.clone());
-            if e.resolution == "resolved" {
-                if let Some(to) = &e.to {
-                    if to.starts_with(DEP_CORE) || to.starts_with(DEP_OTHER) {
-                        resolved_to_dep += 1;
-                    }
-                }
+            if e.resolution == "resolved"
+                && let Some(to) = &e.to
+                && (to.starts_with(DEP_CORE) || to.starts_with(DEP_OTHER))
+            {
+                resolved_to_dep += 1;
             }
         }
     }

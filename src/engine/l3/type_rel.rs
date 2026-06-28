@@ -105,10 +105,10 @@ pub fn type_relation(arg_type: &str, param_type: &str) -> TypeRelation {
     }
     let fa = scalar_family(&a);
     let fp = scalar_family(&p);
-    if let (Some(fa), Some(fp)) = (fa, fp) {
-        if fa != fp {
-            return TypeRelation::DefinitelyIncompatible;
-        }
+    if let (Some(fa), Some(fp)) = (fa, fp)
+        && fa != fp
+    {
+        return TypeRelation::DefinitelyIncompatible;
     }
     TypeRelation::Unknown
 }

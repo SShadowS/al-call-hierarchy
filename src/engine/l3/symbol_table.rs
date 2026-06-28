@@ -147,13 +147,13 @@ impl SymbolTable {
         // by BOTH its name and its number, so either encoding resolves.
         let mut table_extensions_by_base: HashMap<String, Vec<String>> = HashMap::new();
         for o in &objects {
-            if o.object_type.eq_ignore_ascii_case("tableextension") {
-                if let Some(et) = &o.extends_target_name {
-                    table_extensions_by_base
-                        .entry(et.to_lowercase())
-                        .or_default()
-                        .push(o.id.clone());
-                }
+            if o.object_type.eq_ignore_ascii_case("tableextension")
+                && let Some(et) = &o.extends_target_name
+            {
+                table_extensions_by_base
+                    .entry(et.to_lowercase())
+                    .or_default()
+                    .push(o.id.clone());
             }
         }
         for list in table_extensions_by_base.values_mut() {
@@ -246,14 +246,13 @@ impl SymbolTable {
             return Vec::new();
         };
         let mut out: Vec<&L3PageControl> = obj.page_controls.iter().collect();
-        if obj.object_type.eq_ignore_ascii_case("pageextension") {
-            if let Some(base) = obj
+        if obj.object_type.eq_ignore_ascii_case("pageextension")
+            && let Some(base) = obj
                 .extends_target_name
                 .as_deref()
                 .and_then(|n| self.object_by_type_name("Page", n))
-            {
-                out.extend(base.page_controls.iter());
-            }
+        {
+            out.extend(base.page_controls.iter());
         }
         out
     }

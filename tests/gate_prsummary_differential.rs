@@ -23,7 +23,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
+use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use serde_json::Value;
 
 /// How a golden's txn slot was produced on the al-sem side (mirrors the SARIF corpus).
@@ -419,24 +419,24 @@ fn gate_exit_code_matrix_matches() {
                 }
             }
             // A leaf `"<key>": <num>[,]` line inside a known fixture+slot.
-            if let (Some(fx), Some(slot)) = (cur_fixture.as_deref(), cur_slot.as_deref()) {
-                if let Some((leaf, has_comma)) = leaf_num_key(trimmed) {
-                    let (preset, detector) = sel[fx];
-                    let (slot_preset, slot_detector) = if slot == "txn" {
-                        (preset, detector)
-                    } else {
-                        (None, None)
-                    };
-                    let val = if leaf == "require-dependencies" {
-                        run_exit_require_deps(fx, slot_preset, slot_detector)
-                    } else {
-                        run_exit_fail_on(fx, slot_preset, slot_detector, &leaf)
-                    };
-                    let comma = if has_comma { "," } else { "" };
-                    out.push_str(&" ".repeat(indent));
-                    out.push_str(&format!("\"{leaf}\": {val}{comma}\n"));
-                    continue;
-                }
+            if let (Some(fx), Some(slot)) = (cur_fixture.as_deref(), cur_slot.as_deref())
+                && let Some((leaf, has_comma)) = leaf_num_key(trimmed)
+            {
+                let (preset, detector) = sel[fx];
+                let (slot_preset, slot_detector) = if slot == "txn" {
+                    (preset, detector)
+                } else {
+                    (None, None)
+                };
+                let val = if leaf == "require-dependencies" {
+                    run_exit_require_deps(fx, slot_preset, slot_detector)
+                } else {
+                    run_exit_fail_on(fx, slot_preset, slot_detector, &leaf)
+                };
+                let comma = if has_comma { "," } else { "" };
+                out.push_str(&" ".repeat(indent));
+                out.push_str(&format!("\"{leaf}\": {val}{comma}\n"));
+                continue;
             }
             out.push_str(line);
         }

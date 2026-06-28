@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l4::capability_cone::{
-    compute_r3a3_real_matrix, project_r3a3, PCapabilityFact, PRoutineConeCoverage,
+    PCapabilityFact, PRoutineConeCoverage, compute_r3a3_real_matrix, project_r3a3,
 };
 
 fn repo_root() -> PathBuf {

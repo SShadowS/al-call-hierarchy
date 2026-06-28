@@ -47,7 +47,7 @@ use crate::engine::deps::app_package_zip::{
     extract_navx_manifest_xml, extract_symbol_reference_json,
 };
 use crate::engine::deps::projection::{
-    project_abi_to_index, ProjectedField, ProjectedObject, ProjectedRoutine, ProjectedTable,
+    ProjectedField, ProjectedObject, ProjectedRoutine, ProjectedTable, project_abi_to_index,
 };
 use crate::engine::deps::symbol_reference::parse_symbol_reference;
 use crate::engine::ids::{encode_field_id, encode_table_id, to_stable_field_id};
@@ -322,10 +322,10 @@ pub fn build_merged_index_from_path(path: &Path, model_instance_id: &str) -> Mer
     let app_paths = collect_app_paths(path);
     let mut parses: Vec<DepAppParse> = Vec::new();
     for ap in &app_paths {
-        if let Ok(bytes) = std::fs::read(ap) {
-            if let Some(parsed) = parse_dep_app(&bytes, model_instance_id) {
-                parses.push(parsed);
-            }
+        if let Ok(bytes) = std::fs::read(ap)
+            && let Some(parsed) = parse_dep_app(&bytes, model_instance_id)
+        {
+            parses.push(parsed);
         }
     }
     build_merged_index(parses)
@@ -565,11 +565,11 @@ fn internal_field_id_to_stable(internal: &str) -> String {
 /// `{tableId}/key/{index}`. Reproduces al-sem `stableKeyId`.
 fn stable_key_id(internal: &str, stable_table_id: &str) -> String {
     let marker = "/key/";
-    if let Some(at) = internal.find(marker) {
-        if at > 0 {
-            let index = &internal[at + marker.len()..];
-            return format!("{stable_table_id}#Key:{index}");
-        }
+    if let Some(at) = internal.find(marker)
+        && at > 0
+    {
+        let index = &internal[at + marker.len()..];
+        return format!("{stable_table_id}#Key:{index}");
     }
     internal.to_string()
 }

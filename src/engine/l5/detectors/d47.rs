@@ -21,8 +21,8 @@ use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::ordering_facts::{
-    grade_guarantee, is_reportable_routine, stable_routine_id_for_routine, to_severity,
-    OrderingFact, OrderingFacts,
+    OrderingFact, OrderingFacts, grade_guarantee, is_reportable_routine,
+    stable_routine_id_for_routine, to_severity,
 };
 use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 

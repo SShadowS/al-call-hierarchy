@@ -247,8 +247,7 @@ fn scc_order_is_valid_reverse_topological() {
                 assert!(
                     input.proj.sccs[to_scc].recursive,
                     "[{fixture}] an intra-SCC edge {} → {} lands in a NON-recursive SCC (index {to_scc})",
-                    e.from,
-                    e.to,
+                    e.from, e.to,
                 );
             }
             checked += 1;

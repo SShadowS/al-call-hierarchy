@@ -2,6 +2,10 @@
 //!
 //! Same call shape repeating within a session is suppressed and counted.
 //! Different workspaces never cross-suppress (key includes workspace_id).
+//!
+//! NOTE: complete but not yet wired into the telemetry pipeline (future design);
+//! module-level `allow(dead_code)` until a caller consumes it.
+#![allow(dead_code)]
 
 use crate::telemetry::events::LeafKind;
 use lru::LruCache;

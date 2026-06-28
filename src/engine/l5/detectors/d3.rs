@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::l2::features::{PAnchor, PCallSite, PCallee};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
-use crate::engine::l5::confidence::{to_confidence, UncertaintyLite};
+use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_platform_loaded_trigger_rec, normalize_load_field_arg, primary_key_field_names_lc,
@@ -33,6 +33,7 @@ const DETECTOR: &str = "d3-missing-setloadfields";
 const RETRIEVAL_OPS: &[&str] = &["FindSet", "FindFirst", "FindLast", "Get"];
 
 /// Ops that close the access window (and bail in deriveLoadStates).
+#[allow(dead_code)] // future design: G-15(b) access-window detector
 const INVALIDATING_OPS: &[&str] = &["Reset", "Copy", "TransferFields"];
 
 /// G-15(b): ops that close the post-retrieval ACCESS window. Besides the
@@ -209,17 +210,16 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
             // G-19: a ParameterDependent param record (keyword-less by-var)
             // CLOSED-WORLD PROVEN temp (`local` routine, all resolved callers
             // pass Known(true) temp) is treated exactly like Known(true).
-            if let Some(rv) = rec_var {
-                if rv.temp_state_known_value() == Some(true)
+            if let Some(rv) = rec_var
+                && (rv.temp_state_known_value() == Some(true)
                     || crate::engine::l5::closed_world_temp::pd_state_proven_temp(
                         Some(&rv.temp_state),
                         &routine.id,
                         &ctx.closed_world_temp_params,
-                    )
-                {
-                    skipped_temporary_record += 1;
-                    continue;
-                }
+                    ))
+            {
+                skipped_temporary_record += 1;
+                continue;
             }
             let table_id = match rec_var.and_then(|rv| rv.table_id.clone()) {
                 Some(t) => t,

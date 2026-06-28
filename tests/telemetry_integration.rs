@@ -42,8 +42,8 @@ async fn queue_full_distinguishable_from_dedup() {
 #[test]
 fn record_resolution_miss_increments_counters() {
     use al_call_hierarchy::telemetry::{
-        record_resolution_miss, testing, CallContext, CallPattern, CalleeSource, CallerContext,
-        ObjectType, ResolutionFailure,
+        CallContext, CallPattern, CalleeSource, CallerContext, ObjectType, ResolutionFailure,
+        record_resolution_miss, testing,
     };
 
     let counters = Arc::new(Counters::new());

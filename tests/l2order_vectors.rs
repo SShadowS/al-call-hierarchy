@@ -15,7 +15,7 @@
 //!   - single file    = src/vec.al  →  sourceUnitId = "ws:src/vec.al"
 //!   - modelInstanceId = "r0"
 
-use al_call_hierarchy::engine::l2::operation_order::{analyze_named_routine_order, OperationOrder};
+use al_call_hierarchy::engine::l2::operation_order::{OperationOrder, analyze_named_routine_order};
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";

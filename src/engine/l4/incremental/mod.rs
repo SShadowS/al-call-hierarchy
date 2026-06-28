@@ -86,10 +86,10 @@ impl L4Database {
         let log: RecomputeLog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let log_cb = log.clone();
         let storage = salsa::Storage::new(Some(Box::new(move |event: salsa::Event| {
-            if let salsa::EventKind::WillExecute { database_key } = event.kind {
-                if let Ok(mut g) = log_cb.lock() {
-                    g.push(format!("{database_key:?}"));
-                }
+            if let salsa::EventKind::WillExecute { database_key } = event.kind
+                && let Ok(mut g) = log_cb.lock()
+            {
+                g.push(format!("{database_key:?}"));
             }
         })));
         (L4Database { storage }, log)

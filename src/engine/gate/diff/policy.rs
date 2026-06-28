@@ -9,7 +9,7 @@ use crate::engine::gate::cbor::CborValue;
 
 use super::fingerprint::DiffKind;
 use super::indexes::DiffIndexes;
-use super::{get_str, CoveragePolicy, DiffDiagnostic, DiffFinding};
+use super::{CoveragePolicy, DiffDiagnostic, DiffFinding, get_str};
 
 /// The cone coverage status: `complete` unless any cone member's inheritedStatus
 /// is `partial` (→ partial) or `unknown`/absent (→ unknown, short-circuits).

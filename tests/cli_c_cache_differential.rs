@@ -23,7 +23,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::cache_prune::{
-    classify_artifact_for_prune, format_prune_report, prune_cache, PruneStatus,
+    PruneStatus, classify_artifact_for_prune, format_prune_report, prune_cache,
 };
 
 // ---------------------------------------------------------------------------

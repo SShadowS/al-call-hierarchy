@@ -16,8 +16,8 @@
 use serde_yaml::Value;
 
 use crate::engine::gate::policy::policy_types::{
-    PolicyDefaults, PolicyDoc, Rule, ALLOWED_COVERAGE, ALLOWED_FACTS, ALLOWED_SEVERITIES,
-    ALLOWED_UNKNOWN,
+    ALLOWED_COVERAGE, ALLOWED_FACTS, ALLOWED_SEVERITIES, ALLOWED_UNKNOWN, PolicyDefaults,
+    PolicyDoc, Rule,
 };
 use crate::engine::gate::policy::predicate_compiler::compile_predicate;
 

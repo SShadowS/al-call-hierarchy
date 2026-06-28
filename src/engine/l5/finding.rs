@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::registry::{run_detectors, run_detectors_cross_app, Detector, RunOutput};
+use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detectors_cross_app};
 
 // ===========================================================================
 // INTERNAL model (model/finding.ts). Not serialized — the detector populates it

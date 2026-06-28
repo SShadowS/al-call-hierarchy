@@ -15,7 +15,7 @@
 //!   (d) RE-4 — an escaped-quote / mixed-case field name → the unescaped logical name.
 //!   (e) a true object-level trigger (`OnRun`) → `enclosing_member` is `None`.
 
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_workspace, L3Routine, L3Workspace};
+use al_call_hierarchy::engine::l3::l3_workspace::{L3Routine, L3Workspace, assemble_workspace};
 
 const APP_GUID: &str = "11111111-1111-1111-1111-111111111111";
 

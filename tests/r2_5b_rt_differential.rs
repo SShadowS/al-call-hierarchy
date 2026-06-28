@@ -168,10 +168,11 @@ fn coverage_of(proj: &Value) -> CrossAppCoverage {
         for t in tables {
             if let Some(fields) = t.get("fields").and_then(|f| f.as_array()) {
                 for f in fields {
-                    if let Some(d) = f.get("declaringObjectId").and_then(|d| d.as_str()) {
-                        if d.contains(":TableExtension:") && is_dep_owned(d) {
-                            m.dep_extension_merged_fields += 1;
-                        }
+                    if let Some(d) = f.get("declaringObjectId").and_then(|d| d.as_str())
+                        && d.contains(":TableExtension:")
+                        && is_dep_owned(d)
+                    {
+                        m.dep_extension_merged_fields += 1;
                     }
                 }
             }
@@ -181,19 +182,19 @@ fn coverage_of(proj: &Value) -> CrossAppCoverage {
         for r in routines {
             if let Some(vars) = r.get("recordVariables").and_then(|v| v.as_array()) {
                 for v in vars {
-                    if let Some(t) = v.get("tableId").and_then(|t| t.as_str()) {
-                        if is_dep_owned(t) {
-                            m.dep_bound_record_vars += 1;
-                        }
+                    if let Some(t) = v.get("tableId").and_then(|t| t.as_str())
+                        && is_dep_owned(t)
+                    {
+                        m.dep_bound_record_vars += 1;
                     }
                 }
             }
             if let Some(ops) = r.get("recordOperations").and_then(|o| o.as_array()) {
                 for o in ops {
-                    if let Some(t) = o.get("tableId").and_then(|t| t.as_str()) {
-                        if is_dep_owned(t) {
-                            m.dep_bound_record_ops += 1;
-                        }
+                    if let Some(t) = o.get("tableId").and_then(|t| t.as_str())
+                        && is_dep_owned(t)
+                    {
+                        m.dep_bound_record_ops += 1;
                     }
                 }
             }

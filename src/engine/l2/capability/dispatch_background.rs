@@ -13,8 +13,8 @@ use super::super::features::PCallee;
 use super::super::features::PRoutine;
 use super::value_source::classify_value_source;
 use super::{
-    confidence_from_source, CapabilityExtra, CapabilityFact, CoverageReason, DispatchExtra,
-    ExtractionContext, ValueSource,
+    CapabilityExtra, CapabilityFact, CoverageReason, DispatchExtra, ExtractionContext, ValueSource,
+    confidence_from_source,
 };
 
 /// Map an object-run kind string to the dispatch resourceKind.

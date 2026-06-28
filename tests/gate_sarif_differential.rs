@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{run_analyze, AnalyzeArgs, OutputFormat};
+use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze};
 
 const PIN_VERSION: &str = "gate-sarif-v1";
 

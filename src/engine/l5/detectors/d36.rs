@@ -64,11 +64,12 @@ pub fn detect_d36(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
             let var_key = op.record_variable_name.to_lowercase();
 
             // Skip temporary records.
-            if let Some(ts) = &op.temp_state {
-                if ts.kind == "known" && ts.value == Some(true) {
-                    skipped_temp_record += 1;
-                    continue;
-                }
+            if let Some(ts) = &op.temp_state
+                && ts.kind == "known"
+                && ts.value == Some(true)
+            {
+                skipped_temp_record += 1;
+                continue;
             }
 
             // Skip by-var parameter records.

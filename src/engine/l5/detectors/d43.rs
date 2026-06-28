@@ -153,10 +153,10 @@ fn enumerate_dispatch_sites(
             };
 
             let var_name = name_from_binding.or(name_from_text);
-            if let Some(vn) = var_name {
-                if !vn.is_empty() {
-                    handled_actual = Some(DispatchSiteHandledActual { variable_name: vn });
-                }
+            if let Some(vn) = var_name
+                && !vn.is_empty()
+            {
+                handled_actual = Some(DispatchSiteHandledActual { variable_name: vn });
             }
         }
 
@@ -183,10 +183,10 @@ fn enumerate_dispatch_sites(
 
         // Guarded writes: full caller transitive writes when ≥1 post-call guard exists.
         let mut guarded_tables_written: Vec<String> = Vec::new();
-        if !post_call_guards.is_empty() {
-            if let Some(summary) = ctx.summaries.get(&caller.id) {
-                guarded_tables_written = writes_physical_tables_of(summary);
-            }
+        if !post_call_guards.is_empty()
+            && let Some(summary) = ctx.summaries.get(&caller.id)
+        {
+            guarded_tables_written = writes_physical_tables_of(summary);
         }
 
         out.push(DispatchSite {
@@ -252,11 +252,12 @@ fn is_assignment_nested_in_tree(assignment_anchor: &PAnchor, tree: Option<&PCFNN
         if *result {
             return;
         }
-        if let Some((sl, sc, _, _)) = node.source_range {
-            if sl == target_line && sc == target_col {
-                *result = in_conditional;
-                return;
-            }
+        if let Some((sl, sc, _, _)) = node.source_range
+            && sl == target_line
+            && sc == target_col
+        {
+            *result = in_conditional;
+            return;
         }
         let child_conditional = in_conditional || is_conditional_kind(&node.kind);
         if let Some(children) = &node.children {

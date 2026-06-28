@@ -98,10 +98,10 @@ pub fn blame_for_finding<'a>(
             continue;
         };
         // Skip the owner app — we only want the OTHER apps.
-        if let Some(o) = owner {
-            if app.app_guid == o.app_guid {
-                continue;
-            }
+        if let Some(o) = owner
+            && app.app_guid == o.app_guid
+        {
+            continue;
         }
         if seen.insert(app.app_guid.as_str()) {
             other_map.insert(app.app_guid.as_str(), app);

@@ -42,12 +42,11 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
 /// "Post", "Apply", or "Release", followed immediately by an uppercase ASCII letter.
 fn posting_name_matches(name: &str) -> bool {
     for prefix in &["Post", "Apply", "Release"] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            if let Some(next) = rest.chars().next() {
-                if next.is_ascii_uppercase() {
-                    return true;
-                }
-            }
+        if let Some(rest) = name.strip_prefix(prefix)
+            && let Some(next) = rest.chars().next()
+            && next.is_ascii_uppercase()
+        {
+            return true;
         }
     }
     false

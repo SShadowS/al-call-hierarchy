@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Cleared the clippy `-D warnings` debt + whole-crate edition-2024 rustfmt** (CI gate
+  prerequisites for merging `feat/owned-syntax-ir` → `master`). The edition-2024 upgrade
+  enabled let-chains, so clippy's `collapsible_if` flagged ~155 `if x { if let … }` nests
+  (master @ 2021 never saw these); `cargo clippy --fix` collapsed them to let-chains.
+  Remaining handled by hand: 2 `never_loop`s (`for f in … { return Err }` → `if let
+  Some(f) = …next()`), `strip_prefix`/`clamp`/`from_ref`/`&Path`/`needless_range_loop`/
+  `redundant_guard` rewrites, doc-list indentation, and `#[allow]` with rationale for the
+  inherent ones (`too_many_arguments` on document-envelope builders, `type_complexity` on
+  parallel index maps, `large_enum_variant`, `enum_variant_names` where `Event` is the AL
+  domain term). ~22 dead-code items (telemetry `dedup` module, detector `INVALIDATING_OPS`,
+  `is_edge_kind`, never-read data-model fields, etc.) were triaged as future-design
+  scaffolding and kept under targeted `#[allow(dead_code)]` with notes — none were obsolete.
+  Then a one-time `cargo fmt` normalized the 277 stale edition-2021-formatted files (the
+  per-file `rustfmt` hook keeps them clean afterward). `cargo clippy --release -- -D
+  warnings`, `cargo fmt --check`, and `cargo test --workspace` all green.
+
 ### Fixed
 - **Member-trigger names (`Object::Member`) were truncated to the object half.** The
   grammar's `_trigger_name` was an inlined `seq(id, '::', id)`, so the `name` field of

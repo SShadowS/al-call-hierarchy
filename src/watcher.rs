@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{debug, error, info};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
 /// File change event
@@ -83,6 +83,7 @@ impl AlFileWatcher {
     }
 
     /// Try to receive a file change event (non-blocking)
+    #[allow(dead_code)] // non-blocking API kept for future consumers
     pub fn try_recv(&self) -> Option<FileChange> {
         self.receiver.try_recv().ok()
     }

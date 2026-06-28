@@ -78,11 +78,12 @@ pub fn detect_d10(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
 
             // G-13: skip Known(true) TEMPORARY records — no SQL cursor to
             // corrupt when the iterating record is in-memory (same gate as d33).
-            if let Some(ts) = &op.temp_state {
-                if ts.kind == "known" && ts.value == Some(true) {
-                    skipped_temp_record += 1;
-                    continue;
-                }
+            if let Some(ts) = &op.temp_state
+                && ts.kind == "known"
+                && ts.value == Some(true)
+            {
+                skipped_temp_record += 1;
+                continue;
             }
             // G-19: a ParameterDependent record (keyword-less by-var param)
             // whose `(routine, param)` is CLOSED-WORLD PROVEN temp — a `local`

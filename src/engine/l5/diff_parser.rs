@@ -288,15 +288,7 @@ pub fn parse_unified_diff(text: &str) -> DiffParseResult {
                     // pending_old_path was Some(None) ⇒ old_p is None ⇒ `--- /dev/null` → added.
                     // (The `in_file` guard guarantees a `---` was seen, so the only way
                     // old_p is None here is the /dev/null case — matching TS `pendingOldPath === null`.)
-                    if old_p.is_none() {
-                        Some(DiffFile {
-                            path: new_p,
-                            kind: DiffFileKind::Added,
-                            old_path: None,
-                            hunks: Vec::new(),
-                        })
-                    } else {
-                        let old_real = old_p.unwrap();
+                    if let Some(old_real) = old_p {
                         let is_rename =
                             pending_rename_from.is_some() || pending_rename_to.is_some();
                         let kind = if is_rename {
@@ -315,6 +307,14 @@ pub fn parse_unified_diff(text: &str) -> DiffParseResult {
                             path: new_p,
                             kind,
                             old_path,
+                            hunks: Vec::new(),
+                        })
+                    } else {
+                        // old_p None ⇒ `--- /dev/null` → added.
+                        Some(DiffFile {
+                            path: new_p,
+                            kind: DiffFileKind::Added,
+                            old_path: None,
                             hunks: Vec::new(),
                         })
                     }
@@ -365,12 +365,11 @@ pub fn parse_unified_diff(text: &str) -> DiffParseResult {
         }
 
         // Hunk header — pass the full line so the strict `^@@…@@` regex anchors correctly.
-        if line.starts_with("@@") {
-            if let Some(hunk) = parse_hunk_header(line) {
-                if let Some(ref mut f) = current_file {
-                    f.hunks.push(hunk);
-                }
-            }
+        if line.starts_with("@@")
+            && let Some(hunk) = parse_hunk_header(line)
+            && let Some(ref mut f) = current_file
+        {
+            f.hunks.push(hunk);
         }
         // All other lines ignored
     }
@@ -506,8 +505,7 @@ mod tests {
     #[test]
     fn dev_null_added_then_deleted_two_files() {
         // /dev/null on both sides across two file sections.
-        let diff =
-            "diff --git a/New.al b/New.al\n--- /dev/null\n+++ b/New.al\n@@ -0,0 +1,1 @@\n+x\n\
+        let diff = "diff --git a/New.al b/New.al\n--- /dev/null\n+++ b/New.al\n@@ -0,0 +1,1 @@\n+x\n\
             diff --git a/Gone.al b/Gone.al\n--- a/Gone.al\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-y\n";
         let r = parse_unified_diff(diff);
         assert_eq!(r.files.len(), 2);

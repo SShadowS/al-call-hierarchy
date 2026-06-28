@@ -12,7 +12,7 @@ use serde_yaml::Value;
 
 use crate::engine::gate::policy::policy_types::{Predicate, PredicateOperator, PredicateValue};
 use crate::engine::gate::policy::predicate_fields::{
-    get_field_def, FieldScope, FieldValueShape, PredicateFieldDef,
+    FieldScope, FieldValueShape, PredicateFieldDef, get_field_def,
 };
 
 pub type CompileResult = Result<Predicate, String>;
@@ -252,10 +252,10 @@ fn collect_scopes(preds: &[Predicate]) -> Vec<FieldScope> {
 fn collect_scopes_one(p: &Predicate, out: &mut Vec<FieldScope>) {
     match p {
         Predicate::Field { field, .. } => {
-            if let Some(def) = get_field_def(field) {
-                if !out.contains(&def.scope) {
-                    out.push(def.scope);
-                }
+            if let Some(def) = get_field_def(field)
+                && !out.contains(&def.scope)
+            {
+                out.push(def.scope);
             }
         }
         Predicate::Not { child } => collect_scopes_one(child, out),

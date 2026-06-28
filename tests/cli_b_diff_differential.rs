@@ -17,13 +17,13 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::cbor::CborValue;
-use al_call_hierarchy::engine::gate::diff::cli::{run_diff, DiffCliOptions};
+use al_call_hierarchy::engine::gate::diff::cli::{DiffCliOptions, run_diff};
 use al_call_hierarchy::engine::gate::diff::format::format_diff;
 use al_call_hierarchy::engine::gate::diff::renames::parse_rename_overlay;
 use al_call_hierarchy::engine::gate::diff::{
-    run_diff_engine, CoveragePolicy, DiffEngineOptions, Severity,
+    CoveragePolicy, DiffEngineOptions, Severity, run_diff_engine,
 };
-use al_call_hierarchy::engine::gate::snapshot_deserialize::{deserialize_snapshot, SnapshotFormat};
+use al_call_hierarchy::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 
@@ -201,7 +201,7 @@ fn compose_ws(dir: &std::path::Path) -> CborValue {
     use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
     use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
     use al_call_hierarchy::engine::l5::snapshot_full::{
-        compose_full_snapshot, FullSnapshotOptions,
+        FullSnapshotOptions, compose_full_snapshot,
     };
     let model_id = compute_gate_model_instance_id(dir).expect("modelInstanceId");
     let resolved = assemble_and_resolve_workspace(dir, &model_id).expect("resolve");
@@ -538,10 +538,11 @@ fn oracle_preflight_schema_version_mismatch_is_fatal() {
     }
     let r = engine(&old_mut, &new, CoveragePolicy::Loose);
     assert!(r.findings.is_empty(), "fatal preflight → no findings");
-    assert!(r
-        .diagnostics
-        .iter()
-        .any(|d| d.kind == "schema-version-mismatch"));
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.kind == "schema-version-mismatch")
+    );
 }
 
 /// #5(b) — alsemVersion mismatch under strict → fatal error diagnostic.
@@ -597,10 +598,11 @@ fn oracle_preflight_app_identity_mismatch_is_fatal() {
     }
     let r = engine(&old, &new, CoveragePolicy::Loose);
     assert!(r.findings.is_empty(), "app mismatch → fatal, no findings");
-    assert!(r
-        .diagnostics
-        .iter()
-        .any(|d| d.kind == "app-identity-mismatch"));
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.kind == "app-identity-mismatch")
+    );
 }
 
 /// #4 — human renderer: a diff yielding DIAGNOSTICS but ZERO findings prints the

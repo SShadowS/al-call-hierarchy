@@ -18,8 +18,10 @@ fn main() {
     // `cargo run -p xtask -- gen-syntax`.
     let node_types = src_dir.join("node-types.json");
     let sidecar = PathBuf::from("src/raw/generated/node-types.sha256");
-    if let (Ok(bytes), Ok(expected)) = (std::fs::read(&node_types), std::fs::read_to_string(&sidecar))
-    {
+    if let (Ok(bytes), Ok(expected)) = (
+        std::fs::read(&node_types),
+        std::fs::read_to_string(&sidecar),
+    ) {
         let actual = hex(&Sha256::digest(&bytes));
         let expected = expected.trim();
         if actual != expected {

@@ -16,19 +16,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::inputs::{AppContext, DepStamp, RoutineInput, RoutineRegistry, RoutineUniverse};
-use super::queries::{cones, scc_summaries, InternalId};
+use super::queries::{InternalId, cones, scc_summaries};
 use super::{L4Database, L4Db};
-use crate::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
+use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
 use crate::engine::l3::event_graph::build_event_graph;
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l3::symbol_table::SymbolTable;
 use crate::engine::l4::capability_cone::{
+    CapabilityFact, ConeResultPub, R3a3Projection, R3a5FullSummaryProjection,
     build_r3a5_cross_app_base, direct_facts_for_routine, project_r3a3_from_parts,
-    project_r3a5_from_parts, CapabilityFact, ConeResultPub, R3a3Projection,
-    R3a5FullSummaryProjection,
+    project_r3a5_from_parts,
 };
 use crate::engine::l4::combined_graph::{
-    build_combined_graph, CombinedGraph, TypedEdge, UncertaintyEdge,
+    CombinedGraph, TypedEdge, UncertaintyEdge, build_combined_graph,
 };
 use crate::engine::l4::summary::RoutineSummary;
 use crate::engine::l4::summary_runner::base_intraprocedural_summary;

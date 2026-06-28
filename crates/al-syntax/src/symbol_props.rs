@@ -77,12 +77,11 @@ fn find_named_decl<'t>(
     target: &str,
     source: &str,
 ) -> Option<RawNode<'t>> {
-    if node.kind() == want {
-        if let Some(name_node) = node.field(FieldName::Name) {
-            if clean_name(name_node.text(source)) == target {
-                return Some(node);
-            }
-        }
+    if node.kind() == want
+        && let Some(name_node) = node.field(FieldName::Name)
+        && clean_name(name_node.text(source)) == target
+    {
+        return Some(node);
     }
     for child in node.named_children() {
         if let Some(found) = find_named_decl(child, want, target, source) {
@@ -98,12 +97,11 @@ fn find_named_decl<'t>(
 fn extract_properties(decl: RawNode, source: &str, extract_field_id: bool) -> SymbolProperties {
     let mut result = SymbolProperties::default();
 
-    if extract_field_id {
-        if let Some(id_node) = decl.field(FieldName::Id) {
-            if let Ok(id) = id_node.text(source).trim().parse::<u32>() {
-                result.field_id = Some(id);
-            }
-        }
+    if extract_field_id
+        && let Some(id_node) = decl.field(FieldName::Id)
+        && let Ok(id) = id_node.text(source).trim().parse::<u32>()
+    {
+        result.field_id = Some(id);
     }
 
     let container = decl.field(FieldName::Body).unwrap_or(decl);

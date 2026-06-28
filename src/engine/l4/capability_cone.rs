@@ -29,12 +29,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::combined_graph::{build_combined_graph, CombinedGraph, TypedEdge};
-use super::scc::{tarjan_scc, Scc, SccInputGraph, SccResult};
+use super::combined_graph::{CombinedGraph, TypedEdge, build_combined_graph};
+use super::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::ids::to_stable_object_id;
 use crate::engine::l2::features::{PCallSite, PCallee, PExpressionInfo, POperationSite};
-use crate::engine::l3::call_resolver::{resolve_calls, DeclaredDependency};
-use crate::engine::l3::event_graph::{build_event_graph, EventGraph, EventSymbol};
+use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+use crate::engine::l3::event_graph::{EventGraph, EventSymbol, build_event_graph};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l3::symbol_table::SymbolTable;
 
@@ -1536,10 +1536,10 @@ fn build_succ_sccs(
     for (i, scc) in sccs.iter().enumerate() {
         for m in &scc.members {
             for e in g.outgoing.get(m).unwrap_or(&empty) {
-                if let Some(yj) = scc_id_by_routine.get(&e.to) {
-                    if *yj != i {
-                        succ[i].insert(*yj);
-                    }
+                if let Some(yj) = scc_id_by_routine.get(&e.to)
+                    && *yj != i
+                {
+                    succ[i].insert(*yj);
                 }
             }
         }
@@ -1603,13 +1603,13 @@ fn coverage_cone_for_scc(
             complete = false;
             reason_set.insert("object-run-unresolved".to_string());
         }
-        if let Some(c) = cov.get(m) {
-            if c.direct_status == "partial" || c.direct_status == "unknown" {
-                complete = false;
-                unknown_set.insert(m.clone());
-                for r in &c.reasons {
-                    reason_set.insert(r.clone());
-                }
+        if let Some(c) = cov.get(m)
+            && (c.direct_status == "partial" || c.direct_status == "unknown")
+        {
+            complete = false;
+            unknown_set.insert(m.clone());
+            for r in &c.reasons {
+                reason_set.insert(r.clone());
             }
         }
     }
@@ -2074,7 +2074,7 @@ fn compute_uncertainty_coverage_reasons(
     graph: &CombinedGraph,
     calls: &crate::engine::l3::call_resolver::ResolvedCalls,
 ) -> HashMap<String, BTreeSet<String>> {
-    use crate::engine::l4::summary_runner::{compute_summaries, FieldIndex};
+    use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
 
     // Tarjan SCC over the COMBINED graph (summary substrate — distinct from the
     // typed-edge SCC the cone walks).
@@ -2377,7 +2377,7 @@ fn build_cross_app_base_from_cross(
     model_instance_id: &str,
 ) -> Option<R3a5CrossAppBase> {
     use crate::engine::deps::dep_artifact_l4::{
-        build_dep_artifact_l4, inject_intra_app_call_edges, ConsumerModel,
+        ConsumerModel, build_dep_artifact_l4, inject_intra_app_call_edges,
     };
     use crate::engine::deps::merged_index::collect_app_paths;
     use crate::engine::l4::summary_runner::FieldIndex;

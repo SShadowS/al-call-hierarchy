@@ -111,6 +111,7 @@ impl Histogram {
 ///        embedded in the key so the detail is surfaced as counts-per-expression).
 ///   3 — `bareCallDetail` (keyed by lowercased bare call name for
 ///        `BareUnresolved` edges — names the residual for catalog-gap analysis).
+#[allow(clippy::type_complexity)] // 3 parallel breakdown maps; a struct adds no clarity here
 pub fn unknown_breakdown(
     edges: &[CallEdge],
 ) -> (

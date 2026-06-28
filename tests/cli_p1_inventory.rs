@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l5::fingerprint_cli::{
-    run_fingerprint_pipeline, FingerprintFormat, FingerprintOptions, FingerprintOutput,
+    FingerprintFormat, FingerprintOptions, FingerprintOutput, run_fingerprint_pipeline,
 };
 
 fn corpus_dir() -> PathBuf {
@@ -28,7 +28,7 @@ fn corpus_dir() -> PathBuf {
 const FIXTURE: &str = "ws-d8-commit-in-tx";
 
 /// Build the base `FingerprintOptions` for the fixture.
-fn base_opts(ws: &std::path::Path) -> FingerprintOptions {
+fn base_opts(ws: &std::path::Path) -> FingerprintOptions<'_> {
     FingerprintOptions {
         workspace: ws,
         alsem_version: "p1-test-v1",
@@ -205,7 +205,7 @@ fn inventory_only_exit_code_zero() {
 #[test]
 fn inventory_only_cbor_rejected() {
     use al_call_hierarchy::engine::l5::fingerprint_cli::{
-        default_format, reject_illegal_combos, SpecifiedFlags,
+        SpecifiedFlags, default_format, reject_illegal_combos,
     };
     // Simulate: --inventory-only --format cbor (no query flags).
     let fmt = default_format(Some("cbor"), false).expect("cbor is a valid format");
@@ -214,8 +214,8 @@ fn inventory_only_cbor_rejected() {
     // but the CLI layer must reject --inventory-only + cbor.
     // We test this via the CLI combo-validator that will be added.
     let _ = reject_illegal_combos(specified, &fmt, false); // existing path: ok
-                                                           // The new rejection is in run_fingerprint_pipeline when inventory_only + non-json.
-                                                           // Test via the pipeline directly.
+    // The new rejection is in run_fingerprint_pipeline when inventory_only + non-json.
+    // Test via the pipeline directly.
     let ws = corpus_dir().join(FIXTURE);
     assert!(ws.is_dir());
     let opts = FingerprintOptions {

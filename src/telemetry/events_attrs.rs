@@ -3,8 +3,8 @@
 //! without crossing into pipeline code.
 
 use crate::telemetry::events::{EventKind, ResolutionMiss};
-use opentelemetry::trace::Span;
 use opentelemetry::KeyValue;
+use opentelemetry::trace::Span;
 
 pub fn apply<S: Span>(span: &mut S, event: &EventKind) {
     match event {

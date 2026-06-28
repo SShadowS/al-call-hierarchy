@@ -33,6 +33,7 @@ pub enum ExternalMethodKind {
 
 impl ExternalMethodKind {
     /// True if this method is an event publisher (Integration/Business/Internal).
+    #[allow(dead_code)] // predicate kept for future consumers
     pub fn is_publisher(&self) -> bool {
         matches!(
             self,
@@ -41,6 +42,7 @@ impl ExternalMethodKind {
     }
 
     /// Render the attribute tag used in detail strings.
+    #[allow(dead_code)] // label helper kept for future consumers
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Procedure => "",
@@ -192,7 +194,9 @@ struct SymbolMethod {
     return_type: Option<SymbolTypeDefinition>,
     /// MethodKind tag from the SymbolReference (Method/Local/Internal/etc.).
     /// Microsoft sometimes emits negative values; accept i64 for safety.
+    /// Parsed for completeness; not yet read (future design).
     #[serde(default)]
+    #[allow(dead_code)]
     method_kind: Option<i64>,
     /// PascalCase nested object: `{"Local": true}` etc. Optional.
     #[serde(default)]
@@ -486,10 +490,10 @@ fn format_type(td: Option<&SymbolTypeDefinition>) -> String {
             out.push_str(sub);
         }
     }
-    if let Some(len) = td.length {
-        if len > 0 {
-            out.push_str(&format!("[{}]", len));
-        }
+    if let Some(len) = td.length
+        && len > 0
+    {
+        out.push_str(&format!("[{}]", len));
     }
     out
 }

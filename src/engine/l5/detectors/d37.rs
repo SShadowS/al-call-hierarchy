@@ -86,11 +86,12 @@ pub fn detect_d37(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             candidates_considered += 1;
             let var_key = op.record_variable_name.to_lowercase();
             // op.tempState.kind === "known" && op.tempState.value === true
-            if let Some(ts) = &op.temp_state {
-                if ts.kind == "known" && ts.value == Some(true) {
-                    skipped_temp_record += 1;
-                    continue;
-                }
+            if let Some(ts) = &op.temp_state
+                && ts.kind == "known"
+                && ts.value == Some(true)
+            {
+                skipped_temp_record += 1;
+                continue;
             }
             if param_record_names.contains(&var_key) {
                 skipped_parameter += 1;
@@ -252,10 +253,10 @@ fn post_validate_helper_verdict(
             }
             match callee_role.persists_current_record {
                 crate::engine::l4::effect_lattice::EffectPresence::Yes => {
-                    return "suppress-may-persist"
+                    return "suppress-may-persist";
                 }
                 crate::engine::l4::effect_lattice::EffectPresence::Unknown => {
-                    return "suppress-unknown"
+                    return "suppress-unknown";
                 }
                 // "no" — helper provably doesn't persist; keep walking.
                 crate::engine::l4::effect_lattice::EffectPresence::No => {}

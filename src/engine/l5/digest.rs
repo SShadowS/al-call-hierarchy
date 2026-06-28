@@ -40,8 +40,8 @@ use serde::Serialize;
 use crate::engine::ids::sha256_hex;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::snapshot::{
-    compose_snapshot, CapabilitySnapshot, SnapCapabilityExtra, SnapTempState, SnapValueSource,
-    SnapshotCallsiteEvidence, SnapshotGraphEdge,
+    CapabilitySnapshot, SnapCapabilityExtra, SnapTempState, SnapValueSource,
+    SnapshotCallsiteEvidence, SnapshotGraphEdge, compose_snapshot,
 };
 
 // ===========================================================================
@@ -88,10 +88,10 @@ fn resource_display_of(
         let parts: Vec<&str> = rid.split('/').collect();
         if parts.len() == 3 && parts[1] == "table" {
             let stable = format!("{}:Table:{}", parts[0], parts[2]);
-            if let Some(name) = stable_id_to_display.get(&stable) {
-                if !name.is_empty() {
-                    return Some(name.clone());
-                }
+            if let Some(name) = stable_id_to_display.get(&stable)
+                && !name.is_empty()
+            {
+                return Some(name.clone());
             }
         }
         return None;
@@ -690,15 +690,15 @@ fn fact_equivalent(a: &Fact, b: &Fact) -> bool {
     if a.resource_kind != b.resource_kind {
         return false;
     }
-    if let (Some(ra), Some(rb)) = (&a.resource_id, &b.resource_id) {
-        if ra != rb {
-            return false;
-        }
+    if let (Some(ra), Some(rb)) = (&a.resource_id, &b.resource_id)
+        && ra != rb
+    {
+        return false;
     }
-    if let (Some(sa), Some(sb)) = (&a.resource_arg_source, &b.resource_arg_source) {
-        if value_source_json(sa) != value_source_json(sb) {
-            return false;
-        }
+    if let (Some(sa), Some(sb)) = (&a.resource_arg_source, &b.resource_arg_source)
+        && value_source_json(sa) != value_source_json(sb)
+    {
+        return false;
     }
     let oa = dispatch_object_type(a);
     let ob = dispatch_object_type(b);
@@ -1867,23 +1867,23 @@ fn build_canonical_key(
     effect_type: &str,
 ) -> (String, String) {
     let mut link_signature = String::new();
-    if let Some(first_path) = via_paths.first() {
-        if !first_path.is_empty() {
-            let segments: Vec<String> = first_path
-                .iter()
-                .map(|hop| {
-                    // QueryWitnessHop has NO edgeId → "". Trailing slot also "".
-                    format!(
-                        "{}>{}@{}/{}//",
-                        hop.from_routine_id,
-                        hop.to_routine_id.clone().unwrap_or_default(),
-                        hop.callsite_id.clone().unwrap_or_default(),
-                        hop.kind
-                    )
-                })
-                .collect();
-            link_signature = segments.join(",");
-        }
+    if let Some(first_path) = via_paths.first()
+        && !first_path.is_empty()
+    {
+        let segments: Vec<String> = first_path
+            .iter()
+            .map(|hop| {
+                // QueryWitnessHop has NO edgeId → "". Trailing slot also "".
+                format!(
+                    "{}>{}@{}/{}//",
+                    hop.from_routine_id,
+                    hop.to_routine_id.clone().unwrap_or_default(),
+                    hop.callsite_id.clone().unwrap_or_default(),
+                    hop.kind
+                )
+            })
+            .collect();
+        link_signature = segments.join(",");
     }
 
     let canonical_key = [
@@ -1987,7 +1987,7 @@ fn compute_path_conditionality(
     op_ctx: &HashMap<&str, Option<&str>>,
 ) -> crate::engine::l5::conditionality::EffectConditionality {
     use crate::engine::l5::conditionality::{
-        context_to_conditionality, path_conditionality, UNKNOWN,
+        UNKNOWN, context_to_conditionality, path_conditionality,
     };
     let mut hop_contexts: Vec<crate::engine::l5::conditionality::EffectConditionality> = Vec::new();
     let mut terminal_ctx = UNKNOWN;

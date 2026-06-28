@@ -38,7 +38,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l4::capability_cone::{
-    compute_r3a3_real_matrix, project_r3a3, R3a3Projection,
+    R3a3Projection, compute_r3a3_real_matrix, project_r3a3,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -84,28 +84,29 @@ fn inline_short_string_arrays(expanded: &str) -> String {
                 }
                 j += 1;
             }
-            if all_strings && !elems.is_empty() {
-                if let Some(ci) = close_idx {
-                    let tab_count = line.len() - line.trim_start_matches('\t').len();
-                    let trailing_comma = lines[ci].trim_start_matches('\t') == "],";
-                    let inline = format!("[{}]", elems.join(", "));
-                    // width = tabs + `"key": ` prefix + inline body
-                    let prefix_len = trimmed.len() - 1; // `"key": [` minus the `[`
-                    if tab_count + prefix_len + inline.len() <= INLINE_WIDTH {
-                        let mut rebuilt = String::new();
-                        for _ in 0..tab_count {
-                            rebuilt.push('\t');
-                        }
-                        // `"key": ` then inline
-                        rebuilt.push_str(&trimmed[..prefix_len]);
-                        rebuilt.push_str(&inline);
-                        if trailing_comma {
-                            rebuilt.push(',');
-                        }
-                        out.push(rebuilt);
-                        i = ci + 1;
-                        continue;
+            if all_strings
+                && !elems.is_empty()
+                && let Some(ci) = close_idx
+            {
+                let tab_count = line.len() - line.trim_start_matches('\t').len();
+                let trailing_comma = lines[ci].trim_start_matches('\t') == "],";
+                let inline = format!("[{}]", elems.join(", "));
+                // width = tabs + `"key": ` prefix + inline body
+                let prefix_len = trimmed.len() - 1; // `"key": [` minus the `[`
+                if tab_count + prefix_len + inline.len() <= INLINE_WIDTH {
+                    let mut rebuilt = String::new();
+                    for _ in 0..tab_count {
+                        rebuilt.push('\t');
                     }
+                    // `"key": ` then inline
+                    rebuilt.push_str(&trimmed[..prefix_len]);
+                    rebuilt.push_str(&inline);
+                    if trailing_comma {
+                        rebuilt.push(',');
+                    }
+                    out.push(rebuilt);
+                    i = ci + 1;
+                    continue;
                 }
             }
         }

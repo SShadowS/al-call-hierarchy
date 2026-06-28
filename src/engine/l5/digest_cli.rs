@@ -19,16 +19,16 @@ use std::collections::HashMap;
 use crate::engine::gate::format_json::serialize_document_value;
 use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::run::compute_analyzer_diagnostics;
-use crate::engine::l3::l3_workspace::{assemble_and_resolve_workspace, L3Resolved};
+use crate::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace};
 use crate::engine::l5::conditionality::EffectConditionality;
 use crate::engine::l5::detector_context::build_detector_context;
 use crate::engine::l5::detectors::registered_detectors;
-use crate::engine::l5::diff_parser::{parse_unified_diff, DiffFileKind};
-use crate::engine::l5::digest::{compute_digest_effects_cli, DigestEntryResult};
-use crate::engine::l5::snapshot::{compose_snapshot, CapabilitySnapshot};
+use crate::engine::l5::diff_parser::{DiffFileKind, parse_unified_diff};
+use crate::engine::l5::digest::{DigestEntryResult, compute_digest_effects_cli};
+use crate::engine::l5::snapshot::{CapabilitySnapshot, compose_snapshot};
 use crate::engine::l5::transaction_spans::SeedKind;
 use crate::engine::l5::unresolved_cone::{
-    unresolved_cone, UnresolvedConeItem, UnresolvedTraversal,
+    UnresolvedConeItem, UnresolvedTraversal, unresolved_cone,
 };
 
 // ---------------------------------------------------------------------------
@@ -112,11 +112,10 @@ fn strip_scheme(p: &str) -> String {
     if let Some(rest) = p.strip_prefix("ws:") {
         return rest.replace('\\', "/");
     }
-    if p.starts_with("app:") {
-        let second = p[4..].find(':');
-        if let Some(i) = second {
-            return p[4 + i + 1..].replace('\\', "/");
-        }
+    if let Some(rest) = p.strip_prefix("app:")
+        && let Some(i) = rest.find(':')
+    {
+        return rest[i + 1..].replace('\\', "/");
     }
     p.replace('\\', "/")
 }
@@ -282,10 +281,10 @@ fn resolve_selector(selector: &str, idx: &SelectorIndexes) -> Vec<String> {
 
     // Form 2: full display name (normalized).
     let key = normalize_display_key(selector);
-    if let Some(full) = display_to_ids(idx, &key) {
-        if !full.is_empty() {
-            return full.clone();
-        }
+    if let Some(full) = display_to_ids(idx, &key)
+        && !full.is_empty()
+    {
+        return full.clone();
     }
 
     // Form 3: two-segment — strip leading type-word from the (already-normalized)
@@ -322,10 +321,10 @@ fn resolve_selector(selector: &str, idx: &SelectorIndexes) -> Vec<String> {
     // Form 5: object-qualified — routine segment after the LAST "::".
     if let Some(sep) = selector.rfind("::") {
         let routine_key = normalize_display_key(&selector[sep + 2..]);
-        if let Some(qualified) = display_to_ids(idx, &routine_key) {
-            if !qualified.is_empty() {
-                return qualified.clone();
-            }
+        if let Some(qualified) = display_to_ids(idx, &routine_key)
+            && !qualified.is_empty()
+        {
+            return qualified.clone();
         }
     }
 
@@ -373,6 +372,7 @@ pub struct ChangedInput {
 }
 
 /// Build the file → routines index from operationIndex + callsiteIndex.
+#[allow(clippy::type_complexity)] // documented parallel index maps; a struct adds no clarity
 fn build_routine_file_index(
     snap: &CapabilitySnapshot,
 ) -> (
@@ -466,67 +466,67 @@ pub fn resolve_changed_roots(
     }
 
     // 3. Unified diff matching
-    if let Some(ref diff_text) = input.diff_text {
-        if !diff_text.trim().is_empty() {
-            let parsed = parse_unified_diff(diff_text);
-            for err in &parsed.errors {
-                diagnostics.push(ChangedRootsDiagnostic::DiffParseError {
-                    detail: err.clone(),
+    if let Some(ref diff_text) = input.diff_text
+        && !diff_text.trim().is_empty()
+    {
+        let parsed = parse_unified_diff(diff_text);
+        for err in &parsed.errors {
+            diagnostics.push(ChangedRootsDiagnostic::DiffParseError {
+                detail: err.clone(),
+            });
+        }
+        for diff_file in &parsed.files {
+            if diff_file.kind == DiffFileKind::Deleted {
+                diagnostics.push(ChangedRootsDiagnostic::DiffFileDeleted {
+                    file: diff_file.path.clone(),
                 });
+                continue;
             }
-            for diff_file in &parsed.files {
-                if diff_file.kind == DiffFileKind::Deleted {
-                    diagnostics.push(ChangedRootsDiagnostic::DiffFileDeleted {
-                        file: diff_file.path.clone(),
-                    });
-                    continue;
-                }
-                let norm_path = normalize_input(&diff_file.path);
-                let rset = by_file.get(&norm_path);
-                if rset.map(|v| v.is_empty()).unwrap_or(true) {
-                    diagnostics.push(ChangedRootsDiagnostic::DiffFileUnmatched {
-                        file: diff_file.path.clone(),
-                    });
-                    continue;
-                }
-                let rset = rset.unwrap();
-                let entries = line_entries
-                    .get(&norm_path)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]);
+            let norm_path = normalize_input(&diff_file.path);
+            let rset = by_file.get(&norm_path);
+            if rset.map(|v| v.is_empty()).unwrap_or(true) {
+                diagnostics.push(ChangedRootsDiagnostic::DiffFileUnmatched {
+                    file: diff_file.path.clone(),
+                });
+                continue;
+            }
+            let rset = rset.unwrap();
+            let entries = line_entries
+                .get(&norm_path)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
 
-                if diff_file.hunks.is_empty() {
-                    // Rename with no content — include all routines
-                    for r in rset {
-                        roots.insert(r.clone());
+            if diff_file.hunks.is_empty() {
+                // Rename with no content — include all routines
+                for r in rset {
+                    roots.insert(r.clone());
+                }
+                continue;
+            }
+
+            for hunk in &diff_file.hunks {
+                // 1-based [newStart, newStart+newCount) → 0-based [newStart-1, newStart+newCount-1)
+                let hunk_start = (hunk.new_start - 1).max(0) as u32;
+                let hunk_end = (hunk.new_start - 1 + hunk.new_count.max(0)) as u32;
+
+                let mut matched: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for (rid, line) in entries {
+                    if *line >= hunk_start && *line < hunk_end {
+                        matched.insert(rid.clone());
                     }
-                    continue;
                 }
-
-                for hunk in &diff_file.hunks {
-                    // 1-based [newStart, newStart+newCount) → 0-based [newStart-1, newStart+newCount-1)
-                    let hunk_start = (hunk.new_start - 1).max(0) as u32;
-                    let hunk_end = (hunk.new_start - 1 + hunk.new_count.max(0)) as u32;
-
-                    let mut matched: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    for (rid, line) in entries {
-                        if *line >= hunk_start && *line < hunk_end {
-                            matched.insert(rid.clone());
-                        }
-                    }
-                    if matched.is_empty() {
-                        // endLine = newStart + max(newCount - 1, 0). When newCount == 0
-                        // (pure deletion hunk) TS yields newStart, NOT newStart - 1 (#14).
-                        diagnostics.push(ChangedRootsDiagnostic::HunkOutsideRoutines {
-                            file: diff_file.path.clone(),
-                            start_line: hunk.new_start,
-                            end_line: hunk.new_start + (hunk.new_count - 1).max(0),
-                        });
-                    } else {
-                        for r in matched {
-                            roots.insert(r);
-                        }
+                if matched.is_empty() {
+                    // endLine = newStart + max(newCount - 1, 0). When newCount == 0
+                    // (pure deletion hunk) TS yields newStart, NOT newStart - 1 (#14).
+                    diagnostics.push(ChangedRootsDiagnostic::HunkOutsideRoutines {
+                        file: diff_file.path.clone(),
+                        start_line: hunk.new_start,
+                        end_line: hunk.new_start + (hunk.new_count - 1).max(0),
+                    });
+                } else {
+                    for r in matched {
+                        roots.insert(r);
                     }
                 }
             }
@@ -685,19 +685,19 @@ pub fn run_digest_query_full_from_entries(
     // Root anchor map
     let mut anchor_by_rid: HashMap<&str, FullAnchor> = HashMap::new();
     for slot in &snap.root_classifications {
-        if let Some(ref sa) = slot.source_anchor {
-            if !sa.source_unit_id.is_empty() {
-                anchor_by_rid.insert(
-                    slot.routine_id.as_str(),
-                    FullAnchor {
-                        source_kind: "source",
-                        file: Some(sa.source_unit_id.clone()),
-                        line: Some(sa.range.start_line),
-                        column: Some(sa.range.start_column),
-                        excerpt: None,
-                    },
-                );
-            }
+        if let Some(ref sa) = slot.source_anchor
+            && !sa.source_unit_id.is_empty()
+        {
+            anchor_by_rid.insert(
+                slot.routine_id.as_str(),
+                FullAnchor {
+                    source_kind: "source",
+                    file: Some(sa.source_unit_id.clone()),
+                    line: Some(sa.range.start_line),
+                    column: Some(sa.range.start_column),
+                    excerpt: None,
+                },
+            );
         }
     }
     for op in &snap.operation_index {
@@ -1159,6 +1159,7 @@ fn project_query_diagnostic(d: &DigestQueryDiagnostic) -> serde_json::Value {
 
 /// Build the DocumentEnvelope<"digest", DigestPayload> as a serde_json::Value,
 /// then serialize with serialize_document_value (sorted keys, null-drop, trailing \n).
+#[allow(clippy::too_many_arguments)] // document-envelope fields; grouping would obscure
 pub fn project_digest_document(
     workspace_fp: &str,
     changed_input: &ChangedInputContract,

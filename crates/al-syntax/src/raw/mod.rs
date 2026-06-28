@@ -6,12 +6,12 @@
 pub mod generated;
 pub mod node;
 
-pub use generated::{FieldName, RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};
+pub use generated::{FieldName, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT, RawKind};
 pub use node::RawNode;
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldName, RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};
+    use super::{FieldName, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT, RawKind};
 
     #[test]
     fn raw_kind_round_trips() {

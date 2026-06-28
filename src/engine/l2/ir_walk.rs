@@ -15,7 +15,7 @@ use super::features::{
     PTempState, PUnreachableStatement, PVarAssignment,
 };
 use super::node_util::Utf16Cols;
-use super::record_op::{record_op_type, FIELD_ARGS_OPS};
+use super::record_op::{FIELD_ARGS_OPS, record_op_type};
 use al_syntax::ir::{
     AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
     StmtKind, UnaryOp, VarDecl,
@@ -309,16 +309,15 @@ impl<'a> SpineCtx<'a> {
         let callee_text = self.raw(&fe.origin).to_string();
         let callee = match &fe.kind {
             Identifier(_) | QuotedIdentifier(_) => PCallee::Bare {
-                name: strip_quote_chars(&self.raw(&fe.origin)),
+                name: strip_quote_chars(self.raw(&fe.origin)),
             },
             Member { object, member, .. } => {
                 let obj = self.file.ir.expr(*object);
-                if obj.origin.kind_text == "keyword_identifier" {
-                    if let Some(okind) = object_run_kind(self.raw(&obj.origin)) {
-                        if member.eq_ignore_ascii_case("run") {
-                            return (self.object_run_callee(okind, args), callee_text);
-                        }
-                    }
+                if obj.origin.kind_text == "keyword_identifier"
+                    && let Some(okind) = object_run_kind(self.raw(&obj.origin))
+                    && member.eq_ignore_ascii_case("run")
+                {
+                    return (self.object_run_callee(okind, args), callee_text);
                 }
                 PCallee::Member {
                     receiver: self.raw(&obj.origin).to_string(),
@@ -335,21 +334,20 @@ impl<'a> SpineCtx<'a> {
     fn object_run_callee(&self, object_kind: &str, args: &[ExprId]) -> PCallee {
         let mut target_ref = None;
         let mut target_is_name = false;
-        if let Some(&first) = args.first() {
-            if let ExprKind::DatabaseReference(text) = &self.file.ir.expr(first).kind {
-                if let Some((_, tn)) = text.split_once("::") {
-                    let tn = tn.trim();
-                    if tn.starts_with('"') {
-                        target_ref = Some(strip_quote_chars(tn));
-                        target_is_name = true;
-                    } else if tn.parse::<i64>().is_ok() {
-                        target_ref = Some(tn.to_string());
-                        target_is_name = false;
-                    } else {
-                        target_ref = Some(tn.to_string());
-                        target_is_name = true;
-                    }
-                }
+        if let Some(&first) = args.first()
+            && let ExprKind::DatabaseReference(text) = &self.file.ir.expr(first).kind
+            && let Some((_, tn)) = text.split_once("::")
+        {
+            let tn = tn.trim();
+            if tn.starts_with('"') {
+                target_ref = Some(strip_quote_chars(tn));
+                target_is_name = true;
+            } else if tn.parse::<i64>().is_ok() {
+                target_ref = Some(tn.to_string());
+                target_is_name = false;
+            } else {
+                target_ref = Some(tn.to_string());
+                target_is_name = true;
             }
         }
         PCallee::ObjectRun {
@@ -783,12 +781,11 @@ impl<'a> SpineCtx<'a> {
             let count_this_fn = self.count_next_call_fn;
             self.count_next_call_fn = false;
             let fe = self.file.ir.expr(function);
-            if count_this_fn {
-                if let Identifier(n) = &fe.kind {
-                    if fe.origin.kind_text == "identifier" {
-                        self.identifier_ref_set.insert(n.to_ascii_lowercase());
-                    }
-                }
+            if count_this_fn
+                && let Identifier(n) = &fe.kind
+                && fe.origin.kind_text == "identifier"
+            {
+                self.identifier_ref_set.insert(n.to_ascii_lowercase());
             }
             // Record-op classification + (op_type, receiver text) for the emit.
             let record_op: Option<(&'static str, String)> = match &fe.kind {
@@ -998,22 +995,22 @@ impl<'a> SpineCtx<'a> {
                 // Value-position `X.Field` where X is a record var → field access,
                 // anchored on the member_expression. Enum-scope refs go through the
                 // QualifiedEnum arm (object recursed directly), never here.
-                if let Identifier(x) | QuotedIdentifier(x) = &self.file.ir.expr(*object).kind {
-                    if self.scope.frvars.contains(&x.to_ascii_lowercase()) {
-                        let record_variable_name =
-                            self.raw(&self.file.ir.expr(*object).origin).to_string();
-                        let field_name = if member_origin.kind_text == "quoted_identifier" {
-                            strip_quotes(member)
-                        } else {
-                            member.clone()
-                        };
-                        let source_anchor = self.anchor(&e.origin);
-                        self.field_accesses.push(PFieldAccess {
-                            record_variable_name,
-                            field_name,
-                            source_anchor,
-                        });
-                    }
+                if let Identifier(x) | QuotedIdentifier(x) = &self.file.ir.expr(*object).kind
+                    && self.scope.frvars.contains(&x.to_ascii_lowercase())
+                {
+                    let record_variable_name =
+                        self.raw(&self.file.ir.expr(*object).origin).to_string();
+                    let field_name = if member_origin.kind_text == "quoted_identifier" {
+                        strip_quotes(member)
+                    } else {
+                        member.clone()
+                    };
+                    let source_anchor = self.anchor(&e.origin);
+                    self.field_accesses.push(PFieldAccess {
+                        record_variable_name,
+                        field_name,
+                        source_anchor,
+                    });
                 }
                 let object = *object;
                 self.walk_expr(object);
@@ -1252,10 +1249,10 @@ impl<'a> IrCfn<'a> {
 
     fn harvest_receiver(&self, function: ExprId, out: &mut Vec<PCFNNode>) {
         use ExprKind::*;
-        if let Member { object, .. } = &self.ir().expr(function).kind {
-            if matches!(&self.ir().expr(*object).kind, Call { .. } | Member { .. }) {
-                self.harvest(*object, out);
-            }
+        if let Member { object, .. } = &self.ir().expr(function).kind
+            && matches!(&self.ir().expr(*object).kind, Call { .. } | Member { .. })
+        {
+            self.harvest(*object, out);
         }
     }
 
@@ -1945,7 +1942,11 @@ fn ir_istemporary_receiver(file: &AlFile, eid: ExprId) -> Option<String> {
     let ExprKind::Member { object, member, .. } = &file.ir.expr(member_eid).kind else {
         return None;
     };
-    if member.trim().trim_matches('"').to_ascii_lowercase() != "istemporary" {
+    if !member
+        .trim()
+        .trim_matches('"')
+        .eq_ignore_ascii_case("istemporary")
+    {
         return None;
     }
     match &file.ir.expr(*object).kind {
@@ -2058,10 +2059,10 @@ pub fn ir_table_has_temp_contract_guard(file: &AlFile, o: &al_syntax::ir::Object
         }
         let Some(body) = r.body else { continue };
         for it in &file.ir.block(body).items {
-            if let BlockItem::Stmt(s) = it {
-                if ir_is_temporary_error_guard(file, *s).as_deref() == Some("rec") {
-                    return true;
-                }
+            if let BlockItem::Stmt(s) = it
+                && ir_is_temporary_error_guard(file, *s).as_deref() == Some("rec")
+            {
+                return true;
             }
         }
     }
@@ -2301,13 +2302,13 @@ fn ir_attr_arg(file: &AlFile, eid: ExprId, source: &str) -> serde_json::Value {
             }
         }
         "database_reference" => {
-            if let ExprKind::DatabaseReference(t) = &e.kind {
-                if let Some((kw, tn)) = t.split_once("::") {
-                    let m = strip(tn);
-                    obj.insert("value".into(), json!(m));
-                    obj.insert("qualifier".into(), json!(kw.trim()));
-                    obj.insert("member".into(), json!(m));
-                }
+            if let ExprKind::DatabaseReference(t) = &e.kind
+                && let Some((kw, tn)) = t.split_once("::")
+            {
+                let m = strip(tn);
+                obj.insert("value".into(), json!(m));
+                obj.insert("qualifier".into(), json!(kw.trim()));
+                obj.insert("member".into(), json!(m));
             }
         }
         _ => {}
@@ -2392,19 +2393,19 @@ pub fn ir_object_metadata(
         page_type = prop("pagetype");
         source_table_name = prop("sourcetable").map(|s| s.trim().trim_matches('"').to_string());
     }
-    if object_type == "Codeunit" || object_type == "Table" || object_type == "TableExtension" {
-        if let Some(icb_raw) = prop("inherentcommitbehavior") {
-            let member = match icb_raw.rfind("::") {
-                Some(sep) => icb_raw[sep + 2..].to_lowercase(),
-                None => icb_raw.to_lowercase(),
-            };
-            inherent_commit_behavior = match member.as_str() {
-                "ignore" => Some("ignore".to_string()),
-                "error" => Some("error".to_string()),
-                "allow" => Some("allow".to_string()),
-                _ => None,
-            };
-        }
+    if (object_type == "Codeunit" || object_type == "Table" || object_type == "TableExtension")
+        && let Some(icb_raw) = prop("inherentcommitbehavior")
+    {
+        let member = match icb_raw.rfind("::") {
+            Some(sep) => icb_raw[sep + 2..].to_lowercase(),
+            None => icb_raw.to_lowercase(),
+        };
+        inherent_commit_behavior = match member.as_str() {
+            "ignore" => Some("ignore".to_string()),
+            "error" => Some("error".to_string()),
+            "allow" => Some("allow".to_string()),
+            _ => None,
+        };
     }
     (
         object_subtype,

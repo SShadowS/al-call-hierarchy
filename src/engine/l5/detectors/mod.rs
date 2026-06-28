@@ -253,14 +253,13 @@ pub(crate) fn record_loaded_by_call_before(
             continue;
         }
         // Tier 1: platform built-in loader called ON the record itself.
-        if let PCallee::Member { receiver, method } = &cs.callee {
-            if receiver.to_lowercase() == var_lc
-                && PLATFORM_LOADER_METHODS
-                    .iter()
-                    .any(|m| m.eq_ignore_ascii_case(method))
-            {
-                return true;
-            }
+        if let PCallee::Member { receiver, method } = &cs.callee
+            && receiver.to_lowercase() == var_lc
+            && PLATFORM_LOADER_METHODS
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(method))
+        {
+            return true;
         }
         // Tier 2: by-var argument into a resolved callee that loads it.
         if callee_loads_by_var_arg(ctx, cs, &var_lc) {
@@ -315,14 +314,13 @@ fn callee_loads_param(
     }
     for cs in &callee.call_sites {
         // Tier 1 inside the wrapper: `<param>.GetBySystemId(...)`.
-        if let PCallee::Member { receiver, method } = &cs.callee {
-            if receiver.to_lowercase() == param_lc
-                && PLATFORM_LOADER_METHODS
-                    .iter()
-                    .any(|m| m.eq_ignore_ascii_case(method))
-            {
-                return true;
-            }
+        if let PCallee::Member { receiver, method } = &cs.callee
+            && receiver.to_lowercase() == param_lc
+            && PLATFORM_LOADER_METHODS
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(method))
+        {
+            return true;
         }
         // Deeper wrapper hop: the parameter forwarded by-`var` into a
         // resolved callee that loads it (bounded).
@@ -547,12 +545,11 @@ pub(crate) fn record_filtered_by_call_before(
         }
         // G-17(a): member call ON the receiver to a filter method defined on
         // the receiver's own table.
-        if let PCallee::Member { receiver, method } = &cs.callee {
-            if receiver.to_lowercase() == var_lc
-                && receiver_table_method_net_filters_self(routine, ctx, &var_lc, method)
-            {
-                return true;
-            }
+        if let PCallee::Member { receiver, method } = &cs.callee
+            && receiver.to_lowercase() == var_lc
+            && receiver_table_method_net_filters_self(routine, ctx, &var_lc, method)
+        {
+            return true;
         }
         // G-3: by-`var` argument into a resolved callee that filters it.
         if callee_applies_op_to_by_var_arg(ctx, cs, &var_lc, callee_net_filters_param) {
@@ -757,10 +754,10 @@ pub(crate) fn op_targets_virtual_system_table(
 ) -> bool {
     // A type that resolved to a workspace table is a user-defined physical table
     // (the source-only pipeline never loads platform tables) — never virtual.
-    if let Some(tid) = op.table_id.as_deref() {
-        if table_by_id.contains_key(tid) {
-            return false;
-        }
+    if let Some(tid) = op.table_id.as_deref()
+        && table_by_id.contains_key(tid)
+    {
+        return false;
     }
     let lc = op.record_variable_name.to_lowercase();
     routine

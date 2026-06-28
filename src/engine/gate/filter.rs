@@ -38,11 +38,11 @@ pub fn filter_findings(findings: Vec<FindingSummary>, opts: &FilterOptions) -> V
         let min_rank = sev_rank(min);
         out.retain(|f| sev_rank(&f.severity) >= min_rank);
     }
-    if let Some(detectors) = &opts.detectors {
-        if !detectors.is_empty() {
-            let allow: HashSet<&str> = detectors.iter().map(|s| s.as_str()).collect();
-            out.retain(|f| allow.contains(f.detector.as_str()));
-        }
+    if let Some(detectors) = &opts.detectors
+        && !detectors.is_empty()
+    {
+        let allow: HashSet<&str> = detectors.iter().map(|s| s.as_str()).collect();
+        out.retain(|f| allow.contains(f.detector.as_str()));
     }
     out
 }

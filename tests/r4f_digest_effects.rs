@@ -13,7 +13,7 @@
 //! ## Anti-degenerate
 //!
 //! - >=1 effect with a multi-hop viaPath (viaPaths[0].len >= 2) [event-pos
-//!   ProcessAndNotify HTTP, factId 2d2c85f05c8bac52].
+//!   > ProcessAndNotify HTTP, factId 2d2c85f05c8bac52].
 //! - >=1 event-dispatch hop in event-pos.
 //! - Every entry's effects each carry a 16-hex factId.
 
@@ -107,10 +107,9 @@ fn anti_degenerate_multi_hop_via_path_exists() {
                     .and_then(|v| v.as_array())
                     .and_then(|p| p.first())
                     .and_then(|p| p.as_array())
+                    && first.len() >= 2
                 {
-                    if first.len() >= 2 {
-                        found = true;
-                    }
+                    found = true;
                 }
             }
         }

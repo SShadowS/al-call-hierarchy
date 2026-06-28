@@ -22,7 +22,7 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l4::summary::{project_r3a2_with_trace, R3a2Trace};
+use al_call_hierarchy::engine::l4::summary::{R3a2Trace, project_r3a2_with_trace};
 use serde::Deserialize;
 use serde_json::Value;
 

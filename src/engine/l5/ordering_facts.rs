@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::digest::{
-    compute_digest_effects_for_ordering, DigestEntryResult, ProjectedEvidence,
+    DigestEntryResult, ProjectedEvidence, compute_digest_effects_for_ordering,
 };
 use crate::engine::l5::ordering_engine::ScopedGuarantee;
 

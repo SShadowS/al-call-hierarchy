@@ -8,7 +8,7 @@
 //!     skip-if-none.
 //!   - `human`: literal TAB-indented summary + findings list.
 
-use crate::engine::gate::ordered_json::{serialize_jv, Jv};
+use crate::engine::gate::ordered_json::{Jv, serialize_jv};
 use crate::engine::gate::policy::policy_engine::PolicyRunResult;
 use crate::engine::gate::policy::policy_types::RuleRunSummary;
 use crate::engine::l5::finding::{EvidenceStep, Finding, SourceAnchor};

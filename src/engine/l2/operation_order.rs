@@ -28,7 +28,7 @@
 //!    + all conditionLeaves + error/exit leaves reset it to false.
 
 use super::control_flow::{
-    branch_termination, else_termination, has_explicit_else, terminates, Termination,
+    Termination, branch_termination, else_termination, has_explicit_else, terminates,
 };
 use super::features::{PCFNNode, PCallSite, PFeatures, POperationSite};
 use serde::{Deserialize, Serialize};
@@ -717,10 +717,9 @@ pub fn apply_operation_order(features: &mut PFeatures, attr_names_lc: &[String])
             if let Some(paired) = features.call_sites.iter().find(|cs| {
                 cs.source_anchor.start_line == r.start_line
                     && cs.source_anchor.start_column == r.start_column
-            }) {
-                if let Some(ord) = order.by_callsite.get(&paired.id).copied() {
-                    by_operation.insert(op.id.clone(), ord);
-                }
+            }) && let Some(ord) = order.by_callsite.get(&paired.id).copied()
+            {
+                by_operation.insert(op.id.clone(), ord);
             }
         }
     }
@@ -786,10 +785,9 @@ pub fn analyze_named_routine_order(
             if let Some(paired) = features.call_sites.iter().find(|cs| {
                 cs.source_anchor.start_line == r.start_line
                     && cs.source_anchor.start_column == r.start_column
-            }) {
-                if let Some(ord) = order.by_callsite.get(&paired.id).copied() {
-                    by_operation.insert(op.id.clone(), ord);
-                }
+            }) && let Some(ord) = order.by_callsite.get(&paired.id).copied()
+            {
+                by_operation.insert(op.id.clone(), ord);
             }
         }
     }

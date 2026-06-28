@@ -13,7 +13,7 @@
 
 use std::collections::HashSet;
 
-use crate::engine::l3::al_attributes::{find_attribute, string_arg, AttributeInfo};
+use crate::engine::l3::al_attributes::{AttributeInfo, find_attribute, string_arg};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;

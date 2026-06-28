@@ -59,14 +59,14 @@ pub fn record_clean_shutdown() {
 }
 
 pub fn clean_shutdown_at(path: &Path) {
-    if let Err(e) = fs::remove_file(path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            log::warn!(
-                "telemetry: failed to remove session marker at {}: {}",
-                path.display(),
-                e
-            );
-        }
+    if let Err(e) = fs::remove_file(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!(
+            "telemetry: failed to remove session marker at {}: {}",
+            path.display(),
+            e
+        );
     }
 }
 

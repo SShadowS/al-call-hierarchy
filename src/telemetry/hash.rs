@@ -11,6 +11,7 @@ pub const DOMAIN_PROCEDURE: &[u8] = b"procedure:";
 pub const DOMAIN_APP_ID: &[u8] = b"app_id:";
 pub const DOMAIN_FILE: &[u8] = b"file:";
 pub const DOMAIN_WORKSPACE: &[u8] = b"workspace:";
+#[allow(dead_code)] // domain-separation tag for future node-kind hashing
 pub const DOMAIN_NODE_KIND: &[u8] = b"node_kind:";
 
 const MAX_INPUT_BYTES: usize = 4096;

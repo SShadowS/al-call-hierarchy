@@ -24,7 +24,7 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    anchor_of, before_anchor, record_filtered_by_call_before, RECORD_FILTER_OPS,
+    RECORD_FILTER_OPS, anchor_of, before_anchor, record_filtered_by_call_before,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -71,11 +71,12 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
             let var_key = op.record_variable_name.to_lowercase();
 
             // Skip temporary records.
-            if let Some(ts) = &op.temp_state {
-                if ts.kind == "known" && ts.value == Some(true) {
-                    skipped_temp_record += 1;
-                    continue;
-                }
+            if let Some(ts) = &op.temp_state
+                && ts.kind == "known"
+                && ts.value == Some(true)
+            {
+                skipped_temp_record += 1;
+                continue;
             }
 
             // Skip by-var parameter records.

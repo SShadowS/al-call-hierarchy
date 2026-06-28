@@ -4,11 +4,11 @@
 
 pub mod kind_policy;
 
-pub use kind_policy::{class_of, Class};
+pub use kind_policy::{Class, class_of};
 
 #[cfg(test)]
 mod tests {
-    use super::{class_of, Class};
+    use super::{Class, class_of};
     use crate::raw::RawKind;
 
     #[test]

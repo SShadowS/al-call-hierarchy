@@ -13,6 +13,12 @@ pub struct Counters {
     pub export_failures: AtomicU32,
 }
 
+impl Default for Counters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Counters {
     pub const fn new() -> Self {
         // const-init is verbose pre-Rust-1.79; use a helper.
