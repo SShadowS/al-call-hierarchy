@@ -488,7 +488,7 @@ fn lower_routine<'t>(
     }
     let name = node
         .field(FieldName::Name)
-        .map(|n| ident_text(n, source))
+        .map(|n| routine_name_text(n, source))
         .unwrap_or_default();
     // Origin of the name identifier itself (for the LSP selection_range); fall back to
     // the whole-routine origin when the name node is absent.
@@ -1099,6 +1099,26 @@ fn ident_text(n: RawNode, source: &str) -> String {
     }
 }
 
+/// A routine name node — either a plain `(quoted_)identifier` or a scoped
+/// `member_trigger_name` (`Object::Member`). For the scoped form, join the two
+/// (each unescaped) as `Object::Member` so the full qualified trigger name is kept
+/// (`field("name")` on the old `multiple` shape returned only the object half).
+fn routine_name_text(n: RawNode, source: &str) -> String {
+    if n.kind() == RawKind::MemberTriggerName {
+        let object = n
+            .field(FieldName::Object)
+            .map(|o| ident_text(o, source))
+            .unwrap_or_default();
+        let member = n
+            .field(FieldName::Member)
+            .map(|m| ident_text(m, source))
+            .unwrap_or_default();
+        format!("{object}::{member}")
+    } else {
+        ident_text(n, source)
+    }
+}
+
 /// Build an [`Origin`] from a raw node (used pervasively by lowering).
 pub(crate) fn origin_of(n: RawNode) -> Origin {
     let s = n.start_position();
@@ -1213,5 +1233,29 @@ codeunit 50001 T
             1,
             "`I in [..]:` is a single pattern, not left/op/right"
         );
+    }
+
+    /// A scoped member-trigger name (`Object::Member`) lowers to the FULL qualified
+    /// name. Pre-fix, `_trigger_name` was an inlined `seq(id, '::', id)` so the `name`
+    /// field was `multiple:true` over the `::` token, and `field("name")` returned only
+    /// the object half (`UserTours`), silently dropping the member.
+    #[test]
+    fn member_trigger_name_lowers_to_qualified_name() {
+        let src = r#"
+codeunit 50000 T
+{
+    trigger UserTours::ShowTourWizard()
+    begin
+    end;
+}
+"#;
+        let af = parse(src);
+        let routine = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .find(|r| matches!(r.kind, crate::ir::RoutineKind::Trigger))
+            .expect("a trigger routine");
+        assert_eq!(routine.name, "UserTours::ShowTourWizard");
     }
 }

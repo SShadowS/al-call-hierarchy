@@ -247,6 +247,7 @@ pub fn class_of(k: RawKind) -> Class {
         | RawKind::LogicalExpression
         | RawKind::LookupFormula
         | RawKind::MemberExpression
+        | RawKind::MemberTriggerName
         | RawKind::MlValueList
         | RawKind::MlValuePair
         | RawKind::ModifyActionModification

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Member-trigger names (`Object::Member`) were truncated to the object half.** The
+  grammar's `_trigger_name` was an inlined `seq(id, '::', id)`, so the `name` field of
+  `trigger_declaration` was `multiple:true` and included the anonymous `::` token; the
+  lowerer's `field("name")` returned only the FIRST node (`UserTours`), silently dropping
+  `::ShowTourWizard`. Introduced a named `member_trigger_name` node (`object` / `member`
+  fields) so `name` binds a single value (`multiple:false`, no `::` in its type set), and
+  the lowerer now joins it to the full qualified `Object::Member` name. Grammar issue #4
+  closed. (No member triggers in the test corpus → zero golden divergence; +1 named kind
+  → 388, new node-types hash `90f25499…`.)
+
 ### Changed
 - **tree-sitter-al grammar: case-pattern field-pollution cleanup.** Case branches no
   longer leak spurious fields. Two grammar-level root causes, both fixed in the owned

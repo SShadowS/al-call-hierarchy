@@ -194,6 +194,7 @@ pub enum RawKind {
     LogicalExpression,
     LookupFormula,
     MemberExpression,
+    MemberTriggerName,
     MlValueList,
     MlValuePair,
     ModifyActionModification,
@@ -593,6 +594,7 @@ impl RawKind {
             "logical_expression" => RawKind::LogicalExpression,
             "lookup_formula" => RawKind::LookupFormula,
             "member_expression" => RawKind::MemberExpression,
+            "member_trigger_name" => RawKind::MemberTriggerName,
             "ml_value_list" => RawKind::MlValueList,
             "ml_value_pair" => RawKind::MlValuePair,
             "modify_action_modification" => RawKind::ModifyActionModification,
@@ -991,6 +993,7 @@ impl RawKind {
             RawKind::LogicalExpression => "logical_expression",
             RawKind::LookupFormula => "lookup_formula",
             RawKind::MemberExpression => "member_expression",
+            RawKind::MemberTriggerName => "member_trigger_name",
             RawKind::MlValueList => "ml_value_list",
             RawKind::MlValuePair => "ml_value_pair",
             RawKind::ModifyActionModification => "modify_action_modification",
@@ -1202,7 +1205,7 @@ impl RawKind {
 /// `build.rs` asserts the checked-in grammar matches, so a silent grammar swap
 /// fails the build.
 pub const GRAMMAR_NODE_TYPES_HASH: &str =
-    "8f9b7013b577d13e40db3d55dc05cf60aca201cbaeec89537527c0237e4ff4a4";
+    "90f25499293fec09590bb8fb4e8391521f0c6a0bbd2471a76755df02242b2c08";
 
 /// Count of NAMED kinds (excludes `Error`). Sanity anchor for the coverage test.
-pub const NAMED_KIND_COUNT: usize = 387;
+pub const NAMED_KIND_COUNT: usize = 388;

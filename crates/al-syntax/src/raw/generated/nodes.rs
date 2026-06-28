@@ -230,6 +230,33 @@ impl<'t> IdentifierOrMemberExpressionOrQuotedIdentifier<'t> {
     }
 }
 
+/// One of: identifier, member_trigger_name, quoted_identifier.
+#[derive(Copy, Clone)]
+pub enum IdentifierOrMemberTriggerNameOrQuotedIdentifier<'t> {
+    Identifier(RawIdentifier<'t>),
+    MemberTriggerName(RawMemberTriggerName<'t>),
+    QuotedIdentifier(RawQuotedIdentifier<'t>),
+}
+impl<'t> IdentifierOrMemberTriggerNameOrQuotedIdentifier<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> {
+        match n.kind() {
+            RawKind::Identifier => Some(Self::Identifier(RawIdentifier(n))),
+            RawKind::MemberTriggerName => Some(Self::MemberTriggerName(RawMemberTriggerName(n))),
+            RawKind::QuotedIdentifier => Some(Self::QuotedIdentifier(RawQuotedIdentifier(n))),
+            _ => None,
+        }
+    }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> {
+        match self {
+            Self::Identifier(x) => x.node(),
+            Self::MemberTriggerName(x) => x.node(),
+            Self::QuotedIdentifier(x) => x.node(),
+        }
+    }
+}
+
 /// One of: identifier, preproc_and_expression, preproc_not_expression, preproc_or_expression.
 #[derive(Copy, Clone)]
 pub enum IdentifierOrPreprocAndExpressionOrPreprocNotExpressionOrPreprocOrExpression<'t> {
@@ -4303,6 +4330,33 @@ impl<'t> RawMemberExpression<'t> {
 }
 
 #[derive(Copy, Clone)]
+pub struct RawMemberTriggerName<'t>(pub(super) RawNode<'t>);
+impl<'t> RawMemberTriggerName<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> {
+        if n.kind() == RawKind::MemberTriggerName {
+            Some(Self(n))
+        } else {
+            None
+        }
+    }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> {
+        self.0
+    }
+    pub fn member(self) -> Option<IdentifierOrQuotedIdentifier<'t>> {
+        self.0
+            .field(FieldName::Member)
+            .and_then(IdentifierOrQuotedIdentifier::cast)
+    }
+    pub fn object(self) -> Option<IdentifierOrQuotedIdentifier<'t>> {
+        self.0
+            .field(FieldName::Object)
+            .and_then(IdentifierOrQuotedIdentifier::cast)
+    }
+}
+
+#[derive(Copy, Clone)]
 pub struct RawMlValueList<'t>(pub(super) RawNode<'t>);
 impl<'t> RawMlValueList<'t> {
     #[inline]
@@ -7916,8 +7970,10 @@ impl<'t> RawTriggerDeclaration<'t> {
     pub fn body(self) -> Option<RawCodeBlock<'t>> {
         self.0.field(FieldName::Body).and_then(RawCodeBlock::cast)
     }
-    pub fn name(self) -> Vec<RawNode<'t>> {
-        self.0.children_by_field(FieldName::Name)
+    pub fn name(self) -> Option<IdentifierOrMemberTriggerNameOrQuotedIdentifier<'t>> {
+        self.0
+            .field(FieldName::Name)
+            .and_then(IdentifierOrMemberTriggerNameOrQuotedIdentifier::cast)
     }
     pub fn parameters(self) -> Option<RawParameterList<'t>> {
         self.0
