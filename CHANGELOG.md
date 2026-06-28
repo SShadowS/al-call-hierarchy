@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Whole-program node graph** (`src/program/`) — app-qualified canonical
+  `NodeId`s + topology index over the snapshot (Plan 1B.1). Also adds
+  `Hash, Ord, PartialOrd` to `al_syntax::ir::ObjectKind` (plain C-like enum,
+  safe and free).
 - **Content-addressed source cache** (`src/snapshot/cache.rs`) — `cached_source(app_path)`
   stores the extracted `Vec<SourceFile>` from embedded `.app` packages as
   `<OS-cache-dir>/al-ch-snapshot-cache/<blake3-hex>.json`; the content hash

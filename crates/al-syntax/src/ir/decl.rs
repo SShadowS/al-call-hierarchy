@@ -78,7 +78,7 @@ pub struct AttributeIr {
     pub args: Vec<super::ExprId>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
 pub enum ObjectKind {
     Codeunit,
     Table,
