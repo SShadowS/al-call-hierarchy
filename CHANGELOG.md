@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **R0 identity snapshot (`engine::snapshot` / `aldump`) now derives from the owned IR**
+  (`al_syntax::parse`) instead of its own tree-sitter walk (Phase 5 step). Object/
+  routine identity (stable ids, signature fingerprints, normalizedSignatureHash,
+  canonicalSignatureText) reuses the shared `engine::ids` algorithms, so R0 identity
+  equals production identity. Byte-identical to the prior output — the R0 goldens pass
+  unchanged. Removed `extract_from_tree` + the tree-sitter object/routine/param walkers.
 - **`workspace_diagnostics` "No object declaration found" now uses the owned IR**
   (`al_syntax::parse(...).objects.is_empty()`) instead of a direct tree-sitter
   root-children scan (Phase 5 step). The diagnostic now matches exactly what the

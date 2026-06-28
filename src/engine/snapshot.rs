@@ -1,41 +1,26 @@
-//! R0 identity-subset extraction — the structural walker behind `aldump`.
+//! R0 identity-subset extraction — the structural derivation behind `aldump`.
 //!
-//! This module parses an AL workspace and derives the object/routine *identity
-//! subset* that the R0 differential harness (Task 5) diffs against al-sem's
-//! committed "golden" files. It deliberately reproduces al-sem's identity
-//! derivation EXACTLY:
+//! Derives the object/routine *identity subset* (stable ids + signature
+//! fingerprints + normalizedSignatureHash + canonicalSignatureText) the R0
+//! differential harness diffs against the Rust-owned goldens. Sources everything
+//! from the owned `al-syntax` IR (`al_syntax::parse`) — no tree-sitter walk; the
+//! stable-id / signature algorithms are the shared `engine::ids` ones (the same the
+//! L2/L3 pipeline uses), so R0 identity matches production identity.
 //!
-//! - objects: `src/index/object-indexer.ts` (OBJECT_TYPE_MAP, extractObjectNumber, extractObjectName, indexObjects)
-//! - routines: `src/index/routine-indexer.ts` (classifyAndCollectAttributes, getReturnTypeText, collectDescendants prune-at-match)
-//! - params: `src/index/intraprocedural-refs.ts` (extractParameters)
-//! - strip: `src/parser/ast.ts` (stripQuotes)
-//! - attr name: `src/index/attribute-from-node.ts`
-//!
-//! DESIGN DEVIATION (deliberate, decided by the R0 controller): the R0 plan's
-//! Task 4 wording says "emit a v3-shaped CapabilitySnapshot with L1+ arrays
-//! empty." We do NOT do that. R0 compares the *identity subset* (plan REVIEW #9:
-//! "compare parsed structures, not byte-identical JSON"), and that subset carries
-//! fields that the production v3 snapshot does not even have — routine sub-kind
-//! and `canonicalSignatureText`. A v3 envelope could not carry them, and building
-//! the full v3 serde type-zoo just to leave it empty is work that belongs to the
-//! final byte-identical-snapshot phase. So `aldump` emits the identity-subset
-//! JSON directly, in the golden's exact shape (see `IdentitySnapshot`).
-//!
-//! GRAMMAR NOTE: this parses with the currently bundled fork grammar
-//! (`crate::language::language()`). The swap to the canonical grammar is R0
-//! Task 6 (deliberately LAST). If the fork grammar yields a different AST shape
-//! than al-sem's WASM grammar for some construct, the resulting identity may
-//! diverge from the golden — that is expected pre-Task-6 and is reconciled there,
-//! not papered over here.
+//! The identity subset carries fields the production v3 snapshot does not (routine
+//! sub-kind + `canonicalSignatureText`), so `aldump` emits this shape directly (see
+//! [`IdentitySnapshot`]). The object-kind label map omits PermissionSetExtension /
+//! Profile / Entitlement and renders XmlPort as "XMLport" (historical al-sem
+//! identity shape, now a Rust-owned baseline).
 
 use crate::engine::ids::{
     canonical_routine_signature, encode_object_id, normalized_signature_hash,
     object_signature_fingerprint, routine_signature_fingerprint, to_stable_object_id,
     to_stable_routine_id_from_parts, ParamSpec,
 };
+use al_syntax::ir::{ObjectKind, RoutineDecl, RoutineKind};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tree_sitter::{Node, Parser};
 
 /// The identity subset of a single AL object declaration, in the golden's shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,28 +57,72 @@ pub struct IdentitySnapshot {
     pub routines: Vec<RoutineIdentity>,
 }
 
-/// Map a V2-grammar object declaration node type to its display object-type
-/// name. Mirrors al-sem's `OBJECT_TYPE_MAP` EXACTLY — note `xmlport_declaration`
-/// → "XMLport" and the deliberate absence of `permissionsetextension`
-/// (al-sem skips that object type, so we must too).
-fn object_type_for(node_type: &str) -> Option<&'static str> {
-    Some(match node_type {
-        "codeunit_declaration" => "Codeunit",
-        "table_declaration" => "Table",
-        "tableextension_declaration" => "TableExtension",
-        "page_declaration" => "Page",
-        "pageextension_declaration" => "PageExtension",
-        "report_declaration" => "Report",
-        "reportextension_declaration" => "ReportExtension",
-        "query_declaration" => "Query",
-        "xmlport_declaration" => "XMLport",
-        "enum_declaration" => "Enum",
-        "enumextension_declaration" => "EnumExtension",
-        "interface_declaration" => "Interface",
-        "controladdin_declaration" => "ControlAddIn",
-        "permissionset_declaration" => "PermissionSet",
-        _ => return None,
+/// Map an owned-IR object kind to its display object-type name. Mirrors al-sem's
+/// `OBJECT_TYPE_MAP` EXACTLY — note `XmlPort` → "XMLport" and the deliberate
+/// OMISSION of PermissionSetExtension / Profile / Entitlement (al-sem skips those
+/// object types in the identity snapshot, so we must too).
+fn object_type_label_ir(kind: ObjectKind) -> Option<&'static str> {
+    use ObjectKind as K;
+    Some(match kind {
+        K::Codeunit => "Codeunit",
+        K::Table => "Table",
+        K::TableExtension => "TableExtension",
+        K::Page => "Page",
+        K::PageExtension => "PageExtension",
+        K::Report => "Report",
+        K::ReportExtension => "ReportExtension",
+        K::Query => "Query",
+        K::XmlPort => "XMLport",
+        K::Enum => "Enum",
+        K::EnumExtension => "EnumExtension",
+        K::Interface => "Interface",
+        K::ControlAddIn => "ControlAddIn",
+        K::PermissionSet => "PermissionSet",
+        K::PermissionSetExtension | K::Profile | K::Entitlement | K::Other => return None,
     })
+}
+
+/// Routine kind label, mirroring al-sem `classifyAndCollectAttributes` (kind only):
+/// base is "trigger" / "procedure"; the FIRST event attribute (closest sibling to
+/// the routine — i.e. last in source order) wins: `eventsubscriber` →
+/// "event-subscriber", `integrationevent`|`businessevent` → "event-publisher".
+/// `internalevent` (and all other attributes) leave the kind unchanged — matching
+/// AL-SEM, NOT the LSP parser (which treats InternalEvent as a publisher).
+fn classify_kind_ir(r: &RoutineDecl) -> String {
+    let mut kind = match r.kind {
+        RoutineKind::Trigger => "trigger",
+        RoutineKind::Procedure => "procedure",
+    };
+    // `r.attributes` are lowercased, in source order; closest-to-routine = last.
+    for attr in r.attributes.iter().rev() {
+        match attr.as_str() {
+            "eventsubscriber" => {
+                kind = "event-subscriber";
+                break;
+            }
+            "integrationevent" | "businessevent" => {
+                kind = "event-publisher";
+                break;
+            }
+            _ => {}
+        }
+    }
+    kind.to_string()
+}
+
+/// Parameters in identity-signature form. Mirrors al-sem GAP 1: a parameter with
+/// NO semantic name (a parse artifact) is skipped; a quoted-name parameter is KEPT
+/// (its type enters the signature). The IR stores a nameless param with `name ==
+/// ""`, so the GAP-1 skip is `!name.is_empty()`.
+fn params_ir(r: &RoutineDecl) -> Vec<ParamSpec> {
+    r.params
+        .iter()
+        .filter(|p| !p.name.is_empty())
+        .map(|p| ParamSpec {
+            type_text: p.ty.clone().unwrap_or_default(),
+            is_var: p.by_ref,
+        })
+        .collect()
 }
 
 /// Strip surrounding double quotes — matches al-sem's `stripQuotes` exactly:
@@ -116,171 +145,16 @@ fn strip_quotes(text: &str) -> &str {
     }
 }
 
-/// Source text of a node.
-fn node_text<'a>(node: Node, source: &'a str) -> &'a str {
-    &source[node.byte_range()]
-}
-
-/// Iterate a node's NAMED children (mirrors al-sem `namedChildren`).
-fn named_children<'a>(node: Node<'a>) -> impl Iterator<Item = Node<'a>> {
-    (0..node.named_child_count() as u32).filter_map(move |i| node.named_child(i))
-}
-
-/// `extractObjectNumber`: first `integer` named child parsed as int, else 0.
-fn extract_object_number(decl: Node, source: &str) -> i64 {
-    for child in named_children(decl) {
-        if child.kind() == "integer" {
-            return node_text(child, source).trim().parse::<i64>().unwrap_or(0);
-        }
-    }
-    0
-}
-
-/// `extractObjectName`: first `quoted_identifier` (stripQuotes) or `identifier`
-/// (verbatim) named child, else "".
-fn extract_object_name(decl: Node, source: &str) -> String {
-    for child in named_children(decl) {
-        match child.kind() {
-            "quoted_identifier" => return strip_quotes(node_text(child, source)).to_string(),
-            "identifier" => return node_text(child, source).to_string(),
-            _ => {}
-        }
-    }
-    String::new()
-}
-
-/// Parse an `attribute_item` node's attribute NAME (lowercased comparison done
-/// by the caller). Mirrors `attributeInfoFromNode`: the name is the `name` field
-/// of the `attribute` (attribute_content) field child. Returns None when the
-/// shape is unrecognizable (parse error) — matching al-sem's null fallback.
-fn attribute_name<'a>(item: Node, source: &'a str) -> Option<&'a str> {
-    let content = item.child_by_field_name("attribute")?;
-    let name_node = content.child_by_field_name("name")?;
-    let name = node_text(name_node, source);
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
-}
-
-/// `classifyAndCollectAttributes` (kind only). Base kind is "trigger" for a
-/// `trigger_declaration` node else "procedure". Walk PREVIOUS siblings while
-/// they are `attribute_item`; the FIRST (closest-sibling) event attribute wins:
-///   name-lc == "eventsubscriber"            → "event-subscriber"
-///   name-lc == "integrationevent"|"businessevent" → "event-publisher"
-/// All other attributes (incl. InternalEvent) leave the kind unchanged — this
-/// matches AL-SEM, NOT the LSP parser (which treats InternalEvent as publisher).
-fn classify_kind(node: Node, source: &str) -> String {
-    let mut kind = if node.kind() == "trigger_declaration" {
-        "trigger"
-    } else {
-        "procedure"
-    };
-    let mut sibling = node.prev_sibling();
-    while let Some(sib) = sibling {
-        if sib.kind() != "attribute_item" {
-            break;
-        }
-        if let Some(name) = attribute_name(sib, source) {
-            let name_lc = name.to_lowercase();
-            if name_lc == "eventsubscriber" {
-                kind = "event-subscriber";
-                break;
-            } else if name_lc == "integrationevent" || name_lc == "businessevent" {
-                kind = "event-publisher";
-                break;
-            }
-        }
-        sibling = sib.prev_sibling();
-    }
-    kind.to_string()
-}
-
-/// `extractParameters`: for each `parameter` named child of the routine's
-/// `parameter_list`, produce a ParamSpec carrying only the bits the signature
-/// needs — `type_text` (the `type_specification` named child's text, or "") and
-/// `is_var` (presence of a `var_keyword` named child).
-///
-/// ORACLE BEHAVIOR (intraprocedural-refs.ts:44-86, GAP 1 fix): al-sem locates the
-/// parameter NAME node as the FIRST named child of kind `identifier` OR
-/// `quoted_identifier`, and only SKIPS a parameter when it has NEITHER (no name
-/// node at all → a parse artifact). A parameter whose name is a *quoted*
-/// identifier (e.g. `"Sales Header": Record "Sales Header"`) is therefore KEPT,
-/// so its `type_specification` text enters the canonical signature. We don't need
-/// the name itself for the identity subset (only `type_text` + `is_var` matter),
-/// but we must mirror the skip predicate exactly so the param set matches the
-/// oracle's (driven by ws-r0-canon-stress `DoWork`'s `"Sales Header"` param).
-fn extract_parameters(node: Node, source: &str) -> Vec<ParamSpec> {
-    let mut params = Vec::new();
-    let Some(param_list) = named_children(node).find(|c| c.kind() == "parameter_list") else {
-        return params;
-    };
-    for param in named_children(param_list) {
-        if param.kind() != "parameter" {
-            continue;
-        }
-        // Mirror al-sem GAP 1: skip only when there is NO name node at all
-        // (neither `identifier` nor `quoted_identifier`). Quoted-name params ARE
-        // kept so their type enters the signature.
-        let has_name = named_children(param)
-            .any(|c| c.kind() == "identifier" || c.kind() == "quoted_identifier");
-        if !has_name {
-            continue;
-        }
-        let is_var = named_children(param).any(|c| c.kind() == "var_keyword");
-        let type_text = named_children(param)
-            .find(|c| c.kind() == "type_specification")
-            .map(|c| node_text(c, source).to_string())
-            .unwrap_or_default();
-        params.push(ParamSpec { type_text, is_var });
-    }
-    params
-}
-
-/// `getReturnTypeText`: the FIRST direct named child of the routine node whose
-/// type is `type_specification`. Parameter type_specs are nested inside
-/// `parameter` nodes, so the first direct one is unambiguously the return type.
-/// None for triggers / void procedures.
-fn extract_return_type(node: Node, source: &str) -> Option<String> {
-    named_children(node)
-        .find(|c| c.kind() == "type_specification")
-        .map(|c| node_text(c, source).to_string())
-}
-
-/// Depth-first collect descendant nodes matching `pred`, pruning at a match
-/// (do not descend into a matched node). Mirrors al-sem's `collectDescendants`
-/// with `pruneAtMatch = true`. Traversal order is NOT document order (al-sem
-/// re-sorts routines by source position; identity does not depend on order, and
-/// the snapshot re-sorts by id anyway).
-fn collect_descendants_pruned<'a>(
-    root: Node<'a>,
-    pred: &dyn Fn(Node<'a>) -> bool,
-) -> Vec<Node<'a>> {
-    let mut out = Vec::new();
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if pred(node) {
-            out.push(node);
-            continue; // prune: do not descend into a matched routine
-        }
-        for child in named_children(node) {
-            stack.push(child);
-        }
-    }
-    out
-}
-
-/// Build the identity subset for one parsed source file's syntax tree.
-fn extract_from_tree(root: Node, source: &str, app_guid: &str, out: &mut IdentitySnapshot) {
-    // Object declarations = the root's NAMED children whose type is a known
-    // object-decl type (al-sem `findObjectDeclarations`).
-    for decl in named_children(root) {
-        let Some(object_type) = object_type_for(decl.kind()) else {
+/// Build the identity subset for one parsed source file's owned IR.
+fn extract_from_ir(file: &al_syntax::ir::AlFile, app_guid: &str, out: &mut IdentitySnapshot) {
+    for obj in &file.objects {
+        let Some(object_type) = object_type_label_ir(obj.kind) else {
             continue;
         };
-        let object_number = extract_object_number(decl, source);
-        let name = extract_object_name(decl, source);
+        let object_number = obj.id.unwrap_or(0);
+        // `strip_quotes` is idempotent on an already-unquoted IR name; applying it
+        // keeps parity with al-sem's `extractObjectName` regardless.
+        let name = strip_quotes(&obj.name).to_string();
 
         let internal_object_id = encode_object_id(app_guid, object_type, object_number);
         let stable_object_id = to_stable_object_id(&internal_object_id);
@@ -293,25 +167,14 @@ fn extract_from_tree(root: Node, source: &str, app_guid: &str, out: &mut Identit
             signature_fingerprint,
         });
 
-        // Routines = `procedure` / `trigger_declaration` descendants of the
-        // object decl (prune-at-match).
-        let routine_nodes = collect_descendants_pruned(decl, &|n| {
-            n.kind() == "procedure" || n.kind() == "trigger_declaration"
-        });
-
-        for rnode in routine_nodes {
-            let Some(name_node) = rnode.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(name_node, source)).to_string();
+        for r in &obj.routines {
+            let rname = strip_quotes(&r.name).to_string();
             if rname.is_empty() {
                 continue;
             }
-
-            let kind = classify_kind(rnode, source);
-            let parameters = extract_parameters(rnode, source);
-            let return_type = extract_return_type(rnode, source);
-            let return_type_ref = return_type.as_deref();
+            let kind = classify_kind_ir(r);
+            let parameters = params_ir(r);
+            let return_type_ref = r.return_type.as_deref();
 
             let canonical_signature_text =
                 canonical_routine_signature(&rname, &parameters, return_type_ref);
@@ -492,11 +355,6 @@ pub fn snapshot_workspace(workspace: &Path) -> anyhow::Result<IdentitySnapshot> 
     let files = discover_al_files(workspace)
         .map_err(|e| anyhow::anyhow!("failed to discover .al files: {e}"))?;
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&crate::language::language())
-        .map_err(|e| anyhow::anyhow!("failed to set tree-sitter language: {e}"))?;
-
     let mut snapshot = IdentitySnapshot {
         objects: Vec::new(),
         routines: Vec::new(),
@@ -510,14 +368,7 @@ pub fn snapshot_workspace(workspace: &Path) -> anyhow::Result<IdentitySnapshot> 
                 continue;
             }
         };
-        let Some(tree) = parser.parse(&source, None) else {
-            eprintln!(
-                "warning: skipping {} (parse returned no tree)",
-                file.sort_key
-            );
-            continue;
-        };
-        extract_from_tree(tree.root_node(), &source, &app_guid, &mut snapshot);
+        extract_from_ir(&al_syntax::parse(&source), &app_guid, &mut snapshot);
     }
 
     // `objects` sorted by stableObjectId; `routines` by stableRoutineId. Plain
