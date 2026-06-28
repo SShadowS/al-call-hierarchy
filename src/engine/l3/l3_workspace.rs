@@ -1044,6 +1044,23 @@ fn anchor_from_node(
     }
 }
 
+/// PAnchor from an owned-IR `Origin` — byte-identical to [`anchor_from_node`] on the
+/// node the origin came from (same row + utf16 column basis + raw `kind_text`).
+fn anchor_from_origin(
+    origin: &al_syntax::ir::Origin,
+    source_unit_id: &str,
+    cols: &Utf16Cols,
+) -> crate::engine::l2::features::PAnchor {
+    crate::engine::l2::features::PAnchor {
+        source_unit_id: source_unit_id.to_string(),
+        start_line: origin.start.row,
+        start_column: cols.col(origin.start.row as usize, origin.start.column as usize),
+        end_line: origin.end.row,
+        end_column: cols.col(origin.end.row as usize, origin.end.column as usize),
+        syntax_kind: origin.kind_text.to_string(),
+    }
+}
+
 /// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
 ///
 /// Returns `(parent, routine)` pairs: the routine node plus its immediate
@@ -1391,9 +1408,14 @@ fn project_file(
             // "unreachable" emit no facts — mirrors al-sem `extractCapabilities`).
             // R3a-2's projection never reads control_context, so this is additive.
             {
-                let cc_params = crate::engine::l2::scope::extract_parameters(routine, source);
-                let (_, attrs_json) =
-                    crate::engine::l2::l2_workspace::collect_attributes(routine, source);
+                let cc_params = match ir_routine_opt {
+                    Some(r) => crate::engine::l2::ir_walk::ir_parameter_symbols(r),
+                    None => crate::engine::l2::scope::extract_parameters(routine, source),
+                };
+                let attrs_json = match ir_routine_opt {
+                    Some(r) => crate::engine::l2::ir_walk::ir_attributes(r, &ir_file, source).1,
+                    None => crate::engine::l2::l2_workspace::collect_attributes(routine, source).1,
+                };
                 let attr_names_lc: Vec<String> = attrs_json
                     .iter()
                     .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
@@ -1497,22 +1519,29 @@ fn project_file(
                 })
                 .collect();
 
-            // Re-extract the routine's own parameters + return type for the call
-            // resolver (project_routine_features discards them after id hashing).
-            // Reuse the SAME extractors the routine-id/signature-hash path uses so
+            // The routine's own parameters + return type for the call resolver, from
+            // the matched IR routine (legacy extractors as a fallback). Reuses the SAME
+            // ParameterSymbol shape the routine-id/signature-hash path uses so
             // arity/var-ness/type-text cannot drift.
-            let parameters = crate::engine::l2::scope::extract_parameters(routine, source)
-                .into_iter()
+            let param_syms = match ir_routine_opt {
+                Some(r) => crate::engine::l2::ir_walk::ir_parameter_symbols(r),
+                None => crate::engine::l2::scope::extract_parameters(routine, source),
+            };
+            let parameters: Vec<L3Parameter> = param_syms
+                .iter()
                 .map(|p| L3Parameter {
                     index: p.index,
-                    name: p.name,
-                    type_text: p.type_text,
+                    name: p.name.clone(),
+                    type_text: p.type_text.clone(),
                     is_var: p.is_var,
                     is_record: p.is_record,
-                    table_name: p.table_name,
+                    table_name: p.table_name.clone(),
                 })
                 .collect();
-            let return_type = crate::engine::l2::get_return_type_text(routine, source);
+            let return_type = match ir_routine_opt {
+                Some(r) => r.return_type.clone(),
+                None => crate::engine::l2::get_return_type_text(routine, source),
+            };
             let mut call_sites = features.call_sites.clone();
             // RV-8 (Task 8): scope-honest `sourceKind`. The L2 binding builder
             // labels ANY non-parameter record-var arg `"local"` because scope is
@@ -1622,7 +1651,10 @@ fn project_file(
             let condition_references = features.condition_references.clone();
             // The routine's OWN declaration anchor (al-sem routine-indexer.ts:419):
             // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
-            let source_anchor = anchor_from_node(routine, source_unit_id, cols);
+            let source_anchor = match ir_routine_opt {
+                Some(r) => anchor_from_origin(&r.origin, source_unit_id, cols),
+                None => anchor_from_node(routine, source_unit_id, cols),
+            };
 
             // L2 bodyAvailable / parseIncomplete — from the owned IR when matched
             // (a body block present; the routine subtree carried a tree-sitter ERROR),
@@ -1640,7 +1672,23 @@ fn project_file(
             // The hash reuses the same param/kind/return extraction as the internal
             // routine id (`routine_normalized_signature_hash`), so they cannot drift.
             let stable_object_id = to_stable_object_id(&object_id);
-            let norm_hash = routine_normalized_signature_hash(routine, source).unwrap_or_default();
+            let norm_hash = match ir_routine_opt {
+                Some(_) => {
+                    let param_specs: Vec<crate::engine::ids::ParamSpec> = param_syms
+                        .iter()
+                        .map(|p| crate::engine::ids::ParamSpec {
+                            type_text: p.type_text.clone(),
+                            is_var: p.is_var,
+                        })
+                        .collect();
+                    crate::engine::ids::normalized_signature_hash(
+                        &rname,
+                        &param_specs,
+                        return_type.as_deref(),
+                    )
+                }
+                None => routine_normalized_signature_hash(routine, source).unwrap_or_default(),
+            };
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
             // Routine kind + structured attributes (the event-graph inputs). Reuse the
