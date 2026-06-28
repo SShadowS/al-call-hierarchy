@@ -317,16 +317,15 @@ fn clean_name(name: &str) -> String {
 }
 
 // ===========================================================================
-// Owned-IR projection (Phase 4)
+// Owned-IR projection (the LSP front-end `ParsedFile`)
 //
-// `parse_file_ir` produces the SAME `ParsedFile` as the legacy tree-sitter
-// `AlParser::parse_file`, but sources everything from the owned `al-syntax` IR
-// (`al_syntax::parse`) instead of running the 6 S-expr queries. This is the
-// zero-diff projection: it deliberately reproduces the legacy query SET
-// (`call_expression`-only calls, first-name-only multi-name vars, the legacy
-// object-kind coverage) so a differential test can prove byte-identical output
-// before the queries are deleted. Correctness improvements the IR enables
-// (parenless statement calls, all multi-name vars) land as separate fast-follows.
+// `parse_file_ir` builds the `ParsedFile` (definitions / calls / variables /
+// events) from the owned `al-syntax` IR (`al_syntax::parse`) — no S-expr queries.
+// It began as a byte-identical port of the legacy tree-sitter `AlParser` (proven
+// over the r0-corpus, then the queries were deleted) and now carries the
+// completeness improvements the IR enables that the old query set could not:
+// PARENLESS statement calls (`Initialize;`, `Rec.Find;`) are real call edges, and
+// EVERY name of a grouped `A, B: T` declaration becomes its own variable.
 // ===========================================================================
 
 use al_syntax::ir::{
@@ -426,18 +425,13 @@ fn origin_to_range(o: &Origin) -> Range {
     }
 }
 
-/// Project IR variable declarations into `ParsedVariable`s. Legacy emits ONE
-/// variable per `variable_declaration` (the first name); the IR expands
-/// `A, B: T` into one `VarDecl` per name, all sharing the declaration's origin —
-/// so we collapse a same-origin run to its first entry to stay zero-diff.
+/// Project IR variable declarations into `ParsedVariable`s — ONE per declared name.
+/// A grouped declaration `A, B: T` yields a `VarDecl` per name in the IR, and we
+/// now emit ALL of them (the legacy query captured only the first, leaving `B` an
+/// untracked receiver / false unknown — the completeness fast-follow).
 fn push_variables_ir(result: &mut ParsedFile, vars: &[VarDecl], containing: Option<String>) {
-    let mut last_origin: Option<std::ops::Range<usize>> = None;
     for v in vars {
-        if last_origin.as_ref() == Some(&v.origin.byte) {
-            continue;
-        }
-        last_origin = Some(v.origin.byte.clone());
-        // Legacy requires BOTH a name and a type; untyped declarations are skipped.
+        // A variable needs both a name and a type; untyped declarations are skipped.
         let Some(ty_text) = &v.ty else {
             continue;
         };
@@ -712,16 +706,16 @@ fn calls_in_stmt(
 
 fn calls_in_expr(ir: &ir::Ir, source: &str, eid: ExprId, name: &str, out: &mut Vec<ParsedCall>) {
     let expr = ir.expr(eid);
-    // ZERO-DIFF: the legacy CALLS query matched `call_expression` (parenthesized)
-    // ONLY. The IR also models parenless statement calls (`Modify;`, `Rec.Find;`) as
-    // `ExprKind::Call`, but anchors them on the bare callee node — so its origin
-    // `kind_text` is `identifier`/`member_expression`/`subscript_expression`, not
-    // `call_expression`. Restrict to true `call_expression` origins here; capturing
-    // parenless calls is a deliberate fast-follow improvement, not part of the port.
+    // Every `ExprKind::Call` is a call edge: a parenthesized `call_expression`
+    // (`Foo()`, `Rec.Find('-')`) OR a PARENLESS statement call (`Initialize;`,
+    // `Rec.Find;`, `Modify;`) — the lowerer only ever builds `ExprKind::Call` for a
+    // genuine call (a `call_statement`/member/subscript in statement position, never
+    // for ERROR-recovery debris). Capturing the parenless form is the completeness
+    // fast-follow: a procedure invoked only as `MyProc;` is now a real call-hierarchy
+    // edge (and no longer mis-flagged as unused). Parenless record builtins
+    // (`Modify;`) simply don't resolve to a user procedure — harmless non-edges.
     if let ExprKind::Call { function, .. } = &expr.kind {
-        if expr.origin.kind_text == "call_expression" {
-            record_call(ir, source, eid, *function, name, out);
-        }
+        record_call(ir, source, eid, *function, name, out);
     }
     for_each_subexpr(ir, eid, &mut |sub| {
         calls_in_expr(ir, source, sub, name, out)
@@ -1061,6 +1055,69 @@ codeunit 50000 "Test Codeunit"
             Some("CallerProc"),
             "Call should be inside CallerProc"
         );
+    }
+
+    #[test]
+    fn test_parenless_statement_calls_are_captured() {
+        // Parenless calls (`Initialize;`, `Rec.Find;`) are real call edges — the old
+        // `call_expression`-only query missed them.
+        let al_code = r#"codeunit 50100 "TestParenless"
+{
+    procedure CallerProc(var Cust: Record Customer)
+    begin
+        Initialize;
+        Cust.Find;
+        HelperProc();
+    end;
+
+    procedure Initialize()
+    begin
+    end;
+
+    procedure HelperProc()
+    begin
+    end;
+}"#;
+        let result = parse_file_ir(al_code);
+        let methods: Vec<&str> = result.calls.iter().map(|c| c.method.as_str()).collect();
+        assert!(
+            methods.contains(&"Initialize"),
+            "parenless `Initialize;` should be a call. calls: {methods:?}"
+        );
+        assert!(
+            methods.contains(&"Find"),
+            "parenless `Cust.Find;` should be a call. calls: {methods:?}"
+        );
+        // The parenless member call carries its receiver object.
+        let find = result.calls.iter().find(|c| c.method == "Find").unwrap();
+        assert_eq!(find.object.as_deref(), Some("Cust"));
+        assert_eq!(find.containing_procedure.as_deref(), Some("CallerProc"));
+    }
+
+    #[test]
+    fn test_grouped_var_declaration_yields_all_names() {
+        // `A, B: T` declares BOTH A and B — the old query captured only the first.
+        let al_code = r#"codeunit 50100 "TestGroupedVars"
+{
+    procedure P()
+    var
+        Cust, Vend: Record Customer;
+        "Quoted A", "Quoted B": Codeunit "Sales-Post";
+    begin
+    end;
+}"#;
+        let result = parse_file_ir(al_code);
+        let names: Vec<&str> = result.variables.iter().map(|v| v.name.as_str()).collect();
+        for want in ["Cust", "Vend", "Quoted A", "Quoted B"] {
+            assert!(
+                names.contains(&want),
+                "grouped declaration should yield `{want}`. got: {names:?}"
+            );
+        }
+        // Trailing grouped names keep the group's type.
+        let vend = result.variables.iter().find(|v| v.name == "Vend").unwrap();
+        assert_eq!(vend.type_kind.as_deref(), Some("Record"));
+        assert_eq!(vend.type_name, "Customer");
     }
 
     #[test]

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Parenless statement calls are now call-hierarchy edges.** `parse_file_ir` captures
+  every `ExprKind::Call`, including the parenless forms (`Initialize;`, `Rec.Find;`,
+  `Modify;`) the old `call_expression`-only query missed. A procedure invoked only as
+  `MyProc;` is now a real incoming/outgoing call edge and no longer mis-flagged as
+  unused; parenless record builtins simply don't resolve to a user procedure. (Deferred
+  completeness fast-follow from the Phase 4 zero-diff port.)
+- **Grouped variable declarations yield every name.** `A, B: T` now produces a variable
+  for BOTH `A` and `B` (the old query captured only the first, leaving trailing names as
+  untracked receivers / false unknowns). Quoted grouped names are handled too.
+
 ### Removed
 - **The engine's `tree-sitter` dependency is gone — `al-syntax` is the SOLE
   tree-sitter linker (Phase 5 SEAL complete).** Deleted the test-only legacy L2
