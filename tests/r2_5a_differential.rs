@@ -596,7 +596,7 @@ fn differential_r2_5a_merged_index_matches_goldens() {
 
     let mut zero_axes: Vec<&str> = Vec::new();
     macro_rules! gate {
-        ($cond:expr, $name:expr) => {
+        ($cond:expr_2021, $name:expr_2021) => {
             if $cond {
                 zero_axes.push($name);
             }

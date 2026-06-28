@@ -1,7 +1,7 @@
 [package]
 name = "al-syntax"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "The only crate that knows tree-sitter: AL grammar FFI, generated raw vocabulary/typed CST, the lowerer, and the owned AL syntax IR."
 license = "GPL-3.0"
 

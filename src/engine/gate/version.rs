@@ -66,16 +66,19 @@ mod tests {
     #[test]
     fn alsem_version_reads_override_env_var() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var(OVERRIDE_ENV_VAR, "test-override-99.9.9");
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var(OVERRIDE_ENV_VAR, "test-override-99.9.9") };
         let v = alsem_version();
-        std::env::remove_var(OVERRIDE_ENV_VAR);
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var(OVERRIDE_ENV_VAR) };
         assert_eq!(v, "test-override-99.9.9");
     }
 
     #[test]
     fn alsem_version_defaults_when_env_unset() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var(OVERRIDE_ENV_VAR);
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var(OVERRIDE_ENV_VAR) };
         let v = alsem_version();
         assert_eq!(v, DEFAULT_ALSEM_VERSION);
     }

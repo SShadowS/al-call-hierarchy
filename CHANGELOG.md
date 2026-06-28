@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Upgraded to Rust edition 2024** (from 2021) across all three crates — it is 2026 and
+  edition 2024 is the current stable (rustc 1.94). `cargo fix --edition` applied the
+  migrations: `unsafe extern "C"` (the al-syntax grammar FFI), `unsafe { std::env::set_var
+  / remove_var }` (now unsafe in 2024 — a real parallel-test environment race the edition
+  surfaces), and an over-conservative `if let/else`→`match` rewrite (tidied back to
+  `if let … else`). Added a workspace `rustfmt.toml` with `edition = "2024"` as the SINGLE
+  source of truth — `gen-syntax` and the editor `rustfmt` hook no longer hardcode an
+  edition. Full `cargo build`/`test --workspace` green under 2024.
+
 ### Fixed
 - **`raw_kind_round_trips` stale assertion** — it pinned `NAMED_KIND_COUNT == 386`, but
   the generated const is `387` (the `call_statement` grammar node added a named kind;

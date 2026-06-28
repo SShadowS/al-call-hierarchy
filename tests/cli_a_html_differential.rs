@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{run_analyze_with_exit, AnalyzeArgs, OutputFormat};
+use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
 const TEST_NAME: &str = "cli_a_html_differential";
 
@@ -278,7 +278,8 @@ fn cli_a_html_byte_match() {
 
     // Serialize env access across all sub-runs (AL_SEM_VERSION_OVERRIDE is process-global).
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE);
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
 
     for &fixture in FIXTURES {
         // Always run default slot.
@@ -328,7 +329,8 @@ fn cli_a_html_byte_match() {
         }
     }
 
-    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -355,9 +357,11 @@ fn zero_findings_fixture_renders_correctly() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE);
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-txn-d46-neg", &default_csv);
-    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"<p class="empty">No findings."#),
@@ -381,9 +385,11 @@ fn event_graph_fixture_renders_svg() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE);
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-d8-commit-in-tx", &default_csv);
-    std::env::remove_var("AL_SEM_VERSION_OVERRIDE");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"class="evgraph""#),

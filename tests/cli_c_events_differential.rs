@@ -25,8 +25,8 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::events::{
-    format_chains_human, format_chains_json, format_fanout_human, format_fanout_json,
-    run_events_chains, run_events_fanout, EventsChainsOptions, EventsFanoutOptions,
+    EventsChainsOptions, EventsFanoutOptions, format_chains_human, format_chains_json,
+    format_fanout_human, format_fanout_json, run_events_chains, run_events_fanout,
 };
 use al_call_hierarchy::engine::l5::event_flow::Scope;
 
@@ -59,7 +59,7 @@ const ALSEM_VERSION: &str = "cli-c-v1";
 // ---------------------------------------------------------------------------
 
 macro_rules! events_differential {
-    ($test_name:ident, $fixture:literal, $scope:expr) => {
+    ($test_name:ident, $fixture:literal, $scope:expr_2021) => {
         #[test]
         fn $test_name() {
             let ws = corpus_dir().join($fixture);
@@ -558,8 +558,8 @@ fn cycle_native_oracle() {
         EventEdge, EventGraph, EventSymbol, Evidence,
     };
     use al_call_hierarchy::engine::l5::event_flow::{
-        build_event_flow_indexes, compute_chain_report, walk_event_chain, ChainNode,
-        ChainWalkOptions, Scope,
+        ChainNode, ChainWalkOptions, Scope, build_event_flow_indexes, compute_chain_report,
+        walk_event_chain,
     };
     use std::collections::BTreeSet;
 
