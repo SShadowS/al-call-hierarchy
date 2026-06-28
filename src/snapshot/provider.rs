@@ -21,6 +21,50 @@ pub trait SourceProvider {
     fn try_provide(&self, app: &AppId) -> Result<Option<SourceRoot>>;
 }
 
+/// Walk `root` for `.al` source (skipping dependency/output dirs), sorted +
+/// content-hashed for determinism. `Ok(None)` if no `.al` files.
+fn walk_al_source(root: &std::path::Path, tier: TrustTier) -> Result<Option<SourceRoot>> {
+    let mut files: Vec<SourceFile> = Vec::new();
+    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("al") {
+            continue;
+        }
+        // Skip dependency/output dirs.
+        if path.components().any(|c| {
+            matches!(
+                c.as_os_str().to_str(),
+                Some(".alpackages") | Some(".snapshots") | Some("node_modules")
+            )
+        }) {
+            continue;
+        }
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("reading source {}", path.display()))?;
+        let virtual_path = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        files.push(SourceFile { virtual_path, text });
+    }
+    if files.is_empty() {
+        return Ok(None);
+    }
+    files.sort_by(|a, b| a.virtual_path.cmp(&b.virtual_path));
+    // Hash over sorted file texts for determinism.
+    let mut hasher = blake3::Hasher::new();
+    for f in &files {
+        hasher.update(f.text.as_bytes());
+    }
+    let content_hash = hasher.finalize().to_hex().to_string();
+    Ok(Some(SourceRoot {
+        files,
+        tier,
+        content_hash,
+    }))
+}
+
 /// The app under development — source on disk is truth.
 pub struct WorkspaceProvider {
     pub root: PathBuf,
@@ -28,45 +72,7 @@ pub struct WorkspaceProvider {
 
 impl SourceProvider for WorkspaceProvider {
     fn try_provide(&self, _app: &AppId) -> Result<Option<SourceRoot>> {
-        let mut files: Vec<SourceFile> = Vec::new();
-        for entry in WalkDir::new(&self.root).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().and_then(|x| x.to_str()) != Some("al") {
-                continue;
-            }
-            // Skip dependency/output dirs.
-            if path.components().any(|c| {
-                matches!(
-                    c.as_os_str().to_str(),
-                    Some(".alpackages") | Some(".snapshots") | Some("node_modules")
-                )
-            }) {
-                continue;
-            }
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading workspace source {}", path.display()))?;
-            let virtual_path = path
-                .strip_prefix(&self.root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .replace('\\', "/");
-            files.push(SourceFile { virtual_path, text });
-        }
-        if files.is_empty() {
-            return Ok(None);
-        }
-        files.sort_by(|a, b| a.virtual_path.cmp(&b.virtual_path));
-        // Hash over sorted file texts for determinism.
-        let mut hasher = blake3::Hasher::new();
-        for f in &files {
-            hasher.update(f.text.as_bytes());
-        }
-        let content_hash = hasher.finalize().to_hex().to_string();
-        Ok(Some(SourceRoot {
-            files,
-            tier: TrustTier::Workspace,
-            content_hash,
-        }))
+        walk_al_source(&self.root, TrustTier::Workspace)
     }
 }
 
@@ -112,49 +118,20 @@ pub struct LocalRepoProvider {
 
 impl SourceProvider for LocalRepoProvider {
     fn try_provide(&self, requested: &AppId) -> Result<Option<SourceRoot>> {
-        // Collect AL files exactly as WorkspaceProvider does.
-        let mut files: Vec<SourceFile> = Vec::new();
-        for entry in WalkDir::new(&self.root).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().and_then(|x| x.to_str()) != Some("al") {
-                continue;
-            }
-            if path.components().any(|c| {
-                matches!(
-                    c.as_os_str().to_str(),
-                    Some(".alpackages") | Some(".snapshots") | Some("node_modules")
-                )
-            }) {
-                continue;
-            }
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading local repo source {}", path.display()))?;
-            let virtual_path = path
-                .strip_prefix(&self.root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .replace('\\', "/");
-            files.push(SourceFile { virtual_path, text });
-        }
-        if files.is_empty() {
+        // Walk first; identity check runs after because verify_local_source is
+        // forward-designed to also corroborate against the produced SourceRoot
+        // (hash/commit) in a later task.
+        let Some(source_root) = walk_al_source(&self.root, TrustTier::LocalSourceApproximate)?
+        else {
             return Ok(None);
-        }
-        files.sort_by(|a, b| a.virtual_path.cmp(&b.virtual_path));
-        let mut hasher = blake3::Hasher::new();
-        for f in &files {
-            hasher.update(f.text.as_bytes());
-        }
-        let content_hash = hasher.finalize().to_hex().to_string();
-        let root = SourceRoot {
-            files,
-            tier: TrustTier::LocalSourceApproximate,
-            content_hash,
         };
         // Fail closed on identity mismatch.
-        if let IdentityCheck::Mismatch(_) = verify_local_source(requested, &root, Some(&self.app)) {
+        if let IdentityCheck::Mismatch(_) =
+            verify_local_source(requested, &source_root, Some(&self.app))
+        {
             return Ok(None);
         }
-        Ok(Some(root))
+        Ok(Some(source_root))
     }
 }
 
@@ -238,5 +215,59 @@ mod tests {
         };
         let result = p.try_provide(&dummy_app()).unwrap();
         assert!(result.is_none(), "should skip .alpackages");
+    }
+
+    #[test]
+    fn select_source_first_wins() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("Foo.al"), "codeunit 1 Foo { }").unwrap();
+        let providers: Vec<Box<dyn SourceProvider>> = vec![
+            Box::new(SymbolOnlyProvider),
+            Box::new(WorkspaceProvider {
+                root: dir.path().to_path_buf(),
+            }),
+        ];
+        let result = select_source(&dummy_app(), &providers).unwrap();
+        assert!(
+            result.is_some(),
+            "SymbolOnlyProvider yields None; WorkspaceProvider should win"
+        );
+        assert_eq!(result.unwrap().tier, TrustTier::Workspace);
+    }
+
+    #[test]
+    fn local_repo_mismatch_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("Foo.al"), "codeunit 1 Foo { }").unwrap();
+        let p = LocalRepoProvider {
+            app: AppId {
+                guid: "g".into(),
+                name: "X".into(),
+                publisher: "P".into(),
+                version: "29.0.0.0".into(),
+            },
+            root: dir.path().to_path_buf(),
+        };
+        // Version mismatch → fail closed.
+        let mismatched = AppId {
+            guid: "g".into(),
+            name: "X".into(),
+            publisher: "P".into(),
+            version: "28.0.0.0".into(),
+        };
+        assert!(
+            p.try_provide(&mismatched).unwrap().is_none(),
+            "version mismatch should return None"
+        );
+        // Version match → Some with correct tier.
+        let matched = AppId {
+            guid: "g".into(),
+            name: "X".into(),
+            publisher: "P".into(),
+            version: "29.0.0.0".into(),
+        };
+        let result = p.try_provide(&matched).unwrap();
+        assert!(result.is_some(), "matching version should return Some");
+        assert_eq!(result.unwrap().tier, TrustTier::LocalSourceApproximate);
     }
 }
