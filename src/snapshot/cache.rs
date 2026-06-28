@@ -32,32 +32,58 @@ pub fn cache_dir() -> PathBuf {
 /// (same semantics as [`extract_embedded_source`]).  The hash is always the
 /// blake3 hex of the whole `.app`, computed once and reused — callers must not
 /// call `app_content_hash` a second time.
+///
+/// Cache I/O failures (unwritable dir, locked file, corrupt entry) are
+/// **non-fatal**: a warn is logged and extraction proceeds uncached.
 pub fn cached_source(app_path: &Path) -> Result<(Vec<SourceFile>, String)> {
     let hash = app_content_hash(app_path)
         .with_context(|| format!("content hash for {}", app_path.display()))?;
 
     let cache_file = cache_dir().join(format!("{hash}.json"));
 
-    // Cache hit.
+    // Cache hit — deserialise; fall through to re-extract on a corrupt entry.
     if cache_file.exists() {
-        let raw = std::fs::read_to_string(&cache_file)
-            .with_context(|| format!("read cache {}", cache_file.display()))?;
-        let files: Vec<SourceFile> = serde_json::from_str(&raw)
-            .with_context(|| format!("deserialise cache {}", cache_file.display()))?;
-        return Ok((files, hash));
+        match try_read_cache(&cache_file) {
+            Ok(files) => return Ok((files, hash)),
+            Err(e) => {
+                log::warn!(
+                    "snapshot cache read failed for {} ({e:#}); re-extracting",
+                    cache_file.display()
+                );
+            }
+        }
     }
 
-    // Cache miss — extract then persist.
+    // Cache miss (or corrupt hit) — extract then persist best-effort.
     let files = extract_embedded_source(app_path)?;
-    let json = serde_json::to_string(&files).context("serialise source files")?;
-    // Write atomically: per-process temp file beside the target, then rename.
-    // Using per-process names means two concurrent processes can each write
-    // their own temp file; last rename wins, and both write identical content,
-    // so the final file is always valid (no torn writes).
+    if let Err(e) = persist_cache(&cache_file, &hash, &files) {
+        log::warn!(
+            "snapshot source cache write failed for {} ({e:#}); continuing uncached",
+            app_path.display()
+        );
+    }
+    Ok((files, hash))
+}
+
+/// Attempt to deserialise a cache entry.  Returns `Err` on any I/O or JSON
+/// failure so the caller can fall through to re-extraction.
+fn try_read_cache(cache_file: &Path) -> Result<Vec<SourceFile>> {
+    let raw = std::fs::read_to_string(cache_file)
+        .with_context(|| format!("read cache {}", cache_file.display()))?;
+    serde_json::from_str(&raw)
+        .with_context(|| format!("deserialise cache {}", cache_file.display()))
+}
+
+/// Persist `files` to `cache_file` atomically (temp-write + rename).
+///
+/// Using per-process temp names lets concurrent processes each write their own
+/// file; last rename wins.  Both processes write identical content so the final
+/// file is always valid — no torn writes.
+fn persist_cache(cache_file: &Path, hash: &str, files: &[SourceFile]) -> Result<()> {
+    let json = serde_json::to_string(files).context("serialise source files")?;
     let tmp = cache_dir().join(format!("{hash}-{}.json.tmp", std::process::id()));
     std::fs::write(&tmp, &json).with_context(|| format!("write cache tmp {}", tmp.display()))?;
-    std::fs::rename(&tmp, &cache_file)
+    std::fs::rename(&tmp, cache_file)
         .with_context(|| format!("rename cache tmp → {}", cache_file.display()))?;
-
-    Ok((files, hash))
+    Ok(())
 }
