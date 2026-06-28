@@ -10,6 +10,6 @@ mod nodes;
 mod raw_kind;
 
 pub use field::FieldName;
-pub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};
 #[allow(unused_imports)]
 pub use nodes::*;
+pub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};

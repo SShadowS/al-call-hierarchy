@@ -1201,7 +1201,8 @@ impl RawKind {
 /// sha256 of the `node-types.json` this file was generated from. al-syntax
 /// `build.rs` asserts the checked-in grammar matches, so a silent grammar swap
 /// fails the build.
-pub const GRAMMAR_NODE_TYPES_HASH: &str = "29aff04b8ffbaee76728b657486b6d7bc32fb2cd1405e28608caec8c4a3ff449";
+pub const GRAMMAR_NODE_TYPES_HASH: &str =
+    "29aff04b8ffbaee76728b657486b6d7bc32fb2cd1405e28608caec8c4a3ff449";
 
 /// Count of NAMED kinds (excludes `Error`). Sanity anchor for the coverage test.
 pub const NAMED_KIND_COUNT: usize = 387;

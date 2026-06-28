@@ -89,6 +89,33 @@ fn main() -> ExitCode {
         std::fs::write(&path, content).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         println!("wrote {}", path.display());
     }
+
+    // Format the generated Rust with rustfmt so the checked-in output is CANONICAL
+    // and STABLE across regenerations: a developer's `cargo fmt` produces the same
+    // bytes gen-syntax does, so there is no fmt/gen-syntax ping-pong. (Mirrors how
+    // rust-analyzer formats its ungrammar-generated syntax nodes.) `node-types.sha256`
+    // is not Rust, so it is excluded. Edition matches al-syntax (2021).
+    let rs_paths: Vec<_> = files
+        .iter()
+        .filter(|(name, _)| name.ends_with(".rs"))
+        .map(|(name, _)| out_dir.join(name))
+        .collect();
+    let status = std::process::Command::new("rustfmt")
+        .arg("--edition")
+        .arg("2021")
+        .args(&rs_paths)
+        .status()
+        .unwrap_or_else(|e| {
+            panic!(
+                "failed to run rustfmt on the generated files \
+                 (install with `rustup component add rustfmt`): {e}"
+            )
+        });
+    if !status.success() {
+        panic!("rustfmt failed on the generated files (exit {status})");
+    }
+    println!("formatted {} generated Rust file(s)", rs_paths.len());
+
     println!(
         "gen-syntax: {} named kinds, {} fields, {} typed structs, {} union enums, hash {}",
         model.kinds.len(), model.fields.len(), model.nodes.len(), model.unions.len(), hash
