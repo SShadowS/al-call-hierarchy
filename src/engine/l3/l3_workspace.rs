@@ -758,12 +758,11 @@ fn index_table(
 #[allow(clippy::too_many_arguments)]
 fn index_table_ir(
     o: &al_syntax::ir::ObjectDecl,
-    decl: Node,
+    ir_file: &al_syntax::ir::AlFile,
     object_id: &str,
     app_guid: &str,
     table_number: i64,
     table_name: &str,
-    source: &str,
     is_extension_stub: bool,
 ) -> L3Table {
     let table_id = format!("{app_guid}/table/{table_number}");
@@ -805,7 +804,7 @@ fn index_table_ir(
         .find(|p| p.name == "tabletype")
         .map(|p| p.value.trim().to_lowercase() == "temporary")
         .unwrap_or(false)
-        || table_has_temp_contract_guard(decl, source);
+        || crate::engine::l2::ir_walk::ir_table_has_temp_contract_guard(ir_file, o);
     L3Table {
         id: table_id,
         app_guid: app_guid.to_string(),
@@ -1301,12 +1300,11 @@ fn project_file(
             workspace.tables.push(match ir_obj {
                 Some(o) => index_table_ir(
                     o,
-                    decl,
+                    &ir_file,
                     &object_id,
                     app_guid,
                     object_number,
                     &name,
-                    source,
                     object_type == "TableExtension",
                 ),
                 None => index_table(

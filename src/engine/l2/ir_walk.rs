@@ -1956,22 +1956,16 @@ fn ir_istemporary_receiver(file: &AlFile, eid: ExprId) -> Option<String> {
     }
 }
 
-/// IR port of `is_temporary_error_guard` / `entry_temp_guard_receiver_of` (the receiver
-/// only — the caller verifies it is a record var). The FIRST body statement is
-/// `if not <X>.IsTemporary[()] then Error(...)` (or `<X>.IsTemporary = false`), `<X>` a
-/// bare identifier, the then-branch a single PARENFUL `Error(...)` call.
-pub fn ir_entry_temp_guard_receiver(file: &AlFile, routine: &RoutineDecl) -> Option<String> {
-    use al_syntax::ir::{BinaryOp, Literal, UnaryOp};
-    let body = routine.body?;
-    let first = file.ir.block(body).items.iter().find_map(|it| match it {
-        al_syntax::ir::BlockItem::Stmt(s) => Some(*s),
-        _ => None,
-    })?;
+/// The receiver of an `if not <X>.IsTemporary[()] then Error(...)` (or
+/// `<X>.IsTemporary = false`) guard STATEMENT — `<X>` a bare identifier, the
+/// then-branch a single PARENFUL `Error(...)` call. Mirrors `is_temporary_error_guard`.
+fn ir_is_temporary_error_guard(file: &AlFile, sid: al_syntax::ir::StmtId) -> Option<String> {
+    use al_syntax::ir::{BinaryOp, BlockItem, Literal, UnaryOp};
     let StmtKind::If {
         cond,
         then_block,
         else_block,
-    } = &file.ir.stmt(first).kind
+    } = &file.ir.stmt(sid).kind
     else {
         return None;
     };
@@ -2013,7 +2007,7 @@ pub fn ir_entry_temp_guard_receiver(file: &AlFile, routine: &RoutineDecl) -> Opt
         .items
         .iter()
         .filter_map(|it| match it {
-            al_syntax::ir::BlockItem::Stmt(s) => Some(*s),
+            BlockItem::Stmt(s) => Some(*s),
             _ => None,
         })
         .collect();
@@ -2034,6 +2028,44 @@ pub fn ir_entry_temp_guard_receiver(file: &AlFile, routine: &RoutineDecl) -> Opt
         ExprKind::Identifier(n) if n.eq_ignore_ascii_case("error") => Some(receiver),
         _ => None,
     }
+}
+
+/// IR port of `entry_temp_guard_receiver_of` (the receiver only — the caller verifies it
+/// is a record var). The guard must be the FIRST body statement.
+pub fn ir_entry_temp_guard_receiver(file: &AlFile, routine: &RoutineDecl) -> Option<String> {
+    let body = routine.body?;
+    let first = file.ir.block(body).items.iter().find_map(|it| match it {
+        al_syntax::ir::BlockItem::Stmt(s) => Some(*s),
+        _ => None,
+    })?;
+    ir_is_temporary_error_guard(file, first)
+}
+
+/// IR port of `table_has_temp_contract_guard` (G-2 Part 1): a table whose
+/// OnInsert/OnModify/OnDelete/OnRename trigger has a top-level
+/// `if not Rec.IsTemporary then Error(...)` guard is temporary by runtime contract.
+pub fn ir_table_has_temp_contract_guard(file: &AlFile, o: &al_syntax::ir::ObjectDecl) -> bool {
+    use al_syntax::ir::{BlockItem, RoutineKind};
+    for r in &o.routines {
+        if r.kind != RoutineKind::Trigger {
+            continue;
+        }
+        if !matches!(
+            r.name.to_ascii_lowercase().as_str(),
+            "oninsert" | "onmodify" | "ondelete" | "onrename"
+        ) {
+            continue;
+        }
+        let Some(body) = r.body else { continue };
+        for it in &file.ir.block(body).items {
+            if let BlockItem::Stmt(s) = it {
+                if ir_is_temporary_error_guard(file, *s).as_deref() == Some("rec") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 // ---- variables (PVariableSymbol: params + locals + object globals) ----
