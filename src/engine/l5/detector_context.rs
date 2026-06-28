@@ -391,11 +391,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         if from_summary.is_empty() && from_edges.is_empty() {
             continue;
         }
-        let combined: Vec<Uncertainty> = from_summary
-            .iter()
-            .cloned()
-            .chain(from_edges.into_iter())
-            .collect();
+        let combined: Vec<Uncertainty> = from_summary.iter().cloned().chain(from_edges).collect();
         uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
     }
 
@@ -615,11 +611,7 @@ pub(crate) fn build_detector_context_cross_app(
         if from_summary.is_empty() && from_edges.is_empty() {
             continue;
         }
-        let combined: Vec<Uncertainty> = from_summary
-            .iter()
-            .cloned()
-            .chain(from_edges.into_iter())
-            .collect();
+        let combined: Vec<Uncertainty> = from_summary.iter().cloned().chain(from_edges).collect();
         uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
     }
 

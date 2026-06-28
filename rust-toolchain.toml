@@ -1,0 +1,7 @@
+# Pin the toolchain so CI (which gates on `clippy -- -D warnings`) is deterministic.
+# A floating `stable` means every new clippy release that adds lints can break CI
+# without a code change. Bump deliberately, re-run `cargo clippy --release -- -D
+# warnings` locally, then fix any new lints in the same PR.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]

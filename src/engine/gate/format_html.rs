@@ -293,7 +293,7 @@ fn render_finding(
 
     // fixOptions — sorted by safety desc (STABLE)
     let mut fix_options = finding.fix_options.clone();
-    fix_options.sort_by(|a, b| safety_rank(&b.safety).cmp(&safety_rank(&a.safety)));
+    fix_options.sort_by_key(|x| std::cmp::Reverse(safety_rank(&x.safety)));
     let fixes_html: String = fix_options
         .iter()
         .map(|f| {

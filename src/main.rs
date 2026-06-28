@@ -292,7 +292,7 @@ fn print_text(
 
     // Sort by complexity (descending)
     let mut sorted_metrics = result.metrics.clone();
-    sorted_metrics.sort_by(|a, b| b.complexity.cmp(&a.complexity));
+    sorted_metrics.sort_by_key(|m| std::cmp::Reverse(m.complexity));
 
     println!("PROCEDURES (sorted by complexity):\n");
     println!(

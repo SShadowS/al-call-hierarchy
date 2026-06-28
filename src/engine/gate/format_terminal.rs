@@ -268,7 +268,7 @@ fn render_rolled(
                 .map(|(desc, safety)| (c.detector.as_str(), desc.as_str(), safety.as_str()))
         })
         .collect();
-    fixes.sort_by(|a, b| safety_rank(b.2).cmp(&safety_rank(a.2)));
+    fixes.sort_by_key(|x| std::cmp::Reverse(safety_rank(x.2)));
 
     if !fixes.is_empty() {
         lines.push("    fix options (safest first):".to_string());

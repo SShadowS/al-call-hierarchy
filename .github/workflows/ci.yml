@@ -21,7 +21,9 @@ jobs:
           path: tree-sitter-al
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        # No `toolchain:` input → the action reads the pinned channel + components
+        # from rust-toolchain.toml (single source of truth, matches local dev).
+        uses: dtolnay/rust-toolchain@master
 
       - name: Check formatting
         run: cargo fmt --check

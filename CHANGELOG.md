@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Pinned the toolchain (`rust-toolchain.toml` → 1.96.0).** CI floated `dtolnay/
+  rust-toolchain@stable` while gating on `cargo clippy -- -D warnings`, so every new
+  clippy release that adds lints could break CI with no code change (it did: 1.96 added
+  `unnecessary_sort_by` / `useless_conversion` cases the 1.94 dev box never saw). The pin
+  makes CI deterministic and matches local dev; `ci.yml` now reads the channel + components
+  from the file (`@master`, no `toolchain:` input). Bump deliberately + clear new lints in
+  the same PR. Also fixed the 1.96 lints surfaced: 3 `sort_by` → `sort_by_key(Reverse(..))`
+  (descending sorts preserved), 2 redundant `.into_iter()` in `chain(..)`.
 - **Cleared the clippy `-D warnings` debt + whole-crate edition-2024 rustfmt** (CI gate
   prerequisites for merging `feat/owned-syntax-ir` → `master`). The edition-2024 upgrade
   enabled let-chains, so clippy's `collapsible_if` flagged ~155 `if x { if let … }` nests
