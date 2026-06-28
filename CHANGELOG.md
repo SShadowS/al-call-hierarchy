@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Content-addressed source cache** (`src/snapshot/cache.rs`) — `cached_source(app_path)`
+  stores the extracted `Vec<SourceFile>` from embedded `.app` packages as
+  `<OS-cache-dir>/al-ch-snapshot-cache/<blake3-hex>.json`; the content hash
+  is the key so stale reads are structurally impossible. `EmbeddedAppProvider`
+  now routes through the cache. `SourceFile` gains `Serialize`/`Deserialize`.
+- **Snapshot robustness gate** (`tests/snapshot_robustness.rs`) — `cdo_snapshot_deep_parse_is_panic_free`:
+  env-guarded (`CDO_WS`) integration test that builds the full CDO app-set snapshot
+  and deep-parses it; asserts no panic and >1000 files parsed (Plan 1A §3.7 gate).
 - **App-set snapshot ingestion substrate** (`src/snapshot/`) — per-app source
   acquisition with identity verification + trust tiers (Spec 1 / Plan 1A).
 - **`snapshot::parse_snapshot`** — deep-parse of snapshot source into the owned

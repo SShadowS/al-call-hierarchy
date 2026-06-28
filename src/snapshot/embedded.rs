@@ -15,7 +15,7 @@ use std::path::Path;
 const NAVX_HEADER_SIZE: u64 = 40;
 
 /// One embedded source file recovered from a `.app`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SourceFile {
     pub virtual_path: String,
     pub text: String,
