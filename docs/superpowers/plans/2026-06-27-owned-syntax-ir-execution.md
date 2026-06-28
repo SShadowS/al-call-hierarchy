@@ -613,3 +613,39 @@ compares the L4/L5 summary (not just L2 PFeatures) IR-vs-legacy, to catch skip-f
 + table-trigger temp detection. Port these onto the IR (extend ObjectDecl with extends/
 implements/page_controls/fields/keys) to finish the L3 cut, then Phase 4 (LSP front-end,
 retire 6 queries) + Phase 5 (seal: drop engine tree-sitter dep).
+
+---
+
+## UPDATE 11 — L3 object/table + routine metadata ported to the owned IR
+
+Commits d093d4a, 7f7055f, e34829d. `l3_workspace::project_file` now sources from the
+owned IR (matched by start byte; legacy tree-sitter extractors only as a defensive
+fallback for an unmatched decl/routine), all validated byte-identical via the L3 /
+R3a-2 / event / coverage goldens:
+
+- **Object metadata:** name/number, properties (SourceTable/PageType/Subtype/
+  InherentCommitBehavior/SourceTableTemporary), extends target, implements list, page
+  controls — via new `ObjectDecl.{extends_target, implements, page_controls}` +
+  `PageControl`.
+- **Table metadata:** fields + keys + TableType (`index_table_ir`) — via
+  `ObjectDecl.{fields, keys}` + `FieldDecl`. The lowerer uses the grammar's typed field
+  accessors (base_object / field id/name/type / key field_list / part name+source).
+- **Routine envelope:** kind / attributesParsed / accessModifier / bodyAvailable /
+  parseIncomplete (ir_routine_kind / ir_attributes / r.access_modifier / r.body / r.parse_incomplete).
+- **Routine signature:** parameters / return_type / normalizedSignatureHash / source_anchor
+  (ir_parameter_symbols / r.return_type / normalized_signature_hash / new `anchor_from_origin`).
+
+### REMAINING L3 tree-sitter (the harder body-pattern / structural pieces):
+- the routine iteration itself (`collect_routine_nodes` over tree-sitter nodes — the
+  loop still keys on tree-sitter routine nodes, matched to IR by byte);
+- object globals + global-record-var promotion (`extract_object_globals` /
+  `extract_object_global_record_vars` — port via `ObjectDecl.globals`);
+- `object_procedure_names` (port via `o.routines` names);
+- `entry_temp_guard_receiver_of` (G-2 entry guard body pattern);
+- `enclosing_member_of` (page/field-trigger member context, structural);
+- the table temp-contract `IsTemporary` guard (`table_has_temp_contract_guard`) in index_table.
+Then Phase 4 (LSP front-end, retire 6 queries) + Phase 5 (seal: drop engine tree-sitter dep).
+
+SESSION TALLY: Phase 2 complete; Phase 3 ~80% (all object/table + routine metadata +
+features on IR; body_walk gone). ~14 commits this session, full suite green throughout,
+grammar + key cutovers reviewed by gpt-5.5 + gemini-3.1-pro.
