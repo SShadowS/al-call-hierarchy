@@ -3,6 +3,7 @@
 //! Turns "workspace + symbol-only dep tables" into an explicit set of
 //! identity-verified, per-app source roots ready for deep resolution.
 
+pub mod embedded;
 pub mod identity;
 
 pub use identity::{AppId, Provenance, TrustTier};

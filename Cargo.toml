@@ -100,7 +100,7 @@ clap = { version = "4", features = ["derive"] }
 # pulls a second copy of the crate and breaks the trait bounds at the
 # global::set_tracer_provider call site). tracing-opentelemetry 0.27 is the
 # bridge version that targets opentelemetry 0.26.
-blake3 = { version = "1", optional = true }
+blake3 = { version = "1" }
 opentelemetry = { version = "0.26", optional = true }
 opentelemetry_sdk = { version = "0.26", features = ["rt-tokio-current-thread"], optional = true }
 opentelemetry-application-insights = { version = "0.36", features = ["reqwest-blocking-client"], optional = true }
@@ -113,7 +113,6 @@ reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-fea
 [features]
 default = ["telemetry"]
 telemetry = [
-    "dep:blake3",
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-application-insights",

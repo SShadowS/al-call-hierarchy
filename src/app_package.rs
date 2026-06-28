@@ -247,21 +247,25 @@ struct SymbolMethodProperty {
     value: Option<serde_json::Value>,
 }
 
-/// Extract and parse a .app package file
-pub fn extract_app_package(path: &Path) -> Result<ParsedAppPackage> {
+/// Open a `.app` file's embedded zip by skipping the 40-byte NAVX header.
+///
+/// Shared by [`extract_app_package`] and [`crate::snapshot::embedded`] so the
+/// NAVX-offset + zip-open logic is not duplicated.
+pub(crate) fn open_app_zip(
+    path: &Path,
+) -> Result<zip::ZipArchive<std::io::BufReader<std::fs::File>>> {
     let file = std::fs::File::open(path)
-        .with_context(|| format!("Failed to open app file: {}", path.display()))?;
-
+        .with_context(|| format!("Failed to open .app file: {}", path.display()))?;
     let mut reader = std::io::BufReader::new(file);
-
-    // Skip the 40-byte NAVX header
     reader
         .seek(SeekFrom::Start(NAVX_HEADER_SIZE))
         .context("Failed to skip NAVX header")?;
+    zip::ZipArchive::new(reader).context("Failed to open .app as ZIP archive")
+}
 
-    // Open as ZIP archive
-    let mut archive =
-        zip::ZipArchive::new(reader).context("Failed to read app file as ZIP archive")?;
+/// Extract and parse a .app package file
+pub fn extract_app_package(path: &Path) -> Result<ParsedAppPackage> {
+    let mut archive = open_app_zip(path)?;
 
     // Parse NavxManifest.xml
     let metadata = parse_manifest(&mut archive)?;
