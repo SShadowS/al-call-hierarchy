@@ -45,6 +45,14 @@ pub struct Evidence {
 }
 
 impl Evidence {
+    /// Provenance: this edge was derived from STRUCTURAL/SYNTACTIC analysis (the
+    /// parsed AST), as opposed to symbol-table resolution or a heuristic. The
+    /// serialized `source` string is `"tree-sitter"` — a STABLE provenance LABEL
+    /// retained for golden compatibility, NOT a live dependency: since the Phase 5
+    /// seal the syntactic evidence comes from the owned `al-syntax` IR, and the
+    /// engine no longer links tree-sitter. (Renaming the serialized label would
+    /// churn the event/policy goldens for no behavior change; the label's meaning —
+    /// "syntactic provenance" — is unchanged.)
     fn tree_sitter() -> Evidence {
         Evidence {
             source: "tree-sitter".to_string(),
