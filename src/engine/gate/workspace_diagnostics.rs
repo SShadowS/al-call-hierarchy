@@ -25,9 +25,7 @@
 use std::path::Path;
 
 use crate::engine::l2::l2_workspace::{count_app_json_paths, discover_al_files, read_al_source};
-use crate::engine::l2::scope;
 use crate::engine::l5::registry::Diagnostic;
-use tree_sitter::{Node, Parser};
 
 /// Compute al-sem's `workspace.diagnostics` for a disk workspace: PROVIDER
 /// diagnostics (remapped to `stage: "discover"`) concatenated with INDEX
@@ -108,21 +106,13 @@ pub fn compute_workspace_diagnostics(workspace: &Path) -> Vec<Diagnostic> {
     }
 
     // --- 2. INDEX diagnostics (buildSemanticIndex; their own stage) ------------
-    // Per unit, in ingestion (rel-posix-sorted) order: if the parse produces NO
-    // object declaration, emit an `info`/`index` "No object declaration found in
-    // <rel>" — al-sem `indexer.ts:56-63`. (PARSER001 / failed-to-index are
-    // unreachable here: the native tree-sitter parser is always available in the
-    // engine and `Parser::parse` returning None is treated as "no objects".)
-    let mut parser = Parser::new();
-    if parser.set_language(&crate::language::language()).is_err() {
-        return out;
-    }
+    // Per unit, in ingestion (rel-posix-sorted) order: if the owned-IR parse produces
+    // NO object declaration, emit an `info`/`index` "No object declaration found in
+    // <rel>" — al-sem `indexer.ts:56-63`. Uses the same `al_syntax::parse` the engine
+    // indexes with, so the diagnostic reflects exactly what L3 sees (incl. objects
+    // nested under a `namespace`, which the former direct-root-children check missed).
     for (rel, source) in &units {
-        let has_object = match parser.parse(source, None) {
-            Some(tree) => root_has_object_declaration(tree.root_node()),
-            None => false,
-        };
-        if !has_object {
+        if al_syntax::parse(source).objects.is_empty() {
             out.push(Diagnostic {
                 severity: "info".to_string(),
                 stage: "index".to_string(),
@@ -150,17 +140,4 @@ fn read_root_app_json_id(workspace: &Path) -> (bool, Option<String>) {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
     (true, id)
-}
-
-/// True iff the parsed file root has ≥1 object declaration (any node type that
-/// `scope::object_type_for` recognizes). Mirrors `indexObjects` returning a
-/// non-empty result.
-fn root_has_object_declaration(root: Node) -> bool {
-    let mut child = root.walk();
-    for n in root.children(&mut child) {
-        if scope::object_type_for(n.kind()).is_some() {
-            return true;
-        }
-    }
-    false
 }

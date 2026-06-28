@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`workspace_diagnostics` "No object declaration found" now uses the owned IR**
+  (`al_syntax::parse(...).objects.is_empty()`) instead of a direct tree-sitter
+  root-children scan (Phase 5 step). The diagnostic now matches exactly what the
+  engine indexes (including objects nested under a `namespace`, which the old
+  direct-child check missed). Removed the tree-sitter `Parser` + `root_has_object_declaration`.
+
 ### Removed
 - **The legacy tree-sitter LSP parser is gone (Phase 4 complete).** Deleted `AlParser`
   + the 6 S-expr queries' consumers in `parser.rs`, the tree-sitter
