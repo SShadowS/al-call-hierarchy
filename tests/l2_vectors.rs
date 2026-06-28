@@ -14,8 +14,6 @@
 
 use al_call_hierarchy::engine::l2::features::PFeatures;
 use al_call_hierarchy::engine::l2::features_for_named_routine;
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -55,24 +53,15 @@ fn all_l2_vector_families_match() {
     assert_eq!(doc.family_count, 14, "expected 14 vector families");
     assert_eq!(doc.vectors.len(), 14, "expected 14 vectors");
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-
     let mut failures: Vec<String> = Vec::new();
 
     for vec in &doc.vectors {
-        let tree = parser
-            .parse(&vec.source, None)
-            .expect("source parses into a tree");
         let actual = features_for_named_routine(
             &vec.source,
             &vec.routine_name,
             APP_GUID,
             MODEL_INSTANCE_ID,
             SOURCE_UNIT_ID,
-            &tree,
         );
         let Some(actual) = actual else {
             failures.push(format!(

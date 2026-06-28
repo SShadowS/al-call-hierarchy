@@ -16,8 +16,6 @@
 //!   - modelInstanceId = "r0"
 
 use al_call_hierarchy::engine::l2::operation_order::{analyze_named_routine_order, OperationOrder};
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -117,24 +115,15 @@ fn all_l2order_vector_families_match() {
     assert_eq!(doc.vector_count, 16, "expected 16 vectors");
     assert_eq!(doc.vectors.len(), 16, "expected 16 vectors");
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-
     let mut failures: Vec<String> = Vec::new();
 
     for vec in &doc.vectors {
-        let tree = parser
-            .parse(&vec.source, None)
-            .expect("source parses into a tree");
         let analysis = analyze_named_routine_order(
             &vec.source,
             &vec.routine_name,
             APP_GUID,
             MODEL_INSTANCE_ID,
             SOURCE_UNIT_ID,
-            &tree,
         );
         let Some(analysis) = analysis else {
             failures.push(format!(

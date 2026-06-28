@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **The engine's `tree-sitter` dependency is gone — `al-syntax` is the SOLE
+  tree-sitter linker (Phase 5 SEAL complete).** Deleted the test-only legacy L2
+  "dual-run oracle" (`dual_run_support.rs`, `tests/ir_dual_run.rs`) and the legacy
+  tree-sitter L2 body-walk (`engine/l2/{body_walk,cfn,classify}.rs` + the tree-sitter
+  fns in `mod`/`scope`/`node_util`/`control_context`/`operation_order`/`l2_workspace`),
+  keeping the tree-sitter-free production helpers. Removed `tree-sitter` +
+  `streaming-iterator` from `[dependencies]`. The engine consumes `al_syntax::parse`
+  exclusively; `cargo tree -i tree-sitter` now shows only `al-syntax`.
+  - The L2 single-routine analyzers (`control_context::analyze_named_routine`,
+    `operation_order::analyze_named_routine_order`) + the `features_for_named_routine`
+    test entry now build `PFeatures` via the owned IR
+    (`l2_workspace::ir_features_for_named_routine`); the l2 / l2cc / l2order vector +
+    oracle tests and `temp_state_capture` were converted to the IR path (no tree-sitter).
+  - The migration-era `tests/ir_object_set_parity.rs` (IR-vs-tree-sitter set parity, a
+    Phase-2/3 cutover precondition) is retired — its invariant is permanently satisfied.
+  - Rebaselined 2 synthetic L2 vectors: the IR no longer emits an UNQUOTED qualified-enum
+    VALUE (`Codeunit::A` → `a`) as a `condition_reference`. The legacy capture was a
+    tree-sitter token-shape artifact (it captured a bare `identifier` but never a quoted
+    value); an object/enum name is a compile-time constant, not a runtime variable, so
+    dropping it is more accurate (reviewed: gpt-5.5 + gemini-3.1-pro). No production
+    golden impact (the corpus's only such case is quoted).
+
 ### Changed
 - **R0 identity snapshot (`engine::snapshot` / `aldump`) now derives from the owned IR**
   (`al_syntax::parse`) instead of its own tree-sitter walk (Phase 5 step). Object/

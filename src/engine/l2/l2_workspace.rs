@@ -37,15 +37,12 @@
 //! logs/warnings go to stderr. The projection carries no absolute paths.
 
 use super::features::{L2Projection, PFeatures, PObject, PRoutine};
-use super::node_util::{named_children, node_text};
 use crate::engine::ids::{
     encode_object_id, normalized_signature_hash, to_stable_object_id,
     to_stable_routine_id_from_parts, ParamSpec,
 };
 use crate::engine::l2::scope;
-use serde_json::json;
 use std::path::Path;
-use tree_sitter::Node;
 
 /// The intentional stable corpus/model-instance label (matches the golden's id
 /// prefixes `r0/…`). It does not enter the R1a stable comparison subset.
@@ -229,191 +226,6 @@ pub(crate) fn count_app_json_paths(workspace: &Path) -> Vec<std::path::PathBuf> 
     paths
 }
 
-// ---------------------------------------------------------------------------
-// Metadata extraction — mirrors al-sem object-indexer.ts / routine-indexer.ts /
-// attribute-from-node.ts.
-// ---------------------------------------------------------------------------
-
-/// Strip a single layer of surrounding double OR single quotes (mirrors
-/// attribute-from-node.ts `stripQuoteChars`).
-fn strip_quote_chars(text: &str) -> &str {
-    let mut chars = text.chars();
-    let first = chars.next();
-    let last = chars.next_back();
-    if (first == Some('"') && last == Some('"')) || (first == Some('\'') && last == Some('\'')) {
-        &text[1..text.len() - 1]
-    } else {
-        text
-    }
-}
-
-/// Classify a grammar node type into the AttributeArgKind string (else "unknown").
-fn attr_arg_kind(node_type: &str) -> &'static str {
-    match node_type {
-        "boolean" => "boolean",
-        "integer" => "integer",
-        "string_literal" => "string_literal",
-        "identifier" => "identifier",
-        "quoted_identifier" => "quoted_identifier",
-        "qualified_enum_value" => "qualified_enum_value",
-        "database_reference" => "database_reference",
-        "member_expression" => "member_expression",
-        _ => "unknown",
-    }
-}
-
-/// Build a single `AttributeArg` JSON object (mirrors `argFromNode`).
-fn attr_arg_from_node(node: Node, source: &str) -> serde_json::Value {
-    let kind = attr_arg_kind(node.kind());
-    let text = node_text(node, source).to_string();
-    let mut obj = serde_json::Map::new();
-    obj.insert("kind".to_string(), json!(kind));
-    obj.insert("text".to_string(), json!(text));
-
-    // deriveValueParts.
-    match kind {
-        "boolean" | "integer" | "identifier" => {
-            obj.insert("value".to_string(), json!(text));
-        }
-        "string_literal" | "quoted_identifier" => {
-            obj.insert("value".to_string(), json!(strip_quote_chars(&text)));
-        }
-        "qualified_enum_value" => {
-            let qualifier = node
-                .child_by_field_name("enum_type")
-                .map(|n| node_text(n, source).to_string());
-            let member = node
-                .child_by_field_name("value")
-                .map(|n| strip_quote_chars(node_text(n, source)).to_string());
-            if let Some(m) = &member {
-                obj.insert("value".to_string(), json!(m));
-            }
-            if let Some(q) = qualifier {
-                obj.insert("qualifier".to_string(), json!(q));
-            }
-            if let Some(m) = member {
-                obj.insert("member".to_string(), json!(m));
-            }
-        }
-        "database_reference" => {
-            let qualifier = node
-                .child_by_field_name("keyword")
-                .map(|n| node_text(n, source).to_string());
-            let member = node
-                .child_by_field_name("table_name")
-                .map(|n| strip_quote_chars(node_text(n, source)).to_string());
-            if let Some(m) = &member {
-                obj.insert("value".to_string(), json!(m));
-            }
-            if let Some(q) = qualifier {
-                obj.insert("qualifier".to_string(), json!(q));
-            }
-            if let Some(m) = member {
-                obj.insert("member".to_string(), json!(m));
-            }
-        }
-        // member_expression / unknown → no value parts.
-        _ => {}
-    }
-    serde_json::Value::Object(obj)
-}
-
-/// `attributeInfoFromNode` — structured `{name, args, raw}` JSON, or None when
-/// the attribute shape is unrecognizable (parse error).
-pub fn attribute_info_from_node(item: Node, source: &str) -> Option<serde_json::Value> {
-    let content = item.child_by_field_name("attribute")?;
-    let name = content
-        .child_by_field_name("name")
-        .map(|n| node_text(n, source).to_string())
-        .unwrap_or_default();
-    if name.is_empty() {
-        return None;
-    }
-    let mut args = Vec::new();
-    if let Some(args_node) = content.child_by_field_name("arguments") {
-        if let Some(list) = named_children(args_node)
-            .into_iter()
-            .find(|c| c.kind() == "attribute_argument_list")
-        {
-            for child in named_children(list) {
-                args.push(attr_arg_from_node(child, source));
-            }
-        }
-    }
-    Some(json!({
-        "name": name,
-        "args": args,
-        "raw": node_text(item, source),
-    }))
-}
-
-/// `classifyAndCollectAttributes` — raw `attributes` (document order) +
-/// structured `attributesParsed` (document order) by walking preceding
-/// `attribute_item` siblings.
-pub fn collect_attributes(node: Node, source: &str) -> (Vec<String>, Vec<serde_json::Value>) {
-    let mut attributes: Vec<String> = Vec::new();
-    let mut parsed: Vec<serde_json::Value> = Vec::new();
-    let mut sibling = node.prev_sibling();
-    while let Some(sib) = sibling {
-        if sib.kind() != "attribute_item" {
-            break;
-        }
-        // unshift to keep document order.
-        attributes.insert(0, node_text(sib, source).to_string());
-        if let Some(info) = attribute_info_from_node(sib, source) {
-            parsed.insert(0, info);
-        }
-        sibling = sib.prev_sibling();
-    }
-    (attributes, parsed)
-}
-
-/// `classifyAccessModifier` — the `modifier` field on a `procedure` node
-/// (`local`/`internal`/`protected`); None for triggers / default-access.
-/// `pub(crate)` so the L3 assembly path can call it directly (d32 scope gate).
-pub(crate) fn classify_access_modifier(node: Node, source: &str) -> Option<String> {
-    if node.kind() != "procedure" {
-        return None;
-    }
-    let modifier = node.child_by_field_name("modifier")?;
-    let text = node_text(modifier, source).trim().to_lowercase();
-    match text.as_str() {
-        "local" => Some("local".to_string()),
-        "internal" => Some("internal".to_string()),
-        "protected" => Some("protected".to_string()),
-        _ => None,
-    }
-}
-
-/// `classifyAndCollectAttributes` (kind only) — base kind + first event attr.
-pub fn classify_kind(node: Node, source: &str) -> &'static str {
-    let mut kind = if node.kind() == "trigger_declaration" {
-        "trigger"
-    } else {
-        "procedure"
-    };
-    let mut sibling = node.prev_sibling();
-    while let Some(sib) = sibling {
-        if sib.kind() != "attribute_item" {
-            break;
-        }
-        if let Some(info) = attribute_info_from_node(sib, source) {
-            if let Some(name) = info.get("name").and_then(|n| n.as_str()) {
-                let name_lc = name.to_lowercase();
-                if name_lc == "eventsubscriber" {
-                    kind = "event-subscriber";
-                    break;
-                } else if name_lc == "integrationevent" || name_lc == "businessevent" {
-                    kind = "event-publisher";
-                    break;
-                }
-            }
-        }
-        sibling = sib.prev_sibling();
-    }
-    kind
-}
-
 /// Build one fully-populated [`PRoutine`] from an IR routine (features →
 /// control-context → operation-order → capabilities), the single shared per-routine
 /// path for BOTH [`project_file`] and [`project_named_routine`] so they cannot drift.
@@ -520,6 +332,59 @@ fn build_proutine(
     apply_capabilities(&mut routine);
 
     Some(routine)
+}
+
+/// Project the L2 `PFeatures` (+ parameters + lowercased attribute names) for a
+/// single NAMED routine in a one-file source, driven by the owned IR. Shared by the
+/// control-context / operation-order single-routine analyzers (and their vector
+/// tests). Mirrors [`build_proutine`]'s per-routine feature setup; returns `None`
+/// when the routine isn't found.
+pub fn ir_features_for_named_routine(
+    source: &str,
+    routine_name: &str,
+    app_guid: &str,
+    model_instance_id: &str,
+    source_unit_id: &str,
+) -> Option<(PFeatures, Vec<scope::ParameterSymbol>, Vec<String>)> {
+    use crate::engine::l2::ir_walk;
+    let ir_file = al_syntax::parse(source);
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        let Some(object_type) = ir_walk::ir_object_type(&o.kind) else {
+            continue;
+        };
+        let object_number = o.id.unwrap_or(0);
+        let (_subtype, _page_type, source_table_name, _icb) =
+            ir_walk::ir_object_metadata(o, object_type);
+        for r in &o.routines {
+            if r.name != routine_name {
+                continue;
+            }
+            let kind = ir_walk::ir_routine_kind(r);
+            let parameters = ir_walk::ir_parameter_symbols(r);
+            let routine_id = scope::compute_routine_id(
+                app_guid,
+                object_type,
+                object_number,
+                kind,
+                &r.name,
+                &parameters,
+                r.return_type.as_deref(),
+                model_instance_id,
+            );
+            let features = ir_walk::project_routine_features_ir(
+                &ir_file,
+                oi,
+                r,
+                &routine_id,
+                source,
+                source_unit_id,
+                source_table_name.as_deref(),
+            );
+            let attr_names_lc = r.attributes.clone();
+            return Some((features, parameters, attr_names_lc));
+        }
+    }
+    None
 }
 
 /// Build the full L2 projection for one source file, driven entirely by the owned

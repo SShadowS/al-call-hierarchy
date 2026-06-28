@@ -18,11 +18,8 @@
 
 use super::control_flow::{branch_termination, else_termination, has_explicit_else, Termination};
 use super::features::{PCFNNode, PCallSite, PFeatures, POperationSite};
-use super::node_util::{named_children, node_text, strip_quotes, Utf16Cols};
-use super::scope::{extract_parameters, object_type_for, ParameterSymbol};
-use super::{extract_object_number, features_for_named_routine};
+use super::scope::ParameterSymbol;
 use std::collections::HashMap;
-use tree_sitter::Node;
 
 // ============================================================================
 // Lattice
@@ -591,20 +588,17 @@ pub fn analyze_named_routine(
     app_guid: &str,
     model_instance_id: &str,
     source_unit_id: &str,
-    tree: &tree_sitter::Tree,
 ) -> Option<RoutineControlContexts> {
-    // R1a body walk → the projected features (CFN skeleton + call/op sites + vars).
-    let features = features_for_named_routine(
-        source,
-        routine_name,
-        app_guid,
-        model_instance_id,
-        source_unit_id,
-        tree,
-    )?;
-
-    // Locate the routine node again to read parameters + attribute names.
-    let (parameters, attr_names_lc) = routine_metadata(tree, source, routine_name)?;
+    // Owned-IR body projection → features (CFN skeleton + call/op sites + vars) +
+    // parameters + lowercased attribute names.
+    let (features, parameters, attr_names_lc) =
+        crate::engine::l2::l2_workspace::ir_features_for_named_routine(
+            source,
+            routine_name,
+            app_guid,
+            model_instance_id,
+            source_unit_id,
+        )?;
 
     let is_handled_vars = derive_is_handled_vars(&features);
 
@@ -641,69 +635,4 @@ pub fn analyze_named_routine(
         call_sites: features.call_sites,
         operation_sites: features.operation_sites,
     })
-}
-
-/// Re-locate the named routine node and read its parameters + lowercased
-/// attribute names (for TryFunction + by-var Boolean eligibility). Mirrors the
-/// routine-finding loop in `features_for_named_routine`.
-fn routine_metadata(
-    tree: &tree_sitter::Tree,
-    source: &str,
-    routine_name: &str,
-) -> Option<(Vec<ParameterSymbol>, Vec<String>)> {
-    let root = tree.root_node();
-    let _cols = Utf16Cols::new(source);
-    for decl in named_children(root) {
-        if object_type_for(decl.kind()).is_none() {
-            continue;
-        }
-        let _ = extract_object_number(decl, source);
-        for routine in collect_routine_nodes(decl) {
-            let Some(nm) = routine.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(nm, source)).to_string();
-            if rname != routine_name {
-                continue;
-            }
-            let parameters = extract_parameters(routine, source);
-            let attr_names_lc = routine_attribute_names_lc(routine, source);
-            return Some((parameters, attr_names_lc));
-        }
-    }
-    None
-}
-
-/// Collect lowercased attribute names from preceding `attribute_item` siblings.
-fn routine_attribute_names_lc(routine: Node, source: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut sibling = routine.prev_sibling();
-    while let Some(sib) = sibling {
-        if sib.kind() != "attribute_item" {
-            break;
-        }
-        if let Some(content) = sib.child_by_field_name("attribute") {
-            if let Some(name_node) = content.child_by_field_name("name") {
-                names.push(node_text(name_node, source).to_lowercase());
-            }
-        }
-        sibling = sib.prev_sibling();
-    }
-    names
-}
-
-/// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
-fn collect_routine_nodes(decl: Node) -> Vec<Node> {
-    let mut out = Vec::new();
-    let mut stack = vec![decl];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
-            out.push(node);
-            continue;
-        }
-        for child in named_children(node) {
-            stack.push(child);
-        }
-    }
-    out
 }

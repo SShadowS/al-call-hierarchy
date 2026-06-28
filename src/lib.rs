@@ -10,8 +10,6 @@
 //! crate cannot compile.
 
 pub mod config;
-/// Legacy extraction reachable from dual-run parity tests (migration scaffolding).
-pub mod dual_run_support;
 pub mod engine;
 /// Tree-sitter AL language bindings. Exposed from the library so additive
 /// binaries (e.g. the R0 `aldump`) can parse without duplicating the `extern`

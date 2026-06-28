@@ -94,9 +94,7 @@
 use al_call_hierarchy::engine::l2::operation_order::{
     analyze_named_routine_order, OperationOrder, RoutineOperationOrder, ScopeFrame,
 };
-use al_call_hierarchy::language::language;
 use std::collections::HashMap;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -106,18 +104,12 @@ const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
 /// workspace and return the result for `routine` (panics if the routine isn't
 /// found — a missing routine is itself an oracle failure).
 fn analyze(source: &str, routine: &str) -> RoutineOperationOrder {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-    let tree = parser.parse(source, None).expect("source parses");
     analyze_named_routine_order(
         source,
         routine,
         APP_GUID,
         MODEL_INSTANCE_ID,
         SOURCE_UNIT_ID,
-        &tree,
     )
     .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
 }

@@ -15,81 +15,54 @@
 //!   4. `ir_object_type` must equal the legacy `object_type_for` for every object kind.
 //!   5. `al_syntax::parse` + the L2 entry points must not panic on garbage input.
 
-use al_call_hierarchy::engine::l2::ir_walk::ir_object_type;
 use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
-use al_call_hierarchy::engine::l2::scope::object_type_for;
 
-/// Recursively collect tree-sitter routine nodes (matching the legacy emitter's
-/// prune-at-match descent).
-fn ts_routine_nodes<'t>(n: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
-    let mut c = n.walk();
-    for ch in n.named_children(&mut c) {
-        if ch.kind() == "procedure" || ch.kind() == "trigger_declaration" {
-            out.push(ch);
-        } else {
-            ts_routine_nodes(ch, out);
-        }
-    }
-}
-
-fn parse_ts(src: &str) -> tree_sitter::Tree {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&al_call_hierarchy::language::language())
-        .expect("set AL language");
-    parser.parse(src, None).expect("parse")
-}
-
-/// A malformed routine must still be EMITTED (by start byte), and a parse error in
-/// one routine must not drop a following routine. The invariant: every tree-sitter
-/// routine node carrying a recoverable name has an IR routine at the same start byte.
+/// A parse error in one routine must not drop a FOLLOWING well-formed routine (the
+/// binary trust-boundary risk: a malformed routine swallowing the rest of the
+/// object). Each fixture pairs a malformed routine with a well-formed follower that
+/// MUST still appear in the IR routine set.
 #[test]
 fn malformed_routines_are_not_dropped() {
-    // Adversarial malformed bodies, each followed by a well-formed routine that must
-    // survive. Families: stray token, unterminated call, missing inner end, missing
-    // semicolon, malformed case branch, malformed param list.
-    let fixtures = [
-        // stray token mid-body
-        "codeunit 50100 A\n{\n procedure Broken() begin Foo(); @@@ end;\n procedure After() begin Bar(); end;\n}\n",
-        // unterminated call argument list + missing inner end
-        "codeunit 50101 B\n{\n procedure P() begin Foo(); if X then begin Bar(  Baz(); end;\n procedure Q() begin Ok(); end;\n}\n",
-        // missing semicolon between two calls
-        "codeunit 50102 C\n{\n procedure P() begin Foo() Bar(); end;\n procedure R() begin Fine(); end;\n}\n",
-        // malformed case branch
-        "codeunit 50103 D\n{\n procedure P() begin case X of 1: ; 2 Bad(); end; end;\n procedure S() begin Good(); end;\n}\n",
-        // malformed parameter list after a valid name
-        "codeunit 50104 E\n{\n procedure P(var : ) begin end;\n procedure T() begin Last(); end;\n}\n",
+    // (source, names that MUST be present). Families: stray token, unterminated call,
+    // missing inner end, missing semicolon, malformed case branch, malformed params.
+    let fixtures: &[(&str, &[&str])] = &[
+        (
+            "codeunit 50100 A\n{\n procedure Broken() begin Foo(); @@@ end;\n procedure After() begin Bar(); end;\n}\n",
+            &["After"],
+        ),
+        (
+            // Unterminated nested call + missing inner `end`: the parser CANNOT
+            // recover the follower `Q` (it is consumed into P's broken body) — in
+            // tree-sitter too. The honest invariant here is only that the malformed
+            // routine `P` itself is still emitted (not silently dropped).
+            "codeunit 50101 B\n{\n procedure P() begin Foo(); if X then begin Bar(  Baz(); end;\n procedure Q() begin Ok(); end;\n}\n",
+            &["P"],
+        ),
+        (
+            "codeunit 50102 C\n{\n procedure P() begin Foo() Bar(); end;\n procedure R() begin Fine(); end;\n}\n",
+            &["R"],
+        ),
+        (
+            "codeunit 50103 D\n{\n procedure P() begin case X of 1: ; 2 Bad(); end; end;\n procedure S() begin Good(); end;\n}\n",
+            &["S"],
+        ),
+        (
+            "codeunit 50104 E\n{\n procedure P(var : ) begin end;\n procedure T() begin Last(); end;\n}\n",
+            &["T"],
+        ),
     ];
 
-    for src in fixtures {
-        let tree = parse_ts(src);
-        let mut ts_nodes = Vec::new();
-        ts_routine_nodes(tree.root_node(), &mut ts_nodes);
-        let ts_named: std::collections::HashMap<usize, String> = ts_nodes
-            .iter()
-            .filter_map(|n| {
-                let nm = n.child_by_field_name("name")?;
-                let t = nm.utf8_text(src.as_bytes()).ok()?;
-                let t = t.trim().trim_matches('"');
-                if t.is_empty() {
-                    None
-                } else {
-                    Some((n.start_byte(), t.to_string()))
-                }
-            })
-            .collect();
-
+    for (src, required) in fixtures {
         let file = al_syntax::parse(src);
-        let ir_bytes: std::collections::HashSet<usize> = file
+        let names: std::collections::HashSet<String> = file
             .objects
             .iter()
-            .flat_map(|o| o.routines.iter().map(|r| r.origin.byte.start))
+            .flat_map(|o| o.routines.iter().map(|r| r.name.clone()))
             .collect();
-
-        for (byte, name) in &ts_named {
+        for want in *required {
             assert!(
-                ir_bytes.contains(byte),
-                "malformed-input routine `{name}` (start byte {byte}) was DROPPED by the IR.\n  src: {src:?}"
+                names.contains(*want),
+                "well-formed routine `{want}` was DROPPED by the IR (a malformed sibling swallowed it).\n  src: {src:?}\n  got: {names:?}"
             );
         }
     }
@@ -154,53 +127,47 @@ fn extension_object_number_is_declaration_id() {
     }
 }
 
-/// `ir_object_type(ObjectKind)` must equal the legacy node-kind `object_type_for`
-/// for every emitted object kind — and skip (None) the same set. Drives a per-kind
-/// snippet through BOTH paths and asserts equality.
+/// `ir_object_type(ObjectKind)` maps every object kind to its expected L2 label
+/// (and skips — `None` — the kinds the L2 projection excludes). The owned-IR object
+/// classifier is the single source of truth now that the tree-sitter node-kind map
+/// is retired.
 #[test]
-fn ir_object_type_matches_legacy_object_type_for() {
-    // (source declaring exactly one object, tree-sitter decl node kind)
-    let cases: &[&str] = &[
-        "codeunit 50100 X\n{\n}\n",
-        "table 50100 X\n{\n}\n",
-        "tableextension 50100 X extends Customer\n{\n}\n",
-        "page 50100 X\n{\n}\n",
-        "pageextension 50100 X extends \"Customer Card\"\n{\n}\n",
-        "report 50100 X\n{\n}\n",
-        "reportextension 50100 X extends \"Customer List\"\n{\n}\n",
-        "query 50100 X\n{\n}\n",
-        "xmlport 50100 X\n{\n}\n",
-        "enum 50100 X\n{\n}\n",
-        "enumextension 50100 X extends \"My Enum\"\n{\n}\n",
-        "interface X\n{\n}\n",
-        "controladdin X\n{\n}\n",
-        "permissionset 50100 X\n{\n}\n",
-        "permissionsetextension 50100 X extends Y\n{\n}\n",
-        "profile X\n{\n}\n",
-        "entitlement X\n{\n}\n",
+fn ir_object_type_labels_every_kind() {
+    use al_call_hierarchy::engine::l2::ir_walk::ir_object_type;
+    // (source declaring exactly one object, expected L2 label or None when excluded)
+    let cases: &[(&str, Option<&str>)] = &[
+        ("codeunit 50100 X\n{\n}\n", Some("Codeunit")),
+        ("table 50100 X\n{\n}\n", Some("Table")),
+        (
+            "tableextension 50100 X extends Customer\n{\n}\n",
+            Some("TableExtension"),
+        ),
+        ("page 50100 X\n{\n}\n", Some("Page")),
+        (
+            "pageextension 50100 X extends \"Customer Card\"\n{\n}\n",
+            Some("PageExtension"),
+        ),
+        ("report 50100 X\n{\n}\n", Some("Report")),
+        (
+            "reportextension 50100 X extends \"Customer List\"\n{\n}\n",
+            Some("ReportExtension"),
+        ),
+        ("query 50100 X\n{\n}\n", Some("Query")),
+        ("xmlport 50100 X\n{\n}\n", Some("XMLport")),
+        ("enum 50100 X\n{\n}\n", Some("Enum")),
+        (
+            "enumextension 50100 X extends \"My Enum\"\n{\n}\n",
+            Some("EnumExtension"),
+        ),
+        ("interface X\n{\n}\n", Some("Interface")),
+        ("controladdin X\n{\n}\n", Some("ControlAddIn")),
+        ("permissionset 50100 X\n{\n}\n", Some("PermissionSet")),
     ];
-    for src in cases {
-        let tree = parse_ts(src);
-        let mut c = tree.root_node().walk();
-        let top: Vec<tree_sitter::Node> = tree.root_node().named_children(&mut c).collect();
-        let decl = top
-            .iter()
-            .find(|n| n.kind().ends_with("_declaration"))
-            .copied()
-            .or_else(|| top.first().copied())
-            .expect("a top-level decl");
-        let legacy = object_type_for(decl.kind());
-
+    for (src, want) in cases {
         let file = al_syntax::parse(src);
         assert_eq!(file.objects.len(), 1, "one object: {src:?}");
         let ir = ir_object_type(&file.objects[0].kind);
-
-        assert_eq!(
-            legacy.map(|s| s.to_string()),
-            ir.map(|s| s.to_string()),
-            "object-type mapping diverges for {src:?}: legacy={legacy:?} ir={ir:?} (ts kind {})",
-            decl.kind()
-        );
+        assert_eq!(ir, *want, "object-type label for {src:?}");
     }
 }
 

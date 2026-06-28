@@ -63,8 +63,6 @@ use al_call_hierarchy::engine::l2::control_context::{
     analyze_named_routine, ControlContext, RoutineControlContexts,
 };
 use al_call_hierarchy::engine::l2::features::PCallee;
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -74,20 +72,8 @@ const SOURCE_UNIT_ID: &str = "ws:src/vec.al";
 /// workspace and return the result for `routine` (panics if the routine isn't
 /// found — a missing routine is itself an oracle failure).
 fn analyze(source: &str, routine: &str) -> RoutineControlContexts {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-    let tree = parser.parse(source, None).expect("source parses");
-    analyze_named_routine(
-        source,
-        routine,
-        APP_GUID,
-        MODEL_INSTANCE_ID,
-        SOURCE_UNIT_ID,
-        &tree,
-    )
-    .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
+    analyze_named_routine(source, routine, APP_GUID, MODEL_INSTANCE_ID, SOURCE_UNIT_ID)
+        .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
 }
 
 /// Context of the FIRST operation site whose `kind` matches `kind_filter`

@@ -60,8 +60,6 @@
 
 use al_call_hierarchy::engine::l2::features::PFeatures;
 use al_call_hierarchy::engine::l2::features_for_named_routine;
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const MODEL_INSTANCE_ID: &str = "r0";
@@ -74,20 +72,8 @@ const PROBE_TABLE: &str = r#"table 50100 "Probe Rec" { fields { field(1; "No."; 
 /// projected features for `routine` (panics if the routine isn't found — a
 /// missing routine is itself an oracle failure).
 fn features(source: &str, routine: &str) -> PFeatures {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("set tree-sitter language");
-    let tree = parser.parse(source, None).expect("source parses");
-    features_for_named_routine(
-        source,
-        routine,
-        APP_GUID,
-        MODEL_INSTANCE_ID,
-        SOURCE_UNIT_ID,
-        &tree,
-    )
-    .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
+    features_for_named_routine(source, routine, APP_GUID, MODEL_INSTANCE_ID, SOURCE_UNIT_ID)
+        .unwrap_or_else(|| panic!("routine `{routine}` not found by the Rust L2 walker"))
 }
 
 /// The L2-observable receiver classification of a single record built-in call.

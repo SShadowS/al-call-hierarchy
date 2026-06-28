@@ -14,9 +14,8 @@
 //! The test invokes the function DIRECTLY on a tree-sitter-parsed object node so
 //! it is independent of the L3 wiring (Task 3).
 
-use al_call_hierarchy::engine::l2::scope::extract_object_global_record_vars;
-use al_call_hierarchy::language::language;
-use tree_sitter::Parser;
+use al_call_hierarchy::engine::l2::features::PRecordVariable;
+use al_call_hierarchy::engine::l2::ir_walk::ir_object_global_record_vars;
 
 const OBJECT_ID: &str = "test-app-guid/codeunit/50001";
 
@@ -34,28 +33,17 @@ codeunit 50001 "GlobalRecordProbe"
 }
 "#;
 
-fn parse_object_node(source: &str) -> tree_sitter::Tree {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language())
-        .expect("tree-sitter-al language loaded");
-    parser
-        .parse(source, None)
-        .expect("source parses without error")
+/// Project the object-global record variables of the FIRST object in `source`
+/// from the owned IR (the IR analogue of the retired tree-sitter extractor).
+fn global_record_vars(source: &str) -> Vec<PRecordVariable> {
+    let file = al_syntax::parse(source);
+    let o = file.objects.first().expect("one object in source");
+    ir_object_global_record_vars(o, OBJECT_ID)
 }
 
 #[test]
 fn buf_is_temporary_phys_is_not() {
-    let tree = parse_object_node(SOURCE);
-    let root = tree.root_node();
-
-    // The codeunit_declaration is the first named child of the root.
-    let object_node = root
-        .named_children(&mut root.walk())
-        .find(|n| n.kind() == "codeunit_declaration")
-        .expect("codeunit_declaration found in source");
-
-    let vars = extract_object_global_record_vars(object_node, OBJECT_ID, SOURCE);
+    let vars = global_record_vars(SOURCE);
 
     assert_eq!(
         vars.len(),
@@ -137,14 +125,7 @@ fn buf_is_temporary_phys_is_not() {
 /// Non-record globals (e.g. Integer) must be silently skipped.
 #[test]
 fn non_record_globals_are_skipped() {
-    let tree = parse_object_node(SOURCE);
-    let root = tree.root_node();
-    let object_node = root
-        .named_children(&mut root.walk())
-        .find(|n| n.kind() == "codeunit_declaration")
-        .expect("codeunit_declaration found");
-
-    let vars = extract_object_global_record_vars(object_node, OBJECT_ID, SOURCE);
+    let vars = global_record_vars(SOURCE);
 
     let has_counter = vars.iter().any(|v| v.name.eq_ignore_ascii_case("counter"));
     assert!(
@@ -164,14 +145,7 @@ codeunit 50002 "QuotedProbe"
         "My Buf": Record "Some Table" temporary;
 }
 "#;
-    let tree = parse_object_node(source);
-    let root = tree.root_node();
-    let object_node = root
-        .named_children(&mut root.walk())
-        .find(|n| n.kind() == "codeunit_declaration")
-        .expect("codeunit_declaration found");
-
-    let vars = extract_object_global_record_vars(object_node, OBJECT_ID, source);
+    let vars = global_record_vars(source);
 
     assert_eq!(vars.len(), 1, "one quoted-name record variable");
     let v = &vars[0];

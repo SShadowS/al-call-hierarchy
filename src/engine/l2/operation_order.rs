@@ -31,12 +31,8 @@ use super::control_flow::{
     branch_termination, else_termination, has_explicit_else, terminates, Termination,
 };
 use super::features::{PCFNNode, PCallSite, PFeatures, POperationSite};
-use super::node_util::{named_children, node_text, strip_quotes};
-use super::scope::object_type_for;
-use super::{extract_object_number, features_for_named_routine};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tree_sitter::Node;
 
 // ============================================================================
 // Result types (parity shape)
@@ -767,18 +763,15 @@ pub fn analyze_named_routine_order(
     app_guid: &str,
     model_instance_id: &str,
     source_unit_id: &str,
-    tree: &tree_sitter::Tree,
 ) -> Option<RoutineOperationOrder> {
-    let features = features_for_named_routine(
-        source,
-        routine_name,
-        app_guid,
-        model_instance_id,
-        source_unit_id,
-        tree,
-    )?;
-
-    let attr_names_lc = routine_attribute_names(tree, source, routine_name)?;
+    let (features, _parameters, attr_names_lc) =
+        crate::engine::l2::l2_workspace::ir_features_for_named_routine(
+            source,
+            routine_name,
+            app_guid,
+            model_instance_id,
+            source_unit_id,
+        )?;
 
     let order = compute_operation_order(features.statement_tree.as_ref(), &attr_names_lc);
 
@@ -808,66 +801,4 @@ pub fn analyze_named_routine_order(
         call_sites: features.call_sites,
         operation_sites: features.operation_sites,
     })
-}
-
-/// Locate the named routine and read its lowercased `attributesParsed` names
-/// (for the TryFunction guard). Mirrors the routine-finding loop in
-/// `features_for_named_routine`.
-fn routine_attribute_names(
-    tree: &tree_sitter::Tree,
-    source: &str,
-    routine_name: &str,
-) -> Option<Vec<String>> {
-    let root = tree.root_node();
-    for decl in named_children(root) {
-        if object_type_for(decl.kind()).is_none() {
-            continue;
-        }
-        let _ = extract_object_number(decl, source);
-        for routine in collect_routine_nodes(decl) {
-            let Some(nm) = routine.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(nm, source)).to_string();
-            if rname != routine_name {
-                continue;
-            }
-            return Some(attribute_names_lc(routine, source));
-        }
-    }
-    None
-}
-
-/// Collect lowercased attribute names from preceding `attribute_item` siblings.
-fn attribute_names_lc(routine: Node, source: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut sibling = routine.prev_sibling();
-    while let Some(sib) = sibling {
-        if sib.kind() != "attribute_item" {
-            break;
-        }
-        if let Some(content) = sib.child_by_field_name("attribute") {
-            if let Some(name_node) = content.child_by_field_name("name") {
-                names.push(node_text(name_node, source).to_lowercase());
-            }
-        }
-        sibling = sib.prev_sibling();
-    }
-    names
-}
-
-/// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
-fn collect_routine_nodes(decl: Node) -> Vec<Node> {
-    let mut out = Vec::new();
-    let mut stack = vec![decl];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
-            out.push(node);
-            continue;
-        }
-        for child in named_children(node) {
-            stack.push(child);
-        }
-    }
-    out
 }

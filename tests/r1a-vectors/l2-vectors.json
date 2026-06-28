@@ -387,26 +387,6 @@
               "endColumn": 23,
               "syntaxKind": "identifier"
             }
-          },
-          {
-            "identifier": "a",
-            "conditionKind": "if",
-            "statementAnchor": {
-              "sourceUnitId": "ws:src/vec.al",
-              "startLine": 10,
-              "startColumn": 8,
-              "endLine": 10,
-              "endColumn": 42,
-              "syntaxKind": "if_statement"
-            },
-            "referenceAnchor": {
-              "sourceUnitId": "ws:src/vec.al",
-              "startLine": 10,
-              "startColumn": 34,
-              "endLine": 10,
-              "endColumn": 35,
-              "syntaxKind": "identifier"
-            }
           }
         ],
         "statementTree": {
@@ -1359,26 +1339,6 @@
               "startColumn": 20,
               "endLine": 7,
               "endColumn": 23,
-              "syntaxKind": "identifier"
-            }
-          },
-          {
-            "identifier": "d",
-            "conditionKind": "if",
-            "statementAnchor": {
-              "sourceUnitId": "ws:src/vec.al",
-              "startLine": 7,
-              "startColumn": 8,
-              "endLine": 7,
-              "endColumn": 42,
-              "syntaxKind": "if_statement"
-            },
-            "referenceAnchor": {
-              "sourceUnitId": "ws:src/vec.al",
-              "startLine": 7,
-              "startColumn": 34,
-              "endLine": 7,
-              "endColumn": 35,
               "syntaxKind": "identifier"
             }
           }
