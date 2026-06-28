@@ -16,7 +16,11 @@ const NAVX_HEADER_SIZE: u64 = 40;
 /// App metadata from NavxManifest.xml
 #[derive(Debug, Clone)]
 pub struct AppMetadata {
+    /// The app's stable GUID (`App@Id`) — the only globally-unique identity.
+    /// May be empty for malformed manifests.
+    pub app_id: String,
     pub name: String,
+    pub publisher: String,
     pub version: String,
 }
 
@@ -297,7 +301,12 @@ fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Ap
         .context("App element not found in NavxManifest.xml")?;
 
     Ok(AppMetadata {
+        app_id: app_node.attribute("Id").unwrap_or_default().to_string(),
         name: app_node.attribute("Name").unwrap_or_default().to_string(),
+        publisher: app_node
+            .attribute("Publisher")
+            .unwrap_or_default()
+            .to_string(),
         version: app_node
             .attribute("Version")
             .unwrap_or_default()

@@ -54,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warnings`, `cargo fmt --check`, and `cargo test --workspace` all green.
 
 ### Fixed
+- **Dependency apps now carry their real unique GUID (and publisher).** `AppMetadata`
+  parsed only `name`/`version` from `NavxManifest.xml`, dropping the `App@Id` (the app's
+  only globally-unique identity) and `Publisher` — so `SnapshotBuilder` built dependency
+  `AppId`s with `guid: ""`, leaving cross-app node identity leaning on name+version
+  uniqueness. `parse_manifest` now also extracts `Id` → `AppMetadata.app_id` and
+  `Publisher`, and the dependency `AppId` is built from the `.app`'s authoritative manifest
+  (the workspace already read its own `id` from `app.json`). Local-provider matching now
+  prefers GUID when known. The identity foundation Plan 1B builds on is now truly unique.
 - **Member-trigger names (`Object::Member`) were truncated to the object half.** The
   grammar's `_trigger_name` was an inlined `seq(id, '::', id)`, so the `name` field of
   `trigger_declaration` was `multiple:true` and included the anonymous `::` token; the

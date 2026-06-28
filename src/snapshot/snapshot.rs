@@ -124,22 +124,38 @@ impl SnapshotBuilder {
         apps.push(ws_unit);
 
         for rd in resolved_deps {
+            // Identity from the `.app`'s own NavxManifest (authoritative) — the
+            // GUID is the only globally-unique id. Fall back to the app.json dep
+            // entry for any field the manifest left blank.
+            let m = &rd.package.metadata;
             let dep_id = AppId {
-                guid: String::new(),
-                name: rd.dependency.name.clone(),
-                publisher: rd.dependency.publisher.clone(),
-                version: rd.dependency.version.clone(),
+                guid: m.app_id.clone(),
+                name: if m.name.is_empty() {
+                    rd.dependency.name.clone()
+                } else {
+                    m.name.clone()
+                },
+                publisher: if m.publisher.is_empty() {
+                    rd.dependency.publisher.clone()
+                } else {
+                    m.publisher.clone()
+                },
+                version: if m.version.is_empty() {
+                    rd.dependency.version.clone()
+                } else {
+                    m.version.clone()
+                },
             };
 
             // Build provider chain: EmbeddedAppProvider → LocalRepoProvider (if matched) → SymbolOnlyProvider.
             let mut providers: Vec<Box<dyn SourceProvider>> = vec![Box::new(EmbeddedAppProvider {
                 app_path: rd.app_path.clone(),
             })];
-            // NOTE: dep `publisher`/`guid` are empty until NavxManifest parsing is enriched,
-            // so match on name (case-insensitive) + version only for now.
-            // TODO: include publisher in the match once NavxManifest.xml is parsed (follow-up task).
+            // Match a configured local provider by GUID when known (the unique
+            // identity), else by name (case-insensitive) + version.
             if let Some((id, path)) = self.local_providers.iter().find(|(id, _)| {
-                id.name.eq_ignore_ascii_case(&dep_id.name) && id.version == dep_id.version
+                (!dep_id.guid.is_empty() && id.guid == dep_id.guid)
+                    || (id.name.eq_ignore_ascii_case(&dep_id.name) && id.version == dep_id.version)
             }) {
                 providers.push(Box::new(LocalRepoProvider {
                     app: id.clone(),
@@ -211,6 +227,18 @@ mod tests {
         assert!(
             sym_only >= 1,
             "expected >=1 symbol-only units, got {sym_only}"
+        );
+        // Dependency apps carry their REAL unique GUID (from the .app NavxManifest
+        // `App@Id`), not an empty string — the identity foundation 1B builds on.
+        let deps_with_guid = snap
+            .apps
+            .iter()
+            .skip(1) // apps[0] = workspace
+            .filter(|u| u.id.guid.len() == 36 && u.id.guid.contains('-'))
+            .count();
+        assert!(
+            deps_with_guid >= 9,
+            "expected >=9 deps with a real GUID, got {deps_with_guid}"
         );
     }
 }
