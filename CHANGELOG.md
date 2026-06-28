@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **L3 is now tree-sitter-free (Phase 3 complete).** `l3_workspace::project_file` no
+  longer takes a tree-sitter `root` — it iterates the owned IR directly
+  (`ir_file.objects` → `o.routines`), sourcing every routine's kind / attributes /
+  access / body / params / return / norm-hash / source-anchor / cc-params /
+  entry-temp-guard / enclosing-member from the IR. Both callers
+  (`assemble_workspace` / `assemble_workspace_units`) stopped creating a tree-sitter
+  `Parser` and parsing source; the IR (already produced once upstream) is the sole
+  input. The IR routine set is byte-identical to the former tree-sitter routine set
+  (591/591 on the corpus, malformed routines included), so the iteration switch is a
+  zero-golden-change refactor. Removed ~560 lines of now-dead legacy CST extractors
+  (`extract_object_name`, `index_table`, `collect_routine_nodes`, `enclosing_member_of`,
+  the body-guard matchers, …); l3_workspace.rs is warning-clean.
 - **L3 object & table metadata are now owned-IR-driven.** `l3_workspace::project_file`
   sources object name/number, properties (SourceTable/PageType/Subtype/
   InherentCommitBehavior/SourceTableTemporary/TableNo), `extends` target,

@@ -26,10 +26,7 @@ use crate::engine::l2::node_util::{
     block_statements, named_children, node_text, strip_quotes, Utf16Cols,
 };
 use crate::engine::l2::scope;
-use crate::engine::l2::{
-    extract_object_number, project_routine_features, routine_normalized_signature_hash, IdentityCtx,
-};
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
 // L3 model types — workspace-level, in-memory (NOT the serde projection shape).
@@ -436,325 +433,13 @@ pub struct L3Workspace {
 }
 
 // ---------------------------------------------------------------------------
-// Object metadata extraction (object-indexer.ts parity).
-// ---------------------------------------------------------------------------
-
-/// `extractObjectName` — first quoted_identifier (stripped) or identifier, else "".
-fn extract_object_name(decl: Node, source: &str) -> String {
-    for child in named_children(decl) {
-        match child.kind() {
-            "quoted_identifier" => return strip_quotes(node_text(child, source)).to_string(),
-            "identifier" => return node_text(child, source).to_string(),
-            _ => {}
-        }
-    }
-    String::new()
-}
-
-/// `readObjectProperty` — first DIRECT `property` child whose `name` field matches
-/// (case-insensitive); returns the raw `value` field text. Never descends.
-fn read_object_property(decl: Node, property_name: &str, source: &str) -> Option<String> {
-    let want = property_name.to_lowercase();
-    // tree-sitter-al v3 wraps the object body in a `declaration_body` (the
-    // `body` field); object-level properties are no longer direct children of
-    // the declaration. Look inside the body when present.
-    let container = decl.child_by_field_name("body").unwrap_or(decl);
-    for child in named_children(container) {
-        if child.kind() != "property" {
-            continue;
-        }
-        let Some(name_node) = child.child_by_field_name("name") else {
-            continue;
-        };
-        if node_text(name_node, source).to_lowercase() != want {
-            continue;
-        }
-        return child
-            .child_by_field_name("value")
-            .map(|v| node_text(v, source).to_string());
-    }
-    None
-}
-
-/// `extractExtendsTargetName` — first identifier / quoted_identifier (stripped)
-/// after the `extends_keyword` child.
-fn extract_extends_target_name(decl: Node, source: &str) -> Option<String> {
-    let mut saw_extends = false;
-    for child in named_children(decl) {
-        if child.kind() == "extends_keyword" {
-            saw_extends = true;
-            continue;
-        }
-        if !saw_extends {
-            continue;
-        }
-        match child.kind() {
-            "quoted_identifier" => return Some(strip_quotes(node_text(child, source)).to_string()),
-            "identifier" => return Some(node_text(child, source).to_string()),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Walk a Page / PageExtension declaration node and collect all `part_section`,
-/// `systempart_section`, and `usercontrol_section` nodes in document order.
-/// Recurses the layout tree but never descends into `code_block` nodes (routine
-/// bodies) to avoid picking up any AL that happens to contain those keywords.
-fn extract_page_controls(decl: Node, source: &str) -> Vec<L3PageControl> {
-    fn walk(n: Node, source: &str, out: &mut Vec<L3PageControl>) {
-        let kind = match n.kind() {
-            "part_section" => Some(PageControlKind::Part),
-            "systempart_section" => Some(PageControlKind::SystemPart),
-            "usercontrol_section" => Some(PageControlKind::UserControl),
-            _ => None,
-        };
-        if let Some(kind) = kind {
-            if let (Some(name_node), Some(src_node)) = (
-                n.child_by_field_name("name"),
-                n.child_by_field_name("source"),
-            ) {
-                out.push(L3PageControl {
-                    name: strip_quotes(node_text(name_node, source)).to_string(),
-                    kind,
-                    target: strip_quotes(node_text(src_node, source)).to_string(),
-                });
-            }
-        }
-        if n.kind() == "code_block" {
-            return;
-        }
-        for c in named_children(n) {
-            walk(c, source, out);
-        }
-    }
-    let mut out = Vec::new();
-    walk(decl, source, &mut out);
-    out
-}
-
-/// `extractImplementsInterfaces` — names after the `implements` keyword (unquoted),
-/// in document order. Returns `Some([])` when the object type can carry the clause
-/// but none are present. Mirrors object-indexer.ts (Codeunit / Enum / Interface).
-fn extract_implements_interfaces(decl: Node, source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut saw_implements = false;
-    for child in named_children(decl) {
-        let kind = child.kind();
-        if kind == "implements_keyword" {
-            saw_implements = true;
-            continue;
-        }
-        if !saw_implements {
-            // Some grammars wrap the list in an `implements_clause` node — descend.
-            if kind == "implements_clause" {
-                for sub in named_children(child) {
-                    match sub.kind() {
-                        "quoted_identifier" => {
-                            out.push(strip_quotes(node_text(sub, source)).to_string())
-                        }
-                        "identifier" => out.push(node_text(sub, source).to_string()),
-                        _ => {}
-                    }
-                }
-            }
-            continue;
-        }
-        match kind {
-            "quoted_identifier" => out.push(strip_quotes(node_text(child, source)).to_string()),
-            "identifier" => out.push(node_text(child, source).to_string()),
-            // Stop at the body brace / first non-name child. tree-sitter-al v3
-            // renamed `object_body` to `declaration_body`; accept both.
-            "object_body" | "declaration_body" | "code_block" => break,
-            _ => {}
-        }
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
 // Table / field extraction (object-indexer.ts `indexTable` / `classifyField`).
 // ---------------------------------------------------------------------------
 
-const BLOB_LIKE: &[&str] = &["blob", "media", "mediaset"];
-
-/// `classifyField` — (dataType, fieldClass, isBlobLike).
-fn classify_field(field_node: Node, source: &str) -> (String, String, bool) {
-    let mut data_type = String::new();
-    for child in named_children(field_node) {
-        if child.kind() == "type_specification" {
-            data_type = node_text(child, source).to_string();
-            break;
-        }
-    }
-    let mut field_class = "Normal".to_string();
-    // tree-sitter-al v3 wraps a field's properties in a `declaration_body` (the
-    // `body` field); they are no longer direct children of the field_declaration.
-    let prop_container = field_node.child_by_field_name("body").unwrap_or(field_node);
-    for child in named_children(prop_container) {
-        if child.kind() != "property" {
-            continue;
-        }
-        let Some(name_node) = child.child_by_field_name("name") else {
-            continue;
-        };
-        if node_text(name_node, source).to_lowercase() != "fieldclass" {
-            continue;
-        }
-        let value = child
-            .child_by_field_name("value")
-            .map(|v| node_text(v, source).to_lowercase())
-            .unwrap_or_default();
-        if value.contains("flowfield") {
-            field_class = "FlowField".to_string();
-        } else if value.contains("flowfilter") {
-            field_class = "FlowFilter".to_string();
-        }
-    }
-    let is_blob_like = BLOB_LIKE.contains(&data_type.to_lowercase().as_str());
-    (data_type, field_class, is_blob_like)
-}
-
-/// `indexTable` — build an `L3Table` (fields only; keys are OUT for R2a) from a
-/// table / tableextension declaration.
-fn index_table(
-    decl: Node,
-    object_id: &str,
-    app_guid: &str,
-    table_number: i64,
-    table_name: &str,
-    source: &str,
-    is_extension_stub: bool,
-) -> L3Table {
-    let table_id = format!("{app_guid}/table/{table_number}");
-    let mut fields = Vec::new();
-
-    // Collect `field_declaration` + `key_declaration` nodes anywhere under the
-    // declaration (prune at match — don't recurse into a matched node's own
-    // children). Document order. Mirrors al-sem `indexTable`'s single DFS.
-    let mut field_nodes: Vec<Node> = Vec::new();
-    let mut key_nodes: Vec<Node> = Vec::new();
-    let mut stack = vec![decl];
-    let mut buffer: Vec<Node> = Vec::new();
-    let mut key_buffer: Vec<Node> = Vec::new();
-    while let Some(node) = stack.pop() {
-        if node.kind() == "field_declaration" {
-            buffer.push(node);
-            continue;
-        }
-        if node.kind() == "key_declaration" {
-            key_buffer.push(node);
-            continue;
-        }
-        // Push children reversed so the (reversed) collection reads document order.
-        let children = named_children(node);
-        for child in children.into_iter().rev() {
-            stack.push(child);
-        }
-    }
-    // `stack.pop()` + reverse-push yields document order already; collect.
-    field_nodes.extend(buffer);
-    key_nodes.extend(key_buffer);
-
-    for field_node in &field_nodes {
-        let mut field_number = 0i64;
-        let mut field_name = String::new();
-        let mut name_found = false;
-        for child in named_children(*field_node) {
-            if field_number == 0 && child.kind() == "integer" {
-                field_number = node_text(child, source).trim().parse::<i64>().unwrap_or(0);
-                continue;
-            }
-            if !name_found && field_number != 0 {
-                match child.kind() {
-                    "quoted_identifier" => {
-                        field_name = strip_quotes(node_text(child, source)).to_string();
-                        name_found = true;
-                    }
-                    "identifier" => {
-                        field_name = node_text(child, source).to_string();
-                        name_found = true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let (data_type, field_class, is_blob_like) = classify_field(*field_node, source);
-        fields.push(L3Field {
-            id: format!("{table_id}/{field_number}"),
-            physical_table_id: table_id.clone(),
-            declaring_object_id: object_id.to_string(),
-            declaring_app_id: app_guid.to_string(),
-            field_number,
-            name: field_name,
-            field_class,
-            data_type,
-            is_blob_like,
-        });
-    }
-
-    // Resolve key member fields by (lowercased) name → field id, mirroring
-    // al-sem `indexTable`'s `fieldsByName` resolution. A key field not present in
-    // this object is silently skipped.
-    let fields_by_name: std::collections::HashMap<String, String> = fields
-        .iter()
-        .map(|f| (f.name.to_lowercase(), f.id.clone()))
-        .collect();
-    let mut keys: Vec<L3Key> = Vec::new();
-    for (index, key_node) in key_nodes.iter().enumerate() {
-        let mut key_field_ids: Vec<String> = Vec::new();
-        // The member list lives in a `field_list` child; its named children are
-        // identifier / quoted_identifier name references.
-        if let Some(field_list) = named_children(*key_node)
-            .into_iter()
-            .find(|c| c.kind() == "field_list")
-        {
-            for child in named_children(field_list) {
-                let raw = node_text(child, source);
-                let name = strip_quotes(raw).to_lowercase();
-                if let Some(fid) = fields_by_name.get(&name) {
-                    key_field_ids.push(fid.clone());
-                }
-            }
-        }
-        keys.push(L3Key {
-            id: format!("{table_id}/key/{index}"),
-            fields: key_field_ids,
-        });
-    }
-
-    // Part A (Task 4 / G3): native `TableType = Temporary` capture — a
-    // structural property read. EXACT case-insensitive match (trim + lowercase
-    // + `== "temporary"`); never `.contains()` / string-sniffing. A missing /
-    // other value → false (conservative; the engine never throws).
-    //
-    // G-2 Part 1 (runtime-implied tempness): a table whose OnInsert/OnModify/
-    // OnDelete/OnRename trigger contains a top-level
-    // `if not Rec.IsTemporary[()] then Error(...)` guard is temporary BY
-    // RUNTIME CONTRACT (the trigger errors otherwise — the `CDO File` shape).
-    // Also an exact structural signal (AST shape match, no string-sniffing),
-    // same suppression direction as `TableType = Temporary`.
-    let is_temporary = read_object_property(decl, "TableType", source)
-        .map(|v| v.trim().to_lowercase() == "temporary")
-        .unwrap_or(false)
-        || table_has_temp_contract_guard(decl, source);
-
-    L3Table {
-        id: table_id,
-        app_guid: app_guid.to_string(),
-        table_number,
-        name: table_name.to_string(),
-        fields,
-        keys,
-        is_temporary,
-        is_extension_stub,
-    }
-}
-
 /// `index_table` over the owned IR (fields/keys/TableType from `ObjectDecl`). The
 /// rare `TableType = Temporary` runtime-contract guard (`if not Rec.IsTemporary then
-/// Error` in a table trigger) is still matched over the tree-sitter `decl` body — a
-/// body-pattern not yet IR-ported. Mirrors `index_table` byte-for-byte otherwise.
+/// Error` in a table trigger) is matched over the owned IR via
+/// [`ir_table_has_temp_contract_guard`]. Fields/keys come from `ObjectDecl`.
 #[allow(clippy::too_many_arguments)]
 fn index_table_ir(
     o: &al_syntax::ir::ObjectDecl,
@@ -817,233 +502,7 @@ fn index_table_ir(
     }
 }
 
-// ---------------------------------------------------------------------------
-// G-2 (runtime-implied tempness): structural matching of the EXACT guard
-// `if not <recv>.IsTemporary[()] then Error(...)`.
-//
-// SOUNDNESS / suppression direction: matching this shape PROVES the receiver
-// is temporary (the code errors at runtime otherwise), so upgrading to
-// `Known(true)` is sound — the same direction as `TableType = Temporary`.
-// ANY deviation (else branch, non-negated condition, non-Error then-branch,
-// arguments on IsTemporary, non-identifier receiver) → no match → the record
-// stays Unknown and detectors keep firing.
-// ---------------------------------------------------------------------------
-
-/// Named `code_block` children that are NOT statements — the same trivia set
-/// the L2 unreachable-after-exit scan filters (G-11).
-fn is_statement_trivia(kind: &str) -> bool {
-    matches!(
-        kind,
-        "begin_keyword" | "end_keyword" | "comment" | "multiline_comment" | "pragma"
-    )
-}
-
-/// Unwrap nested `parenthesized_expression` wrappers (skipping comment trivia).
-fn unwrap_parens(node: Node) -> Node {
-    let mut current = node;
-    while current.kind() == "parenthesized_expression" {
-        let Some(inner) = named_children(current)
-            .into_iter()
-            .find(|c| !is_statement_trivia(c.kind()))
-        else {
-            return current;
-        };
-        current = inner;
-    }
-    current
-}
-
-/// Match `<recv>.IsTemporary` or `<recv>.IsTemporary()` where `<recv>` is a
-/// BARE identifier / quoted identifier. Returns the receiver name (unquoted,
-/// lowercased). Anything else — arguments on the call, a chained / complex
-/// receiver — → `None` (conservative).
-fn istemporary_receiver(node: Node, source: &str) -> Option<String> {
-    let node = unwrap_parens(node);
-    let member = match node.kind() {
-        "call_expression" => {
-            // EXACT: `IsTemporary` takes no arguments.
-            let args = node.child_by_field_name("arguments")?;
-            if named_children(args)
-                .iter()
-                .any(|c| !is_statement_trivia(c.kind()))
-            {
-                return None;
-            }
-            let func = node.child_by_field_name("function")?;
-            if func.kind() != "member_expression" {
-                return None;
-            }
-            func
-        }
-        "member_expression" => node,
-        _ => return None,
-    };
-    let member_name = member.child_by_field_name("member")?;
-    if strip_quotes(node_text(member_name, source)).to_lowercase() != "istemporary" {
-        return None;
-    }
-    let object = member.child_by_field_name("object")?;
-    if object.kind() != "identifier" && object.kind() != "quoted_identifier" {
-        return None;
-    }
-    Some(
-        strip_quotes(node_text(object, source))
-            .trim()
-            .to_lowercase(),
-    )
-}
-
-/// `Error(...)` — a call whose function is the bare `Error` identifier.
-fn is_error_call(node: Node, source: &str) -> bool {
-    if node.kind() != "call_expression" {
-        return false;
-    }
-    let Some(func) = node.child_by_field_name("function") else {
-        return false;
-    };
-    matches!(func.kind(), "identifier" | "keyword_identifier")
-        && node_text(func, source).to_lowercase() == "error"
-}
-
-/// Match the EXACT runtime-tempness guard STATEMENT
-///
-///   `if not <recv>.IsTemporary[()] then Error(...)`
-///
-/// (negation also as `<recv>.IsTemporary[()] = false` / `false = ...`), with NO
-/// else branch, whose then-branch is an `Error(...)` call — directly or as a
-/// `begin Error(...); end` block containing exactly that one statement.
-/// Returns the receiver name (lowercased). Any deviation → `None`.
-fn is_temporary_error_guard(node: Node, source: &str) -> Option<String> {
-    if node.kind() != "if_statement" {
-        return None;
-    }
-    if node.child_by_field_name("else_branch").is_some() {
-        return None;
-    }
-    let condition = unwrap_parens(node.child_by_field_name("condition")?);
-    let receiver = match condition.kind() {
-        "unary_expression" => {
-            let op = condition.child_by_field_name("operator")?;
-            if node_text(op, source).to_lowercase() != "not" {
-                return None;
-            }
-            istemporary_receiver(condition.child_by_field_name("operand")?, source)?
-        }
-        "comparison_expression" => {
-            let op = condition.child_by_field_name("operator")?;
-            if node_text(op, source).trim() != "=" {
-                return None;
-            }
-            let left = unwrap_parens(condition.child_by_field_name("left")?);
-            let right = unwrap_parens(condition.child_by_field_name("right")?);
-            let is_false_literal = |n: Node| {
-                n.kind() == "boolean" && node_text(n, source).trim().to_lowercase() == "false"
-            };
-            if is_false_literal(right) {
-                istemporary_receiver(left, source)?
-            } else if is_false_literal(left) {
-                istemporary_receiver(right, source)?
-            } else {
-                return None;
-            }
-        }
-        _ => return None,
-    };
-    let then_branch = node.child_by_field_name("then_branch")?;
-    if is_error_call(then_branch, source) {
-        return Some(receiver);
-    }
-    if then_branch.kind() == "code_block" {
-        let statements: Vec<Node> = block_statements(then_branch)
-            .into_iter()
-            .filter(|c| !is_statement_trivia(c.kind()))
-            .collect();
-        if statements.len() == 1 && is_error_call(statements[0], source) {
-            return Some(receiver);
-        }
-    }
-    None
-}
-
-/// G-2 Part 1: temp-by-contract table detection. True when ANY of the table's
-/// OnInsert/OnModify/OnDelete/OnRename triggers contains a TOP-LEVEL
-/// `if not Rec.IsTemporary[()] then Error(...)` guard (top-level only — a
-/// guard nested under another condition does not always execute and proves
-/// nothing; conservative).
-fn table_has_temp_contract_guard(decl: Node, source: &str) -> bool {
-    for (_parent, routine) in collect_routine_nodes(decl) {
-        if routine.kind() != "trigger_declaration" {
-            continue;
-        }
-        let Some(name_node) = routine.child_by_field_name("name") else {
-            continue;
-        };
-        let trigger_name = strip_quotes(node_text(name_node, source)).to_lowercase();
-        if !matches!(
-            trigger_name.as_str(),
-            "oninsert" | "onmodify" | "ondelete" | "onrename"
-        ) {
-            continue;
-        }
-        let Some(body) = crate::engine::l2::find_code_block(routine) else {
-            continue;
-        };
-        for statement in block_statements(body) {
-            if is_statement_trivia(statement.kind()) {
-                continue;
-            }
-            if is_temporary_error_guard(statement, source).as_deref() == Some("rec") {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// G-2 Part 2: routine ENTRY-guard detection. Returns the lowercased receiver
-/// of `if not <X>.IsTemporary[()] then Error(...)` when it is the routine's
-/// FIRST executable statement (so it dominates the whole body) AND `<X>` is a
-/// record var/param (incl. promoted globals) or the implicit `Rec`/`xRec`.
-fn entry_temp_guard_receiver_of(
-    routine: Node,
-    record_variables: &[L3RecordVariable],
-    source: &str,
-) -> Option<String> {
-    let body = crate::engine::l2::find_code_block(routine)?;
-    let first_statement = block_statements(body)
-        .into_iter()
-        .find(|c| !is_statement_trivia(c.kind()))?;
-    let receiver = is_temporary_error_guard(first_statement, source)?;
-    let is_record = receiver == "rec"
-        || receiver == "xrec"
-        || record_variables
-            .iter()
-            .any(|rv| rv.name.eq_ignore_ascii_case(&receiver));
-    is_record.then_some(receiver)
-}
-
-/// Build a `PAnchor` from a node + the file's UTF-16 column index, mirroring the
-/// L2 body-walk `Ctx::anchor`. Used to capture the routine's OWN declaration
-/// anchor (`syntax_kind` = node.kind() = "procedure" / "trigger_declaration"),
-/// matching al-sem `routine-indexer.ts:419`'s `sourceAnchor`.
-fn anchor_from_node(
-    node: Node,
-    source_unit_id: &str,
-    cols: &Utf16Cols,
-) -> crate::engine::l2::features::PAnchor {
-    let sp = node.start_position();
-    let ep = node.end_position();
-    crate::engine::l2::features::PAnchor {
-        source_unit_id: source_unit_id.to_string(),
-        start_line: sp.row as u32,
-        start_column: cols.col(sp.row, sp.column),
-        end_line: ep.row as u32,
-        end_column: cols.col(ep.row, ep.column),
-        syntax_kind: node.kind().to_string(),
-    }
-}
-
-/// PAnchor from an owned-IR `Origin` — byte-identical to [`anchor_from_node`] on the
+/// PAnchor from an owned-IR `Origin` — byte-identical to the legacy node anchor on the
 /// node the origin came from (same row + utf16 column basis + raw `kind_text`).
 fn anchor_from_origin(
     origin: &al_syntax::ir::Origin,
@@ -1060,29 +519,6 @@ fn anchor_from_origin(
     }
 }
 
-/// `collectDescendants(prune-at-match)` for procedure / trigger_declaration.
-///
-/// Returns `(parent, routine)` pairs: the routine node plus its immediate
-/// `node.parent()` at the DFS match point (RE-7), captured WITHOUT restructuring the
-/// stack / push order so the traversal — and therefore the routine set + order — is
-/// byte-for-byte unchanged from the pre-E1 `Vec<Node>` form. The parent enables the
-/// member-trigger enclosing-member derivation (`enclosing_member_of`); object-level
-/// triggers / procedures carry a non-member-bearing parent and resolve to `None`.
-fn collect_routine_nodes(decl: Node) -> Vec<(Option<Node>, Node)> {
-    let mut out = Vec::new();
-    let mut stack = vec![decl];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "procedure" || node.kind() == "trigger_declaration" {
-            out.push((node.parent(), node));
-            continue;
-        }
-        for child in named_children(node).into_iter().rev() {
-            stack.push(child);
-        }
-    }
-    out
-}
-
 /// Unescape an AL identifier's logical name: a quoted AL identifier escapes an inner
 /// double-quote by doubling it (`""`), so the logical name collapses each `""` back to
 /// a single `"`. Called AFTER `strip_quotes` (which only trims the boundary quotes), so
@@ -1091,48 +527,15 @@ fn unescape_al_identifier(inner: &str) -> String {
     inner.replace("\"\"", "\"")
 }
 
-/// Returns `(unescaped-logical-member-name, wrapper_node)` when `parent` is a
-/// member-bearing wrapper, else `None`.
-///
-/// RULE (RE-3): a member-bearing parent is any immediate parent that is NOT the object
-/// declaration AND exposes a `name` field — `field_declaration` (whose first named child
-/// is the integer field NUMBER, so the name MUST come via `child_by_field_name("name")`,
-/// not "first child"), `page_field`, `action_declaration`, `report_dataitem`,
-/// `query_dataitem`. Object declarations expose `object_name` (not `name`) so they are
-/// excluded by construction; true object-level triggers (`OnRun` / `OnOpenPage`) have a
-/// non-member parent → `None`. `actionref_declaration` uses `promoted_name` (no `name`)
-/// → `None`. The name is `strip_quotes`'d then `unescape_al_identifier`'d (RE-4).
-fn enclosing_member_of<'a>(parent: Option<Node<'a>>, source: &str) -> Option<(String, Node<'a>)> {
-    let mut p = parent?;
-    // tree-sitter-al v3 wraps a member's triggers in a body node whose kind ends
-    // in `_body` (declaration_body for a table/page field's OnValidate or an
-    // action's OnAction; report_body for a report dataitem's OnAfterGetRecord;
-    // query_body for a query element; ...). The body carries no `name`, so the
-    // trigger's direct parent is not the named member — step up to the member
-    // (the body's parent). Object-level bodies (codeunit/table/page/report) have
-    // no enclosing MEMBER, so an OnRun/OnOpenPage/etc. trigger stays `None`,
-    // matching the pre-v3 behaviour where its parent was the unnamed object body.
-    if p.child_by_field_name("name").is_none() && p.kind().ends_with("_body") {
-        let grandparent = p.parent()?;
-        if scope::object_type_for(grandparent.kind()).is_some() {
-            return None;
-        }
-        p = grandparent;
-    }
-    let name_node = p.child_by_field_name("name")?;
-    let raw = node_text(name_node, source);
-    Some((unescape_al_identifier(strip_quotes(raw)), p))
-}
-
 // ---------------------------------------------------------------------------
 // Per-file assembly.
 // ---------------------------------------------------------------------------
 
 const MODEL_INSTANCE_ID_DEFAULT: &str = "r0";
 
-#[allow(clippy::too_many_arguments)]
+/// Build the L3 workspace contribution for one source file, driven entirely by the
+/// owned AL syntax IR (`al_syntax::parse`) — no tree-sitter CST walk.
 fn project_file(
-    root: Node,
     source: &str,
     app_guid: &str,
     model_instance_id: &str,
@@ -1141,47 +544,23 @@ fn project_file(
     workspace: &mut L3Workspace,
 ) {
     let ir_file = al_syntax::parse(source);
-    let mut ir_routine_by_byte: std::collections::HashMap<
-        usize,
-        (usize, &al_syntax::ir::RoutineDecl),
-    > = std::collections::HashMap::new();
-    let mut ir_obj_by_byte: std::collections::HashMap<usize, &al_syntax::ir::ObjectDecl> =
-        std::collections::HashMap::new();
-    for (oi, o) in ir_file.objects.iter().enumerate() {
-        ir_obj_by_byte.insert(o.origin.byte.start, o);
-        for r in &o.routines {
-            ir_routine_by_byte.insert(r.origin.byte.start, (oi, r));
-        }
-    }
 
-    for decl in named_children(root) {
-        let Some(object_type) = scope::object_type_for(decl.kind()) else {
+    for (oi, o) in ir_file.objects.iter().enumerate() {
+        let Some(object_type) = crate::engine::l2::ir_walk::ir_object_type(&o.kind) else {
             continue;
         };
-        // Object metadata from the owned IR (matched by start byte); legacy
-        // tree-sitter extractors only as a defensive fallback for an unmatched decl.
-        let ir_obj = ir_obj_by_byte.get(&decl.start_byte()).copied();
-        let object_number = match ir_obj {
-            Some(o) => o.id.unwrap_or(0),
-            None => extract_object_number(decl, source),
-        };
-        let name = match ir_obj {
-            Some(o) => o.name.clone(),
-            None => extract_object_name(decl, source),
-        };
+        // Object metadata driven entirely by the owned IR (the loop iterates IR objects
+        // — no tree-sitter CST walk).
+        let object_number = o.id.unwrap_or(0);
+        let name = o.name.clone();
         let object_id = encode_object_id(app_guid, object_type, object_number);
 
-        // Read an object-level property value from the IR (lowercased name match),
-        // else the legacy tree-sitter reader.
+        // Read an object-level property value from the IR (lowercased name match).
         let ir_prop = |name_lc: &str| -> Option<String> {
-            match ir_obj {
-                Some(o) => o
-                    .properties
-                    .iter()
-                    .find(|p| p.name == name_lc)
-                    .map(|p| p.value.clone()),
-                None => read_object_property(decl, name_lc, source),
-            }
+            o.properties
+                .iter()
+                .find(|p| p.name == name_lc)
+                .map(|p| p.value.clone())
         };
 
         // Object metadata (object-indexer.ts parity).
@@ -1192,19 +571,13 @@ fn project_file(
         };
         let extends_target_name =
             if object_type == "TableExtension" || object_type == "PageExtension" {
-                match ir_obj {
-                    Some(o) => o.extends_target.clone(),
-                    None => extract_extends_target_name(decl, source),
-                }
+                o.extends_target.clone()
             } else {
                 None
             };
         let implements_interfaces =
             if object_type == "Codeunit" || object_type == "Enum" || object_type == "Interface" {
-                Some(match ir_obj {
-                    Some(o) => o.implements.clone(),
-                    None => extract_implements_interfaces(decl, source),
-                })
+                Some(o.implements.clone())
             } else {
                 None
             };
@@ -1257,22 +630,18 @@ fn project_file(
         // Page controls (`part`/`systempart`/`usercontrol`) — used to resolve
         // `CurrPage.<control>…` member calls (Task 6+).
         let page_controls = if object_type == "Page" || object_type == "PageExtension" {
-            match ir_obj {
-                Some(o) => o
-                    .page_controls
-                    .iter()
-                    .map(|pc| L3PageControl {
-                        name: pc.name.clone(),
-                        kind: match pc.kind.as_str() {
-                            "systempart" => PageControlKind::SystemPart,
-                            "usercontrol" => PageControlKind::UserControl,
-                            _ => PageControlKind::Part,
-                        },
-                        target: pc.target.clone(),
-                    })
-                    .collect(),
-                None => extract_page_controls(decl, source),
-            }
+            o.page_controls
+                .iter()
+                .map(|pc| L3PageControl {
+                    name: pc.name.clone(),
+                    kind: match pc.kind.as_str() {
+                        "systempart" => PageControlKind::SystemPart,
+                        "usercontrol" => PageControlKind::UserControl,
+                        _ => PageControlKind::Part,
+                    },
+                    target: pc.target.clone(),
+                })
+                .collect()
         } else {
             Vec::new()
         };
@@ -1297,117 +666,51 @@ fn project_file(
             // G-5: a TableExtension's indexed table is a STUB whose id reuses the
             // EXTENSION's own object number — it must never win an id collision
             // against a real table sharing that number (see `is_extension_stub`).
-            workspace.tables.push(match ir_obj {
-                Some(o) => index_table_ir(
-                    o,
-                    &ir_file,
-                    &object_id,
-                    app_guid,
-                    object_number,
-                    &name,
-                    object_type == "TableExtension",
-                ),
-                None => index_table(
-                    decl,
-                    &object_id,
-                    app_guid,
-                    object_number,
-                    &name,
-                    source,
-                    object_type == "TableExtension",
-                ),
-            });
+            workspace.tables.push(index_table_ir(
+                o,
+                &ir_file,
+                &object_id,
+                app_guid,
+                object_number,
+                &name,
+                object_type == "TableExtension",
+            ));
         }
 
-        // Object globals — used ONLY by the legacy project_routine_features fallback
-        // (the IR feature path supplies its own scope). Kept per-object.
-        let object_globals = scope::extract_object_globals(decl, source_unit_id, source);
-        // Task 3 (temp-state): object-global RECORD vars carry the temp signal the
-        // L2 body walk never saw (it only knew params + locals). From the owned IR when
-        // the object is matched (else legacy). Promoted (below) into each routine's
-        // `record_variables`, honoring AL shadowing (a routine's own var wins).
-        let object_global_record_vars = match ir_obj {
-            Some(o) => crate::engine::l2::ir_walk::ir_object_global_record_vars(o, &object_id),
-            None => scope::extract_object_global_record_vars(decl, &object_id, source),
-        };
-        let routine_nodes = collect_routine_nodes(decl);
-        // Object procedure-name collision set (implicit-receiver §3.3) — from the IR's
-        // routine names when matched, else the tree-sitter routine nodes.
-        let object_procedure_names: std::collections::HashSet<String> = match ir_obj {
-            Some(o) => o.routines.iter().map(|r| r.name.to_lowercase()).collect(),
-            None => {
-                let mut s = std::collections::HashSet::new();
-                for (_parent, n) in &routine_nodes {
-                    if let Some(nm) = n.child_by_field_name("name") {
-                        s.insert(strip_quotes(node_text(nm, source)).to_lowercase());
-                    }
-                }
-                s
-            }
-        };
-        let id_ctx = IdentityCtx {
-            app_guid,
-            model_instance_id,
-            source_unit_id,
-        };
+        // Object-global RECORD vars (scope=global) — promoted (below) into each
+        // routine's `record_variables`, honoring AL shadowing (a routine's own var wins).
+        let object_global_record_vars =
+            crate::engine::l2::ir_walk::ir_object_global_record_vars(o, &object_id);
 
-        for (member_parent, routine) in routine_nodes {
-            let Some(nm) = routine.child_by_field_name("name") else {
-                continue;
-            };
-            let rname = strip_quotes(node_text(nm, source)).to_string();
+        for ir_routine in &o.routines {
+            let rname = ir_routine.name.clone();
             if rname.is_empty() {
                 continue;
             }
 
-            // The matched IR routine (byte-exact) — drives the routine-envelope
-            // metadata below; legacy tree-sitter extractors only as a defensive
-            // fallback for an unmatched (parse-error) routine.
-            let ir_routine_opt: Option<&al_syntax::ir::RoutineDecl> = ir_routine_by_byte
-                .get(&routine.start_byte())
-                .map(|&(_, r)| r);
-
-            let (routine_id, mut features) = match ir_routine_by_byte.get(&routine.start_byte()) {
-                Some(&(oi, ir_routine)) => {
-                    let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
-                    let params_for_id =
-                        crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
-                    let rid = crate::engine::l2::scope::compute_routine_id(
-                        app_guid,
-                        object_type,
-                        object_number,
-                        kind_for_id,
-                        &rname,
-                        &params_for_id,
-                        ir_routine.return_type.as_deref(),
-                        model_instance_id,
-                    );
-                    let feats = crate::engine::l2::ir_walk::project_routine_features_ir(
-                        &ir_file,
-                        oi,
-                        ir_routine,
-                        &rid,
-                        source,
-                        source_unit_id,
-                        source_table_name.as_deref(),
-                    );
-                    (rid, feats)
-                }
-                None => match project_routine_features(
-                    decl,
-                    routine,
+            let (routine_id, mut features) = {
+                let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
+                let params_for_id = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
+                let rid = crate::engine::l2::scope::compute_routine_id(
+                    app_guid,
                     object_type,
                     object_number,
-                    source_table_name.as_deref(),
-                    &object_procedure_names,
-                    &object_globals,
-                    &id_ctx,
+                    kind_for_id,
+                    &rname,
+                    &params_for_id,
+                    ir_routine.return_type.as_deref(),
+                    model_instance_id,
+                );
+                let feats = crate::engine::l2::ir_walk::project_routine_features_ir(
+                    &ir_file,
+                    oi,
+                    ir_routine,
+                    &rid,
                     source,
-                    cols,
-                ) {
-                    Some(x) => x,
-                    None => continue,
-                },
+                    source_unit_id,
+                    source_table_name.as_deref(),
+                );
+                (rid, feats)
             };
 
             // R1b control-context lattice (the SAME pass `aldump --l2` applies):
@@ -1417,14 +720,9 @@ fn project_file(
             // "unreachable" emit no facts — mirrors al-sem `extractCapabilities`).
             // R3a-2's projection never reads control_context, so this is additive.
             {
-                let cc_params = match ir_routine_opt {
-                    Some(r) => crate::engine::l2::ir_walk::ir_parameter_symbols(r),
-                    None => crate::engine::l2::scope::extract_parameters(routine, source),
-                };
-                let attrs_json = match ir_routine_opt {
-                    Some(r) => crate::engine::l2::ir_walk::ir_attributes(r, &ir_file, source).1,
-                    None => crate::engine::l2::l2_workspace::collect_attributes(routine, source).1,
-                };
+                let cc_params = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
+                let attrs_json =
+                    crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source).1;
                 let attr_names_lc: Vec<String> = attrs_json
                     .iter()
                     .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
@@ -1495,17 +793,15 @@ fn project_file(
             // temporary for the whole body; `record_types.rs` consumes this.
             // Computed AFTER global promotion so a guarded object-global
             // receiver also qualifies.
-            let entry_temp_guard_receiver = match ir_routine_opt {
-                Some(r) => crate::engine::l2::ir_walk::ir_entry_temp_guard_receiver(&ir_file, r)
+            let entry_temp_guard_receiver =
+                crate::engine::l2::ir_walk::ir_entry_temp_guard_receiver(&ir_file, ir_routine)
                     .filter(|receiver| {
                         receiver == "rec"
                             || receiver == "xrec"
                             || record_variables
                                 .iter()
                                 .any(|rv| rv.name.eq_ignore_ascii_case(receiver))
-                    }),
-                None => entry_temp_guard_receiver_of(routine, &record_variables, source),
-            };
+                    });
             let record_operations = features
                 .record_operations
                 .iter()
@@ -1541,10 +837,7 @@ fn project_file(
             // the matched IR routine (legacy extractors as a fallback). Reuses the SAME
             // ParameterSymbol shape the routine-id/signature-hash path uses so
             // arity/var-ness/type-text cannot drift.
-            let param_syms = match ir_routine_opt {
-                Some(r) => crate::engine::l2::ir_walk::ir_parameter_symbols(r),
-                None => crate::engine::l2::scope::extract_parameters(routine, source),
-            };
+            let param_syms = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
             let parameters: Vec<L3Parameter> = param_syms
                 .iter()
                 .map(|p| L3Parameter {
@@ -1556,10 +849,7 @@ fn project_file(
                     table_name: p.table_name.clone(),
                 })
                 .collect();
-            let return_type = match ir_routine_opt {
-                Some(r) => r.return_type.clone(),
-                None => crate::engine::l2::get_return_type_text(routine, source),
-            };
+            let return_type = ir_routine.return_type.clone();
             let mut call_sites = features.call_sites.clone();
             // RV-8 (Task 8): scope-honest `sourceKind`. The L2 binding builder
             // labels ANY non-parameter record-var arg `"local"` because scope is
@@ -1669,43 +959,29 @@ fn project_file(
             let condition_references = features.condition_references.clone();
             // The routine's OWN declaration anchor (al-sem routine-indexer.ts:419):
             // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
-            let source_anchor = match ir_routine_opt {
-                Some(r) => anchor_from_origin(&r.origin, source_unit_id, cols),
-                None => anchor_from_node(routine, source_unit_id, cols),
-            };
+            let source_anchor = anchor_from_origin(&ir_routine.origin, source_unit_id, cols);
 
-            // L2 bodyAvailable / parseIncomplete — from the owned IR when matched
-            // (a body block present; the routine subtree carried a tree-sitter ERROR),
-            // else the legacy tree-sitter computation.
-            let body_available = match ir_routine_opt {
-                Some(r) => r.body.is_some(),
-                None => crate::engine::l2::find_code_block(routine).is_some(),
-            };
-            let parse_incomplete = match ir_routine_opt {
-                Some(r) => r.parse_incomplete,
-                None => routine.has_error(),
-            };
+            // L2 bodyAvailable / parseIncomplete from the owned IR.
+            let body_available = ir_routine.body.is_some();
+            let parse_incomplete = ir_routine.parse_incomplete;
 
             // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
             // The hash reuses the same param/kind/return extraction as the internal
             // routine id (`routine_normalized_signature_hash`), so they cannot drift.
             let stable_object_id = to_stable_object_id(&object_id);
-            let norm_hash = match ir_routine_opt {
-                Some(_) => {
-                    let param_specs: Vec<crate::engine::ids::ParamSpec> = param_syms
-                        .iter()
-                        .map(|p| crate::engine::ids::ParamSpec {
-                            type_text: p.type_text.clone(),
-                            is_var: p.is_var,
-                        })
-                        .collect();
-                    crate::engine::ids::normalized_signature_hash(
-                        &rname,
-                        &param_specs,
-                        return_type.as_deref(),
-                    )
-                }
-                None => routine_normalized_signature_hash(routine, source).unwrap_or_default(),
+            let norm_hash = {
+                let param_specs: Vec<crate::engine::ids::ParamSpec> = param_syms
+                    .iter()
+                    .map(|p| crate::engine::ids::ParamSpec {
+                        type_text: p.type_text.clone(),
+                        is_var: p.is_var,
+                    })
+                    .collect();
+                crate::engine::ids::normalized_signature_hash(
+                    &rname,
+                    &param_specs,
+                    return_type.as_deref(),
+                )
             };
             let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
 
@@ -1713,24 +989,16 @@ fn project_file(
             // SAME L2 attribute indexing that produces the L2 projection's
             // `attributesParsed`, so the AttributeInfo arg shape (kind/value/qualifier/
             // member) cannot drift from R1.
-            let kind = match ir_routine_opt {
-                Some(r) => crate::engine::l2::ir_walk::ir_routine_kind(r).to_string(),
-                None => crate::engine::l2::l2_workspace::classify_kind(routine, source).to_string(),
-            };
-            let attributes_parsed_json = match ir_routine_opt {
-                Some(r) => crate::engine::l2::ir_walk::ir_attributes(r, &ir_file, source).1,
-                None => crate::engine::l2::l2_workspace::collect_attributes(routine, source).1,
-            };
+            let kind = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine).to_string();
+            let attributes_parsed_json =
+                crate::engine::l2::ir_walk::ir_attributes(ir_routine, &ir_file, source).1;
             let attributes_parsed: Vec<super::al_attributes::AttributeInfo> =
                 attributes_parsed_json
                     .into_iter()
                     .filter_map(|v| serde_json::from_value(v).ok())
                     .collect();
             // d32 scope gate: access modifier (`local`/`internal`/`protected`; None = public).
-            let access_modifier = match ir_routine_opt {
-                Some(r) => r.access_modifier.clone(),
-                None => crate::engine::l2::l2_workspace::classify_access_modifier(routine, source),
-            };
+            let access_modifier = ir_routine.access_modifier.clone();
 
             // E1: enclosing-member capture (additive — never serialized into a golden).
             // A member-trigger (parent is a member-bearing wrapper) gets the unescaped
@@ -1740,25 +1008,15 @@ fn project_file(
             // object-level triggers (OnRun / OnOpenPage) carry a non-member parent → all
             // `None`.
             let (enclosing_member, enclosing_member_range, originating_object) =
-                match ir_routine_opt {
-                    Some(r) => match &r.enclosing_member {
-                        // IR carries the (outer-quote-stripped) member name + wrapper origin;
-                        // the unescape + range anchoring match the legacy enclosing_member_of.
-                        Some((member_name, wrapper_origin)) => (
-                            Some(unescape_al_identifier(member_name)),
-                            Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
-                            Some(stable_object_id.clone()),
-                        ),
-                        None => (None, None, None),
-                    },
-                    None => match enclosing_member_of(member_parent, source) {
-                        Some((member_name, wrapper)) => (
-                            Some(member_name),
-                            Some(anchor_from_node(wrapper, source_unit_id, cols)),
-                            Some(stable_object_id.clone()),
-                        ),
-                        None => (None, None, None),
-                    },
+                match &ir_routine.enclosing_member {
+                    // IR carries the (outer-quote-stripped) member name + wrapper origin;
+                    // the unescape + range anchoring match the legacy enclosing_member_of.
+                    Some((member_name, wrapper_origin)) => (
+                        Some(unescape_al_identifier(member_name)),
+                        Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
+                        Some(stable_object_id.clone()),
+                    ),
+                    None => (None, None, None),
                 };
 
             workspace.routines.push(L3Routine {
@@ -1843,11 +1101,6 @@ pub fn assemble_workspace(
     let mut sorted: Vec<&(String, String)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&crate::language::language())
-        .expect("set tree-sitter language");
-
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
@@ -1855,13 +1108,9 @@ pub fn assemble_workspace(
     };
 
     for (fname, source) in sorted {
-        let Some(tree) = parser.parse(source, None) else {
-            continue;
-        };
         let source_unit_id = format!("ws:{fname}");
         let cols = Utf16Cols::new(source);
         project_file(
-            tree.root_node(),
             source,
             app_guid,
             model_instance_id,
@@ -1893,11 +1142,6 @@ pub fn assemble_workspace_units(
     let mut sorted: Vec<&(String, String)> = units.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&crate::language::language())
-        .expect("set tree-sitter language");
-
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
@@ -1905,12 +1149,8 @@ pub fn assemble_workspace_units(
     };
 
     for (source_unit_id, source) in sorted {
-        let Some(tree) = parser.parse(source, None) else {
-            continue;
-        };
         let cols = Utf16Cols::new(source);
         project_file(
-            tree.root_node(),
             source,
             app_guid,
             model_instance_id,
