@@ -380,6 +380,9 @@ pub fn ir_features_for_named_routine(
                 source_unit_id,
                 source_table_name.as_deref(),
             );
+            // `RoutineDecl.attributes` is ALREADY lowercased by the lowerer, built from
+            // the same `attributes_parsed` items — so this equals `build_proutine`'s
+            // `attributes_parsed → name → to_lowercase()` set (drives the TryFunction guard).
             let attr_names_lc = r.attributes.clone();
             return Some((features, parameters, attr_names_lc));
         }
