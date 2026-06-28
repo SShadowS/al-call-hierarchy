@@ -104,6 +104,12 @@ pub enum ObjectKind {
 pub struct RoutineDecl {
     pub kind: RoutineKind,
     pub name: String,
+    /// Origin of the routine's NAME identifier node (not the whole routine). The LSP
+    /// front-end uses this for a call-hierarchy item's `selection_range` (the range
+    /// the editor highlights when you click the symbol) — e.g. an event publisher's
+    /// procedure-name range. Falls back to the routine `origin` if the name is absent
+    /// (a malformed/anonymous routine).
+    pub name_origin: Origin,
     pub params: Vec<Param>,
     /// Return type text, if declared.
     pub return_type: Option<String>,

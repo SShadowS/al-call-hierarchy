@@ -490,6 +490,12 @@ fn lower_routine<'t>(
         .field(FieldName::Name)
         .map(|n| ident_text(n, source))
         .unwrap_or_default();
+    // Origin of the name identifier itself (for the LSP selection_range); fall back to
+    // the whole-routine origin when the name node is absent.
+    let name_origin = node
+        .field(FieldName::Name)
+        .map(origin_of)
+        .unwrap_or_else(|| origin_of(node));
 
     let params = node
         .field(FieldName::Parameters)
@@ -530,6 +536,7 @@ fn lower_routine<'t>(
     RoutineDecl {
         kind,
         name,
+        name_origin,
         params,
         return_type,
         locals,

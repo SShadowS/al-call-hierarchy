@@ -718,7 +718,14 @@ fn extract_procedure_signature(proc_node: &Node, source: &str) -> String {
     }
 
     let raw = &source[proc_start..end_byte];
-    // Normalize whitespace: collapse runs, drop trailing whitespace.
+    // The procedure node already includes its modifier keywords
+    // (`local`/`internal`/`protected`), so we don't need to prepend.
+    normalize_signature_ws(raw)
+}
+
+/// Collapse runs of whitespace to single spaces and trim — the procedure-header
+/// rendering shared by the legacy tree-sitter path and the owned-IR projection.
+fn normalize_signature_ws(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut prev_space = false;
     for ch in raw.chars() {
@@ -732,8 +739,6 @@ fn extract_procedure_signature(proc_node: &Node, source: &str) -> String {
             prev_space = false;
         }
     }
-    // The procedure node already includes its modifier keywords
-    // (`local`/`internal`/`protected`), so we don't need to prepend.
     out.trim().to_string()
 }
 
@@ -956,6 +961,532 @@ fn count_parameters(proc_node: &Node, _source: &str) -> u32 {
         }
     }
     count
+}
+
+// ===========================================================================
+// Owned-IR projection (Phase 4)
+//
+// `parse_file_ir` produces the SAME `ParsedFile` as the legacy tree-sitter
+// `AlParser::parse_file`, but sources everything from the owned `al-syntax` IR
+// (`al_syntax::parse`) instead of running the 6 S-expr queries. This is the
+// zero-diff projection: it deliberately reproduces the legacy query SET
+// (`call_expression`-only calls, first-name-only multi-name vars, the legacy
+// object-kind coverage) so a differential test can prove byte-identical output
+// before the queries are deleted. Correctness improvements the IR enables
+// (parenless statement calls, all multi-name vars) land as separate fast-follows.
+// ===========================================================================
+
+use al_syntax::ir::{
+    self, AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
+    RoutineKind, StmtKind, VarDecl,
+};
+
+/// Parse + project a `ParsedFile` from the owned AL syntax IR.
+pub fn parse_file_ir(source: &str) -> ParsedFile {
+    let al: AlFile = al_syntax::parse(source);
+    let mut result = ParsedFile::default();
+
+    for obj in &al.objects {
+        // object_type / object_name: last object whose kind the legacy query covered
+        // wins (kinds the query omits — ReportExtension/Entitlement/Profile — leave the
+        // prior value untouched, exactly as a non-matching query would).
+        if let Some(ot) = map_object_type(obj.kind) {
+            result.object_type = Some(ot);
+            result.object_name = Some(clean_name(&obj.name));
+        }
+
+        // Object-level globals (containing_procedure = None).
+        push_variables_ir(&mut result, &obj.globals, None);
+
+        for r in &obj.routines {
+            let rname = clean_name(&r.name);
+            let def_kind = match r.kind {
+                RoutineKind::Procedure => DefinitionKind::Procedure,
+                RoutineKind::Trigger => DefinitionKind::Trigger,
+            };
+            result.definitions.push(ParsedDefinition {
+                name: rname.clone(),
+                range: origin_to_range(&r.origin),
+                kind: def_kind,
+                complexity: routine_complexity_ir(&al.ir, r),
+                // Legacy hardcodes 0 parameters for triggers.
+                parameter_count: match r.kind {
+                    RoutineKind::Trigger => 0,
+                    RoutineKind::Procedure => r.params.len() as u32,
+                },
+            });
+
+            // Locals (containing_procedure = the routine name).
+            push_variables_ir(&mut result, &r.locals, Some(rname.clone()));
+
+            // Calls — every `call_expression` reachable in the body (matches the
+            // legacy whole-subtree query), recursively through expressions + blocks.
+            if let Some(body) = r.body {
+                calls_in_block(&al.ir, source, body, &rname, &mut result.calls);
+            }
+
+            // Attributes → event subscribers / publishers / framework-invoked.
+            project_routine_attributes(&al.ir, source, r, &mut result);
+        }
+    }
+
+    result
+}
+
+/// Map an IR object kind to the front-end `ObjectType`, mirroring exactly which
+/// object kinds the legacy DEFINITIONS query captured (no ReportExtension /
+/// Entitlement / Profile — those have no query pattern and no `ObjectType` variant).
+fn map_object_type(k: ObjectKind) -> Option<ObjectType> {
+    use ObjectKind as K;
+    Some(match k {
+        K::Codeunit => ObjectType::Codeunit,
+        K::Table => ObjectType::Table,
+        K::Page => ObjectType::Page,
+        K::Report => ObjectType::Report,
+        K::Query => ObjectType::Query,
+        K::XmlPort => ObjectType::XmlPort,
+        K::Enum => ObjectType::Enum,
+        K::Interface => ObjectType::Interface,
+        K::ControlAddIn => ObjectType::ControlAddIn,
+        K::PageExtension => ObjectType::PageExtension,
+        K::TableExtension => ObjectType::TableExtension,
+        K::EnumExtension => ObjectType::EnumExtension,
+        K::PermissionSet => ObjectType::PermissionSet,
+        K::PermissionSetExtension => ObjectType::PermissionSetExtension,
+        K::ReportExtension | K::Entitlement | K::Profile | K::Other => return None,
+    })
+}
+
+/// Convert an IR `Origin` to an LSP `Range`. `Origin` columns are UTF-8 byte
+/// columns within the line — the same convention the legacy `node_range` used
+/// (tree-sitter `Point.column`), so positions are byte-identical.
+fn origin_to_range(o: &Origin) -> Range {
+    Range {
+        start: Position {
+            line: o.start.row,
+            character: o.start.column,
+        },
+        end: Position {
+            line: o.end.row,
+            character: o.end.column,
+        },
+    }
+}
+
+/// Project IR variable declarations into `ParsedVariable`s. Legacy emits ONE
+/// variable per `variable_declaration` (the first name); the IR expands
+/// `A, B: T` into one `VarDecl` per name, all sharing the declaration's origin —
+/// so we collapse a same-origin run to its first entry to stay zero-diff.
+fn push_variables_ir(result: &mut ParsedFile, vars: &[VarDecl], containing: Option<String>) {
+    let mut last_origin: Option<std::ops::Range<usize>> = None;
+    for v in vars {
+        if last_origin.as_ref() == Some(&v.origin.byte) {
+            continue;
+        }
+        last_origin = Some(v.origin.byte.clone());
+        // Legacy requires BOTH a name and a type; untyped declarations are skipped.
+        let Some(ty_text) = &v.ty else {
+            continue;
+        };
+        let (type_kind, type_name) = parse_type_specification(ty_text);
+        result.variables.push(ParsedVariable {
+            name: clean_name(&v.name),
+            type_name,
+            type_kind,
+            containing_procedure: containing.clone(),
+        });
+    }
+}
+
+/// Cyclomatic complexity over the IR body — the IR analogue of
+/// `analysis::count_decision_points`. Base 1; +1 per if (+1 more if it has an
+/// else), +1 per loop, +1 per case branch, +1 per `and`/`or`.
+fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
+    let mut c = 1u32;
+    if let Some(body) = r.body {
+        complexity_block(ir, body, &mut c);
+    }
+    c
+}
+
+fn complexity_block(ir: &ir::Ir, bid: BlockId, c: &mut u32) {
+    for item in &ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(sid) => complexity_stmt(ir, *sid, c),
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    complexity_block(ir, *b, c);
+                }
+            }
+        }
+    }
+}
+
+fn complexity_stmt(ir: &ir::Ir, sid: ir::StmtId, c: &mut u32) {
+    match &ir.stmt(sid).kind {
+        StmtKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            *c += 1;
+            if else_block.is_some() {
+                *c += 1;
+            }
+            complexity_expr(ir, *cond, c);
+            complexity_block(ir, *then_block, c);
+            if let Some(b) = else_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::While { cond, body } => {
+            *c += 1;
+            complexity_expr(ir, *cond, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Repeat { body, until } => {
+            *c += 1;
+            complexity_block(ir, *body, c);
+            complexity_expr(ir, *until, c);
+        }
+        StmtKind::For {
+            var,
+            from,
+            to,
+            body,
+            ..
+        } => {
+            *c += 1;
+            complexity_expr(ir, *var, c);
+            complexity_expr(ir, *from, c);
+            complexity_expr(ir, *to, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Foreach {
+            var,
+            iterable,
+            body,
+        } => {
+            *c += 1;
+            complexity_expr(ir, *var, c);
+            complexity_expr(ir, *iterable, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Case {
+            scrutinee,
+            branches,
+            else_block,
+        } => {
+            complexity_expr(ir, *scrutinee, c);
+            for br in branches {
+                *c += 1;
+                for p in &br.patterns {
+                    complexity_expr(ir, *p, c);
+                }
+                complexity_block(ir, br.body, c);
+            }
+            if let Some(b) = else_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::Assignment { target, value } => {
+            complexity_expr(ir, *target, c);
+            complexity_expr(ir, *value, c);
+        }
+        StmtKind::Call(e) => complexity_expr(ir, *e, c),
+        StmtKind::With { receiver, body } => {
+            complexity_expr(ir, *receiver, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Try { body, catch_block } => {
+            complexity_block(ir, *body, c);
+            if let Some(b) = catch_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::AssertError(b) => complexity_block(ir, *b, c),
+        StmtKind::Exit(Some(e)) => complexity_expr(ir, *e, c),
+        StmtKind::Block(b) => complexity_block(ir, *b, c),
+        _ => {}
+    }
+}
+
+fn complexity_expr(ir: &ir::Ir, eid: ExprId, c: &mut u32) {
+    let e = ir.expr(eid);
+    if let ExprKind::Binary {
+        op: BinaryOp::And | BinaryOp::Or,
+        ..
+    } = &e.kind
+    {
+        *c += 1;
+    }
+    for_each_subexpr(ir, eid, &mut |sub| complexity_expr(ir, sub, c));
+}
+
+/// Visit the direct sub-expressions of an expression (one level). The caller
+/// recurses; this just enumerates children so the two walkers (calls, complexity)
+/// share one definition of the expression shape.
+fn for_each_subexpr(ir: &ir::Ir, eid: ExprId, f: &mut dyn FnMut(ExprId)) {
+    match &ir.expr(eid).kind {
+        ExprKind::Member { object, .. } => f(*object),
+        ExprKind::Call { function, args } => {
+            f(*function);
+            for a in args {
+                f(*a);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            f(*base);
+            f(*index);
+        }
+        ExprKind::Unary { operand, .. } => f(*operand),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            f(*lhs);
+            f(*rhs);
+        }
+        ExprKind::Parenthesized(inner) => f(*inner),
+        ExprKind::QualifiedEnum { enum_type, .. } => f(*enum_type),
+        ExprKind::RangeExpr { start, end } => {
+            f(*start);
+            f(*end);
+        }
+        ExprKind::Identifier(_)
+        | ExprKind::QuotedIdentifier(_)
+        | ExprKind::Literal(_)
+        | ExprKind::DatabaseReference(_)
+        | ExprKind::Unknown => {}
+    }
+}
+
+fn calls_in_block(ir: &ir::Ir, source: &str, bid: BlockId, name: &str, out: &mut Vec<ParsedCall>) {
+    for item in &ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(sid) => calls_in_stmt(ir, source, *sid, name, out),
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    calls_in_block(ir, source, *b, name, out);
+                }
+            }
+        }
+    }
+}
+
+fn calls_in_stmt(
+    ir: &ir::Ir,
+    source: &str,
+    sid: ir::StmtId,
+    name: &str,
+    out: &mut Vec<ParsedCall>,
+) {
+    match &ir.stmt(sid).kind {
+        StmtKind::Assignment { target, value } => {
+            calls_in_expr(ir, source, *target, name, out);
+            calls_in_expr(ir, source, *value, name, out);
+        }
+        StmtKind::Call(e) => calls_in_expr(ir, source, *e, name, out),
+        StmtKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            calls_in_expr(ir, source, *cond, name, out);
+            calls_in_block(ir, source, *then_block, name, out);
+            if let Some(b) = else_block {
+                calls_in_block(ir, source, *b, name, out);
+            }
+        }
+        StmtKind::Case {
+            scrutinee,
+            branches,
+            else_block,
+        } => {
+            calls_in_expr(ir, source, *scrutinee, name, out);
+            for br in branches {
+                for p in &br.patterns {
+                    calls_in_expr(ir, source, *p, name, out);
+                }
+                calls_in_block(ir, source, br.body, name, out);
+            }
+            if let Some(b) = else_block {
+                calls_in_block(ir, source, *b, name, out);
+            }
+        }
+        StmtKind::While { cond, body } => {
+            calls_in_expr(ir, source, *cond, name, out);
+            calls_in_block(ir, source, *body, name, out);
+        }
+        StmtKind::Repeat { body, until } => {
+            calls_in_block(ir, source, *body, name, out);
+            calls_in_expr(ir, source, *until, name, out);
+        }
+        StmtKind::For {
+            var,
+            from,
+            to,
+            body,
+            ..
+        } => {
+            calls_in_expr(ir, source, *var, name, out);
+            calls_in_expr(ir, source, *from, name, out);
+            calls_in_expr(ir, source, *to, name, out);
+            calls_in_block(ir, source, *body, name, out);
+        }
+        StmtKind::Foreach {
+            var,
+            iterable,
+            body,
+        } => {
+            calls_in_expr(ir, source, *var, name, out);
+            calls_in_expr(ir, source, *iterable, name, out);
+            calls_in_block(ir, source, *body, name, out);
+        }
+        StmtKind::With { receiver, body } => {
+            calls_in_expr(ir, source, *receiver, name, out);
+            calls_in_block(ir, source, *body, name, out);
+        }
+        StmtKind::Try { body, catch_block } => {
+            calls_in_block(ir, source, *body, name, out);
+            if let Some(b) = catch_block {
+                calls_in_block(ir, source, *b, name, out);
+            }
+        }
+        StmtKind::AssertError(b) => calls_in_block(ir, source, *b, name, out),
+        StmtKind::Exit(Some(e)) => calls_in_expr(ir, source, *e, name, out),
+        StmtKind::Block(b) => calls_in_block(ir, source, *b, name, out),
+        _ => {}
+    }
+}
+
+fn calls_in_expr(ir: &ir::Ir, source: &str, eid: ExprId, name: &str, out: &mut Vec<ParsedCall>) {
+    let expr = ir.expr(eid);
+    // ZERO-DIFF: the legacy CALLS query matched `call_expression` (parenthesized)
+    // ONLY. The IR also models parenless statement calls (`Modify;`, `Rec.Find;`) as
+    // `ExprKind::Call`, but anchors them on the bare callee node — so its origin
+    // `kind_text` is `identifier`/`member_expression`/`subscript_expression`, not
+    // `call_expression`. Restrict to true `call_expression` origins here; capturing
+    // parenless calls is a deliberate fast-follow improvement, not part of the port.
+    if let ExprKind::Call { function, .. } = &expr.kind {
+        if expr.origin.kind_text == "call_expression" {
+            record_call(ir, source, eid, *function, name, out);
+        }
+    }
+    for_each_subexpr(ir, eid, &mut |sub| {
+        calls_in_expr(ir, source, sub, name, out)
+    });
+}
+
+/// Record a call at `call_eid` whose function is `function`, mirroring the legacy
+/// CALLS query: only a `function` that is a plain identifier (simple call) or a
+/// member expression (`object.method`) is captured; any other function shape
+/// (e.g. `Arr[i]()`) matches no query pattern and is skipped. Object/method text
+/// is the raw source slice of the relevant node, cleaned — byte-identical to the
+/// legacy `node_text(...)` + `clean_name(...)`.
+fn record_call(
+    ir: &ir::Ir,
+    source: &str,
+    call_eid: ExprId,
+    function: ExprId,
+    containing: &str,
+    out: &mut Vec<ParsedCall>,
+) {
+    let fexpr = ir.expr(function);
+    let (object, method) = match &fexpr.kind {
+        ExprKind::Identifier(_) | ExprKind::QuotedIdentifier(_) => {
+            (None, clean_name(&source[fexpr.origin.byte.clone()]))
+        }
+        ExprKind::Member {
+            object,
+            member_origin,
+            ..
+        } => {
+            let obj_expr = ir.expr(*object);
+            (
+                Some(clean_name(&source[obj_expr.origin.byte.clone()])),
+                clean_name(&source[member_origin.byte.clone()]),
+            )
+        }
+        _ => return,
+    };
+    out.push(ParsedCall {
+        object,
+        method,
+        range: origin_to_range(&ir.expr(call_eid).origin),
+        containing_procedure: Some(containing.to_string()),
+    });
+}
+
+/// Classify an attribute name into an event-publisher kind (case-insensitive;
+/// real AL attribute names are case-insensitive).
+fn publisher_kind_ir(name: &str) -> Option<EventPublisherKind> {
+    if name.eq_ignore_ascii_case("IntegrationEvent") {
+        Some(EventPublisherKind::IntegrationEvent)
+    } else if name.eq_ignore_ascii_case("BusinessEvent") {
+        Some(EventPublisherKind::BusinessEvent)
+    } else if name.eq_ignore_ascii_case("InternalEvent") {
+        Some(EventPublisherKind::InternalEvent)
+    } else {
+        None
+    }
+}
+
+/// Render a procedure header from the IR (modifiers + name + params + return),
+/// stopping at the body's `var` section or `begin` — the IR analogue of
+/// `extract_procedure_signature`. Reuses the same textual body-start scan, which
+/// reproduces the legacy AST/textual result (the `var`-section node start and the
+/// `begin` fallback both coincide with the first line-starting `var`/`begin`).
+fn signature_ir(source: &str, r: &RoutineDecl) -> String {
+    let raw = &source[r.origin.byte.clone()];
+    let end = find_body_start(raw).unwrap_or(raw.len());
+    normalize_signature_ws(&raw[..end])
+}
+
+/// Project a routine's attributes into event subscribers / publishers and the
+/// framework-invoked name list, mirroring the EVENT_SUBSCRIBERS / EVENT_PUBLISHERS
+/// / ATTRIBUTED_PROCEDURES queries. The lowerer already attached each attribute to
+/// the routine it decorates (the legacy sibling-walk), so no re-resolution is needed.
+fn project_routine_attributes(ir: &ir::Ir, source: &str, r: &RoutineDecl, result: &mut ParsedFile) {
+    let rname = clean_name(&r.name);
+    if rname.is_empty() {
+        return;
+    }
+    for attr in &r.attributes_parsed {
+        let aname = attr.name.trim();
+        if aname.eq_ignore_ascii_case("EventSubscriber") {
+            // Reconstruct the argument text as the source span covering all args
+            // and reuse the legacy comma-splitting parser (byte-identical behavior).
+            if let (Some(first), Some(last)) = (attr.args.first(), attr.args.last()) {
+                let lo = ir.expr(*first).origin.byte.start;
+                let hi = ir.expr(*last).origin.byte.end;
+                if lo <= hi && hi <= source.len() {
+                    if let Some((obj_type, obj_name, event_name)) =
+                        parse_event_subscriber_args(&source[lo..hi])
+                    {
+                        result.event_subscribers.push(ParsedEventSubscriber {
+                            subscriber_name: rname.clone(),
+                            range: origin_to_range(&r.origin),
+                            publisher_object_type: obj_type,
+                            publisher_object: obj_name,
+                            publisher_event: event_name,
+                        });
+                    }
+                }
+            }
+        } else if let Some(kind) = publisher_kind_ir(aname) {
+            result.event_publishers.push(ParsedEventPublisher {
+                name: rname.clone(),
+                range: origin_to_range(&r.origin),
+                selection_range: origin_to_range(&r.name_origin),
+                kind,
+                is_local: r.access_modifier.as_deref() == Some("local"),
+                signature: signature_ir(source, r),
+            });
+        }
+        // Framework-invocation attributes are a disjoint set (test / *handler) — a
+        // routine with N such attributes pushes its name N times, as legacy did.
+        if is_framework_invocation_attribute(aname) {
+            result.implicitly_invoked.push(rname.clone());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1425,10 +1956,17 @@ codeunit 50100 "Sample Publisher"
 }
 "#;
         let mut parser = AlParser::new().expect("parser");
-        let result = parser.parse_file(Path::new("test.al"), source).expect("parse");
+        let result = parser
+            .parse_file(Path::new("test.al"), source)
+            .expect("parse");
 
         // Three event publishers (two IntegrationEvent + one BusinessEvent).
-        assert_eq!(result.event_publishers.len(), 3, "expected 3, got {:#?}", result.event_publishers);
+        assert_eq!(
+            result.event_publishers.len(),
+            3,
+            "expected 3, got {:#?}",
+            result.event_publishers
+        );
 
         // First publisher: IntegrationEvent OnAfterDoSomething
         let p0 = &result.event_publishers[0];
@@ -1449,5 +1987,164 @@ codeunit 50100 "Sample Publisher"
         let p2 = &result.event_publishers[2];
         assert_eq!(p2.name, "OnLegacyThing");
         assert_eq!(p2.kind, EventPublisherKind::IntegrationEvent);
+    }
+
+    // ===================================================================
+    // Owned-IR projection differential (Phase 4)
+    //
+    // Proves `parse_file_ir` is byte-identical to the legacy tree-sitter
+    // `AlParser::parse_file` over the in-repo r0-corpus, for every ParsedFile
+    // field (definitions / calls / variables / events / implicitly_invoked /
+    // object). Collections are compared as sorted multisets (the graph builder
+    // indexes them by name, so document order is not semantically meaningful).
+    // When this is green, the legacy queries can be deleted.
+    // ===================================================================
+
+    fn collect_al_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                collect_al_files(&p, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("al") {
+                out.push(p);
+            }
+        }
+    }
+
+    /// Render a ParsedFile into per-category SORTED string vectors for comparison.
+    fn normalize(pf: &ParsedFile) -> Vec<(String, Vec<String>)> {
+        let mut defs: Vec<String> = pf
+            .definitions
+            .iter()
+            .map(|d| {
+                format!(
+                    "{}|{:?}|{:?}|cx={}|p={}",
+                    d.name, d.range, d.kind, d.complexity, d.parameter_count
+                )
+            })
+            .collect();
+        defs.sort();
+        let mut calls: Vec<String> = pf
+            .calls
+            .iter()
+            .map(|c| {
+                format!(
+                    "{:?}|{}|{:?}|{:?}",
+                    c.object, c.method, c.range, c.containing_procedure
+                )
+            })
+            .collect();
+        calls.sort();
+        let mut vars: Vec<String> = pf
+            .variables
+            .iter()
+            .map(|v| {
+                format!(
+                    "{}|{:?}|{}|{:?}",
+                    v.name, v.type_kind, v.type_name, v.containing_procedure
+                )
+            })
+            .collect();
+        vars.sort();
+        let mut subs: Vec<String> = pf
+            .event_subscribers
+            .iter()
+            .map(|s| {
+                format!(
+                    "{}|{:?}|{:?}|{}|{}",
+                    s.subscriber_name,
+                    s.range,
+                    s.publisher_object_type,
+                    s.publisher_object,
+                    s.publisher_event
+                )
+            })
+            .collect();
+        subs.sort();
+        let mut pubs: Vec<String> = pf
+            .event_publishers
+            .iter()
+            .map(|p| {
+                format!(
+                    "{}|{:?}|{:?}|{:?}|local={}|{}",
+                    p.name, p.range, p.selection_range, p.kind, p.is_local, p.signature
+                )
+            })
+            .collect();
+        pubs.sort();
+        let mut imp = pf.implicitly_invoked.clone();
+        imp.sort();
+        vec![
+            (
+                "object".to_string(),
+                vec![format!("{:?}|{:?}", pf.object_type, pf.object_name)],
+            ),
+            ("definitions".to_string(), defs),
+            ("calls".to_string(), calls),
+            ("variables".to_string(), vars),
+            ("event_subscribers".to_string(), subs),
+            ("event_publishers".to_string(), pubs),
+            ("implicitly_invoked".to_string(), imp),
+        ]
+    }
+
+    #[test]
+    fn ir_projection_matches_legacy_over_r0_corpus() {
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("r0-corpus");
+        let mut files = Vec::new();
+        collect_al_files(&corpus, &mut files);
+        assert!(
+            files.len() > 100,
+            "expected the r0-corpus to have many .al files, found {}",
+            files.len()
+        );
+        files.sort();
+
+        let mut parser = AlParser::new().expect("parser");
+        let mut diffs: Vec<String> = Vec::new();
+        let mut compared = 0usize;
+
+        for path in &files {
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let legacy = parser.parse_file(path, &source).expect("legacy parse");
+            let owned = parse_file_ir(&source);
+            compared += 1;
+
+            let ln = normalize(&legacy);
+            let on = normalize(&owned);
+            for ((cat, lv), (_, ov)) in ln.iter().zip(on.iter()) {
+                if lv != ov {
+                    let only_legacy: Vec<_> = lv.iter().filter(|x| !ov.contains(x)).collect();
+                    let only_ir: Vec<_> = ov.iter().filter(|x| !lv.contains(x)).collect();
+                    diffs.push(format!(
+                        "{}::{}\n  only-legacy: {:?}\n  only-ir:     {:?}",
+                        path.strip_prefix(&corpus).unwrap_or(path).display(),
+                        cat,
+                        only_legacy,
+                        only_ir
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            diffs.is_empty(),
+            "IR projection diverged from legacy on {} of {} files:\n{}",
+            diffs.len(),
+            compared,
+            diffs
+                .iter()
+                .take(40)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }

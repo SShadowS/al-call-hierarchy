@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Owned-IR projection of the LSP front-end `ParsedFile` (Phase 4, step 1).**
+  `parser::parse_file_ir(source)` produces the same `ParsedFile` (definitions / calls /
+  variables / event subscribers+publishers / framework-invoked / object) as the legacy
+  tree-sitter `AlParser`, but sourced entirely from `al_syntax::parse` — no S-expr
+  queries. It is the ZERO-DIFF projection: it deliberately reproduces the legacy query
+  set (`call_expression`-only calls, first-name-only multi-name vars, the legacy
+  object-kind coverage), proven byte-identical to the legacy parser across all 335
+  in-repo r0-corpus files by a new differential unit test
+  (`ir_projection_matches_legacy_over_r0_corpus`). Correctness gains the IR enables
+  (parenless statement calls, all multi-name vars) are deliberate fast-follows.
+- **`RoutineDecl.name_origin`** (al-syntax IR): the origin of the routine's NAME
+  identifier (vs the whole-routine `origin`), for an LSP call-hierarchy item's
+  `selection_range` (e.g. an event publisher's procedure-name range).
+
 ### Changed
 - **L3 is now tree-sitter-free (Phase 3 complete).** `l3_workspace::project_file` no
   longer takes a tree-sitter `root` — it iterates the owned IR directly
