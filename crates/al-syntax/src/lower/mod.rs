@@ -869,9 +869,10 @@ fn lower_case_body(
     if let Some(body) = case_node.field(FieldName::Body) {
         for child in body.named_children() {
             if child.kind() == RawKind::CaseBranch {
-                // The grammar tags the `,` separators between branch values with the
-                // `pattern` field too, so filter to NAMED nodes — patterns are
-                // expressions; an anonymous `,` token has no `RawKind` and would panic.
+                // The `pattern` field now binds a single value node per branch value
+                // (grammar rule `_case_pattern_item`), so the `,` separators are NOT
+                // tagged `pattern`. The `is_named()` filter is kept as defense-in-depth:
+                // an anonymous `,` token has no `RawKind` and would panic in `lower_expr`.
                 let patterns = child
                     .children_by_field(FieldName::Pattern)
                     .into_iter()
@@ -1114,5 +1115,103 @@ pub(crate) fn origin_of(n: RawNode) -> Origin {
             row: e.row as u32,
             column: e.column as u32,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ir::{ExprKind, Literal, StmtKind};
+    use crate::parse;
+
+    /// Find the first `Case` statement in a parsed file.
+    fn first_case(af: &crate::ir::AlFile) -> (&[crate::ir::CaseBranch], Option<crate::ir::BlockId>) {
+        for s in af.ir.iter_stmts() {
+            if let StmtKind::Case {
+                branches,
+                else_block,
+                ..
+            } = &s.kind
+            {
+                return (branches, *else_block);
+            }
+        }
+        panic!("no Case statement lowered");
+    }
+
+    /// Regression for the case-pattern field-pollution grammar fix: `case 1, 2:` must
+    /// yield TWO value patterns (the `,` separator is NOT a pattern), and lowering must
+    /// not panic / emit Unknown on the comma. Pre-fix, `field('pattern', …)` spread over
+    /// the inlined `,` tokens and `children_by_field("pattern")` returned anonymous commas.
+    #[test]
+    fn comma_case_pattern_yields_two_named_patterns_no_comma() {
+        let src = r#"
+codeunit 50000 T
+{
+    procedure P(I: Integer)
+    begin
+        case I of
+            1, 2:
+                Foo();
+            3:
+                Bar();
+            else
+                Baz();
+        end;
+    end;
+}
+"#;
+        let af = parse(src);
+        let (branches, else_block) = first_case(&af);
+        assert_eq!(branches.len(), 2, "two value branches (1,2 and 3)");
+        assert_eq!(branches[0].patterns.len(), 2, "`1, 2:` → two patterns");
+        assert_eq!(branches[1].patterns.len(), 1, "`3:` → one pattern");
+        assert!(else_block.is_some(), "else branch present");
+        // Both patterns of branch 0 are integer literals — never a comma token.
+        for &p in &branches[0].patterns {
+            assert!(
+                matches!(af.ir.expr(p).kind, ExprKind::Literal(Literal::Int(_))),
+                "expected Int literal pattern"
+            );
+        }
+        // No Unknown exprs anywhere in this clean snippet.
+        assert!(
+            af.ir
+                .iter_exprs()
+                .all(|e| !matches!(e.kind, ExprKind::Unknown)),
+            "no Unknown exprs"
+        );
+    }
+
+    /// `X in [..]` as a case pattern now binds the `pattern` field to a SINGLE named
+    /// `in_expression` node, instead of the old inline `seq` that spread `left` /
+    /// `operator` / `right` fields onto the branch. So the branch has exactly ONE
+    /// pattern (not three), and lowering does not panic. (`in_expression` itself is an
+    /// unmodelled container today → `ExprKind::Unknown` with its `[..]`/identifier
+    /// children captured in the arena — a separate, pre-existing modeling gap, not a
+    /// field-pollution regression.)
+    #[test]
+    fn in_expression_case_pattern_is_a_single_pattern() {
+        let src = r#"
+codeunit 50001 T
+{
+    procedure P(I: Integer): Boolean
+    begin
+        case true of
+            I in [1, 2, 3]:
+                exit(true);
+            else
+                exit(false);
+        end;
+    end;
+}
+"#;
+        let af = parse(src);
+        let (branches, _else) = first_case(&af);
+        assert_eq!(branches.len(), 1, "one value branch (the `in` pattern)");
+        assert_eq!(
+            branches[0].patterns.len(),
+            1,
+            "`I in [..]:` is a single pattern, not left/op/right"
+        );
     }
 }

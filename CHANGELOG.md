@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **tree-sitter-al grammar: case-pattern field-pollution cleanup.** Case branches no
+  longer leak spurious fields. Two grammar-level root causes, both fixed in the owned
+  grammar (`tree-sitter-al` submodule):
+  1. `field('pattern', $._case_pattern)` wrapped an *inlined* `repeat` whose members
+     included the `,` separators, so the `pattern` field distributed over the comma
+     tokens — `children_by_field_name("pattern")` returned anonymous `,` nodes and the
+     owned-IR lowerer panicked on `case 1, 2:`. Introduced `_case_pattern_item =
+     seq(field('pattern', $._single_pattern), optional(','))` so the `pattern` field
+     binds a single value node, never a separator. `case_branch`,
+     `preproc_split_case_branch`, `preproc_split_case_extended`, and
+     `preproc_conditional_case_patterns` all consume `_case_pattern_item`.
+  2. The `in`-as-case-pattern arm was an inline `seq(field('left',…), field('operator',
+     …), field('right',…))` inside `_single_pattern`, so `left`/`operator`/`right`
+     leaked onto every case node. Replaced with the existing named `$.in_expression`;
+     the now-unnecessary `[$._single_pattern, $.in_expression]` conflict was removed.
+  Net effect on `node-types.json`: −876 lines of field pollution; named-kind count
+  unchanged at 387 (`_case_pattern_item` is inlined, `in_expression` already existed).
+  The lowerer's defensive `is_named()` filter is kept as defense-in-depth. Regenerated
+  the raw vocab (`gen-syntax`, new node-types hash `8f9b7013…`). Zero al-sem differential
+  divergence. (Reviewed: gpt-5.5 + gemini-3.1-pro.)
 - **Upgraded to Rust edition 2024** (from 2021) across all three crates — it is 2026 and
   edition 2024 is the current stable (rustc 1.94). `cargo fix --edition` applied the
   migrations: `unsafe extern "C"` (the al-syntax grammar FFI), `unsafe { std::env::set_var

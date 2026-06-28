@@ -1713,25 +1713,8 @@ impl<'t> RawCaseBranch<'t> {
     pub fn body(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Body)
     }
-    pub fn left(self) -> Vec<RawNode<'t>> {
-        self.0.children_by_field(FieldName::Left)
-    }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> {
-        self.0
-            .children_by_field(FieldName::Operator)
-            .into_iter()
-            .filter_map(RawInKeyword::cast)
-            .collect()
-    }
     pub fn pattern(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Pattern)
-    }
-    pub fn right(self) -> Vec<RawListLiteral<'t>> {
-        self.0
-            .children_by_field(FieldName::Right)
-            .into_iter()
-            .filter_map(RawListLiteral::cast)
-            .collect()
     }
 }
 
@@ -5309,22 +5292,8 @@ impl<'t> RawPreprocConditionalCasePatterns<'t> {
     pub fn node(self) -> RawNode<'t> {
         self.0
     }
-    pub fn left(self) -> Vec<RawNode<'t>> {
-        self.0.children_by_field(FieldName::Left)
-    }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> {
-        self.0
-            .children_by_field(FieldName::Operator)
-            .into_iter()
-            .filter_map(RawInKeyword::cast)
-            .collect()
-    }
-    pub fn right(self) -> Vec<RawListLiteral<'t>> {
-        self.0
-            .children_by_field(FieldName::Right)
-            .into_iter()
-            .filter_map(RawListLiteral::cast)
-            .collect()
+    pub fn pattern(self) -> Vec<RawNode<'t>> {
+        self.0.children_by_field(FieldName::Pattern)
     }
 }
 
@@ -6014,25 +5983,8 @@ impl<'t> RawPreprocSplitCaseBranch<'t> {
     pub fn body(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Body)
     }
-    pub fn left(self) -> Vec<RawNode<'t>> {
-        self.0.children_by_field(FieldName::Left)
-    }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> {
-        self.0
-            .children_by_field(FieldName::Operator)
-            .into_iter()
-            .filter_map(RawInKeyword::cast)
-            .collect()
-    }
     pub fn pattern(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Pattern)
-    }
-    pub fn right(self) -> Vec<RawListLiteral<'t>> {
-        self.0
-            .children_by_field(FieldName::Right)
-            .into_iter()
-            .filter_map(RawListLiteral::cast)
-            .collect()
     }
 }
 
@@ -6054,25 +6006,8 @@ impl<'t> RawPreprocSplitCaseExtended<'t> {
     pub fn body(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Body)
     }
-    pub fn left(self) -> Vec<RawNode<'t>> {
-        self.0.children_by_field(FieldName::Left)
-    }
-    pub fn operator(self) -> Vec<RawInKeyword<'t>> {
-        self.0
-            .children_by_field(FieldName::Operator)
-            .into_iter()
-            .filter_map(RawInKeyword::cast)
-            .collect()
-    }
     pub fn pattern(self) -> Vec<RawNode<'t>> {
         self.0.children_by_field(FieldName::Pattern)
-    }
-    pub fn right(self) -> Vec<RawListLiteral<'t>> {
-        self.0
-            .children_by_field(FieldName::Right)
-            .into_iter()
-            .filter_map(RawListLiteral::cast)
-            .collect()
     }
 }
 
