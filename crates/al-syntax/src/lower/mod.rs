@@ -512,11 +512,50 @@ fn lower_block_child(
     ) {
         return;
     }
+    // A bare identifier in statement position is NOT a confident call: it is either
+    // ERROR-recovery debris (a token rescued after a syntax error) or a parenless call
+    // that omitted its `;` (a semicolon-less final statement). A real parenless call
+    // owns its `;` and reduces to `call_statement` (handled in lower_stmt). We do not
+    // fabricate a call edge from a bare identifier — that would manufacture spurious
+    // `unknown` edges from parse-error debris (the moat-polluting case the grammar's
+    // `call_statement` node was added to prevent). The residual (a genuine parenless
+    // call written without a trailing `;`) is rare, never produces a FALSE edge, and is
+    // still no worse than the legacy walk, which captured no parenless calls at all.
+    if matches!(node.kind(), RawKind::Identifier | RawKind::QuotedIdentifier) {
+        return;
+    }
+    // A `call_statement` whose subtree carries a parse error (e.g. tree-sitter
+    // synthesized a MISSING `;`) is not a confident call either — skip it.
+    if node.kind() == RawKind::CallStatement && node.has_error() {
+        return;
+    }
     let sid = lower_stmt(node, ir, issues, source);
     items.push(BlockItem::Stmt(sid));
 }
 
 fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> StmtId {
+    // A parenless no-arg call statement (`Initialize;`) — the grammar wraps a bare
+    // identifier that owns its `;` in a `call_statement` (distinct from ERROR-recovery
+    // debris, which lacks a terminator and stays a raw identifier — never reaching here,
+    // see `lower_block_child`). Lower its `function` to a Call with empty args, ANCHORED
+    // on the callee identifier (NOT the wrapper) so the call's source anchor
+    // (endColumn/syntaxKind) is byte-identical to a parenless call's bare identifier —
+    // preserving golden parity with the pre-grammar form.
+    if node.kind() == RawKind::CallStatement {
+        let callee = node.field(FieldName::Function).unwrap_or(node);
+        let function = lower_expr(callee, ir, issues, source);
+        let call = ir.add_expr(Expr {
+            kind: ExprKind::Call {
+                function,
+                args: Vec::new(),
+            },
+            origin: origin_of(callee),
+        });
+        return ir.add_stmt(Stmt {
+            kind: StmtKind::Call(call),
+            origin: origin_of(callee),
+        });
+    }
     let origin = origin_of(node);
     let kind = match node.kind() {
         RawKind::AssignmentStatement => {
@@ -525,14 +564,11 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             StmtKind::Assignment { target, value }
         }
         RawKind::CallExpression => StmtKind::Call(lower_expr(node, ir, issues, source)),
-        // Parenless call statements (`Modify;`, `Rec.Find;`, `Foo;`) parse as a bare
-        // member/identifier/subscript in statement position. AL has no field-access
-        // statement, so these ARE calls — normalize to a Call with empty args so the
-        // engine sees them uniformly (matches legacy body_walk).
-        RawKind::MemberExpression
-        | RawKind::Identifier
-        | RawKind::QuotedIdentifier
-        | RawKind::SubscriptExpression => {
+        // Parenless member / subscript call statements (`Rec.Find;`, `X[1];`) parse as a
+        // bare member/subscript in statement position (the grammar leaves these UNCHANGED
+        // — only a bare identifier became `call_statement`). AL has no field-access
+        // statement, so these ARE calls — normalize to a Call with empty args.
+        RawKind::MemberExpression | RawKind::SubscriptExpression => {
             let function = lower_expr(node, ir, issues, source);
             let call = ir.add_expr(Expr {
                 kind: ExprKind::Call {

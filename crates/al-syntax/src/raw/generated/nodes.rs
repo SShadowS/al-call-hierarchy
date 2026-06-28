@@ -924,6 +924,16 @@ impl<'t> RawCallExpression<'t> {
 }
 
 #[derive(Copy, Clone)]
+pub struct RawCallStatement<'t>(pub(super) RawNode<'t>);
+impl<'t> RawCallStatement<'t> {
+    #[inline]
+    pub fn cast(n: RawNode<'t>) -> Option<Self> { if n.kind() == RawKind::CallStatement { Some(Self(n)) } else { None } }
+    #[inline]
+    pub fn node(self) -> RawNode<'t> { self.0 }
+    pub fn function(self) -> Option<IdentifierOrQuotedIdentifier<'t>> { self.0.field(FieldName::Function).and_then(IdentifierOrQuotedIdentifier::cast) }
+}
+
+#[derive(Copy, Clone)]
 pub struct RawCaptionValue<'t>(pub(super) RawNode<'t>);
 impl<'t> RawCaptionValue<'t> {
     #[inline]

@@ -24,7 +24,11 @@ pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::featu
         return Vec::new();
     };
     let cols = Utf16Cols::new(source);
-    let id_ctx = IdentityCtx { app_guid: "dual", model_instance_id: "dual", source_unit_id: "dual" };
+    let id_ctx = IdentityCtx {
+        app_guid: "dual",
+        model_instance_id: "dual",
+        source_unit_id: "dual",
+    };
     let mut out = Vec::new();
 
     fn collect_routines<'t>(node: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
@@ -56,7 +60,10 @@ pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::featu
                 for r in &routines {
                     if let Some(nm) = r.child_by_field_name("name") {
                         let mut t = &source[nm.byte_range()];
-                        t = t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(t);
+                        t = t
+                            .strip_prefix('"')
+                            .and_then(|x| x.strip_suffix('"'))
+                            .unwrap_or(t);
                         proc_names.insert(t.to_lowercase());
                     }
                 }
@@ -64,14 +71,25 @@ pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::featu
                     // project_routine_features returns (routine_id_hash, PFeatures);
                     // key on the routine NAME instead (extracted from the node).
                     if let Some((_, feats)) = project_routine_features(
-                        child, r, object_type, object_number, None, &proc_names, &globals,
-                        id_ctx, source, cols,
+                        child,
+                        r,
+                        object_type,
+                        object_number,
+                        None,
+                        &proc_names,
+                        &globals,
+                        id_ctx,
+                        source,
+                        cols,
                     ) {
                         let rname = r
                             .child_by_field_name("name")
                             .map(|nm| {
                                 let t = &source[nm.byte_range()];
-                                t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(t).to_string()
+                                t.strip_prefix('"')
+                                    .and_then(|x| x.strip_suffix('"'))
+                                    .unwrap_or(t)
+                                    .to_string()
                             })
                             .unwrap_or_default();
                         out.push((rname, feats));
@@ -90,7 +108,11 @@ pub fn legacy_l2_features(source: &str) -> Vec<(String, crate::engine::l2::featu
 /// PLUS parenless call statements (`Modify;` / `Rec.SetRecFilter;`), which parse as a
 /// bare identifier/member in statement position (not `call_expression`) but ARE calls.
 pub fn legacy_call_methods(source: &str) -> Vec<String> {
-    let mut v = capture_texts(source, language::queries::CALLS, &["call.simple", "call.method"]);
+    let mut v = capture_texts(
+        source,
+        language::queries::CALLS,
+        &["call.simple", "call.method"],
+    );
     let lang = language::language();
     let mut parser = Parser::new();
     if parser.set_language(&lang).is_ok() {
@@ -128,10 +150,21 @@ fn walk_parenless_calls(node: tree_sitter::Node, source: &str, out: &mut Vec<Str
 }
 
 fn is_statement_position(node: tree_sitter::Node) -> bool {
-    let Some(parent) = node.parent() else { return false };
-    let field_is = |f: &str| parent.child_by_field_name(f).map(|n| n.id() == node.id()).unwrap_or(false);
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    let field_is = |f: &str| {
+        parent
+            .child_by_field_name(f)
+            .map(|n| n.id() == node.id())
+            .unwrap_or(false)
+    };
     match parent.kind() {
         "statement_block" => true,
+        // A parenless no-arg call (`Initialize;`) is the `function` of a `call_statement`
+        // (grammar node added for owned-IR debris discrimination). The bare identifier is
+        // definitionally a parenless call in this position.
+        "call_statement" => field_is("function"),
         "if_statement" => field_is("then_branch") || field_is("else_branch"),
         "while_statement" | "for_statement" | "foreach_statement" | "with_statement"
         | "case_branch" | "case_else_branch" => field_is("body"),
@@ -201,8 +234,7 @@ fn walk_stmt_kinds(node: tree_sitter::Node, in_routine: bool, out: &mut Vec<Stri
 }
 
 fn walk_members(node: tree_sitter::Node, in_routine: bool, source: &str, out: &mut Vec<String>) {
-    let in_routine =
-        in_routine || matches!(node.kind(), "procedure" | "trigger_declaration");
+    let in_routine = in_routine || matches!(node.kind(), "procedure" | "trigger_declaration");
     if in_routine && node.kind() == "member_expression" {
         if let Some(m) = node.child_by_field_name("member") {
             out.push(source[m.byte_range()].to_string());
@@ -269,7 +301,11 @@ fn walk_temp_vars(node: tree_sitter::Node, source: &str, out: &mut Vec<String>) 
 /// Legacy routine names in a source file: every `procedure` / `trigger`
 /// definition, via the same `DEFINITIONS` query the engine uses.
 pub fn legacy_routine_names(source: &str) -> Vec<String> {
-    capture_texts(source, language::queries::DEFINITIONS, &["proc.name", "trigger.name"])
+    capture_texts(
+        source,
+        language::queries::DEFINITIONS,
+        &["proc.name", "trigger.name"],
+    )
 }
 
 /// Run a query and collect the source text of the named captures, in match order.

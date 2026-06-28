@@ -677,6 +677,16 @@ fn chained_receiver_descent(ctx: &mut Ctx, _node: Node, func_node: Node) {
 }
 
 pub fn visit(ctx: &mut Ctx, node: Node, parent: Option<Node>) {
+    // A parenless no-arg call statement (`Initialize;`) is a `call_statement` wrapping
+    // its `function` child. Treat the function child AS the statement, inheriting the
+    // call_statement's own parent (so its statement-position detection — record ops,
+    // identifier refs — fires exactly as it did before the grammar gained the wrapper).
+    if node.kind() == "call_statement" {
+        if let Some(func) = node.child_by_field_name("function") {
+            visit(ctx, func, parent);
+        }
+        return;
+    }
     let node_type = node.kind();
     let parent_type = parent.map(|p| p.kind()).unwrap_or("");
 

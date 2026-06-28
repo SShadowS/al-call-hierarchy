@@ -39,9 +39,9 @@ pub fn block_statements<'a>(block_node: Node<'a>) -> Vec<Node<'a>> {
         for child in named_children(block_node) {
             if child.kind() == "statement_block" {
                 saw_statement_block = true;
-                flattened.extend(named_children(child));
+                flattened.extend(named_children(child).into_iter().map(unwrap_call_statement));
             } else {
-                flattened.push(child);
+                flattened.push(unwrap_call_statement(child));
             }
         }
         if saw_statement_block {
@@ -49,6 +49,23 @@ pub fn block_statements<'a>(block_node: Node<'a>) -> Vec<Node<'a>> {
         }
     }
     named_children(block_node)
+        .into_iter()
+        .map(unwrap_call_statement)
+        .collect()
+}
+
+/// A parenless no-arg call statement (`Initialize;`) parses as a `call_statement`
+/// node wrapping its `function` child (grammar `call_statement: seq(function, ';')`).
+/// The legacy tree-sitter walks (cfn / body_walk / L3) treat the inner bare
+/// identifier AS the statement — exactly as before the grammar gained `call_statement`
+/// — so unwrap to the function child here. (The owned IR lowers `call_statement`
+/// directly; this keeps the legacy dual-run oracle byte-identical.)
+pub fn unwrap_call_statement(node: Node) -> Node {
+    if node.kind() == "call_statement" {
+        node.child_by_field_name("function").unwrap_or(node)
+    } else {
+        node
+    }
 }
 
 /// Source text of a node (UTF-8 byte slice).

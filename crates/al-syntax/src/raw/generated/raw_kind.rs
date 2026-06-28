@@ -67,6 +67,7 @@ pub enum RawKind {
     BreakStatement,
     CalcFieldReference,
     CallExpression,
+    CallStatement,
     CaptionValue,
     CaseBody,
     CaseBranch,
@@ -465,6 +466,7 @@ impl RawKind {
             "break_statement" => RawKind::BreakStatement,
             "calc_field_reference" => RawKind::CalcFieldReference,
             "call_expression" => RawKind::CallExpression,
+            "call_statement" => RawKind::CallStatement,
             "caption_value" => RawKind::CaptionValue,
             "case_body" => RawKind::CaseBody,
             "case_branch" => RawKind::CaseBranch,
@@ -862,6 +864,7 @@ impl RawKind {
             RawKind::BreakStatement => "break_statement",
             RawKind::CalcFieldReference => "calc_field_reference",
             RawKind::CallExpression => "call_expression",
+            RawKind::CallStatement => "call_statement",
             RawKind::CaptionValue => "caption_value",
             RawKind::CaseBody => "case_body",
             RawKind::CaseBranch => "case_branch",
@@ -1198,7 +1201,7 @@ impl RawKind {
 /// sha256 of the `node-types.json` this file was generated from. al-syntax
 /// `build.rs` asserts the checked-in grammar matches, so a silent grammar swap
 /// fails the build.
-pub const GRAMMAR_NODE_TYPES_HASH: &str = "75a697ae4ec49d02d923de01759b8572c1fdeedab3790667c3af16a6885689a2";
+pub const GRAMMAR_NODE_TYPES_HASH: &str = "29aff04b8ffbaee76728b657486b6d7bc32fb2cd1405e28608caec8c4a3ff449";
 
 /// Count of NAMED kinds (excludes `Error`). Sanity anchor for the coverage test.
-pub const NAMED_KIND_COUNT: usize = 386;
+pub const NAMED_KIND_COUNT: usize = 387;

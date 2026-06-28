@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **tree-sitter-al `call_statement` grammar node + engine integration.** A parenless
+  no-arg call (`Initialize;`) — a bare identifier in statement position that owns its
+  `;` — now parses as a `call_statement` node, structurally distinct from an
+  ERROR-recovery bare identifier (which has no terminator and stays raw). This lets the
+  owned-IR lowerer capture parenless procedure calls as call-graph edges WITHOUT
+  mistaking parse-error debris for a call (the moat-polluting case). The IR lowerer
+  lowers `call_statement` to a parenless Call (anchored on the callee identifier so the
+  source anchor is byte-identical to the pre-grammar form); a bare identifier in
+  statement position is treated as debris / semicolon-less and is NOT a call. The legacy
+  tree-sitter walks (the dual-run oracle + the L3 emitter) treat `call_statement`
+  transparently (unwrap to the function child), preserving byte parity. Grammar
+  designed + reviewed with gpt-5.5 + gemini-3.1-pro; parenful `Foo()` and parenless
+  member `Rec.Find;` are unchanged. Known residual: a parenless call written WITHOUT a
+  trailing `;` (a semicolon-less final statement, rare) is not captured — never a false
+  edge, and no worse than the legacy walk which captured no parenless calls at all.
 - **Report dataitems modelled in the owned IR.** `ObjectDecl.report_dataitems`
   (`(name, source-table)` pairs) and `RoutineDecl.dataitem_source_table` (a dataitem
   trigger's implicit-`Rec` table) let the IR-driven L2 path seed a report dataitem
