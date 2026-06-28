@@ -3,7 +3,6 @@
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use rayon::prelude::*;
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -13,15 +12,10 @@ use crate::app_package::{ExternalMethodKind, ParsedAppPackage};
 use crate::dependencies;
 use crate::graph::{
     CallGraph, CallSite, Definition, DefinitionKind, DependencyMethod, DependencyMethodKind,
-    DependencyObject, EventSubscription, ExternalDefinition, ExternalSource,
-    LocalEventPublisher, LocalEventPublisherKind, ObjectType, QualifiedName,
+    DependencyObject, EventSubscription, ExternalDefinition, ExternalSource, LocalEventPublisher,
+    LocalEventPublisherKind, ObjectType, QualifiedName,
 };
-use crate::parser::{AlParser, EventPublisherKind, ParsedFile};
-
-// Thread-local parser to avoid recompiling queries for every file
-thread_local! {
-    static PARSER: RefCell<Option<AlParser>> = const { RefCell::new(None) };
-}
+use crate::parser::{parse_file_ir, EventPublisherKind, ParsedFile};
 
 /// Project indexer
 pub struct Indexer {
@@ -120,23 +114,10 @@ impl Indexer {
             }
         };
 
-        PARSER.with(|cell| {
-            let mut parser_opt = cell.borrow_mut();
-            if parser_opt.is_none() {
-                *parser_opt = Some(AlParser::new()?);
-            }
-            let result = parser_opt.as_mut().unwrap().parse_file(path, &source);
-            #[cfg(feature = "telemetry")]
-            {
-                if result.is_err() {
-                    crate::telemetry::record_parser_error(
-                        crate::telemetry::ParserErrorKind::ParseFailed,
-                        path,
-                    );
-                }
-            }
-            result
-        })
+        // Owned-IR projection (Phase 4): parse once via al-syntax and project the
+        // ParsedFile — no tree-sitter S-expr queries. Byte-identical to the former
+        // AlParser path (proven by the parser::tests differential over r0-corpus).
+        Ok(parse_file_ir(&source))
     }
 
     /// Add parsed file to the graph
@@ -293,7 +274,9 @@ impl Indexer {
                 range: p.range,
                 selection_range: p.selection_range,
                 kind: match p.kind {
-                    EventPublisherKind::IntegrationEvent => LocalEventPublisherKind::IntegrationEvent,
+                    EventPublisherKind::IntegrationEvent => {
+                        LocalEventPublisherKind::IntegrationEvent
+                    }
                     EventPublisherKind::BusinessEvent => LocalEventPublisherKind::BusinessEvent,
                     EventPublisherKind::InternalEvent => LocalEventPublisherKind::InternalEvent,
                 },
@@ -968,7 +951,9 @@ codeunit 50100 "Test"
         );
 
         // The subscriber procedure must not be reported as unused.
-        let handler = graph.get_symbol("HandleOnBeforePost").expect("handler indexed");
+        let handler = graph
+            .get_symbol("HandleOnBeforePost")
+            .expect("handler indexed");
         let unused = graph.get_unused_procedures();
         assert!(
             !unused.iter().any(|(q, _)| q.procedure == handler),

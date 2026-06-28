@@ -125,7 +125,15 @@ pub struct ParsedEventSubscriber {
     pub publisher_event: String,
 }
 
-/// AL file parser using tree-sitter
+/// AL file parser using tree-sitter.
+///
+/// LEGACY / INTERIM: production now parses via [`parse_file_ir`] (the owned-IR
+/// projection). `AlParser` is retained ONLY as the oracle for the
+/// `ir_projection_matches_legacy_over_r0_corpus` differential test, which proves
+/// the IR path byte-identical. It is deleted (along with the 6 S-expr queries) once
+/// `handlers.rs` + `main.rs` are also ported off tree-sitter, at which point the
+/// differential is replaced by an IR-output snapshot golden.
+#[allow(dead_code)]
 pub struct AlParser {
     parser: Parser,
     definitions_query: Query,
@@ -136,6 +144,7 @@ pub struct AlParser {
     attributed_procedures_query: Query,
 }
 
+#[allow(dead_code)]
 impl AlParser {
     pub fn new() -> Result<Self> {
         let lang = language::language();
