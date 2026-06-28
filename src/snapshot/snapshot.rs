@@ -4,7 +4,9 @@
 
 use crate::app_package::ParsedAppPackage;
 use crate::dependencies::load_all_apps;
-use crate::snapshot::compilation::{CompilationContext, context_from_app_json};
+use crate::snapshot::compilation::{
+    CompilationContext, context_from_app_json, context_from_metadata,
+};
 use crate::snapshot::identity::{AppId, Provenance, TrustTier};
 use crate::snapshot::provider::{
     EmbeddedAppProvider, LocalRepoProvider, SourceProvider, SourceRoot, SymbolOnlyProvider,
@@ -35,6 +37,10 @@ pub struct AppUnit {
     pub source: Option<SourceRoot>,
     /// Per-app preprocessor symbols + version basis for `#if` evaluation.
     pub compilation: CompilationContext,
+    /// This app's declared dependencies (each with its real GUID) — drives
+    /// dependency-topology-aware resolution. Workspace deps come from app.json;
+    /// dependency-app deps from their `.app` NavxManifest.
+    pub declared_deps: Vec<crate::dependencies::AppDependency>,
     /// Parsed `.app` symbol table (None for the workspace itself).
     pub abi: Option<ParsedAppPackage>,
 }
@@ -88,6 +94,11 @@ impl SnapshotBuilder {
         };
 
         let ws_compilation = context_from_app_json(&app_json);
+        // Workspace's declared dependencies (with their GUIDs) from app.json.
+        let ws_declared_deps: Vec<crate::dependencies::AppDependency> = app_json
+            .get("dependencies")
+            .and_then(|d| serde_json::from_value(d.clone()).ok())
+            .unwrap_or_default();
 
         let ws_source_provider = WorkspaceProvider { root: ws.clone() };
         let ws_source = ws_source_provider
@@ -112,6 +123,7 @@ impl SnapshotBuilder {
             id: workspace_app.clone(),
             source: ws_source,
             compilation: ws_compilation,
+            declared_deps: ws_declared_deps,
             abi: None,
         };
 
@@ -174,6 +186,10 @@ impl SnapshotBuilder {
                 .map(|s| s.content_hash.clone())
                 .unwrap_or_default();
 
+            // Real compilation basis + declared deps from the dep's manifest
+            // (computed before `rd.package` is moved into `abi`).
+            let dep_compilation = context_from_metadata(&rd.package.metadata);
+            let dep_declared = rd.package.metadata.dependencies.clone();
             apps.push(AppUnit {
                 provenance: Provenance {
                     app: dep_id.clone(),
@@ -182,7 +198,8 @@ impl SnapshotBuilder {
                 },
                 id: dep_id,
                 source,
-                compilation: CompilationContext::default(),
+                compilation: dep_compilation,
+                declared_deps: dep_declared,
                 abi: Some(rd.package),
             });
         }
@@ -239,6 +256,27 @@ mod tests {
         assert!(
             deps_with_guid >= 9,
             "expected >=9 deps with a real GUID, got {deps_with_guid}"
+        );
+        // #1: dependency apps carry a REAL compilation basis (runtime/platform
+        // from their manifest), not an empty default context.
+        let deps_with_runtime = snap
+            .apps
+            .iter()
+            .skip(1)
+            .filter(|u| u.compilation.runtime.is_some() || u.compilation.application.is_some())
+            .count();
+        assert!(
+            deps_with_runtime >= 5,
+            "expected deps to carry a real compilation basis, got {deps_with_runtime}"
+        );
+        // #2: dependency topology is captured — at least one dep declares its own
+        // dependencies (each with a GUID), enabling topology-aware resolution.
+        let some_dep_declares_deps = snap.apps.iter().skip(1).any(|u| {
+            !u.declared_deps.is_empty() && u.declared_deps.iter().all(|d| d.app_id.len() == 36)
+        });
+        assert!(
+            some_dep_declares_deps,
+            "expected at least one dep to declare its own GUID-bearing dependencies"
         );
     }
 }

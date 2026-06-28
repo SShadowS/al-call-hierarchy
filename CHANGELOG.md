@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Publisher`, and the dependency `AppId` is built from the `.app`'s authoritative manifest
   (the workspace already read its own `id` from `app.json`). Local-provider matching now
   prefers GUID when known. The identity foundation Plan 1B builds on is now truly unique.
+  The same manifest-enrichment pass fixes two more workarounds: (a) dependency `AppUnit`s
+  now carry a REAL compilation basis (`Runtime`/`Platform`/`Application` from the manifest)
+  instead of an empty `CompilationContext::default()` — note the source-level `#if`
+  preprocessor symbols are still NOT recoverable from a `.app` (that needs SymbolReference
+  reconciliation, a later phase); (b) `AppMetadata` + every `AppUnit` now carry the app's
+  **declared dependencies** (each with its GUID, from the manifest `<Dependencies>` /
+  app.json), so Plan 1B's resolution can be dependency-topology-aware instead of flat-global.
+  `AppDependency` gains `app_id` (parses the app.json / manifest `id`).
 - **Member-trigger names (`Object::Member`) were truncated to the object half.** The
   grammar's `_trigger_name` was an inlined `seq(id, '::', id)`, so the `name` field of
   `trigger_declaration` was `multiple:true` and included the anonymous `::` token; the

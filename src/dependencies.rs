@@ -12,7 +12,12 @@ use std::path::{Path, PathBuf};
 /// A dependency declared in app.json
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppDependency {
+    /// The dependency's stable GUID. From app.json's `id` field, or the
+    /// NavxManifest `Dependency@Id` — the only globally-unique identity.
+    #[serde(rename = "id", default)]
+    pub app_id: String,
     pub name: String,
+    #[serde(default)]
     pub publisher: String,
     pub version: String,
 }
@@ -257,8 +262,9 @@ pub fn load_all_apps(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
                     );
                     out.push(ResolvedDependency {
                         dependency: AppDependency {
+                            app_id: package.metadata.app_id.clone(),
                             name: package.metadata.name.clone(),
-                            publisher: String::new(),
+                            publisher: package.metadata.publisher.clone(),
                             version: package.metadata.version.clone(),
                         },
                         app_path: path,
@@ -480,6 +486,7 @@ mod tests {
         }
 
         let dep = AppDependency {
+            app_id: String::new(),
             name: "Continia Core".to_string(),
             publisher: "Continia Software".to_string(),
             version: "29.0.0.0".to_string(),
@@ -507,6 +514,7 @@ mod tests {
         }
 
         let dep = AppDependency {
+            app_id: String::new(),
             name: "NonExistent App".to_string(),
             publisher: "Nobody".to_string(),
             version: "1.0.0.0".to_string(),

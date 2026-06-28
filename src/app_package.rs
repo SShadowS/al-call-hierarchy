@@ -22,6 +22,17 @@ pub struct AppMetadata {
     pub name: String,
     pub publisher: String,
     pub version: String,
+    /// Runtime/platform/application version basis (`App@Runtime/Platform/Application`).
+    /// Empty when the attribute is absent. NOTE: the manifest does NOT carry the
+    /// source-level preprocessor symbols active at compile time — those are not
+    /// recoverable from the `.app`; per-app `#if` soundness needs SymbolReference
+    /// reconciliation (a later phase), not this metadata.
+    pub runtime: String,
+    pub platform: String,
+    pub application: String,
+    /// The app's declared dependencies (`<Dependencies><Dependency .../>`), each
+    /// with its real GUID. Drives dependency-topology-aware resolution.
+    pub dependencies: Vec<crate::dependencies::AppDependency>,
 }
 
 /// Kind of method (regular procedure, event publisher, or event subscriber).
@@ -300,17 +311,29 @@ fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Ap
         .find(|n| n.has_tag_name("App"))
         .context("App element not found in NavxManifest.xml")?;
 
+    let attr = |name: &str| app_node.attribute(name).unwrap_or_default().to_string();
+
+    // Declared dependencies: <Dependencies><Dependency Id Name Publisher MinVersion/>
+    let dependencies = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("Dependency"))
+        .map(|d| crate::dependencies::AppDependency {
+            app_id: d.attribute("Id").unwrap_or_default().to_string(),
+            name: d.attribute("Name").unwrap_or_default().to_string(),
+            publisher: d.attribute("Publisher").unwrap_or_default().to_string(),
+            version: d.attribute("MinVersion").unwrap_or_default().to_string(),
+        })
+        .collect();
+
     Ok(AppMetadata {
-        app_id: app_node.attribute("Id").unwrap_or_default().to_string(),
-        name: app_node.attribute("Name").unwrap_or_default().to_string(),
-        publisher: app_node
-            .attribute("Publisher")
-            .unwrap_or_default()
-            .to_string(),
-        version: app_node
-            .attribute("Version")
-            .unwrap_or_default()
-            .to_string(),
+        app_id: attr("Id"),
+        name: attr("Name"),
+        publisher: attr("Publisher"),
+        version: attr("Version"),
+        runtime: attr("Runtime"),
+        platform: attr("Platform"),
+        application: attr("Application"),
+        dependencies,
     })
 }
 

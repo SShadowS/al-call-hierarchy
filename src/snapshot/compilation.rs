@@ -22,6 +22,20 @@ pub fn context_from_app_json(app_json: &serde_json::Value) -> CompilationContext
     }
 }
 
+/// Build a dependency app's compilation context from its `.app` NavxManifest
+/// metadata (`Runtime`/`Platform`/`Application`). `preproc_symbols` stays empty —
+/// the manifest does not record the symbols active at compile time (recovering
+/// per-app `#if` activation needs SymbolReference reconciliation, a later phase).
+pub fn context_from_metadata(meta: &crate::app_package::AppMetadata) -> CompilationContext {
+    let non_empty = |s: &str| (!s.is_empty()).then(|| s.to_string());
+    CompilationContext {
+        preproc_symbols: BTreeSet::new(),
+        runtime: non_empty(&meta.runtime),
+        platform: non_empty(&meta.platform),
+        application: non_empty(&meta.application),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

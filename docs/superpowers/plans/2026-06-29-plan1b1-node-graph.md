@@ -347,7 +347,7 @@ git commit -m "feat(program): extract object+routine nodes from AlFile (with acc
   - `fn add_dependency(&mut self, from: AppRef, on: AppRef)`
   - `fn closure(&self, from: AppRef) -> std::collections::BTreeSet<AppRef>` — `from` plus all transitively reachable deps (an app sees itself + its dependency closure; cycle-safe).
 
-> **Topology source note:** the snapshot today only knows the WORKSPACE's direct deps (its `app.json`), not each dep's own deps. For this task, the builder (Task 4) wires: workspace → every dep app (closed-world: the workspace depends on all snapshot deps), and dep → (nothing yet). Transitive per-dep edges (parsing each `.app`'s manifest deps) is a documented follow-up; `closure()` already supports it once edges are added. This is the honest first cut: it does NOT over-claim a precise per-dep topology it cannot yet derive.
+> **Topology source:** every `AppUnit` now carries `declared_deps: Vec<AppDependency>` (each with its real GUID) — the workspace's from its `app.json`, each dependency app's from its `.app` NavxManifest `<Dependencies>` (the manifest-enrichment fix). So Task 4 wires the REAL per-app topology: for each app, `add_dependency(app_ref, dep_ref)` for every `declared_deps` entry resolved to an interned `AppRef` (match by GUID when present, else name+version). No workspace→all-deps workaround.
 
 - [ ] **Step 1: Write the failing test**
 ```rust
@@ -439,7 +439,7 @@ git commit -m "feat(program): DependencyGraph with cycle-safe app closure"
   - `struct ProgramGraph { apps: AppRegistry, topology: DependencyGraph, objects: Vec<ObjectNode>, routines: Vec<RoutineNode>, obj_index: ObjectIndex }`
   - `struct ObjectIndex { by_app_kind_name: HashMap<(AppRef, ObjectKind, String), ObjectNodeId> }` (name lowercased)
   - `impl ProgramGraph { fn resolve_object(&self, from: AppRef, kind: ObjectKind, name: &str) -> Option<&ObjectNode> }` — searches `from`'s dependency closure (topology-aware), preferring the nearest app; returns the **app-qualified** node. Never a flat-global match.
-  - `fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph` — interns apps, extracts nodes from every source-bearing unit (via `parse_snapshot`), wires topology (workspace → all deps for now), builds the index, sorts `objects`/`routines` by `NodeId` for determinism.
+  - `fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph` — interns every `snap.apps[*].id`, extracts nodes from every source-bearing unit (via `parse_snapshot`), wires REAL topology from each `AppUnit.declared_deps` (resolve each declared dep to an interned `AppRef` by GUID-else-name+version; `add_dependency(app_ref, dep_ref)`), builds the index, sorts `objects`/`routines` by `NodeId` for determinism.
 
 - [ ] **Step 1: Write the failing test** (topology scoping is the key assertion)
 ```rust
