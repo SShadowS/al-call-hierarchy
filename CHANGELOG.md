@@ -39,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case-pattern lowering now filters to named nodes (added `RawNode::is_named`).
 
 ### Added
+- **IR-owned L2 feature snapshot gate (`tests/ir_l2_snapshot.rs`).** Serializes the
+  full `PFeatures` (loops / ops / record-ops / calls / field-accesses / record-vars /
+  nesting / branching / unreachable / identifier+condition refs / variables /
+  var-assignments / the `statement_tree` CFN) of every r0-corpus routine via
+  `project_routine_features_ir`, digested into `tests/ir-l2-goldens/l2_features.snapshot`
+  (REGEN with `REGEN_TEMP_GOLDENS=1`). This is the deepest L2 contract as a Rust-OWNED
+  baseline — it replaces the migration-era legacy-vs-IR dual-run oracle without
+  ossifying against the deleted tree-sitter walk.
 - **`al_syntax::lookup_symbol_properties` facade (Phase 4, step 3).** A semantic,
   owned-types CST-backed lookup for a table field's / page action's properties
   (`SymbolDeclKind`, `SymbolProperties`). The IR models a field's number/name/type/
