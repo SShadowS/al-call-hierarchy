@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Serde-skip drift gate.** The IR L2 feature snapshot (`tests/ir_l2_snapshot.rs`) now
+  digests the `Debug` representation of each routine's `PFeatures` instead of serde
+  JSON, so it covers the `#[serde(skip)]` (and `PartialEq`-excluded) fields a serialized
+  golden cannot see — `PRecordOperation.in_until_condition` / `run_trigger`,
+  `PCFNNode.source_range` / `is_case_else`, `PVarAssignment.rhs_identifier`. Four such
+  load-bearing fields silently broke during the migration because the old byte gate
+  (serde + PartialEq) was blind to them. A `debug_digest_catches_serde_skip_drift` proof
+  test demonstrates the blind spot (two ops differing only in `in_until_condition`
+  serialize identically and compare equal, yet their Debug digests differ).
 - **Parenless statement calls are now call-hierarchy edges.** `parse_file_ir` captures
   every `ExprKind::Call`, including the parenless forms (`Initialize;`, `Rec.Find;`,
   `Modify;`) the old `call_expression`-only query missed. A procedure invoked only as

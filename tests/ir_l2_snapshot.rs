@@ -1,10 +1,18 @@
 //! IR-OWNED L2 feature snapshot — the forward regression gate for the owned-IR L2
 //! walk, replacing the migration-era `ir_dual_run` legacy-vs-IR oracle (deleted at
-//! the Phase 5 seal). For every routine in the in-repo r0-corpus it serializes the
+//! the Phase 5 seal). For every routine in the in-repo r0-corpus it digests the
 //! FULL `PFeatures` (loops / operation_sites / record_operations / call_sites /
 //! field_accesses / record_variables / nesting / branching / unreachable /
 //! identifier_references / variables / var_assignments / condition_references / the
-//! `statement_tree` CFN) produced by `project_routine_features_ir`, and digests it.
+//! `statement_tree` CFN) produced by `project_routine_features_ir`.
+//!
+//! SERDE-SKIP DRIFT: the digest is over the `Debug` representation, NOT serde JSON —
+//! deliberately, so it covers the `#[serde(skip)]` (and `PartialEq`-excluded) fields
+//! that a serialized golden CANNOT see: `PRecordOperation.in_until_condition` /
+//! `run_trigger`, `PCFNNode.source_range` / `is_case_else`, `PVarAssignment.rhs_identifier`.
+//! Four such load-bearing fields silently broke during the migration precisely
+//! because the dual-run byte gate (serde + PartialEq) was blind to them; this gate
+//! is not.
 //!
 //! This is the deepest L2 contract (the raw feature output the whole engine builds
 //! on), captured as a Rust-OWNED baseline: when the engine intentionally improves,
@@ -39,7 +47,7 @@ fn fnv1a(s: &str) -> u64 {
 }
 
 /// Render one source file's per-routine L2 features as digest lines, plus the
-/// full JSON keyed by routine for the on-failure diff.
+/// full Debug rendering keyed by routine for the on-failure diff.
 fn features_lines(rel: &str, source: &str) -> Vec<(String, String)> {
     let file = al_syntax::parse(source);
     let mut out = Vec::new();
@@ -57,8 +65,10 @@ fn features_lines(rel: &str, source: &str) -> Vec<(String, String)> {
                 "snap",
                 r.dataitem_source_table.as_deref(),
             );
-            let json = serde_json::to_string(&feats).expect("PFeatures serializes");
-            out.push((rid, json));
+            // Debug, NOT serde JSON — covers `#[serde(skip)]` / PartialEq-excluded
+            // fields (see the module doc: the serde-skip drift gate).
+            let repr = format!("{feats:?}");
+            out.push((rid, repr));
         }
     }
     out
@@ -82,9 +92,11 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
     );
     files.sort();
 
-    // Per-routine digest lines for the committed golden; keep the JSON for diffs.
+    // Per-routine digest lines for the committed golden; keep the Debug rendering
+    // for on-failure diffs.
     let mut lines = String::new();
-    let mut json_by_rid: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut repr_by_rid: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
     for path in &files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
@@ -94,9 +106,9 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        for (rid, json) in features_lines(&rel, &source) {
-            lines.push_str(&format!("{rid}\t{:016x}\n", fnv1a(&json)));
-            json_by_rid.insert(rid, json);
+        for (rid, repr) in features_lines(&rel, &source) {
+            lines.push_str(&format!("{rid}\t{:016x}\n", fnv1a(&repr)));
+            repr_by_rid.insert(rid, repr);
         }
     }
 
@@ -116,19 +128,17 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
         return;
     }
 
-    // Drift: name the routines whose digest changed and show the current JSON.
+    // Drift: name the routines whose digest changed and show the current Debug repr.
     let exp: std::collections::HashMap<&str, &str> = expected
         .lines()
         .filter_map(|l| l.split_once('\t'))
         .collect();
-    let act: std::collections::HashMap<&str, &str> = lines
-        .lines()
-        .filter_map(|l| l.split_once('\t'))
-        .collect();
+    let act: std::collections::HashMap<&str, &str> =
+        lines.lines().filter_map(|l| l.split_once('\t')).collect();
     let mut drift: Vec<String> = Vec::new();
     for (rid, dig) in &act {
         if exp.get(rid) != Some(dig) {
-            let detail = json_by_rid
+            let detail = repr_by_rid
                 .get(*rid)
                 .map(|j| j.as_str())
                 .unwrap_or("<none>");
@@ -144,5 +154,60 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
         "IR L2 feature snapshot drifted on {} routine(s) (regenerate with REGEN_TEMP_GOLDENS=1 if intended):\n{}",
         drift.len(),
         drift.into_iter().take(20).collect::<Vec<_>>().join("\n")
+    );
+}
+
+/// PROOF the Debug-based digest catches `#[serde(skip)]` drift that a serde-JSON /
+/// PartialEq gate is BLIND to. `PRecordOperation.in_until_condition` is serde-skipped
+/// AND excluded from the manual `PartialEq` — two ops differing ONLY in that field
+/// serialize identically and compare equal, yet their `Debug` renderings (and thus
+/// this gate's FNV digest) differ. This is exactly the blind spot that silently broke
+/// 4 load-bearing fields during the migration; keep the snapshot digest on `Debug`.
+#[test]
+fn debug_digest_catches_serde_skip_drift() {
+    use al_call_hierarchy::engine::l2::features::{PAnchor, PRecordOperation, PTempState};
+    let base = PRecordOperation {
+        id: "r/op0".to_string(),
+        op: "modify".to_string(),
+        record_variable_name: "rec".to_string(),
+        record_variable_id: None,
+        temp_state: PTempState {
+            kind: "known".to_string(),
+            value: Some(false),
+            parameter_index: None,
+        },
+        field_arguments: None,
+        field_argument_infos: None,
+        loop_stack: vec![],
+        source_anchor: PAnchor {
+            source_unit_id: "u".to_string(),
+            start_line: 1,
+            start_column: 0,
+            end_line: 1,
+            end_column: 8,
+            syntax_kind: "call_expression".to_string(),
+        },
+        in_until_condition: false,
+        run_trigger: None,
+    };
+    let mut flipped = base.clone();
+    flipped.in_until_condition = true;
+
+    // serde JSON is BLIND (#[serde(skip)]).
+    assert_eq!(
+        serde_json::to_string(&base).unwrap(),
+        serde_json::to_string(&flipped).unwrap(),
+        "serde must NOT see in_until_condition (it is #[serde(skip)])"
+    );
+    // PartialEq is BLIND (the manual impl excludes it).
+    assert_eq!(
+        base, flipped,
+        "PartialEq must NOT see in_until_condition (excluded from the manual impl)"
+    );
+    // Debug SEES it → the digest differs → this gate catches the drift.
+    assert_ne!(
+        fnv1a(&format!("{base:?}")),
+        fnv1a(&format!("{flipped:?}")),
+        "the Debug digest MUST catch serde-skip drift"
     );
 }
