@@ -40,7 +40,7 @@ pub struct AppUnit {
 }
 
 /// The full set of apps visible in a workspace, keyed by identity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppSetSnapshot {
     /// All app units: index 0 is always the workspace app.
     pub apps: Vec<AppUnit>,
@@ -50,6 +50,7 @@ pub struct AppSetSnapshot {
 }
 
 /// Builds an `AppSetSnapshot` from a workspace root + optional local checkouts.
+#[derive(Debug)]
 pub struct SnapshotBuilder {
     /// Root of the AL workspace (must contain `app.json`).
     pub workspace_root: PathBuf,
@@ -130,22 +131,20 @@ impl SnapshotBuilder {
                 version: rd.dependency.version.clone(),
             };
 
-            // Build provider chain: embedded source wins over local repo over symbol-only.
+            // Build provider chain: EmbeddedAppProvider → LocalRepoProvider (if matched) → SymbolOnlyProvider.
             let mut providers: Vec<Box<dyn SourceProvider>> = vec![Box::new(EmbeddedAppProvider {
                 app_path: rd.app_path.clone(),
             })];
-            for (local_id, local_root) in &self.local_providers {
-                // Include a LocalRepoProvider for any configured local repo whose
-                // identity matches this dep (name + publisher + version).
-                if local_id.name == dep_id.name
-                    && local_id.publisher == dep_id.publisher
-                    && local_id.version == dep_id.version
-                {
-                    providers.push(Box::new(LocalRepoProvider {
-                        app: local_id.clone(),
-                        root: local_root.clone(),
-                    }));
-                }
+            // NOTE: dep `publisher`/`guid` are empty until NavxManifest parsing is enriched,
+            // so match on name (case-insensitive) + version only for now.
+            // TODO: include publisher in the match once NavxManifest.xml is parsed (follow-up task).
+            if let Some((id, path)) = self.local_providers.iter().find(|(id, _)| {
+                id.name.eq_ignore_ascii_case(&dep_id.name) && id.version == dep_id.version
+            }) {
+                providers.push(Box::new(LocalRepoProvider {
+                    app: id.clone(),
+                    root: path.clone(),
+                }));
             }
             providers.push(Box::new(SymbolOnlyProvider));
 
