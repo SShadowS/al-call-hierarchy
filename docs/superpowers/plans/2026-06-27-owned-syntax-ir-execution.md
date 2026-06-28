@@ -576,3 +576,40 @@ Two committed, green, dual-model-reviewed increments + one deferred:
    for HR/HW in legacy-L3 vs IR-L3 (per gpt + gemini Step 4); candidates left: cross-routine
    order into event-subscriber inheritance, or an L5 input not in the dual_run comparison set.
    Tree reverted to legacy L3 (green). Reviewer continuation_ids: Gemini ed13b51c, GPT 1ebeb285.
+
+---
+
+## UPDATE 10 — L3 routine-feature cutover COMPLETE (last body_walk caller gone) [commit 38d0ec3]
+
+Re-applied the L3 routine-loop swap (deferred in UPDATE 9) and root-caused the r3a2
+divergence. `l3_workspace::project_file` now sources each routine's PFeatures from
+`project_routine_features_ir`; legacy `body_walk`/`project_routine_features` survive
+ONLY as the dual-run oracle. The swap surfaced TWO latent IR-vs-legacy divergences the
+byte gate is structurally blind to — the 3rd and 4th instances of the serde-skip
+blind-spot class the reviewers warned about — both root-caused via decisive IR-vs-legacy
+dumps (every per-routine feature, routine_id, AND serde-skip field proved identical first):
+
+1. **PCFNNode.source_range was always None in the IR** (serde-skip + PartialEq-excluded
+   → dual_run's 590/591 gate blind). The L4 branch-aware field-load walker reads it; without
+   it `node_range` reconstructed a too-narrow range from op/cs leaves only and dropped
+   statement-level field reads → diverged R3a-2 `requiredLoadedFieldsAtEntry`/`dirtyAtExit`.
+   Now populated from each block/statement/case-branch IR origin (byte-identical to legacy).
+
+2. **RecordRef/RecordId misclassified as Record vars** (`type.starts_with("record")` matches
+   "RecordRef") → spurious Known(false) temp_state backfilled onto RecRef record ops, breaking
+   the conservative-Unknown RecordRef-flow contract (temp_state_recordref tests). Split the
+   predicate: record-VARIABLE test (`is_record_type_str`) now requires `Record`+ws/quote;
+   record-OP/field-access RECEIVER test (`is_record_receiver_ty`) stays inclusive so
+   `RecRef.DeleteAll` is still a captured record op (matching legacy).
+
+FULL SUITE GREEN (dual_run 30/30, temp_state_recordref 9/9, all L2/L3/R3a-2/coverage goldens).
+Reviewers (gpt-5.5 + gemini-3.1-pro) reviewed the grammar work + gave the diagnostic plan that
+located these. Both serde-skip blind spots argue for a future test: a dual-run gate that
+compares the L4/L5 summary (not just L2 PFeatures) IR-vs-legacy, to catch skip-field drift.
+
+### REMAINING for Phase 3: L3 OBJECT/TABLE metadata still walks tree-sitter
+`l3_workspace::project_file` still iterates tree-sitter decls for object metadata
+(extends_target / implements / page_controls / object props) + `index_table` (fields/keys)
++ table-trigger temp detection. Port these onto the IR (extend ObjectDecl with extends/
+implements/page_controls/fields/keys) to finish the L3 cut, then Phase 4 (LSP front-end,
+retire 6 queries) + Phase 5 (seal: drop engine tree-sitter dep).
