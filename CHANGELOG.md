@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CDO whole-program node-graph robustness + app-qualification gate** (`tests/program_graph.rs`) —
+  integration test (`CDO_WS`-guarded) that runs `build_program_graph` over the real CDO
+  dependency snapshot, asserts panic-free completion, and verifies the resulting graph is
+  deep (>500 objects, >2000 routines) and app-qualified (nodes span ≥2 apps) with objects
+  deterministically sorted by `NodeId`. On CDO the graph spans 21 apps with 23,432 objects
+  and 259,260 routines. Capstone gate for Plan 1B.1.
 - **`ProgramGraph` + topology-scoped object index** (`src/program/graph.rs`,
   `src/program/build.rs`) — `build_program_graph(&AppSetSnapshot)` interns all
   apps, extracts object/routine nodes via `parse_snapshot`, wires real dependency
