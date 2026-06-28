@@ -685,3 +685,36 @@ After that L3 is fully tree-sitter-free → Phase 4 (LSP front-end, retire the 6
 SESSION TALLY (so far): Phase 2 done; Phase 3 ~90%; ~19 commits, full suite green
 throughout; grammar `call_statement` + key cutovers reviewed by gpt-5.5 + gemini-3.1-pro;
 4 latent serde-skip/grammar-blind-spot bugs found + fixed.
+
+---
+
+## UPDATE 13 — E1 enclosing-member modelled in the IR; L3 DATA fully owned-IR
+
+Commit 81dcf36. `RoutineDecl.enclosing_member: Option<(name, Origin)>` — collect_routines
+threads the nearest named/non-object/non-`_body` ancestor as the member-trigger's
+enclosing member (mirrors `enclosing_member_of`). The L3 emitter derives enclosingMember
+(unescape) + enclosingMemberRange (anchor_from_origin) + originatingObject from the IR.
+E1 is never serialized into a golden → validated by the DEDICATED
+`tests/cli_p1_enclosing_member.rs` (5/5: field/part/action/dataitem members, OnRun→None,
+escaped-quote unescape). Full suite green.
+
+### Phase 3 status: ~95% — ALL L3 per-routine/object DATA is owned-IR-driven.
+The ONLY residual tree-sitter in `l3_workspace::project_file` is the **iteration
+structure** (the loop still iterates tree-sitter `named_children(root)` + `collect_routine_nodes`,
+matching each decl/routine to its IR object/routine by start byte) **+ the legacy fallback**
+(project_routine_features / enclosing_member_of / object_globals — reached only on a
+corpus-impossible byte-miss / parse-error routine).
+
+### FINAL L3 step (the iteration switch — do with fresh context):
+Rewrite `project_file` to iterate `ir_file.objects` / `o.routines` directly (object_type via
+`ir_object_type`, everything else already IR-sourced), DROP the legacy fallback (accept the
+IR for malformed routines too — rebaseline the one malformed L3 golden as in the L2 cutover),
+and remove `root`/`decl`/`routine`/`member_parent`/`collect_routine_nodes`/`object_globals`.
+Then `assemble_workspace` stops parsing tree-sitter for L3 → L3 is tree-sitter-free.
+Risk: the ~450-line loop rewrite + the malformed rebaseline; the object set (404/404) and
+routine set (591/591) are already proven identical IR-vs-tree-sitter, so the switch is
+mechanical. THEN: Phase 4 (LSP front-end, retire the 6 queries) + Phase 5 (seal).
+
+SESSION TALLY: Phase 2 done; Phase 3 ~95% (all data on IR; only the iteration wrapper +
+fallback remain); ~21 commits, full suite green throughout; grammar `call_statement` +
+cutovers reviewed by gpt-5.5 + gemini-3.1-pro; 4 serde-skip/grammar-blind-spot bugs fixed.
