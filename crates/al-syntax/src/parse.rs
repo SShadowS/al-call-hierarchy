@@ -59,7 +59,11 @@ mod tests {
         assert_eq!(bar.return_type.as_deref(), Some("Boolean"));
         assert_eq!(bar.locals.len(), 1);
         assert_eq!(bar.locals[0].name, "L");
-        let onrun = o.routines.iter().find(|r| r.name == "OnRun").expect("OnRun");
+        let onrun = o
+            .routines
+            .iter()
+            .find(|r| r.name == "OnRun")
+            .expect("OnRun");
         assert_eq!(onrun.kind, RoutineKind::Trigger);
     }
 
@@ -88,6 +92,10 @@ mod tests {
             _ => panic!("expected if"),
         }
         let msgs: Vec<&String> = f.issues.iter().map(|i| &i.message).collect();
-        assert!(f.issues.is_empty(), "unexpected unlowered nodes: {:?}", msgs);
+        assert!(
+            f.issues.is_empty(),
+            "unexpected unlowered nodes: {:?}",
+            msgs
+        );
     }
 }

@@ -602,8 +602,9 @@ mod tests {
         );
         assert!(folders[0].ends_with(project.join(".alpackages").as_path().file_name().unwrap()));
         assert!(
-            folders.iter().any(|f| f.starts_with(&parent)
-                && !f.starts_with(&project)),
+            folders
+                .iter()
+                .any(|f| f.starts_with(&parent) && !f.starts_with(&project)),
             "ancestor folder missing from {:?}",
             folders
         );

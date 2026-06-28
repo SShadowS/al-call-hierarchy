@@ -569,7 +569,10 @@ mod tests {
             .iter()
             .find(|m| m.kind == ExternalMethodKind::IntegrationEvent)
             .unwrap();
-        assert!(any_event.signature.starts_with("procedure ") || any_event.signature.starts_with("local procedure "));
+        assert!(
+            any_event.signature.starts_with("procedure ")
+                || any_event.signature.starts_with("local procedure ")
+        );
         assert!(any_event.signature.contains('('));
 
         eprintln!(

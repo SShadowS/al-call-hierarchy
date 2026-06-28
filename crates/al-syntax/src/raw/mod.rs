@@ -17,11 +17,19 @@ mod tests {
     fn raw_kind_round_trips() {
         assert_eq!(RawKind::from_raw("procedure"), RawKind::Procedure);
         assert_eq!(RawKind::from_raw("code_block"), RawKind::CodeBlock);
-        assert_eq!(RawKind::from_raw("statement_block"), RawKind::StatementBlock);
-        assert_eq!(RawKind::from_raw("declaration_body"), RawKind::DeclarationBody);
+        assert_eq!(
+            RawKind::from_raw("statement_block"),
+            RawKind::StatementBlock
+        );
+        assert_eq!(
+            RawKind::from_raw("declaration_body"),
+            RawKind::DeclarationBody
+        );
         assert_eq!(RawKind::Procedure.as_str(), "procedure");
         assert_eq!(RawKind::from_raw("ERROR"), RawKind::Error);
-        assert_eq!(NAMED_KIND_COUNT, 386);
+        // Update when the grammar adds/removes a NAMED node kind (the generated
+        // `NAMED_KIND_COUNT` const is authoritative; this pins it as a sanity anchor).
+        assert_eq!(NAMED_KIND_COUNT, 387);
         assert_eq!(GRAMMAR_NODE_TYPES_HASH.len(), 64);
     }
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`raw_kind_round_trips` stale assertion** — it pinned `NAMED_KIND_COUNT == 386`, but
+  the generated const is `387` (the `call_statement` grammar node added a named kind;
+  the const regenerated, the test literal did not). Went unnoticed because root
+  `cargo test` doesn't run member-crate tests without `--workspace`. Fixed to 387; run
+  `cargo test --workspace` going forward.
+
+### Changed
+- **`gen-syntax` now rustfmts its generated Rust output** (`raw_kind.rs` / `field.rs` /
+  `nodes.rs` / `mod.rs`), so the checked-in generated code is canonical AND stable across
+  regenerations — a developer's `cargo fmt` produces the same bytes the generator does
+  (no fmt/gen-syntax ping-pong). Mirrors how rust-analyzer formats its ungrammar-
+  generated syntax nodes. Recommended CI guard: `cargo run -p xtask -- gen-syntax &&
+  git diff --exit-code`. (Reviewed: gpt-5.5 + gemini-3.1-pro.)
+
 ### Added
 - **Serde-skip drift gate.** The IR L2 feature snapshot (`tests/ir_l2_snapshot.rs`) now
   digests the `Debug` representation of each routine's `PFeatures` instead of serde
