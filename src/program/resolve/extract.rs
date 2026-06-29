@@ -8,8 +8,11 @@
 //! # Approximations
 //! The implicit-Rec bare record-op case (e.g. `Validate(Field)` inside a table
 //! trigger where the implicit `Rec` receiver is not explicitly named) is NOT
-//! currently classified as `RecordOp` — it emerges as `Bare`. The Task-4 gate
-//! will quantify the residual from this approximation.
+//! currently classified as `RecordOp` — it emerges as `Bare`. Error() handling
+//! and any other classification residual vs L2 are MEASURED by the Phase-1 Task-4
+//! site-parity gate (do not assert whether L2 makes a PCallSite for these cases —
+//! the gate measures them empirically). The Task-4 gate will quantify the residual
+//! from these approximations.
 
 use std::collections::HashSet;
 
@@ -91,20 +94,12 @@ pub fn record_op_names() -> &'static [&'static str] {
 
 /// Returns `true` if the raw AL type string `ty` denotes a record type.
 ///
-/// Mirrors `record_types.rs::record_table_name_of`: the string must start with
-/// `"record"` (case-insensitive) and the next character must NOT be alphanumeric
-/// or `_` (word-boundary check that excludes `RecordRef`).
+/// Mirrors `ir_walk.rs::is_record_receiver_ty`: the string must start with
+/// `"record"` (case-insensitive), INCLUSIVE of `RecordRef`. This ensures that
+/// a `RecordRef`-typed var's record-op calls classify as `RecordOp` (matching L3,
+/// which makes no PCallSite for them).
 fn is_record_ty(ty: &str) -> bool {
-    let lower = ty.trim().to_ascii_lowercase();
-    if !lower.starts_with("record") {
-        return false;
-    }
-    // Word-boundary: char after "record" must not be alphanumeric or `_`.
-    match lower[6..].chars().next() {
-        None => false, // bare "record" — not a concrete type
-        Some(c) if c.is_alphanumeric() || c == '_' => false, // e.g. "RecordRef"
-        _ => true,     // e.g. "Record Item", "Record Customer"
-    }
+    ty.trim().to_ascii_lowercase().starts_with("record")
 }
 
 /// Compute the set of lowercased record-receiver variable names in scope for a
@@ -519,6 +514,7 @@ codeunit 50100 "C"
         let file = al_syntax::parse(src);
         let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
         let run: Vec<_> = sites.iter().filter(|s| s.caller_routine == "run").collect();
+        assert_eq!(run.len(), 6, "Expected 6 call sites in Run procedure");
         assert!(run.iter().any(
             |s| matches!(&s.shape, CalleeShape::Bare { name } if name.eq_ignore_ascii_case("foo"))
         ));
