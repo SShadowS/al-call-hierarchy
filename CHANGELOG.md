@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **L3 → canonical oracle adapter** (`src/program/resolve/differential.rs`,
+  Phase 0 Task 5) — `project_l3(&Path) -> Vec<CanonicalEdge>` runs the existing
+  L3 resolver over a workspace and projects its `CallEdge`s into the same
+  `CanonicalEdge` shape as `project_fresh`, enabling set-diff in the Task 6/7
+  harness.  PAnchor line/col are 0-based (same basis as the fresh side);
+  columns are UTF-16 vs byte (documented in the function doc, handled by the
+  matcher).  Shared helpers extracted: `callee_fp`, `object_kind_str_to_tag`,
+  `make_canonical_key` — both projections call these so encodings cannot drift.
+  CDO-gated test confirms >1000 edges projected and every site has a real span.
 - **CDO whole-program node-graph robustness + app-qualification gate** (`tests/program_graph.rs`) —
   integration test (`CDO_WS`-guarded) that runs `build_program_graph` over the real CDO
   dependency snapshot, asserts panic-free completion, and verifies the resulting graph is
