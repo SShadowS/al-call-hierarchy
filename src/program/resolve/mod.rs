@@ -10,3 +10,4 @@ pub use edge::{
     DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, Route, RouteTarget,
     SetCompleteness, Witness, classify_obligation, real_unknown_rate,
 };
+pub use stub::resolve_program;

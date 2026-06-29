@@ -17,6 +17,10 @@ pub struct ParsedFile {
     pub virtual_path: String,
     pub file: al_syntax::ir::AlFile,
     pub provenance: Provenance,
+    /// The original AL source text.  Stored here so downstream phases (stub
+    /// resolver, witness span recovery) can slice byte ranges from the IR
+    /// without re-reading from disk.
+    pub text: String,
 }
 
 /// All parsed files for one source-bearing app.
@@ -64,6 +68,7 @@ pub fn parse_snapshot(snap: &AppSetSnapshot) -> Vec<ParsedUnit> {
                         virtual_path: f.virtual_path.clone(),
                         file: al_syntax::parse(&f.text),
                         provenance: unit.provenance.clone(),
+                        text: f.text.clone(),
                     })
                     .collect();
                 Some(ParsedUnit {

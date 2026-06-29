@@ -37,12 +37,30 @@ impl AppRegistry {
         &self.apps[r.0 as usize]
     }
 
+    /// Look up an app ref without panicking if not found (index out of range).
+    pub fn try_resolve(&self, r: AppRef) -> Option<&AppId> {
+        self.apps.get(r.0 as usize)
+    }
+
     /// Find the first interned app whose `name` matches case-insensitively.
     pub fn find_by_name(&self, name: &str) -> Option<AppRef> {
         self.apps
             .iter()
             .position(|id| id.name.eq_ignore_ascii_case(name))
             .map(|i| AppRef(i as u32))
+    }
+
+    /// Look up an interned app by full identity (guid + name + publisher +
+    /// version) without mutating the registry.  Returns `None` if the app was
+    /// never interned via [`Self::intern`].
+    pub fn find(&self, app: &AppId) -> Option<AppRef> {
+        let key = (
+            app.guid.clone(),
+            app.name.clone(),
+            app.publisher.clone(),
+            app.version.clone(),
+        );
+        self.by_key.get(&key).copied()
     }
 }
 
