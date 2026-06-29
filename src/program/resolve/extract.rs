@@ -55,6 +55,12 @@ pub struct RawSiteV2 {
     pub arity: usize,
     /// Source span of the whole call expression (callee + argument list).
     pub span: CanonicalSpan,
+    /// Raw source text of the callee (function) expression — e.g. `"Foo"` or
+    /// `"Rec.Insert"`. Does NOT include the argument list. Used to compute
+    /// `callee_fp` for the site-parity differential harness (must match L3's
+    /// `PCallSite::callee_text` derivation, which is also the raw function-
+    /// expression bytes).
+    pub callee_text: String,
 }
 
 /// The 28 record-operation method names (lowercased), copied verbatim from
@@ -277,6 +283,10 @@ fn collect_calls_v2(
 
             // Classify and emit this call site.
             let shape = classify_call(file, src, fn_id, &arg_ids, rvars);
+            // callee_text = raw source bytes of the function expression (not the
+            // arg list).  Mirrors extract_min.rs and L3's ir_walk classify_callee
+            // so callee_fp agrees between the two sides of the harness.
+            let callee_text = src[file.ir.expr(fn_id).origin.byte.clone()].to_string();
             let span = CanonicalSpan {
                 unit: unit.to_string(),
                 start: byte_to_pos(src, e.origin.byte.start),
@@ -287,6 +297,7 @@ fn collect_calls_v2(
                 shape,
                 arity: arg_ids.len(),
                 span,
+                callee_text,
             });
 
             // Recurse: function expression (catches chained calls), then args.
@@ -462,6 +473,12 @@ fn walk_stmt_v2(
 /// from the enclosing object (the caller is responsible for filtering to
 /// record-typed globals before passing in). Per routine, `rvars = routine_rvars(routine)
 /// ∪ object_globals`. The result is sorted by `(caller_routine, span.start)`.
+///
+/// **Multi-object limitation:** when a file contains more than one object and
+/// two objects share a routine name, the returned list will contain sites from
+/// BOTH routines under the same `caller_routine` label.  Callers that need to
+/// attribute sites to a single object should use [`extract_sites_for_object`]
+/// instead.
 pub fn extract_sites(
     file: &AlFile,
     src: &str,
@@ -484,6 +501,86 @@ pub fn extract_sites(
             .cmp(&b.caller_routine)
             .then_with(|| a.span.start.cmp(&b.span.start))
     });
+    out
+}
+
+/// Walk only the routines of `file.objects[obj_idx]` and return one
+/// [`RawSiteV2`] per call expression.
+///
+/// Unlike [`extract_sites`] (which processes ALL objects in the file),
+/// this variant is scoped to a single object so that sites are unambiguously
+/// attributed to that object even when multiple objects in the same file share
+/// routine names.
+///
+/// `object_globals` should contain only the record-typed global variable names
+/// declared in `file.objects[obj_idx]`.  The result is sorted by
+/// `(caller_routine, span.start)`.
+///
+/// Returns an empty `Vec` if `obj_idx` is out of range.
+pub fn extract_sites_for_object(
+    file: &AlFile,
+    src: &str,
+    unit: &str,
+    object_globals: &HashSet<String>,
+    obj_idx: usize,
+) -> Vec<RawSiteV2> {
+    let Some(obj) = file.objects.get(obj_idx) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for routine in &obj.routines {
+        if let Some(body) = routine.body {
+            let caller = routine.name.to_ascii_lowercase();
+            let mut rvars = routine_rvars(routine);
+            rvars.extend(object_globals.iter().cloned());
+            walk_block_v2(file, src, body, unit, &caller, &rvars, &mut out);
+        }
+    }
+    out.sort_by(|a, b| {
+        a.caller_routine
+            .cmp(&b.caller_routine)
+            .then_with(|| a.span.start.cmp(&b.span.start))
+    });
+    out
+}
+
+/// Walk only `file.objects[obj_idx].routines[routine_idx]` and return one
+/// [`RawSiteV2`] per call expression in that single routine body.
+///
+/// This is the per-routine companion to [`extract_sites_for_object`].  Use it
+/// when iterating over `obj.routines` by index in the calling code, to avoid
+/// attributing sites to the wrong routine instance when two routines in the
+/// same object share a name (e.g. multiple `OnValidate` field triggers in a
+/// TableExtension).
+///
+/// `object_globals` should be the record-typed global variable names from
+/// `file.objects[obj_idx]` only.
+///
+/// Returns an empty `Vec` if either index is out of range or the routine has
+/// no body.
+pub fn extract_sites_for_routine(
+    file: &AlFile,
+    src: &str,
+    unit: &str,
+    object_globals: &HashSet<String>,
+    obj_idx: usize,
+    routine_idx: usize,
+) -> Vec<RawSiteV2> {
+    let Some(obj) = file.objects.get(obj_idx) else {
+        return Vec::new();
+    };
+    let Some(routine) = obj.routines.get(routine_idx) else {
+        return Vec::new();
+    };
+    let Some(body) = routine.body else {
+        return Vec::new();
+    };
+    let caller = routine.name.to_ascii_lowercase();
+    let mut rvars = routine_rvars(routine);
+    rvars.extend(object_globals.iter().cloned());
+    let mut out = Vec::new();
+    walk_block_v2(file, src, body, unit, &caller, &rvars, &mut out);
+    out.sort_by_key(|a| a.span.start);
     out
 }
 

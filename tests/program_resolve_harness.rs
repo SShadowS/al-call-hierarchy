@@ -1,11 +1,12 @@
-//! Phase 0: span-based site matcher fixture matrix (no env needed).
+//! Phase 0 + Phase 1: span-based site matcher fixture matrix (no env needed) +
+//! Phase-1 Task-4 CDO gate (env-gated).
 //!
 //! Exercises [`match_sites`] — the cascade-resistance spine of the dual-run
 //! differential harness.  All tests construct synthetic edges via
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    DiffReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_harness,
+    DiffReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_harness, run_site_harness,
 };
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,58 @@ fn harness_runs_end_to_end_on_cdo_and_measures_the_gap() {
         run_harness(&ws),
         "run_harness must be deterministic"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 5 (Phase 1 Task 4): L3 PCallSite projection + site-parity gate
+// ---------------------------------------------------------------------------
+
+/// Phase-1 site-parity gate: proves that fresh's STRUCTURED call-site
+/// classification (via `extract_sites`/`CalleeShape`) reconciles with the L3
+/// PCallSite oracle.
+///
+/// Every fresh call-category site (Bare/Member/ObjectRun/Unknown) must either
+/// match an L3 PCallSite or be counted in a named justified-extra bucket
+/// (RecordOp / Commit / implicit-Rec bare).  `extra_unexplained` MUST be 0.
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase1_site_extraction_reconciles_with_l3() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_site_harness(&ws);
+
+    eprintln!(
+        "SiteReport: matched={} missing_site={} extra_recordop={} extra_commit={} \
+         extra_implicit_rec={} extra_error={} extra_unexplained={} unaligned={}",
+        report.matched,
+        report.missing_site,
+        report.extra_recordop,
+        report.extra_commit,
+        report.extra_implicit_rec,
+        report.extra_error,
+        report.extra_unexplained,
+        report.unaligned,
+    );
+
+    assert_eq!(report.missing_site, 0, "{report:?}");
+    assert_eq!(report.unaligned, 0, "{report:?}");
+    assert_eq!(
+        report.extra_unexplained, 0,
+        "every fresh call-category site must reconcile with an L3 PCallSite or be \
+         categorized: {report:?}"
+    );
+    assert!(
+        report.extra_recordop > 0,
+        "record-op sites should be a large justified-extra bucket: {report:?}"
+    );
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(report, run_site_harness(&ws), "deterministic");
 }
 
 // Suppress unused-import warning when CDO_WS is not set (no CDO test runs).

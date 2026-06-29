@@ -404,6 +404,81 @@ pub fn project_l3(workspace_root: &Path) -> Vec<CanonicalEdge> {
 }
 
 // ---------------------------------------------------------------------------
+// L3 PCallSite oracle projection (Phase 1 Task 4)
+// ---------------------------------------------------------------------------
+
+/// Project every L3 `PCallSite` from the workspace into a [`CanonicalEdge`]
+/// with **empty** targets — the site-level oracle for the Phase-1 parity gate.
+///
+/// Unlike [`project_l3`] (which projects `CallEdge`s — L3's resolved edges),
+/// this function projects EVERY `PCallSite` regardless of resolution outcome.
+/// This gives the complete set of call-expression sites L3 extracted from the
+/// workspace source, which the fresh [`run_site_harness`] must match.
+///
+/// Key encoding is identical to [`project_l3`]:
+/// - Caller key from the owning `L3Routine` (`app_guid` / lowercased
+///   `object_type` / `object_number` / lowercased `name`).
+/// - Span from `PCallSite.source_anchor` with `"ws:"` prefix stripped and
+///   0-based line/col (same basis as the fresh side's `byte_to_pos`).
+/// - `callee_fp` via [`callee_fp`] on `PCallSite::callee_text`.
+/// - `targets`: always empty (site-level only — resolution is not projected).
+///
+/// Returns an empty `Vec` when the workspace is unsound (fail-closed).
+#[must_use]
+pub fn project_l3_sites(workspace_root: &Path) -> Vec<CanonicalEdge> {
+    use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return Vec::new();
+    };
+    let ws = &resolved.workspace;
+
+    let mut edges: Vec<CanonicalEdge> = Vec::new();
+    for r in &ws.routines {
+        let from = make_canonical_key(
+            r.app_guid.clone(),
+            r.object_type.to_ascii_lowercase(),
+            format!("{}", r.object_number),
+            r.name.to_ascii_lowercase(),
+        );
+        for cs in &r.call_sites {
+            let a = &cs.source_anchor;
+            // Strip the "ws:" prefix so the canonical span unit matches the
+            // fresh side's `virtual_path` (a plain relative POSIX path).
+            let unit_str = a
+                .source_unit_id
+                .strip_prefix("ws:")
+                .unwrap_or(&a.source_unit_id)
+                .to_string();
+            let span = CanonicalSpan {
+                unit: unit_str,
+                start: SourcePos {
+                    line: a.start_line,
+                    col: a.start_column,
+                },
+                end: SourcePos {
+                    line: a.end_line,
+                    col: a.end_column,
+                },
+            };
+            let fp = callee_fp(&cs.callee_text);
+            edges.push(CanonicalEdge {
+                from: from.clone(),
+                site: CanonicalSiteKey {
+                    caller: from.clone(),
+                    span,
+                    callee_fp: fp,
+                },
+                kind: EdgeKind::Call,
+                targets: BTreeSet::new(),
+            });
+        }
+    }
+    edges.sort();
+    edges
+}
+
+// ---------------------------------------------------------------------------
 // Span-based site matcher (spec §6.1)
 // ---------------------------------------------------------------------------
 
@@ -539,6 +614,21 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
 /// `missing_site` = L3-only sites; `extra_site` = fresh-only sites.
 /// `unaligned` = total leftover indices across all `Unaligned` buckets (see
 /// [`match_sites`] docs for the cascade-resistance guarantee).
+///
+/// Phase-1 additions (populated by [`run_site_harness`], zero in
+/// [`run_harness`]):
+/// - `extra_recordop`: fresh sites classified as `RecordOp` — excluded from
+///   the diff set because L3 emits no `PCallSite` for record DB operations.
+/// - `extra_commit`: fresh `Commit()` sites — L3 emits no `PCallSite` for
+///   `Commit`.
+/// - `extra_implicit_rec`: fresh `Bare` sites whose name is in
+///   [`record_op_names`] — the implicit-Rec approximation leaves these as
+///   `Bare` while L3 classifies them as record-ops (no `PCallSite`).
+/// - `extra_error`: diagnostic count for fresh `Bare` `Error()` sites; these
+///   ARE included in the diff set (L3 does emit `PCallSite` for `Error()`),
+///   so this field is informational only and will typically be 0 after matching.
+/// - `extra_unexplained`: `FreshOnly` sites after all categorised extras have
+///   been removed.  Must be 0 for the Phase-1 gate to pass.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DiffReport {
     /// Fresh edges across ALL apps in the snapshot (workspace + embedded deps).
@@ -555,10 +645,28 @@ pub struct DiffReport {
     /// L3 sites with no fresh peer — the resolver MISSED these call sites.
     pub missing_site: usize,
     /// Fresh sites with no L3 peer — fresh extracted sites L3 did not see.
+    /// Superseded by the Phase-1 category breakdown in [`run_site_harness`].
     pub extra_site: usize,
     /// Sum of leftover indices from `Unaligned` buckets — genuinely ambiguous
     /// duplicate call sites that the span matcher could not pair deterministically.
     pub unaligned: usize,
+    // ── Phase-1 category breakdown (zero in run_harness) ────────────────────
+    /// Fresh sites classified as `RecordOp` (excluded from diff set; L3 emits
+    /// no `PCallSite` for record DB operations).
+    pub extra_recordop: usize,
+    /// Fresh `Commit()` sites (excluded from diff set; L3 emits no `PCallSite`
+    /// for `Commit`).
+    pub extra_commit: usize,
+    /// Fresh `Bare` sites whose name ∈ `record_op_names()` (excluded from diff
+    /// set — the implicit-Rec approximation: L3 treats these as record-ops).
+    pub extra_implicit_rec: usize,
+    /// Diagnostic count for `Bare` `Error()` sites.  These are included in the
+    /// diff set (L3 does emit `PCallSite` for `Error()`); they will pair with
+    /// their L3 counterparts and this field will typically be 0 post-match.
+    pub extra_error: usize,
+    /// `FreshOnly` sites remaining after all categorised extras have been
+    /// accounted for.  Must equal 0 for the Phase-1 gate to pass.
+    pub extra_unexplained: usize,
 }
 
 /// Run the full dual-run differential harness over `workspace_root`.
@@ -678,6 +786,248 @@ pub fn run_harness(workspace_root: &Path) -> DiffReport {
         missing_site,
         extra_site,
         unaligned,
+        // Phase-1 fields are not populated by the Phase-0 stub harness.
+        ..DiffReport::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase-1 site harness (Task 4)
+// ---------------------------------------------------------------------------
+
+/// Phase-1 site-parity harness: compares STRUCTURED fresh call-site extraction
+/// against the L3 `PCallSite` oracle.
+///
+/// Unlike [`run_harness`] (which compares resolved `Edge`s from the stub
+/// resolver), this harness:
+/// 1. Extracts call sites via [`extract_sites`]/[`CalleeShape`] for the
+///    workspace app only.
+/// 2. Partitions sites into justified-extra buckets (RecordOp / Commit /
+///    implicit-Rec bare) vs. the "call-category" diff set
+///    (Bare/Member/ObjectRun/Unknown minus the two approximations).
+/// 3. Runs [`project_l3_sites`] for the site-level oracle.
+/// 4. Aligns them via [`match_sites`] and buckets into [`DiffReport`].
+///
+/// The Phase-1 gate requires `extra_unexplained == 0`: every fresh
+/// call-category site must pair with an L3 `PCallSite`.
+///
+/// Fail-closed: any error during setup returns a zero [`DiffReport`].
+#[must_use]
+pub fn run_site_harness(workspace_root: &Path) -> DiffReport {
+    use std::collections::HashSet;
+
+    use crate::program::build::build_program_graph;
+    use crate::program::node::ObjKey;
+    use crate::program::resolve::extract::{
+        CalleeShape, extract_sites_for_routine, record_op_names,
+    };
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    // ── Step 1: Build snapshot ───────────────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return DiffReport::default(),
+    };
+
+    // Build the set of true workspace source virtual paths from the workspace
+    // AppUnit (always at index 0). This is needed to exclude embedded dep apps
+    // whose AppId coincidentally matches the workspace AppId (e.g. when the
+    // workspace .app is cached in an ancestor .alpackages directory). Such dep
+    // AppUnits intern to `ws_ref` but their files carry different virtual paths
+    // (typically with a `src/` prefix from the app's internal build layout).
+    let ws_file_set: HashSet<String> = snap
+        .apps
+        .first()
+        .and_then(|u| u.source.as_ref())
+        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+        .unwrap_or_default();
+
+    // ── Step 2: Build program graph ──────────────────────────────────────────
+    let graph = build_program_graph(&snap);
+
+    // ── Step 3: Parse snapshot ───────────────────────────────────────────────
+    let parsed = parse_snapshot(&snap);
+
+    // ── Step 4: Locate workspace app ─────────────────────────────────────────
+    let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
+        return DiffReport::default();
+    };
+    let ws_guid = graph.apps.resolve(ws_ref).guid.clone();
+
+    // Pre-build a fast set for implicit-Rec record-op name lookups.
+    let rec_op_set: HashSet<&'static str> = record_op_names().iter().copied().collect();
+
+    // ── Step 5: Extract fresh call-category sites (workspace only) ───────────
+    let mut fresh_diff: Vec<CanonicalEdge> = Vec::new();
+    let mut extra_recordop = 0usize;
+    let mut extra_commit = 0usize;
+    let mut extra_implicit_rec = 0usize;
+
+    for unit in &parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        // Keep workspace app only — dep-app call sites are not in the L3 oracle.
+        if app_ref != ws_ref {
+            continue;
+        }
+
+        for pf in &unit.files {
+            // Exclude files from dep apps whose AppId matches the workspace AppId.
+            // Their virtual paths are distinct from the true workspace source paths
+            // (e.g. they carry a `src/` prefix from the embedded build layout).
+            if !ws_file_set.contains(&pf.virtual_path) {
+                continue;
+            }
+            // Process each object individually to avoid the N×M cross-product that
+            // arises when multiple objects in one file share a routine name.
+            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+                let obj_key = match obj.id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                };
+                let obj_kind_str = object_kind_str(obj.kind);
+                let obj_lc = obj_key_lc(&obj_key);
+
+                // Per-object record-typed globals — used so that calls on object-level
+                // record variables (e.g. `GlobalRec.Insert`) are classified as `RecordOp`
+                // (L3 emits no `PCallSite` for those).
+                let object_globals: HashSet<String> = obj
+                    .globals
+                    .iter()
+                    .filter(|v| {
+                        v.ty.as_deref()
+                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                            .unwrap_or(false)
+                    })
+                    .map(|v| v.name.to_ascii_lowercase())
+                    .collect();
+
+                // Iterate per-routine to avoid double-counting when multiple routines
+                // share the same name (e.g. two `OnValidate` field triggers in a
+                // TableExtension). `extract_sites_for_routine` is scoped to exactly one
+                // routine body so each call site is attributed once.
+                for (routine_idx, routine) in obj.routines.iter().enumerate() {
+                    let name_lc = routine.name.to_ascii_lowercase();
+                    let caller_key = make_canonical_key(
+                        ws_guid.clone(),
+                        obj_kind_str.clone(),
+                        obj_lc.clone(),
+                        name_lc,
+                    );
+
+                    let sites = extract_sites_for_routine(
+                        &pf.file,
+                        &pf.text,
+                        &pf.virtual_path,
+                        &object_globals,
+                        obj_idx,
+                        routine_idx,
+                    );
+
+                    for site in &sites {
+                        match &site.shape {
+                            CalleeShape::RecordOp { .. } => {
+                                // L3 emits no PCallSite for RecordOp — justified extra.
+                                extra_recordop += 1;
+                            }
+                            CalleeShape::Commit => {
+                                // L3 emits no PCallSite for Commit — justified extra.
+                                extra_commit += 1;
+                            }
+                            CalleeShape::Bare { name }
+                                if rec_op_set.contains(name.to_ascii_lowercase().as_str())
+                                    && routine.dataitem_source_table.is_none() =>
+                            {
+                                // Implicit-Rec bare record-op (e.g. `Validate(Field)` inside a
+                                // table trigger or a `with Rec do` block).  L3 treats these as
+                                // record-ops and emits no PCallSite; the fresh side approximates
+                                // them as Bare because the implicit receiver isn't explicit.
+                                //
+                                // EXCEPTION: report dataitem triggers (`dataitem_source_table`
+                                // is `Some`).  L3 does NOT set up an implicit record frame for
+                                // report dataitems (`has_implicit_rec` returns false for Report
+                                // objects), so it emits a PCallSite for those bare calls.  We
+                                // must include them in the diff set to match the L3 oracle.
+                                extra_implicit_rec += 1;
+                            }
+                            _ => {
+                                // Call-category site (Bare/Member/ObjectRun/Unknown that is NOT
+                                // a record-op name).  Add to the diff set for matching against
+                                // the L3 PCallSite oracle.
+                                let fp = callee_fp(&site.callee_text);
+                                fresh_diff.push(CanonicalEdge {
+                                    from: caller_key.clone(),
+                                    site: CanonicalSiteKey {
+                                        caller: caller_key.clone(),
+                                        span: site.span.clone(),
+                                        callee_fp: fp,
+                                    },
+                                    kind: EdgeKind::Call,
+                                    targets: BTreeSet::new(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fresh_diff.sort();
+    let fresh_total_workspace = fresh_diff.len();
+
+    // ── Step 6: Project L3 PCallSite oracle ──────────────────────────────────
+    let l3_sites = project_l3_sites(workspace_root);
+    let l3_edges = l3_sites.len();
+
+    // ── Step 7: Match sites ───────────────────────────────────────────────────
+    let site_matches = match_sites(&fresh_diff, &l3_sites);
+
+    // ── Step 8: Bucket ────────────────────────────────────────────────────────
+    let mut matched = 0usize;
+    let mut missing_site = 0usize;
+    let mut extra_unexplained = 0usize;
+    let mut unaligned = 0usize;
+
+    for m in &site_matches {
+        match m {
+            SiteMatch::Paired(_, _) => {
+                matched += 1;
+            }
+            SiteMatch::FreshOnly(_) => {
+                // A fresh call-category site with no L3 PCallSite peer.
+                // Must be 0 for the gate to pass.
+                extra_unexplained += 1;
+            }
+            SiteMatch::L3Only(_) => {
+                missing_site += 1;
+            }
+            SiteMatch::Unaligned(fs, ls) => {
+                unaligned += fs.len() + ls.len();
+            }
+        }
+    }
+
+    DiffReport {
+        fresh_total_all_apps: 0, // not applicable for the site harness
+        fresh_total_workspace,
+        l3_edges,
+        matched,
+        regression: 0, // not applicable (site-level, no targets)
+        missing_site,
+        extra_site: 0, // superseded by extra_unexplained + categorized buckets
+        unaligned,
+        extra_recordop,
+        extra_commit,
+        extra_implicit_rec,
+        extra_error: 0, // Error() sites are included in the diff set and pair with L3
+        extra_unexplained,
     }
 }
 

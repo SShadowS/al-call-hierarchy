@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **L3 PCallSite projection + Phase-1 site-parity gate** (`src/program/resolve/differential.rs`,
+  `src/program/resolve/extract.rs`, `tests/program_resolve_harness.rs`, Phase 1 Task 4) —
+  `project_l3_sites(&Path) -> Vec<CanonicalEdge>` projects every L3 `PCallSite` (not `CallEdge`)
+  to a site-level oracle. `run_site_harness(&Path) -> DiffReport` compares fresh structured
+  call-site classification (`CalleeShape`) against that oracle and buckets extras into
+  `extra_recordop` / `extra_commit` / `extra_implicit_rec` / `extra_unexplained`.
+  `extract_sites_for_routine` added to `extract.rs` (per-routine scoping to prevent double-
+  counting when multiple same-named triggers exist in one object). Three root causes
+  investigated and fixed on the CDO workspace: (1) ancestor `.alpackages` CDO dep with
+  identical `AppId` polluted fresh set → `ws_file_set` filter; (2) multi-same-name-trigger
+  double-counting → per-routine extraction; (3) report-dataitem-trigger implicit-Rec
+  approximation → `dataitem_source_table.is_some()` guard. CDO gate: `matched=13431`,
+  `missing_site=0`, `unaligned=0`, `extra_unexplained=0`, `extra_recordop>0`; determinism
+  asserted by two consecutive runs.
 - **Dual-run differential harness + `aldump --program-call-graph-stats`**
   (`src/program/resolve/differential.rs`, `src/bin/aldump.rs`, Phase 0 Task 7) —
   `run_harness(&Path) -> DiffReport` wires the full pipeline (snapshot →
