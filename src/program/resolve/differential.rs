@@ -1068,6 +1068,15 @@ pub struct ResolutionReport {
     /// fresh-only sites with valid witnesses are legitimate wins outside the
     /// in-scope dispatch filter (interface-implementors etc.) and are counted
     /// in [`extra_site`][Self::extra_site] instead.
+    ///
+    /// STRUCTURAL NO-OP (Phase 2): every `FreshOnly` site goes to `extra_site`; no
+    /// site reaches the `unverified_extra` accumulator because `FreshOnly` targets
+    /// are NOT individually witness-checked here.  `evidence_overclaim` is the sole
+    /// witness-quality gate (it checks ALL routes, including those on FreshOnly sites,
+    /// via the per-route loop in Step 4).  This field MUST gain teeth in Phase 4
+    /// (Multicast), where a FreshOnly site with valid witnesses but inapplicable
+    /// dispatch conditions is a real correctness failure — applicability ≠
+    /// single-dispatch correctness.
     pub unverified_extra: usize,
     /// Paired sites where L3 emitted empty targets but fresh resolved to
     /// non-empty targets — fresh did better than L3.
@@ -1127,6 +1136,15 @@ fn witness_contract_holds(route: &crate::program::resolve::edge::Route) -> bool 
 /// Caller is `Page`, `PageExtension`, or `TableExtension` AND L3 resolved to
 /// a `Table` (kind=1) or `TableExtension` (kind=2) routine — consistent with
 /// L3 following the object's implicit `Rec` to its source/base table.
+///
+/// NOTE: This heuristic can absorb a genuine bare-call regression.  A
+/// Page/PageExtension/TableExtension caller that calls an unqualified procedure
+/// by name that happens to resolve to a Table target in L3 is presumed to be
+/// an implicit-Rec receiver, but that presumption is unvalidated per-site.
+/// The ~90 CDO `regression_implicit_rec` cases are expected to be true
+/// implicit-Rec deferrals, but any genuine missed resolution in a Page/Table
+/// caller targeting a Table would be silently absorbed.  Phase 3 (full
+/// has_implicit_rec / receiver-lattice) will replace this heuristic.
 fn is_implicit_rec_regression(
     caller_key: &CanonicalKey,
     l3_targets: &BTreeSet<CanonicalTarget>,

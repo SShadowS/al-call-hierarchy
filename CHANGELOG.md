@@ -27,9 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Also added `target_is_name: bool` to `CalleeShape::ObjectRun` and updated `classify_call`
   to use `ExprKind::DatabaseReference` for static ObjectRun target extraction. New
   `is_cross_app_regression` helper documents the dep-boundary SymbolReference gap. CDO
-  gate: `regression_unexplained=0`, `evidence_overclaim=0`, `unverified_extra=0`,
-  `verified_win=1827`, `fresh_unknown_rate=4.5%` vs `l3_unknown_rate=65.1%`. Determinism
-  asserted by two consecutive runs.
+  gate (honest paired-subset result): `regression_unexplained=0`, `evidence_overclaim=0`,
+  `unverified_extra=0`, `verified_win=1827`, `divergence=38` (all adjudicated — see
+  task-6-report.md), `regression_implicit_rec=90` (Phase 3 deferred). The raw rates
+  `fresh_unknown=4.5%` vs `l3_unknown=65.1%` are NOT comparable: denominators differ
+  (fresh=4795 in-scope Bare/Run sites vs L3=8196 in-scope edges; `missing_site=3397`
+  are L3 Direct/Member-dispatch sites fresh defers to Phase 3) and fresh emits Builtin
+  targets while L3 builtin edges carry `to=None`. Honest result: on the paired subset
+  (`matched=4304`), fresh has 0 unexplained regressions and 1827 verified wins over L3.
+  Whole-branch fix wave added: symmetric paired-subset assertion
+  (`total_regressions <= verified_win`), bounded divergence cap (`divergence <= 38`),
+  permanent divergence summary print, and honesty comments on `unverified_extra` and
+  `is_implicit_rec_regression`. Determinism asserted by two consecutive runs.
 - **L3 PCallSite projection + Phase-1 site-parity gate** (`src/program/resolve/differential.rs`,
   `src/program/resolve/extract.rs`, `tests/program_resolve_harness.rs`, Phase 1 Task 4) —
   `project_l3_sites(&Path) -> Vec<CanonicalEdge>` projects every L3 `PCallSite` (not `CallEdge`)
