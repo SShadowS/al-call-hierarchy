@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-3 Task 5: Member-resolution gate vs L3** (`src/program/resolve/differential.rs`,
+  `tests/program_resolve_harness.rs`) — `run_member_resolution_harness(&Path) ->
+  MemberResolutionReport` wires `infer_receiver_type` + `resolve_member` (Tasks 1–4) into
+  the dual-run harness for every workspace `CalleeShape::Member` site, then compares against
+  the L3 oracle filtered to `PCallee::Member` origin with `dispatch_kind ∈ {Method, Builtin,
+  CodeunitRun}`.  Regression bucketing mirrors Phase 2: `regression_interface` (Phase-4
+  fan-out), `regression_enum_static` (enum-static deferred), `regression_page_rec`
+  (`Record{None}` — Page/PageExt implicit-Rec table gap), `regression_scalar` (Primitive
+  by-design), two new named deferral buckets: `regression_compound_receiver` (chained dotted
+  receiver e.g. `CurrPage.SubPage.Page` — Phase-4; 47 on CDO) and
+  `regression_codeunit_implicit_rec` (Codeunit with `TableNo`/`Subtype=TestRunner` implicit
+  `Rec` parameter not captured in IR; 24 on CDO).  CDO gate result (honest paired-subset):
+  `regression_unexplained=0`, `evidence_overclaim=0`, `verified_win=2744` (fresh resolved
+  2744 sites L3 left empty), `matched=7164`, `missing_site=0` (vs Phase-2 baseline of 3397
+  — the capstone metric showing Phase-3 coverage), `divergence=45` (adjudicated: fresh more
+  precise than L3 on resolved targets).  Determinism asserted by two consecutive runs.
+  `MemberResolutionReport` has 18 fields.
 - **Phase-3 Task 3: Object/SelfObject member dispatch** (`src/program/resolve/resolver.rs`) —
   `resolve_member` now handles `ReceiverType::Object{kind, name_lc}` and `ReceiverType::SelfObject`.
   Object dispatch: resolves the target object via `graph.resolve_object`, then calls

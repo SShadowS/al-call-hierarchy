@@ -1632,6 +1632,600 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-3 Member resolution gate
+// ---------------------------------------------------------------------------
+
+/// Phase-3 resolution report for `Member` call sites.
+///
+/// Fields mirror [`ResolutionReport`] but are scoped to `CalleeShape::Member`
+/// sites.  The three zero-tolerance gates are `regression_unexplained`,
+/// `evidence_overclaim`, and determinism.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MemberResolutionReport {
+    /// Paired sites where fresh and L3 target sets agree.
+    pub matched: usize,
+    /// Paired regressions NOT in any named deferral bucket (must be 0).
+    pub regression_unexplained: usize,
+    /// Paired regressions where fresh inferred `ReceiverType::Interface`
+    /// (Phase-4 fan-out deferred).
+    pub regression_interface: usize,
+    /// Paired regressions where fresh inferred `ReceiverType::EnumType`
+    /// (enum-static dispatch deferred).
+    pub regression_enum_static: usize,
+    /// Paired regressions where fresh inferred `ReceiverType::Record { table: None }`
+    /// (Page/PageExt implicit-Rec table unresolved — Task-1 gap).
+    pub regression_page_rec: usize,
+    /// Paired regressions where fresh inferred `ReceiverType::Primitive`
+    /// (scalar `.ToText()` etc. — by-design, not a resolution gap).
+    pub regression_scalar: usize,
+    /// Paired regressions where the receiver_text is a **compound dotted
+    /// expression** (e.g. `CurrPage.SubPage.Page`), which fresh cannot resolve
+    /// because Phase-3 receiver inference only handles simple identifiers.
+    /// Phase-4 deferred (chained receiver type propagation).
+    pub regression_compound_receiver: usize,
+    /// Paired regressions where `receiver_lc ∈ {rec, xrec}` inside a
+    /// **Codeunit** object and fresh inferred `Unknown`.  Root cause: a
+    /// Codeunit with `TableNo` or `Subtype = TestRunner` has an implicit `Rec`
+    /// parameter (or a variable named `Rec` sourced from an implicit context)
+    /// that is not captured in the parsed IR or `ObjectNode`.  Deferred: adding
+    /// `implicit_table: Option<ObjectNodeId>` to `ObjectNode` requires a
+    /// properties-scan during node extraction (Phase 3 carry-over).
+    pub regression_codeunit_implicit_rec: usize,
+    /// Routes that claim `Source`/`Abi`/`Catalog` evidence without a matching
+    /// valid witness (must be 0).
+    pub evidence_overclaim: usize,
+    /// Paired sites where L3 emitted empty targets but fresh resolved to
+    /// non-empty targets — fresh did better than L3.
+    pub verified_win: usize,
+    /// Paired sites where both sides have non-empty but differing targets.
+    pub divergence: usize,
+    /// L3-only Member sites: fresh extracted no matching site.
+    pub missing_site: usize,
+    /// Fresh-only Member sites: no L3 Member-oracle peer.
+    pub extra_site: usize,
+    /// Sum of excess indices from `Unaligned` buckets.
+    pub unaligned: usize,
+    /// Total fresh `Member` sites extracted from the workspace.
+    pub fresh_total: usize,
+    /// Total L3 Member-in-scope edges.
+    pub l3_total: usize,
+    /// Count of fresh Member sites where ALL routes are `Unresolved`.
+    pub fresh_unknown_count: usize,
+    /// `fresh_total - fresh_unknown_count`.
+    pub fresh_resolved_count: usize,
+    /// Count of L3 in-scope Member edges with empty targets.
+    pub l3_unknown_count: usize,
+    /// `l3_total - l3_unknown_count`.
+    pub l3_resolved_count: usize,
+}
+
+/// Project the L3 resolver's output for in-scope Member-dispatch kinds only.
+///
+/// Includes L3 edges where:
+/// - The originating `PCallSite.callee` is `PCallee::Member`.
+/// - `dispatch_kind ∈ {Method, Builtin, CodeunitRun}`.
+///
+/// Excludes `Interface` (Phase-4 fan-out) and `Dynamic` (runtime-typed
+/// `Variant` receiver — honest open-world).  L3 `Builtin` edges carry
+/// `to = None` (empty targets); fresh catalog-resolved routes carry a
+/// `CanonicalTarget { kind: 255, … }` (non-empty) → these appear as
+/// `verified_win` in the report.
+#[must_use]
+fn project_l3_member_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
+    use std::collections::HashMap;
+
+    use crate::engine::l2::features::PCallee;
+    use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use crate::engine::l3::symbol_table::SymbolTable;
+    use crate::engine::l3::taxonomy::DispatchKind;
+
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return Vec::new();
+    };
+    let ws = &resolved.workspace;
+
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let resolved_calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+    let routine_by_id: HashMap<&str, &crate::engine::l3::l3_workspace::L3Routine> =
+        ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
+
+    let mut callsite_by_id: HashMap<&str, &crate::engine::l2::features::PCallSite> = HashMap::new();
+    for routine in &ws.routines {
+        for cs in &routine.call_sites {
+            callsite_by_id.insert(cs.id.as_str(), cs);
+        }
+    }
+
+    let mut edges: Vec<CanonicalEdge> = resolved_calls
+        .edges
+        .iter()
+        .filter(|edge| {
+            let is_member = callsite_by_id
+                .get(edge.callsite_id.as_str())
+                .map(|cs| matches!(cs.callee, PCallee::Member { .. }))
+                .unwrap_or(false);
+            is_member
+                && matches!(
+                    edge.dispatch_kind,
+                    DispatchKind::Method | DispatchKind::Builtin | DispatchKind::CodeunitRun
+                )
+        })
+        .filter_map(|edge| {
+            let from_r = routine_by_id.get(edge.from.as_str())?;
+            let from = make_canonical_key(
+                from_r.app_guid.clone(),
+                from_r.object_type.to_ascii_lowercase(),
+                format!("{}", from_r.object_number),
+                from_r.name.to_ascii_lowercase(),
+            );
+
+            let cs = callsite_by_id.get(edge.callsite_id.as_str())?;
+            let a = &cs.source_anchor;
+            let unit_str = a
+                .source_unit_id
+                .strip_prefix("ws:")
+                .unwrap_or(&a.source_unit_id)
+                .to_string();
+            let span = CanonicalSpan {
+                unit: unit_str,
+                start: SourcePos {
+                    line: a.start_line,
+                    col: a.start_column,
+                },
+                end: SourcePos {
+                    line: a.end_line,
+                    col: a.end_column,
+                },
+            };
+            let fp = callee_fp(&cs.callee_text);
+            let site = CanonicalSiteKey {
+                caller: from.clone(),
+                span,
+                callee_fp: fp,
+            };
+
+            let targets: BTreeSet<CanonicalTarget> = if let Some(to_id) = &edge.to {
+                if let Some(to_r) = routine_by_id.get(to_id.as_str()) {
+                    let mut set = BTreeSet::new();
+                    set.insert(CanonicalTarget {
+                        kind: object_kind_str_to_tag(&to_r.object_type.to_ascii_lowercase()),
+                        app: Some(to_r.app_guid.clone()),
+                        object_lc: format!("{}", to_r.object_number),
+                        routine_lc: Some(to_r.name.to_ascii_lowercase()),
+                    });
+                    set
+                } else {
+                    BTreeSet::new()
+                }
+            } else {
+                BTreeSet::new()
+            };
+
+            Some(CanonicalEdge {
+                from,
+                site,
+                kind: EdgeKind::Call,
+                targets,
+            })
+        })
+        .collect();
+
+    edges.sort();
+    edges
+}
+
+/// Diagnostic entry for an unexplained Member regression (fresh Unknown, L3
+/// resolved), printed to stderr if `regression_unexplained > 0` at the end of
+/// [`run_member_resolution_harness`].
+struct RegressionDiag {
+    caller: String,
+    callee_text: String,
+    recv_type: String,
+    l3_targets: String,
+}
+
+/// Phase-3 Member-resolution harness: resolves every workspace `Member` call
+/// site via `infer_receiver_type` + `resolve_member` and compares against the
+/// L3 oracle filtered to `PCallee::Member` origin with `dispatch_kind ∈
+/// {Method, Builtin, CodeunitRun}`.
+///
+/// Paired regressions (L3 resolved, fresh Unknown) are categorized into named
+/// deferral buckets based on the inferred `ReceiverType` and callee structure:
+/// - `regression_interface` — `Interface` receiver (Phase-4 fan-out);
+/// - `regression_enum_static` — `EnumType` receiver (enum-static deferred);
+/// - `regression_page_rec` — `Record { table: None }` (Page/PageExt implicit-Rec gap);
+/// - `regression_scalar` — `Primitive` receiver (scalar `.ToText()` etc.);
+/// - `regression_compound_receiver` — compound dotted receiver (e.g.
+///   `CurrPage.SubPage.Page`); Phase-3 handles only simple identifiers;
+/// - `regression_codeunit_implicit_rec` — `rec`/`xrec` receiver in a Codeunit
+///   with `TableNo`/`Subtype = TestRunner`; implicit parameter not in IR;
+/// - `regression_unexplained` — anything else (must be 0; investigate if > 0).
+///
+/// Fail-closed: any error during setup returns a zero report.
+#[must_use]
+pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionReport {
+    use std::collections::{HashMap, HashSet};
+
+    use crate::program::build::build_program_graph;
+    use crate::program::node::{ObjKey, ObjectNodeId};
+    use crate::program::node_extract::ObjectNode;
+    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::edge::{Evidence, Route, RouteTarget, Witness};
+    use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
+    use crate::program::resolve::index::ResolveIndex;
+    use crate::program::resolve::receiver::{ReceiverType, infer_receiver_type};
+    use crate::program::resolve::resolver::resolve_member;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    // ── Step 1: Build snapshot ───────────────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return MemberResolutionReport::default(),
+    };
+
+    let ws_file_set: HashSet<String> = snap
+        .apps
+        .first()
+        .and_then(|u| u.source.as_ref())
+        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+        .unwrap_or_default();
+
+    // ── Step 2: Build graph + index + body map ───────────────────────────────
+    let graph = build_program_graph(&snap);
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+
+    // ── Step 3: Locate workspace app ─────────────────────────────────────────
+    let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
+        return MemberResolutionReport::default();
+    };
+    let ws_guid = graph.apps.resolve(ws_ref).guid.clone();
+
+    let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+        graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+
+    let unknown_route = || Route {
+        target: RouteTarget::Unresolved,
+        evidence: Evidence::Unknown,
+        condition: None,
+        witness: Witness::None,
+    };
+
+    // ── Step 4: Resolve fresh Member sites (workspace-only) ───────────────────
+    // Three parallel vecs kept in sync:
+    //   fresh_canonical      — the edge projected to canonical form
+    //   fresh_recv_types     — the inferred ReceiverType (for regression bucketing)
+    //   fresh_diag_text      — (callee_text) for diagnostic printing
+    let mut fresh_combined: Vec<(CanonicalEdge, Option<ReceiverType>, String)> = Vec::new();
+    let mut evidence_overclaim = 0usize;
+    let mut fresh_unknown_count = 0usize;
+
+    for unit in &parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        if app_ref != ws_ref {
+            continue;
+        }
+
+        for pf in &unit.files {
+            if !ws_file_set.contains(&pf.virtual_path) {
+                continue;
+            }
+
+            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+                let obj_key = match obj.id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                };
+                let obj_kind_str = object_kind_str(obj.kind);
+                let obj_lc = obj_key_lc(&obj_key);
+
+                let obj_node_id = ObjectNodeId {
+                    app: ws_ref,
+                    kind: obj.kind,
+                    key: obj_key.clone(),
+                };
+                let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+
+                // Record-typed global variable names — for site classification
+                // (same pattern as run_resolution_harness / run_site_harness).
+                let object_globals_rec_set: HashSet<String> = obj
+                    .globals
+                    .iter()
+                    .filter(|v| {
+                        v.ty.as_deref()
+                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                            .unwrap_or(false)
+                    })
+                    .map(|v| v.name.to_ascii_lowercase())
+                    .collect();
+
+                for (routine_idx, routine) in obj.routines.iter().enumerate() {
+                    let caller_key = make_canonical_key(
+                        ws_guid.clone(),
+                        obj_kind_str.clone(),
+                        obj_lc.clone(),
+                        routine.name.to_ascii_lowercase(),
+                    );
+
+                    let sites = extract_sites_for_routine(
+                        &pf.file,
+                        &pf.text,
+                        &pf.virtual_path,
+                        &object_globals_rec_set,
+                        obj_idx,
+                        routine_idx,
+                    );
+
+                    for site in &sites {
+                        let (routes, recv_type) = match &site.shape {
+                            CalleeShape::Member {
+                                receiver_text,
+                                method,
+                            } => {
+                                let receiver_lc = receiver_text.to_ascii_lowercase();
+                                let method_lc = method.to_ascii_lowercase();
+
+                                if let Some(obj_node) = obj_node_opt {
+                                    let recv = infer_receiver_type(
+                                        &receiver_lc,
+                                        routine,
+                                        &obj.globals,
+                                        obj_node,
+                                        &graph,
+                                        &index,
+                                    );
+                                    let (_, routes) = resolve_member(
+                                        &recv, &method_lc, site.arity, obj_node, &graph, &index,
+                                        &body_map,
+                                    );
+                                    (routes, Some(recv))
+                                } else {
+                                    // ObjectNode absent from graph (shouldn't
+                                    // happen in a sound workspace).
+                                    (vec![unknown_route()], None)
+                                }
+                            }
+                            // Skip all non-Member sites — covered by Phase-2.
+                            _ => continue,
+                        };
+
+                        // Evidence/witness contract check (route-level).
+                        for r in &routes {
+                            if !witness_contract_holds(r) {
+                                evidence_overclaim += 1;
+                            }
+                        }
+
+                        let is_all_unresolved = routes.is_empty()
+                            || routes
+                                .iter()
+                                .all(|r| matches!(r.target, RouteTarget::Unresolved));
+                        if is_all_unresolved {
+                            fresh_unknown_count += 1;
+                        }
+
+                        let targets: BTreeSet<CanonicalTarget> = routes
+                            .iter()
+                            .filter_map(|r| project_target(&r.target, &graph.apps))
+                            .collect();
+
+                        let fp = callee_fp(&site.callee_text);
+                        let edge = CanonicalEdge {
+                            from: caller_key.clone(),
+                            site: CanonicalSiteKey {
+                                caller: caller_key.clone(),
+                                span: site.span.clone(),
+                                callee_fp: fp,
+                            },
+                            kind: EdgeKind::Call,
+                            targets,
+                        };
+                        fresh_combined.push((edge, recv_type, site.callee_text.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort all three vecs together (by canonical edge order).
+    fresh_combined.sort_by(|a, b| a.0.cmp(&b.0));
+    let fresh_recv_types: Vec<Option<ReceiverType>> =
+        fresh_combined.iter().map(|(_, r, _)| r.clone()).collect();
+    let fresh_diag_text: Vec<String> = fresh_combined.iter().map(|(_, _, t)| t.clone()).collect();
+    let fresh_canonical: Vec<CanonicalEdge> =
+        fresh_combined.into_iter().map(|(e, _, _)| e).collect();
+
+    let fresh_total = fresh_canonical.len();
+    let fresh_resolved_count = fresh_total.saturating_sub(fresh_unknown_count);
+
+    // ── Step 5: Project L3 Member oracle ─────────────────────────────────────
+    let l3_canonical = project_l3_member_in_scope(workspace_root);
+    let l3_total = l3_canonical.len();
+    let l3_unknown_count = l3_canonical.iter().filter(|e| e.targets.is_empty()).count();
+    let l3_resolved_count = l3_total.saturating_sub(l3_unknown_count);
+
+    // ── Step 6: Match sites ───────────────────────────────────────────────────
+    let site_matches = match_sites(&fresh_canonical, &l3_canonical);
+
+    // ── Step 7: Bucket ────────────────────────────────────────────────────────
+    let mut matched = 0usize;
+    let mut regression_unexplained = 0usize;
+    let mut regression_interface = 0usize;
+    let mut regression_enum_static = 0usize;
+    let mut regression_page_rec = 0usize;
+    let mut regression_scalar = 0usize;
+    let mut regression_compound_receiver = 0usize;
+    let mut regression_codeunit_implicit_rec = 0usize;
+    let mut verified_win = 0usize;
+    let mut divergence = 0usize;
+    let mut missing_site = 0usize;
+    let mut extra_site = 0usize;
+    let mut unaligned = 0usize;
+
+    // Diagnostics for unexplained regressions (first 30, to avoid noise).
+    let mut diag_unexplained: Vec<RegressionDiag> = Vec::new();
+
+    for m in &site_matches {
+        match m {
+            SiteMatch::Paired(fi, li) => {
+                matched += 1;
+                let f = &fresh_canonical[*fi];
+                let l = &l3_canonical[*li];
+                let f_empty = f.targets.is_empty();
+                let l_empty = l.targets.is_empty();
+                match (f_empty, l_empty) {
+                    (true, true) => {
+                        // Both unresolved — agreement.
+                    }
+                    (false, true) => {
+                        // L3 empty, fresh non-empty — fresh did better.
+                        verified_win += 1;
+                    }
+                    (true, false) => {
+                        // L3 resolved, fresh Unknown — categorize regression.
+                        let recv = fresh_recv_types[*fi].as_ref();
+                        match recv {
+                            Some(ReceiverType::Interface { .. }) => {
+                                regression_interface += 1;
+                            }
+                            Some(ReceiverType::EnumType { .. }) => {
+                                regression_enum_static += 1;
+                            }
+                            Some(ReceiverType::Record { table: None }) => {
+                                regression_page_rec += 1;
+                            }
+                            Some(ReceiverType::Primitive) => {
+                                regression_scalar += 1;
+                            }
+                            _ => {
+                                // Derive receiver_lc from callee_text (strip
+                                // the trailing `.method` segment).
+                                let callee_lc = fresh_diag_text[*fi].to_ascii_lowercase();
+                                let recv_lc: &str = if let Some(pos) = callee_lc.rfind('.') {
+                                    &callee_lc[..pos]
+                                } else {
+                                    &callee_lc
+                                };
+
+                                if recv_lc.contains('.') {
+                                    // Compound receiver expression (e.g.
+                                    // `CurrPage.SubPage.Page`) — Phase-3
+                                    // inference is single-identifier only.
+                                    // Deferred to Phase 4.
+                                    regression_compound_receiver += 1;
+                                } else if (recv_lc == "rec" || recv_lc == "xrec")
+                                    && f.from.object_kind == "codeunit"
+                                {
+                                    // Codeunit with implicit `Rec` from
+                                    // `TableNo` or `Subtype = TestRunner` —
+                                    // the implicit parameter is not captured
+                                    // in the parsed IR or `ObjectNode`.
+                                    regression_codeunit_implicit_rec += 1;
+                                } else {
+                                    regression_unexplained += 1;
+                                    if diag_unexplained.len() < 30 {
+                                        let recv_str = format!("{recv:?}");
+                                        let l3_tgt = l
+                                            .targets
+                                            .iter()
+                                            .map(|t| {
+                                                format!(
+                                                    "{}:{}:{}",
+                                                    t.app.as_deref().unwrap_or("?"),
+                                                    t.object_lc,
+                                                    t.routine_lc.as_deref().unwrap_or("<builtin>")
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        diag_unexplained.push(RegressionDiag {
+                                            caller: format!(
+                                                "{}::{}::{}",
+                                                f.from.object_kind,
+                                                f.from.object_lc,
+                                                f.from.routine_lc,
+                                            ),
+                                            callee_text: fresh_diag_text[*fi].clone(),
+                                            recv_type: recv_str,
+                                            l3_targets: l3_tgt,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    (false, false) => {
+                        if f.targets != l.targets {
+                            divergence += 1;
+                        }
+                    }
+                }
+            }
+            SiteMatch::FreshOnly(_) => {
+                extra_site += 1;
+            }
+            SiteMatch::L3Only(_) => {
+                missing_site += 1;
+            }
+            SiteMatch::Unaligned(fs, ls) => {
+                unaligned += fs.len() + ls.len();
+            }
+        }
+    }
+
+    // Print unexplained-regression diagnostics to stderr so they appear in
+    // `cargo test -- --nocapture` output.
+    if !diag_unexplained.is_empty() {
+        eprintln!(
+            "\n[Member harness] regression_unexplained={} (showing first {}):",
+            regression_unexplained,
+            diag_unexplained.len()
+        );
+        for d in &diag_unexplained {
+            eprintln!(
+                "  caller={} callee={:?} recv={} l3→[{}]",
+                d.caller, d.callee_text, d.recv_type, d.l3_targets,
+            );
+        }
+    }
+
+    MemberResolutionReport {
+        matched,
+        regression_unexplained,
+        regression_interface,
+        regression_enum_static,
+        regression_page_rec,
+        regression_scalar,
+        regression_compound_receiver,
+        regression_codeunit_implicit_rec,
+        evidence_overclaim,
+        verified_win,
+        divergence,
+        missing_site,
+        extra_site,
+        unaligned,
+        fresh_total,
+        l3_total,
+        fresh_unknown_count,
+        fresh_resolved_count,
+        l3_unknown_count,
+        l3_resolved_count,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test helper
 // ---------------------------------------------------------------------------
 

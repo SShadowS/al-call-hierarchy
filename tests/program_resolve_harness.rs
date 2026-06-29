@@ -6,8 +6,9 @@
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    DiffReport, ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites,
-    run_harness, run_resolution_harness, run_site_harness,
+    DiffReport, MemberResolutionReport, ResolutionReport, SiteMatch, canonical_call_edge_for_test,
+    match_sites, run_harness, run_member_resolution_harness, run_resolution_harness,
+    run_site_harness,
 };
 
 // ---------------------------------------------------------------------------
@@ -375,9 +376,126 @@ fn phase2_bare_run_resolution_matches_or_beats_l3() {
     assert_eq!(report, run_resolution_harness(&ws), "deterministic");
 }
 
+// ---------------------------------------------------------------------------
+// Test 7 (Phase 3 Task 5): Phase-3 Member-resolution gate vs L3 oracle
+// ---------------------------------------------------------------------------
+
+/// Phase-3 Member-resolution gate: proves that the real `infer_receiver_type` +
+/// `resolve_member` path matches or beats the L3 oracle on CDO for Member call
+/// sites.
+///
+/// Three zero-tolerance assertions:
+/// - `regression_unexplained == 0`: fresh must not lose an L3-resolved Member
+///   target that is not in a named deferral bucket (Interface/EnumType/Record{None}/
+///   Primitive).
+/// - `evidence_overclaim == 0`: no route may claim Source/Abi/Catalog evidence
+///   without the corresponding valid witness.
+/// - Determinism: two consecutive runs produce identical output.
+///
+/// Informational: prints the full categorized breakdown + the Member `missing_site`
+/// (still-deferred residual — Interface fan-out [Phase 4], unresolved Page/PageExt
+/// table, and other open-world sites).
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase3_member_resolution_matches_or_beats_l3() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_member_resolution_harness(&ws);
+
+    eprintln!(
+        "MemberResolutionReport:\n\
+         matched={} verified_win={} divergence={}\n\
+         regression_unexplained={} regression_interface={} regression_enum_static={}\n\
+         regression_page_rec={} regression_scalar={}\n\
+         regression_compound_receiver={} regression_codeunit_implicit_rec={}\n\
+         evidence_overclaim={}\n\
+         missing_site={} extra_site={} unaligned={}\n\
+         fresh_total={} l3_total={}\n\
+         fresh_unknown={} fresh_resolved={} ({:.1}% unknown on fresh Member sites)\n\
+         l3_unknown={} l3_resolved={} ({:.1}% unknown on L3 Member oracle)\n\
+         NOTE: The paired-subset result is the honest metric — fresh has {} unexplained \
+         regressions and {} verified wins over L3 on the paired Member subset (matched={}).\n\
+         Named deferrals: regression_interface={} (Phase-4), \
+         regression_enum_static={} (deferred), \
+         regression_page_rec={} (Page implicit-Rec gap), \
+         regression_scalar={} (primitive by-design), \
+         regression_compound_receiver={} (chained receiver, Phase-4), \
+         regression_codeunit_implicit_rec={} (TableNo/TestRunner implicit Rec).\n\
+         Member missing_site={} (still-deferred: Interface fan-out, Page/PageExt \
+         implicit-Rec table, and open-world residual).",
+        report.matched,
+        report.verified_win,
+        report.divergence,
+        report.regression_unexplained,
+        report.regression_interface,
+        report.regression_enum_static,
+        report.regression_page_rec,
+        report.regression_scalar,
+        report.regression_compound_receiver,
+        report.regression_codeunit_implicit_rec,
+        report.evidence_overclaim,
+        report.missing_site,
+        report.extra_site,
+        report.unaligned,
+        report.fresh_total,
+        report.l3_total,
+        report.fresh_unknown_count,
+        report.fresh_resolved_count,
+        if report.fresh_total > 0 {
+            report.fresh_unknown_count as f64 / report.fresh_total as f64 * 100.0
+        } else {
+            0.0
+        },
+        report.l3_unknown_count,
+        report.l3_resolved_count,
+        if report.l3_total > 0 {
+            report.l3_unknown_count as f64 / report.l3_total as f64 * 100.0
+        } else {
+            0.0
+        },
+        report.regression_unexplained,
+        report.verified_win,
+        report.matched,
+        report.regression_interface,
+        report.regression_enum_static,
+        report.regression_page_rec,
+        report.regression_scalar,
+        report.regression_compound_receiver,
+        report.regression_codeunit_implicit_rec,
+        report.missing_site,
+    );
+
+    assert_eq!(
+        report.regression_unexplained, 0,
+        "fresh must not lose a Member target L3 resolved \
+         (excl. named deferrals: interface/enum/page-rec/scalar/\
+         compound-receiver/codeunit-implicit-rec): {report:?}"
+    );
+    assert_eq!(
+        report.evidence_overclaim, 0,
+        "no Source/Abi/Catalog claim without a valid witness: {report:?}"
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(
+        report,
+        run_member_resolution_harness(&ws),
+        "run_member_resolution_harness must be deterministic"
+    );
+}
+
 // Suppress unused-import warning when CDO_WS is not set (no CDO test runs).
 #[allow(dead_code)]
 fn _assert_diff_report_importable(_: DiffReport) {}
 
 #[allow(dead_code)]
 fn _assert_resolution_report_importable(_: ResolutionReport) {}
+
+#[allow(dead_code)]
+fn _assert_member_report_importable(_: MemberResolutionReport) {}
