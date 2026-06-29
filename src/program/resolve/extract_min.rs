@@ -54,7 +54,7 @@ fn collect_calls(
         ExprKind::Call { function, args } => {
             // Copy out the ids so the borrow on `e` ends before we recurse.
             let fn_id = *function;
-            let arg_ids: Vec<ExprId> = args.clone();
+            let arg_ids = args.to_vec();
 
             // Emit one site for this call expression.
             let callee_text = src[file.ir.expr(fn_id).origin.byte.clone()].to_string();
@@ -263,28 +263,63 @@ mod tests {
 
     #[test]
     fn extracts_one_site_per_call_expression() {
+        // Fixture exercises four call patterns:
+        //  1. Top-level bare call:             Foo()
+        //  2. Top-level call with literals:    Bar(1, 2)
+        //  3. Nested-argument call:            Baz(Foo())  → emits BOTH Baz and the inner Foo
+        //  4. Member (receiver) call:          Rec.Insert(true)
         let src = r#"
 codeunit 50100 "C"
 {
     procedure Run()
+    var
+        Rec: Record Customer;
     begin
         Foo();
         Bar(1, 2);
+        Baz(Foo());
+        Rec.Insert(true);
     end;
     procedure Foo() begin end;
     procedure Bar(a: Integer; b: Integer) begin end;
+    procedure Baz(x: Integer) begin end;
 }
 "#;
         let file = al_syntax::parse(src);
         let sites = extract_raw_sites(&file, src, "C.al");
-        // Two call expressions in Run(): Foo() and Bar(1,2).
         let in_run: Vec<_> = sites.iter().filter(|s| s.caller_routine == "run").collect();
-        assert_eq!(in_run.len(), 2, "sites: {sites:?}");
+
+        // 5 call expressions total in Run():
+        //   Foo(), Bar(1,2), Baz (outer), Foo (nested inside Baz arg), Rec.Insert
+        assert_eq!(in_run.len(), 5, "sites: {sites:?}");
+
+        // Bar() must be captured (guards that top-level calls with args are covered).
         assert!(
             in_run
                 .iter()
-                .any(|s| s.callee_text.to_ascii_lowercase().contains("foo"))
+                .any(|s| s.callee_text.to_ascii_lowercase().contains("bar")),
+            "expected a 'Bar' site; sites: {sites:?}"
         );
+
+        // Foo appears twice: once as top-level and once nested inside Baz(Foo()).
+        // This guards that the walk recurses into call arguments.
+        let foo_count = in_run
+            .iter()
+            .filter(|s| s.callee_text.to_ascii_lowercase().contains("foo"))
+            .count();
+        assert_eq!(
+            foo_count, 2,
+            "expected 2 'Foo' sites (top-level + nested arg); sites: {sites:?}"
+        );
+
+        // Member call Rec.Insert(true) must appear, guarding member-call coverage.
+        assert!(
+            in_run
+                .iter()
+                .any(|s| s.callee_text.to_ascii_lowercase().contains("insert")),
+            "expected a 'Rec.Insert' site; sites: {sites:?}"
+        );
+
         // Spans are non-degenerate and ordered by source position.
         assert!(in_run[0].span.start <= in_run[1].span.start);
     }
