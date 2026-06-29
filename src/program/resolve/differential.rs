@@ -2110,6 +2110,19 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                                 regression_scalar += 1;
                             }
                             _ => {
+                                // Guard: the text-based deferral buckets
+                                // (compound_receiver and codeunit_implicit_rec)
+                                // only apply when receiver inference FAILED
+                                // (ReceiverType::Unknown or obj_node absent).
+                                // If the receiver inferred to a resolvable type
+                                // (Record{Some}, Object, Framework, …) but
+                                // resolve_member still returned empty targets,
+                                // that is a genuine regression — surface it via
+                                // regression_unexplained rather than silently
+                                // absorbing it into a text-heuristic bucket.
+                                let recv_is_unknown =
+                                    matches!(recv, Some(ReceiverType::Unknown) | None);
+
                                 // Derive receiver_lc from callee_text (strip
                                 // the trailing `.method` segment).
                                 let callee_lc = fresh_diag_text[*fi].to_ascii_lowercase();
@@ -2119,13 +2132,14 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                                     &callee_lc
                                 };
 
-                                if recv_lc.contains('.') {
+                                if recv_is_unknown && recv_lc.contains('.') {
                                     // Compound receiver expression (e.g.
                                     // `CurrPage.SubPage.Page`) — Phase-3
                                     // inference is single-identifier only.
                                     // Deferred to Phase 4.
                                     regression_compound_receiver += 1;
-                                } else if (recv_lc == "rec" || recv_lc == "xrec")
+                                } else if recv_is_unknown
+                                    && (recv_lc == "rec" || recv_lc == "xrec")
                                     && f.from.object_kind == "codeunit"
                                 {
                                     // Codeunit with implicit `Rec` from

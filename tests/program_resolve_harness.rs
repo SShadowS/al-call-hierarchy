@@ -427,8 +427,8 @@ fn phase3_member_resolution_matches_or_beats_l3() {
          regression_scalar={} (primitive by-design), \
          regression_compound_receiver={} (chained receiver, Phase-4), \
          regression_codeunit_implicit_rec={} (TableNo/TestRunner implicit Rec).\n\
-         Member missing_site={} (still-deferred: Interface fan-out, Page/PageExt \
-         implicit-Rec table, and open-world residual).",
+         Member missing_site={} | Deferred regression residual: \
+         compound_receiver={} + codeunit_implicit_rec={} + interface={} + page_rec={}.",
         report.matched,
         report.verified_win,
         report.divergence,
@@ -469,6 +469,10 @@ fn phase3_member_resolution_matches_or_beats_l3() {
         report.regression_compound_receiver,
         report.regression_codeunit_implicit_rec,
         report.missing_site,
+        report.regression_compound_receiver,
+        report.regression_codeunit_implicit_rec,
+        report.regression_interface,
+        report.regression_page_rec,
     );
 
     assert_eq!(
@@ -480,6 +484,13 @@ fn phase3_member_resolution_matches_or_beats_l3() {
     assert_eq!(
         report.evidence_overclaim, 0,
         "no Source/Abi/Catalog claim without a valid witness: {report:?}"
+    );
+
+    // Divergence cap: all 45 CDO divergences have been adjudicated (see task-5-report.md).
+    // Any count ABOVE 45 means a NEW unreviewed divergence appeared — must inspect.
+    assert!(
+        report.divergence <= 45,
+        "Member divergence grew beyond the adjudicated 45; inspect before merging: {report:?}"
     );
 
     // Determinism: two consecutive runs must produce identical output.
