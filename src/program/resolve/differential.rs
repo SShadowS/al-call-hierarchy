@@ -18,14 +18,13 @@
 //! every stub edge projects to an empty `targets` set.
 
 use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
 
 use crate::program::node::{AppRef, AppRegistry, ObjKey, RoutineNodeId};
 use crate::program::resolve::edge::{
-    BuiltinId, CanonicalSpan, Edge, EdgeKind, RouteTarget, SourcePos,
+    BuiltinId, CanonicalSpan, Edge, EdgeKind, RouteTarget, SourcePos, callee_fp,
 };
 
 // ---------------------------------------------------------------------------
@@ -81,17 +80,6 @@ pub struct CanonicalEdge {
 // Shared helpers — BOTH project_fresh and project_l3 call these so the two
 // projections cannot silently diverge in encoding.
 // ---------------------------------------------------------------------------
-
-/// Compute the callee-expression fingerprint from raw callee text.
-///
-/// Uses `DefaultHasher` over the lowercased text.  The stub resolver in
-/// `stub.rs` uses the same algorithm to populate `SiteId::callee_fingerprint`;
-/// `project_l3` calls this directly on `PCallSite::callee_text`.
-pub(crate) fn callee_fp(text: &str) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    text.to_ascii_lowercase().hash(&mut h);
-    h.finish()
-}
 
 /// Map an already-lowercased object-kind string to the stable `u8` discriminant
 /// used in [`CanonicalTarget::kind`].
@@ -227,7 +215,7 @@ fn project_target(target: &RouteTarget, apps: &AppRegistry) -> Option<CanonicalT
 /// guid.
 #[must_use]
 pub fn project_fresh(edges: &[Edge], apps: &AppRegistry) -> Vec<CanonicalEdge> {
-    edges
+    let mut result: Vec<CanonicalEdge> = edges
         .iter()
         .map(|e| {
             let from = routine_to_key(&e.from, apps);
@@ -248,7 +236,9 @@ pub fn project_fresh(edges: &[Edge], apps: &AppRegistry) -> Vec<CanonicalEdge> {
                 targets,
             }
         })
-        .collect()
+        .collect();
+    result.sort();
+    result
 }
 
 // ---------------------------------------------------------------------------

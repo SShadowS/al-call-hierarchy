@@ -176,6 +176,16 @@ pub fn real_unknown_rate(edges: &[Edge]) -> f64 {
     unknown as f64 / edges.len() as f64
 }
 
+/// Deterministic (within a process run) fingerprint of a callee's text, used as
+/// part of a call site's identity. BOTH the fresh and L3 projections must use THIS
+/// function so the differential cannot drift.
+pub(crate) fn callee_fp(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.to_ascii_lowercase().hash(&mut h);
+    h.finish()
+}
+
 /// Stratified counts for `--program-call-graph-stats`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Histogram {

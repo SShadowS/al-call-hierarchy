@@ -12,23 +12,14 @@
 //! Phase 1 resolvers will re-extract sites per-object, eliminating this
 //! ambiguity.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId, Witness,
+    callee_fp,
 };
 use crate::program::resolve::extract_min::extract_raw_sites;
 use crate::snapshot::ParsedUnit;
-
-/// Hash the callee text (lowercased) to a stable `u64` fingerprint.
-fn callee_fp(text: &str) -> u64 {
-    let mut h = DefaultHasher::new();
-    text.to_ascii_lowercase().hash(&mut h);
-    h.finish()
-}
 
 /// Emit one `Unknown`-route `Edge` per extracted call site across all parsed
 /// units.
