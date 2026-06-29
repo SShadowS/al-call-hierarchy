@@ -237,12 +237,15 @@ fn entry_trigger_name(kind: ObjectKind) -> &'static str {
 }
 
 /// Build a single Opaque boundary route (target exists but is not in our source).
-fn opaque_boundary_route() -> Route {
+fn opaque_boundary_route(app: AppRef, symbol_key: String) -> Route {
     Route {
-        target: RouteTarget::Unresolved,
+        target: RouteTarget::AbiSymbol {
+            app,
+            symbol_key: symbol_key.clone(),
+        },
         evidence: Evidence::Opaque,
         condition: None,
-        witness: Witness::None,
+        witness: Witness::AbiSymbol { app, symbol_key },
     }
 }
 
@@ -254,17 +257,18 @@ fn opaque_boundary_route() -> Route {
 /// | Situation | Shape | Completeness | Routes |
 /// |-----------|-------|-------------|--------|
 /// | `target_ref` is `None` (runtime variable) | `DynamicOpen` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Unknown, None}]` |
-/// | Target named/numbered but absent from graph | `Exact` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Opaque, None}]` |
+/// | Target named/numbered but absent from graph | `Exact` | `Complete` | `[{AbiSymbol, Opaque, AbiSymbol}]` |
 /// | Target found; entry trigger resolved | `Exact` | `Complete` | `[{Routine(trigger), Source/Abi, SourceSpan/…}]` |
-/// | Target found; entry trigger absent from index | `Exact` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Opaque, None}]` |
+/// | Target found; entry trigger absent from index | `Exact` | `Complete` | `[{AbiSymbol, Opaque, AbiSymbol}]` |
 ///
 /// # Opaque-vs-Unknown choice (Phase 2 note)
 ///
-/// When the target is not found in the graph we use `Evidence::Opaque` (not
-/// `Unknown`) because we know the target *exists* somewhere — it just isn't in
-/// our source snapshot.  The `classify_obligation` metric still counts this as
-/// `Unknown` (since `RouteTarget::Unresolved` is the target), which is honest:
-/// it surfaces as a gap to close when dependency source is added.
+/// When the target is not found in the graph or the entry trigger is not indexed,
+/// we use `Evidence::Opaque` with `RouteTarget::AbiSymbol` because we know the
+/// target *exists* somewhere — it just isn't in our source snapshot.
+/// The `classify_obligation` metric counts a route with `AbiSymbol` target and
+/// `Opaque` evidence as `Resolved` (not `Unknown`) because the symbol boundary
+/// is known and retains its identity; this aligns with L3's External classification.
 pub fn resolve_object_run(
     from: AppRef,
     object_kind: ObjectKind,
@@ -304,12 +308,11 @@ pub fn resolve_object_run(
 
     let Some(target_obj) = target_obj else {
         // Target is named/numbered but absent from the graph: not-in-source boundary.
+        let symbol_key = format!("{:?}::{}", object_kind, target_ref);
         return (
             DispatchShape::Exact,
-            SetCompleteness::Partial {
-                reason: OpenWorldReason::RuntimeTypeUnbounded,
-            },
-            vec![opaque_boundary_route()],
+            SetCompleteness::Complete,
+            vec![opaque_boundary_route(from, symbol_key)],
         );
     };
 
@@ -325,12 +328,11 @@ pub fn resolve_object_run(
 
     let Some(entry_rid) = entry_rid else {
         // Trigger not found in index — Opaque (e.g. an object with no explicit trigger).
+        let symbol_key = target_obj.name.clone();
         return (
             DispatchShape::Exact,
-            SetCompleteness::Partial {
-                reason: OpenWorldReason::RuntimeTypeUnbounded,
-            },
-            vec![opaque_boundary_route()],
+            SetCompleteness::Complete,
+            vec![opaque_boundary_route(target_obj.id.app, symbol_key)],
         );
     };
 
@@ -1032,7 +1034,7 @@ codeunit 50202 "AnotherCaller"
         let body_map = BodyMap::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
-        let (shape, _completeness, routes) = resolve_object_run(
+        let (shape, completeness, routes) = resolve_object_run(
             from,
             ObjectKind::Codeunit,
             Some("NonExistentCU"), // not in graph
@@ -1047,13 +1049,80 @@ codeunit 50202 "AnotherCaller"
             DispatchShape::Exact,
             "not-in-graph is still an exact dispatch"
         );
+        assert_eq!(
+            completeness,
+            SetCompleteness::Complete,
+            "not-in-graph target is a known boundary (Complete, not RuntimeTypeUnbounded)"
+        );
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
-        assert_eq!(r.target, RouteTarget::Unresolved);
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "target must be AbiSymbol (not Unresolved); got {:?}",
+            r.target
+        );
         assert_eq!(
             r.evidence,
             Evidence::Opaque,
             "not-in-source boundary must use Opaque evidence"
+        );
+        assert!(
+            matches!(r.witness, Witness::AbiSymbol { .. }),
+            "AbiSymbol target must pair with AbiSymbol witness; got {:?}",
+            r.witness
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (d-ii): Target in graph but entry trigger not found → AbiSymbol Opaque
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn object_run_entry_trigger_not_found_emits_opaque() {
+        let src: &'static str = r#"
+codeunit 50203 "NoTriggerCU"
+{
+    // Note: no OnRun trigger defined
+    procedure SomeProc()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "NoTriggerCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from = sole_app_ref(&graph);
+        let (shape, completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            Some("NoTriggerCU"), // in graph but no OnRun trigger
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(
+            completeness,
+            SetCompleteness::Complete,
+            "object exists; trigger-not-found is a known boundary (Complete)"
+        );
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "target must be AbiSymbol; got {:?}",
+            r.target
+        );
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(
+            matches!(r.witness, Witness::AbiSymbol { .. }),
+            "AbiSymbol target must pair with AbiSymbol witness"
         );
     }
 
