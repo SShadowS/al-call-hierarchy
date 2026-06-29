@@ -30,9 +30,24 @@ fn one_missing_site_does_not_cascade() {
         .iter()
         .filter(|m| matches!(m, SiteMatch::FreshOnly(_)))
         .count();
+    let l3_only = matches
+        .iter()
+        .filter(|m| matches!(m, SiteMatch::L3Only(_)))
+        .count();
+    let unaligned = matches
+        .iter()
+        .filter(|m| matches!(m, SiteMatch::Unaligned(_, _)))
+        .count();
     // 4 clean pairs; the 2nd fresh site is the single FreshOnly; NO cascade on 3/4/5.
     assert_eq!(paired, 4, "matches: {matches:?}");
     assert_eq!(fresh_only, 1);
+    assert_eq!(
+        matches.len(),
+        5,
+        "every site must be in exactly one bucket: {matches:?}"
+    );
+    assert_eq!(l3_only, 0, "no L3-only sites in this test");
+    assert_eq!(unaligned, 0, "no unaligned duplicates in this test");
 }
 
 // ---------------------------------------------------------------------------

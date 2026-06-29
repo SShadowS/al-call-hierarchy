@@ -17,7 +17,7 @@
 //! entry in `targets`.  The stub resolver emits only `Unresolved` routes, so
 //! every stub edge projects to an empty `targets` set.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
@@ -443,11 +443,13 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
             .push(i);
     }
 
-    let all_group_keys: HashSet<GroupKey> = fresh_groups
+    let mut all_group_keys: Vec<GroupKey> = fresh_groups
         .keys()
         .chain(l3_groups.keys())
         .cloned()
         .collect();
+    all_group_keys.sort_unstable();
+    all_group_keys.dedup();
 
     let mut result: Vec<SiteMatch> = Vec::new();
     let empty: Vec<usize> = Vec::new();
@@ -479,8 +481,10 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
             l3_by_sk.entry(sk).or_default().push(li);
         }
 
-        let all_sks: HashSet<StrongKey> =
+        let mut all_sks: Vec<StrongKey> =
             fresh_by_sk.keys().chain(l3_by_sk.keys()).cloned().collect();
+        all_sks.sort_unstable();
+        all_sks.dedup();
 
         // Step 3: pair within each strong-key bucket.
         for sk in all_sks {
@@ -524,6 +528,7 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
 ///
 /// `from` is set equal to the caller key, `kind` is [`EdgeKind::Call`], and
 /// `targets` is empty.  Column offsets default to 0 / 10.
+#[doc(hidden)]
 pub fn canonical_call_edge_for_test(caller: &str, span_start: u32, fp: u64) -> CanonicalEdge {
     let parts: Vec<&str> = caller.splitn(4, ':').collect();
     let caller_key = CanonicalKey {
