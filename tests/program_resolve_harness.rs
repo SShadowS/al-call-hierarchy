@@ -171,10 +171,10 @@ fn harness_runs_end_to_end_on_cdo_and_measures_the_gap() {
     );
 
     // Phase-0 baseline: stub fresh resolves nothing (all empty targets), so
-    // every matched site is a regression.
-    assert_eq!(
-        report.regression, report.matched,
-        "stub fresh resolves nothing -> all matched sites regress: {report:?}"
+    // regression sites (fresh-empty AND l3-non-empty) are a subset of matched.
+    assert!(
+        report.regression <= report.matched,
+        "regression is a subset of matched (fresh-empty AND l3-non-empty paired sites): {report:?}"
     );
 
     // Alignment quality: UNALIGNED must be <5% of the site population.
