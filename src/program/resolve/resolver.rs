@@ -77,9 +77,11 @@ fn extension_base_kind(kind: ObjectKind) -> Option<ObjectKind> {
 ///
 /// - If the routine is in the `BodyMap` (source-bearing): `Evidence::Source` +
 ///   `Witness::SourceSpan { file: virtual_path, span: (start_byte, end_byte) }`.
-/// - If the routine is NOT in the `BodyMap` (integration gap): `Evidence::Unknown` +
-///   `Witness::None`.  In Phase 2 all ProgramGraph routines are source-tier, so a
-///   BodyMap miss is a real integration bug that must surface in `real_unknown_rate`.
+/// - If the routine is `SymbolOnly` (dep boundary, body unavailable): `Evidence::Opaque` +
+///   `Witness::AbiSymbol` — the symbol identity is retained as a boundary marker.
+/// - If the routine is NOT in the `BodyMap` (integration gap on a source-bearing tier):
+///   `Evidence::Unknown` + `Witness::None`.  Surface this as Unknown so the gap shows up
+///   in `real_unknown_rate` rather than being silently hidden.
 fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyMap<'_>) -> Route {
     if let Some((decl, path)) = body_map.get_with_path(rid) {
         Route {
@@ -91,11 +93,28 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
                 span: (decl.origin.byte.start as u32, decl.origin.byte.end as u32),
             },
         }
+    } else if obj_tier == TrustTier::SymbolOnly {
+        // SymbolOnly routine: body unavailable (loaded from .app SymbolReference,
+        // no source parse).  We know the symbol exists at this ABI boundary, so
+        // return Opaque rather than Unknown.  This preserves identity across the
+        // boundary and classifies the route as `Resolved` (not `Unknown`) in the
+        // obligation metric, matching L3's External treatment of dep symbols.
+        let symbol_key = format!("{:?}::{}", rid.object.kind, rid.name_lc);
+        Route {
+            target: RouteTarget::AbiSymbol {
+                app: rid.object.app,
+                symbol_key: symbol_key.clone(),
+            },
+            evidence: Evidence::Opaque,
+            condition: None,
+            witness: Witness::AbiSymbol {
+                app: rid.object.app,
+                symbol_key,
+            },
+        }
     } else {
-        // BodyMap miss: the routine was resolved from the ProgramGraph (always
-        // source-tier in Phase 2) but is absent from the parsed snapshot — a
-        // real integration gap.  Surface it as Unknown so the gap shows up in
-        // `real_unknown_rate` rather than being silently hidden.
+        // Source-tier BodyMap miss: integration bug.  Surface it as Unknown so
+        // the gap shows up in `real_unknown_rate` rather than being silently hidden.
         Route {
             target: RouteTarget::Unresolved,
             evidence: Evidence::Unknown,
@@ -112,6 +131,11 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
 /// false-confident edge to a wrong-arity candidate (does NOT fall through to the
 /// next precedence level; see module-level doc).  Returns `None` only when the
 /// name is absent entirely in `obj_id`.
+///
+/// **SymbolOnly tier exception:** parameter info is unavailable (no parsed body),
+/// so arity matching is impossible.  Any name match immediately produces an
+/// `Opaque` boundary route (via [`make_routine_route`]) rather than a false
+/// Unknown that would regress vs L3's External resolution.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -125,7 +149,19 @@ fn resolve_in_object(
         return None;
     }
 
-    // Arity-exact match preferred.
+    // SymbolOnly: no params info is available, so arity checking is impossible.
+    // Use the first candidate directly; `make_routine_route` returns an Opaque
+    // boundary route for SymbolOnly BodyMap misses.
+    if obj_tier == TrustTier::SymbolOnly {
+        // SAFETY: candidates is non-empty (checked above).
+        return Some(make_routine_route(
+            candidates.first().unwrap(),
+            obj_tier,
+            body_map,
+        ));
+    }
+
+    // Arity-exact match preferred (source-bearing tiers only).
     if let Some(rid) = candidates.iter().find(|rid| {
         body_map
             .get(rid)
@@ -135,8 +171,25 @@ fn resolve_in_object(
         return Some(make_routine_route(rid, obj_tier, body_map));
     }
 
-    // Name found but no overload matches the requested arity: emit Unknown
-    // rather than a false-confident route to the wrong-arity candidate.
+    // AL overloads: multiple procedures share the same `RoutineNodeId` (same
+    // object + name_lc + enclosing_member_lc) because the node model has no
+    // per-overload discriminant.  The ResolveIndex pushes one entry per IR
+    // routine so `candidates.len() > 1` is the reliable overload signal.
+    // BodyMap stores the last-written overload's params, so the arity-exact
+    // search above only sees ONE overload's params.  When the name unambiguously
+    // exists in this object (overloads present) use the first candidate; the
+    // canonical target is the same for every overload (shared RoutineNodeId).
+    if candidates.len() > 1 {
+        // SAFETY: candidates.len() > 1 implies non-empty.
+        return Some(make_routine_route(
+            candidates.first().unwrap(),
+            obj_tier,
+            body_map,
+        ));
+    }
+
+    // Single candidate, name found but arity mismatch: emit Unknown rather than
+    // a false-confident route to the wrong-arity procedure.
     Some(Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,

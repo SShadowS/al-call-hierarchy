@@ -34,7 +34,15 @@ pub enum CalleeShape {
     /// An object-run: `Codeunit.Run(...)`, `Page.Run(...)`, `Report.Run(...)`.
     ObjectRun {
         object_kind: String,
+        /// Static first argument: the target object name or numeric id, or `None`
+        /// when the first argument is a runtime variable (dynamic dispatch).
+        /// Derived from `ExprKind::DatabaseReference` only; non-DatabaseReference
+        /// arguments produce `None` (mirrors L3's `object_run_callee`).
         target_ref: Option<String>,
+        /// `true` when `target_ref` is a name (quoted or bare identifier),
+        /// `false` when it is a decimal integer id.
+        /// Meaningful only when `target_ref` is `Some`.
+        target_is_name: bool,
     },
     /// A record operation on an explicit record-typed receiver: `Rec.SetRange(...)`.
     RecordOp { receiver_text: String, op: String },
@@ -219,18 +227,42 @@ fn classify_call(
             }
 
             // --- Check 2: ObjectRun -----------------------------------------------
-            // Mirrors L2: `obj.origin.kind_text == "keyword_identifier"` AND
-            // method is "run". The object kind ("Codeunit"/"Page"/"Report") is
-            // derived from `object_run_kind`; target_ref is the first arg's raw text.
+            // Mirrors L2's `object_run_callee`: receiver is `keyword_identifier`
+            // (Codeunit/Page/Report) AND method is "run".
+            // Target extraction: only `ExprKind::DatabaseReference` arguments carry
+            // a static target; all other argument kinds (variables, integer literals
+            // NOT wrapped in DatabaseReference) produce `target_ref = None` (dynamic
+            // dispatch — mirrors L3's behaviour).
             if obj.origin.kind_text == "keyword_identifier" && method_lc == "run" {
                 let obj_text = &src[obj.origin.byte.clone()];
                 if let Some(okind) = object_run_kind(obj_text) {
-                    let target_ref = args
-                        .first()
-                        .map(|&a| src[file.ir.expr(a).origin.byte.clone()].to_string());
+                    let mut target_ref: Option<String> = None;
+                    let mut target_is_name = false;
+                    if let Some(&first_arg) = args.first()
+                        && let ExprKind::DatabaseReference(text) = &file.ir.expr(first_arg).kind
+                        && let Some((_, tn)) = text.split_once("::")
+                    {
+                        let tn = tn.trim();
+                        if tn.starts_with('"') {
+                            // Quoted name: strip surrounding quotes.
+                            target_ref = Some(strip_quote_chars(tn));
+                            target_is_name = true;
+                        } else if tn.parse::<i64>().is_ok() {
+                            // Decimal integer id.
+                            target_ref = Some(tn.to_string());
+                            // target_is_name stays false
+                        } else {
+                            // Bare (unquoted) name.
+                            target_ref = Some(tn.to_string());
+                            target_is_name = true;
+                        }
+                        // Non-DatabaseReference first arg (variable, expression, etc.)
+                        // → let-chain falls through; target_ref stays None (dynamic).
+                    }
                     return CalleeShape::ObjectRun {
                         object_kind: okind.to_string(),
                         target_ref,
+                        target_is_name,
                     };
                 }
             }

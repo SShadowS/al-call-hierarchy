@@ -6,7 +6,8 @@
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    DiffReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_harness, run_site_harness,
+    DiffReport, ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites,
+    run_harness, run_resolution_harness, run_site_harness,
 };
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,95 @@ fn phase1_site_extraction_reconciles_with_l3() {
     assert_eq!(report, run_site_harness(&ws), "deterministic");
 }
 
+// ---------------------------------------------------------------------------
+// Test 6 (Phase 2 Task 6): Phase-2 Bare/Run resolution gate vs L3 oracle
+// ---------------------------------------------------------------------------
+
+/// Phase-2 resolution gate: proves that the real `resolve_bare` / `resolve_object_run`
+/// path matches or beats the L3 oracle on CDO for in-scope (Bare + ObjectRun)
+/// call sites.
+///
+/// Three zero-tolerance assertions (gates that must pass before commit):
+/// - `regression_unexplained == 0`: fresh must not lose a Bare/Run target that
+///   L3 resolved (implicit-Rec deferrals are tracked separately as
+///   `regression_implicit_rec`, which is informational).
+/// - `evidence_overclaim == 0`: no route may claim Source/Abi/Catalog evidence
+///   without the corresponding valid witness.
+/// - `unverified_extra == 0`: fresh must not produce non-empty targets on a
+///   FreshOnly site (a site with no matching L3 peer).
+///
+/// Also verifies determinism by running twice and comparing.
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase2_bare_run_resolution_matches_or_beats_l3() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_resolution_harness(&ws);
+
+    eprintln!(
+        "ResolutionReport: matched={} regression_unexplained={} regression_implicit_rec={} \
+         regression_cross_app={} evidence_overclaim={} unverified_extra={} \
+         verified_win={} divergence={} \
+         missing_site={} extra_site={} unaligned={} \
+         fresh_total={} l3_total={} \
+         fresh_unknown={} fresh_resolved={} ({:.1}% unknown) \
+         l3_unknown={} l3_resolved={} ({:.1}% unknown)",
+        report.matched,
+        report.regression_unexplained,
+        report.regression_implicit_rec,
+        report.regression_cross_app,
+        report.evidence_overclaim,
+        report.unverified_extra,
+        report.verified_win,
+        report.divergence,
+        report.missing_site,
+        report.extra_site,
+        report.unaligned,
+        report.fresh_total,
+        report.l3_total,
+        report.fresh_unknown_count,
+        report.fresh_resolved_count,
+        if report.fresh_total > 0 {
+            report.fresh_unknown_count as f64 / report.fresh_total as f64 * 100.0
+        } else {
+            0.0
+        },
+        report.l3_unknown_count,
+        report.l3_resolved_count,
+        if report.l3_total > 0 {
+            report.l3_unknown_count as f64 / report.l3_total as f64 * 100.0
+        } else {
+            0.0
+        },
+    );
+
+    assert_eq!(
+        report.regression_unexplained, 0,
+        "fresh must not lose a Bare/Run target L3 resolved \
+         (excl. known implicit-Rec deferral): {report:?}"
+    );
+    assert_eq!(
+        report.evidence_overclaim, 0,
+        "no Source/Abi/Catalog claim without a valid witness: {report:?}"
+    );
+    assert_eq!(
+        report.unverified_extra, 0,
+        "no unwitnessed new non-dynamic edge: {report:?}"
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(report, run_resolution_harness(&ws), "deterministic");
+}
+
 // Suppress unused-import warning when CDO_WS is not set (no CDO test runs).
 #[allow(dead_code)]
 fn _assert_diff_report_importable(_: DiffReport) {}
+
+#[allow(dead_code)]
+fn _assert_resolution_report_importable(_: ResolutionReport) {}

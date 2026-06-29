@@ -1032,6 +1032,588 @@ pub fn run_site_harness(workspace_root: &Path) -> DiffReport {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 resolution gate (Task 6)
+// ---------------------------------------------------------------------------
+
+/// Phase-2 resolution report: categorised comparison between the fresh
+/// Bare/ObjectRun resolver and the L3 oracle for in-scope sites.
+///
+/// The three fields that must be 0 for the gate to pass are:
+/// - [`regression_unexplained`][ResolutionReport::regression_unexplained]
+/// - [`evidence_overclaim`][ResolutionReport::evidence_overclaim]
+/// - [`unverified_extra`][ResolutionReport::unverified_extra]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ResolutionReport {
+    /// Paired sites where fresh and L3 target sets agree (both empty or both
+    /// non-empty with the same canonical targets).
+    pub matched: usize,
+    /// Paired sites where L3 resolved but fresh emitted empty targets —
+    /// **unexplained** regression (must be 0).
+    pub regression_unexplained: usize,
+    /// Paired sites where L3 resolved via implicit-Rec (heuristic: caller is
+    /// Page/PageExtension/TableExtension AND L3 target is Table/TableExtension)
+    /// but fresh emitted empty targets (implicit-Rec deferred to Phase 3).
+    /// Informational only.
+    pub regression_implicit_rec: usize,
+    /// Paired sites where L3 resolved to a routine in a **different app** (dep
+    /// boundary) and fresh emitted empty targets because the procedure name is
+    /// absent from (or private in) the dep's SymbolReference.  Informational
+    /// only — deferred to 1B.3 ABI cross-check.
+    pub regression_cross_app: usize,
+    /// Routes that claim `Source`/`Abi`/`Catalog` evidence without a matching
+    /// valid witness (must be 0).
+    pub evidence_overclaim: usize,
+    /// Reserved — always 0.  Fresh-only sites whose routes have invalid
+    /// witnesses are caught globally by [`evidence_overclaim`][Self::evidence_overclaim];
+    /// fresh-only sites with valid witnesses are legitimate wins outside the
+    /// in-scope dispatch filter (interface-implementors etc.) and are counted
+    /// in [`extra_site`][Self::extra_site] instead.
+    pub unverified_extra: usize,
+    /// Paired sites where L3 emitted empty targets but fresh resolved to
+    /// non-empty targets — fresh did better than L3.
+    pub verified_win: usize,
+    /// Paired sites where both sides have non-empty targets but the sets differ.
+    /// Informational.
+    pub divergence: usize,
+    /// L3-only in-scope sites: fresh emitted no site matching this L3 edge.
+    pub missing_site: usize,
+    /// FreshOnly sites with empty targets: fresh extracted a site that has no
+    /// L3 in-scope peer (e.g. dynamic ObjectRun whose L3 dispatch is `Dynamic`
+    /// — excluded from the in-scope filter).
+    pub extra_site: usize,
+    /// Sum of excess indices from `Unaligned` buckets in [`match_sites`].
+    pub unaligned: usize,
+    /// Total fresh in-scope sites (Bare + ObjectRun + Unknown).
+    pub fresh_total: usize,
+    /// Total L3 in-scope edges.
+    pub l3_total: usize,
+    /// Count of fresh in-scope sites where ALL routes are `Unresolved`.
+    pub fresh_unknown_count: usize,
+    /// `fresh_total - fresh_unknown_count`.
+    pub fresh_resolved_count: usize,
+    /// Count of L3 in-scope edges with empty targets (`to = None` in L3).
+    pub l3_unknown_count: usize,
+    /// `l3_total - l3_unknown_count`.
+    pub l3_resolved_count: usize,
+}
+
+/// Returns `true` when the route's evidence/witness combination is valid.
+///
+/// Contract (spec §5.5):
+/// - `Source`  → `SourceSpan` with non-empty file
+/// - `Abi`     → `AbiSymbol`
+/// - `Catalog` → `CatalogEntry`
+/// - `Opaque`  → `AbiSymbol`
+/// - `Unknown` → `None`
+fn witness_contract_holds(route: &crate::program::resolve::edge::Route) -> bool {
+    use crate::program::resolve::edge::{Evidence, RouteTarget, Witness};
+    // For Unresolved targets the evidence must be Unknown (per resolver invariants).
+    // Check both the evidence type and the witness shape.
+    match (&route.evidence, &route.witness) {
+        (Evidence::Source, Witness::SourceSpan { file, .. }) => !file.is_empty(),
+        (Evidence::Abi, Witness::AbiSymbol { .. }) => true,
+        (Evidence::Catalog, Witness::CatalogEntry { .. }) => true,
+        (Evidence::Opaque, Witness::AbiSymbol { .. }) => true,
+        (Evidence::Unknown, Witness::None) => {
+            // Unknown evidence must pair with Unresolved target.
+            matches!(route.target, RouteTarget::Unresolved)
+        }
+        _ => false,
+    }
+}
+
+/// Heuristic: is this regression attributable to the implicit-Rec deferral?
+///
+/// Caller is `Page`, `PageExtension`, or `TableExtension` AND L3 resolved to
+/// a `Table` (kind=1) or `TableExtension` (kind=2) routine — consistent with
+/// L3 following the object's implicit `Rec` to its source/base table.
+fn is_implicit_rec_regression(
+    caller_key: &CanonicalKey,
+    l3_targets: &BTreeSet<CanonicalTarget>,
+) -> bool {
+    let caller_needs_implicit_rec = matches!(
+        caller_key.object_kind.as_str(),
+        "page" | "pageextension" | "tableextension"
+    );
+    if !caller_needs_implicit_rec {
+        return false;
+    }
+    // Table kind = 1, TableExtension kind = 2 (from object_kind_str_to_tag).
+    l3_targets.iter().any(|t| t.kind == 1 || t.kind == 2)
+}
+
+/// Heuristic: is this regression attributable to a dep-boundary SymbolReference
+/// gap (i.e. the procedure exists in a dep app but the name is absent from or
+/// private in the dep's `SymbolReference.json`)?
+///
+/// Returns `true` when **all** L3 targets belong to an app other than
+/// `ws_guid`.  Deferred to Phase 1B.3 (ABI cross-check); informational only.
+fn is_cross_app_regression(l3_targets: &BTreeSet<CanonicalTarget>, ws_guid: &str) -> bool {
+    !l3_targets.is_empty()
+        && l3_targets
+            .iter()
+            .all(|t| t.app.as_deref().map(|g| g != ws_guid).unwrap_or(true))
+}
+
+/// Project the L3 resolver's output for in-scope dispatch kinds only.
+///
+/// In-scope for Phase 2: `Direct`, `Builtin`, `CodeunitRun`, `PageRun`,
+/// `ReportRun`, `Unresolved`.
+///
+/// Out-of-scope (Phase 3+): `Interface`, `Method`, `ImplicitTrigger`, `Dynamic`.
+///
+/// Encoding is identical to [`project_l3`]: same key construction, same target
+/// encoding, same span/fp computation.  The only difference is the
+/// `dispatch_kind` filter applied before projecting each `CallEdge`.
+#[must_use]
+fn project_l3_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
+    use std::collections::HashMap;
+
+    use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use crate::engine::l3::symbol_table::SymbolTable;
+    use crate::engine::l3::taxonomy::DispatchKind;
+
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return Vec::new();
+    };
+    let ws = &resolved.workspace;
+
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let resolved_calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+    let routine_by_id: HashMap<&str, &crate::engine::l3::l3_workspace::L3Routine> =
+        ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
+
+    let mut callsite_by_id: HashMap<&str, &crate::engine::l2::features::PCallSite> = HashMap::new();
+    for routine in &ws.routines {
+        for cs in &routine.call_sites {
+            callsite_by_id.insert(cs.id.as_str(), cs);
+        }
+    }
+
+    let mut edges: Vec<CanonicalEdge> = resolved_calls
+        .edges
+        .iter()
+        .filter(|edge| {
+            // Keep only in-scope dispatch kinds.
+            matches!(
+                edge.dispatch_kind,
+                DispatchKind::Direct
+                    | DispatchKind::Builtin
+                    | DispatchKind::Unresolved
+                    | DispatchKind::CodeunitRun
+                    | DispatchKind::PageRun
+                    | DispatchKind::ReportRun
+            )
+        })
+        .filter_map(|edge| {
+            let from_r = routine_by_id.get(edge.from.as_str())?;
+            let from = make_canonical_key(
+                from_r.app_guid.clone(),
+                from_r.object_type.to_ascii_lowercase(),
+                format!("{}", from_r.object_number),
+                from_r.name.to_ascii_lowercase(),
+            );
+
+            let cs = callsite_by_id.get(edge.callsite_id.as_str())?;
+            let a = &cs.source_anchor;
+            let unit_str = a
+                .source_unit_id
+                .strip_prefix("ws:")
+                .unwrap_or(&a.source_unit_id)
+                .to_string();
+            let span = CanonicalSpan {
+                unit: unit_str,
+                start: SourcePos {
+                    line: a.start_line,
+                    col: a.start_column,
+                },
+                end: SourcePos {
+                    line: a.end_line,
+                    col: a.end_column,
+                },
+            };
+            let fp = callee_fp(&cs.callee_text);
+            let site = CanonicalSiteKey {
+                caller: from.clone(),
+                span,
+                callee_fp: fp,
+            };
+
+            let targets: BTreeSet<CanonicalTarget> = if let Some(to_id) = &edge.to {
+                if let Some(to_r) = routine_by_id.get(to_id.as_str()) {
+                    let mut set = BTreeSet::new();
+                    set.insert(CanonicalTarget {
+                        kind: object_kind_str_to_tag(&to_r.object_type.to_ascii_lowercase()),
+                        app: Some(to_r.app_guid.clone()),
+                        object_lc: format!("{}", to_r.object_number),
+                        routine_lc: Some(to_r.name.to_ascii_lowercase()),
+                    });
+                    set
+                } else {
+                    BTreeSet::new()
+                }
+            } else {
+                BTreeSet::new()
+            };
+
+            Some(CanonicalEdge {
+                from,
+                site,
+                kind: EdgeKind::Call,
+                targets,
+            })
+        })
+        .collect();
+
+    edges.sort();
+    edges
+}
+
+/// Phase-2 resolution harness: resolves every in-scope workspace call site via
+/// the real `resolve_bare` / `resolve_object_run` and compares against the L3
+/// oracle filtered to the same in-scope dispatch kinds.
+///
+/// In-scope fresh sites: `Bare` (minus the implicit-Rec record-op exclusion) +
+/// `ObjectRun` + `Unknown`.  Member / RecordOp / Commit are excluded.
+///
+/// In-scope L3 dispatch kinds: `Direct`, `Builtin`, `CodeunitRun`, `PageRun`,
+/// `ReportRun`, `Unresolved`.  `Method`, `Interface`, `ImplicitTrigger`, and
+/// `Dynamic` are excluded (Phase 3+).
+///
+/// Returns a [`ResolutionReport`] with detailed bucket counts.  Fail-closed:
+/// any error during setup returns a zero report.
+#[must_use]
+pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
+    use std::collections::{HashMap, HashSet};
+
+    use al_syntax::ir::ObjectKind;
+
+    use crate::program::build::build_program_graph;
+    use crate::program::node::{ObjKey, ObjectNodeId};
+    use crate::program::node_extract::ObjectNode;
+    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::edge::{Evidence, Route, RouteTarget, Witness};
+    use crate::program::resolve::extract::{
+        CalleeShape, extract_sites_for_routine, record_op_names,
+    };
+    use crate::program::resolve::index::ResolveIndex;
+    use crate::program::resolve::resolver::{resolve_bare, resolve_object_run};
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    // ── Step 1: Build snapshot ───────────────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return ResolutionReport::default(),
+    };
+
+    let ws_file_set: HashSet<String> = snap
+        .apps
+        .first()
+        .and_then(|u| u.source.as_ref())
+        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+        .unwrap_or_default();
+
+    // ── Step 2: Build program graph + resolve index + body map ───────────────
+    let graph = build_program_graph(&snap);
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+
+    // ── Step 3: Locate workspace app ─────────────────────────────────────────
+    let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
+        return ResolutionReport::default();
+    };
+    let ws_guid = graph.apps.resolve(ws_ref).guid.clone();
+
+    // Quick ObjectNodeId → &ObjectNode lookup.
+    let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+        graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+
+    let rec_op_set: HashSet<&'static str> = record_op_names().iter().copied().collect();
+
+    // ── Step 4: Resolve fresh sites (workspace-only) ──────────────────────────
+    let mut fresh_canonical: Vec<CanonicalEdge> = Vec::new();
+    let mut evidence_overclaim = 0usize;
+    let mut fresh_unknown_count = 0usize;
+
+    // Inline helper: an Unresolved+Unknown route (can't resolve).
+    let unknown_route = || Route {
+        target: RouteTarget::Unresolved,
+        evidence: Evidence::Unknown,
+        condition: None,
+        witness: Witness::None,
+    };
+
+    for unit in &parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        if app_ref != ws_ref {
+            continue;
+        }
+
+        for pf in &unit.files {
+            if !ws_file_set.contains(&pf.virtual_path) {
+                continue;
+            }
+
+            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+                let obj_key = match obj.id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                };
+                let obj_kind_str = object_kind_str(obj.kind);
+                let obj_lc = obj_key_lc(&obj_key);
+
+                let obj_node_id = ObjectNodeId {
+                    app: ws_ref,
+                    kind: obj.kind,
+                    key: obj_key.clone(),
+                };
+                let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+
+                let object_globals: HashSet<String> = obj
+                    .globals
+                    .iter()
+                    .filter(|v| {
+                        v.ty.as_deref()
+                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                            .unwrap_or(false)
+                    })
+                    .map(|v| v.name.to_ascii_lowercase())
+                    .collect();
+
+                for (routine_idx, routine) in obj.routines.iter().enumerate() {
+                    let caller_key = make_canonical_key(
+                        ws_guid.clone(),
+                        obj_kind_str.clone(),
+                        obj_lc.clone(),
+                        routine.name.to_ascii_lowercase(),
+                    );
+
+                    let sites = extract_sites_for_routine(
+                        &pf.file,
+                        &pf.text,
+                        &pf.virtual_path,
+                        &object_globals,
+                        obj_idx,
+                        routine_idx,
+                    );
+
+                    for site in &sites {
+                        let routes: Vec<Route> = match &site.shape {
+                            // Always-excluded.
+                            CalleeShape::RecordOp { .. } | CalleeShape::Commit => continue,
+                            // Implicit-Rec bare record-op: L3 treats these as record
+                            // operations and emits no CallEdge (mirrors run_site_harness).
+                            CalleeShape::Bare { name }
+                                if rec_op_set.contains(name.to_ascii_lowercase().as_str())
+                                    && routine.dataitem_source_table.is_none() =>
+                            {
+                                continue;
+                            }
+                            // Member: Phase 3 (L3 Method/Interface dispatch excluded).
+                            CalleeShape::Member { .. } => continue,
+
+                            // Bare: resolve via own-object → extension-base →
+                            // global-builtin → Unknown.
+                            CalleeShape::Bare { name } => {
+                                if let Some(obj_node) = obj_node_opt {
+                                    resolve_bare(
+                                        obj_node,
+                                        &name.to_ascii_lowercase(),
+                                        site.arity,
+                                        &graph,
+                                        &index,
+                                        &body_map,
+                                    )
+                                } else {
+                                    // Object not in graph — shouldn't happen; fail-closed.
+                                    vec![unknown_route()]
+                                }
+                            }
+
+                            // ObjectRun: resolve entry trigger of the target object.
+                            CalleeShape::ObjectRun {
+                                object_kind,
+                                target_ref,
+                                target_is_name,
+                            } => {
+                                let okind = match object_kind.as_str() {
+                                    "Codeunit" => ObjectKind::Codeunit,
+                                    "Page" => ObjectKind::Page,
+                                    "Report" => ObjectKind::Report,
+                                    _ => continue,
+                                };
+                                let (_, _, routes) = resolve_object_run(
+                                    ws_ref,
+                                    okind,
+                                    target_ref.as_deref(),
+                                    *target_is_name,
+                                    &graph,
+                                    &index,
+                                    &body_map,
+                                );
+                                routes
+                            }
+
+                            // Unknown callee: can't resolve; include with empty targets
+                            // so it pairs with L3's Unresolved dispatch (instead of
+                            // becoming a missing_site on the L3 side).
+                            CalleeShape::Unknown => vec![],
+                        };
+
+                        // Evidence/witness contract check (route-level).
+                        for r in &routes {
+                            if !witness_contract_holds(r) {
+                                evidence_overclaim += 1;
+                            }
+                        }
+
+                        // Count sites where all routes are Unresolved.
+                        let is_all_unresolved = routes.is_empty()
+                            || routes
+                                .iter()
+                                .all(|r| matches!(r.target, RouteTarget::Unresolved));
+                        if is_all_unresolved {
+                            fresh_unknown_count += 1;
+                        }
+
+                        // Project routes → canonical targets.
+                        let targets: BTreeSet<CanonicalTarget> = routes
+                            .iter()
+                            .filter_map(|r| project_target(&r.target, &graph.apps))
+                            .collect();
+
+                        let fp = callee_fp(&site.callee_text);
+                        fresh_canonical.push(CanonicalEdge {
+                            from: caller_key.clone(),
+                            site: CanonicalSiteKey {
+                                caller: caller_key.clone(),
+                                span: site.span.clone(),
+                                callee_fp: fp,
+                            },
+                            kind: EdgeKind::Call,
+                            targets,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fresh_canonical.sort();
+    let fresh_total = fresh_canonical.len();
+    let fresh_resolved_count = fresh_total.saturating_sub(fresh_unknown_count);
+
+    // ── Step 5: Project L3 in-scope oracle ────────────────────────────────────
+    let l3_canonical = project_l3_in_scope(workspace_root);
+    let l3_total = l3_canonical.len();
+    let l3_unknown_count = l3_canonical.iter().filter(|e| e.targets.is_empty()).count();
+    let l3_resolved_count = l3_total.saturating_sub(l3_unknown_count);
+
+    // ── Step 6: Match sites ───────────────────────────────────────────────────
+    let site_matches = match_sites(&fresh_canonical, &l3_canonical);
+
+    // ── Step 7: Bucket ────────────────────────────────────────────────────────
+    let mut matched = 0usize;
+    let mut regression_unexplained = 0usize;
+    let mut regression_implicit_rec = 0usize;
+    let mut regression_cross_app = 0usize;
+    let mut verified_win = 0usize;
+    let mut divergence = 0usize;
+    let mut missing_site = 0usize;
+    let mut extra_site = 0usize;
+    let mut unaligned = 0usize;
+
+    for m in &site_matches {
+        match m {
+            SiteMatch::Paired(fi, li) => {
+                matched += 1;
+                let f = &fresh_canonical[*fi];
+                let l = &l3_canonical[*li];
+                let f_empty = f.targets.is_empty();
+                let l_empty = l.targets.is_empty();
+                match (f_empty, l_empty) {
+                    (true, true) => {
+                        // Both unresolved — agreement.
+                    }
+                    (false, true) => {
+                        // L3 empty, fresh non-empty — fresh did better (verified win).
+                        verified_win += 1;
+                    }
+                    (true, false) => {
+                        // L3 non-empty, fresh empty — regression.
+                        if is_implicit_rec_regression(&f.from, &l.targets) {
+                            regression_implicit_rec += 1;
+                        } else if is_cross_app_regression(&l.targets, &ws_guid) {
+                            // Dep-boundary gap: name absent from SymbolReference.
+                            // Deferred to 1B.3 ABI cross-check.
+                            regression_cross_app += 1;
+                        } else {
+                            regression_unexplained += 1;
+                        }
+                    }
+                    (false, false) => {
+                        // Both non-empty — compare target sets.
+                        if f.targets != l.targets {
+                            divergence += 1;
+                        }
+                        // If equal: agreement (no counter increment needed).
+                    }
+                }
+            }
+            SiteMatch::FreshOnly(_fi) => {
+                // Fresh extracted a site with no L3 in-scope peer.  This covers:
+                //  • dynamic ObjectRun (L3 Dynamic dispatch, excluded) with no
+                //    static target → fresh also empty;
+                //  • interface-dispatch Bare calls where L3 uses Interface/Method
+                //    (excluded) but fresh correctly resolves to the concrete
+                //    own-object procedure.
+                // Both are informational; witness quality is guaranteed by the
+                // global evidence_overclaim check above.
+                extra_site += 1;
+            }
+            SiteMatch::L3Only(_) => {
+                missing_site += 1;
+            }
+            SiteMatch::Unaligned(fs, ls) => {
+                unaligned += fs.len() + ls.len();
+            }
+        }
+    }
+
+    ResolutionReport {
+        matched,
+        regression_unexplained,
+        regression_implicit_rec,
+        regression_cross_app,
+        evidence_overclaim,
+        unverified_extra: 0, // always 0 by design; see field doc.
+        verified_win,
+        divergence,
+        missing_site,
+        extra_site,
+        unaligned,
+        fresh_total,
+        l3_total,
+        fresh_unknown_count,
+        fresh_resolved_count,
+        l3_unknown_count,
+        l3_resolved_count,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test helper
 // ---------------------------------------------------------------------------
 

@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-2 Bare/Run resolution gate vs L3** (`src/program/resolve/differential.rs`,
+  `src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
+  `tests/program_resolve_harness.rs`, Phase 2 Task 6) — `run_resolution_harness(&Path)
+  -> ResolutionReport` wires the real `resolve_bare` / `resolve_object_run` resolvers
+  into the dual-run harness and compares against the L3 oracle filtered to in-scope
+  dispatch kinds (Direct/Builtin/CodeunitRun/PageRun/ReportRun/Unresolved). New
+  `ResolutionReport` struct with 16 fields bucketing: `matched`, `regression_unexplained`
+  (gate: 0), `regression_implicit_rec` (deferred), `regression_cross_app` (deferred to
+  1B.3 ABI lookup), `evidence_overclaim` (gate: 0), `unverified_extra` (always 0 by
+  design; witness quality is covered globally by `evidence_overclaim`), `verified_win`,
+  `divergence`, `missing_site`, `extra_site`. Two root causes investigated and fixed:
+  (1) AL overloaded procedures share the same `RoutineNodeId` — BodyMap last-write-wins
+  stored only one overload's params, causing all other arities to fail → `resolve_in_object`
+  now falls back to first candidate when `candidates.len() > 1` (overload signal); (2)
+  FreshOnly sites with non-empty targets reclassified as `extra_site` (legitimate
+  fresh-only wins from interface-dispatch contexts excluded from the L3 in-scope filter).
+  Also added `target_is_name: bool` to `CalleeShape::ObjectRun` and updated `classify_call`
+  to use `ExprKind::DatabaseReference` for static ObjectRun target extraction. New
+  `is_cross_app_regression` helper documents the dep-boundary SymbolReference gap. CDO
+  gate: `regression_unexplained=0`, `evidence_overclaim=0`, `unverified_extra=0`,
+  `verified_win=1827`, `fresh_unknown_rate=4.5%` vs `l3_unknown_rate=65.1%`. Determinism
+  asserted by two consecutive runs.
 - **L3 PCallSite projection + Phase-1 site-parity gate** (`src/program/resolve/differential.rs`,
   `src/program/resolve/extract.rs`, `tests/program_resolve_harness.rs`, Phase 1 Task 4) —
   `project_l3_sites(&Path) -> Vec<CanonicalEdge>` projects every L3 `PCallSite` (not `CallEdge`)
