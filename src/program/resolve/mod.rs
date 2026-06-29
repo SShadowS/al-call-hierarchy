@@ -7,5 +7,6 @@ pub mod extract_min;
 pub mod stub;
 
 pub use edge::{
-    DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, Witness,
+    DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, Route, RouteTarget,
+    SetCompleteness, Witness, classify_obligation, real_unknown_rate,
 };
