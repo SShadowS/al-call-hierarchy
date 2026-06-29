@@ -126,12 +126,12 @@ impl ResolveIndex {
     /// or [`WorldMode::AnalyzedSnapshot`] (no scoping needed; the object id is
     /// already fully-qualified).
     ///
-    /// Returns an empty `Vec` when nothing is found.
-    pub fn routines_in_object(&self, obj: &ObjectNodeId, name_lc: &str) -> Vec<RoutineNodeId> {
+    /// Returns an empty slice when nothing is found.
+    pub fn routines_in_object(&self, obj: &ObjectNodeId, name_lc: &str) -> &[RoutineNodeId] {
         self.routines_by_obj_name
             .get(&(obj.clone(), name_lc.to_string()))
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Resolve an object by its **numeric AL id** as seen from `from`
@@ -180,21 +180,21 @@ impl ResolveIndex {
     /// `base_table_name_lc` — [`WorldMode::AnalyzedSnapshot`], whole-program
     /// view (extensions live in reverse-dependent apps, outside the base
     /// table's own closure).
-    pub fn table_extensions_of(&self, base_table_name_lc: &str) -> Vec<ObjectNodeId> {
+    pub fn table_extensions_of(&self, base_table_name_lc: &str) -> &[ObjectNodeId] {
         self.table_extensions
             .get(base_table_name_lc)
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// All objects whose `implements` list (lowercased) contains
     /// `interface_name_lc` — [`WorldMode::AnalyzedSnapshot`], whole-program
     /// view (implementers live in reverse-dependent apps).
-    pub fn implementers_of(&self, interface_name_lc: &str) -> Vec<ObjectNodeId> {
+    pub fn implementers_of(&self, interface_name_lc: &str) -> &[ObjectNodeId] {
         self.implementers
             .get(interface_name_lc)
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Event subscribers of `publisher` — **Phase-1 stub, always empty**.

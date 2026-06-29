@@ -166,8 +166,8 @@ codeunit 50100 "My Codeunit"
     }
 
     #[test]
-    fn name_based_key_for_id_less_object() {
-        // Extension objects have no numeric id — key is lowercased name.
+    fn build_is_infallible_for_extension_objects() {
+        // Extension objects carry an explicit numeric id — key is `ObjKey::Id(n)`.
         let app_id = make_app_id("TestApp");
         let graph = single_app_graph(&app_id);
 
@@ -181,7 +181,7 @@ tableextension 50100 "Customer Ext" extends Customer
         let units = [unit];
         let body_map = BodyMap::build(&graph, &units);
 
-        // id=None → ObjKey::Name("customer ext")
+        // The extension has id=50100, so the parser uses ObjKey::Id(50100).
         let obj_id = ObjectNodeId {
             app: AppRef(0),
             kind: ObjectKind::TableExtension,
@@ -191,11 +191,11 @@ tableextension 50100 "Customer Ext" extends Customer
             object: obj_id,
             name_lc: "extrahelper".into(),
         };
-        // May or may not find it depending on whether the grammar records the id.
-        // The assertion here just checks there is no panic — we do NOT hardcode
-        // which key variant the parser uses for tableextension; we only assert
-        // that the BodyMap build itself is infallible.
-        let _ = body_map.get(&r_id);
+        // Verify the routine is found and correctly indexed.
+        assert!(
+            body_map.get(&r_id).is_some(),
+            "ExtraHelper must be found in extension with id=50100"
+        );
     }
 
     #[test]
