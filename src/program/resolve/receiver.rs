@@ -17,14 +17,22 @@
 //!
 //! 1. **Singletons** — hardcoded platform names (`currpage`, `session`, `this`, …)
 //!    that are never declared as AL variables; returns immediately.
-//! 2. **Implicit Rec / xRec** — `rec`/`xrec` resolve to the enclosing object's
-//!    implicit record type (Table self-id, TableExtension base, or `Record{None}`
-//!    for Page/Report where the source table is not on `ObjectNode`). Returns
-//!    `Unknown` for object kinds that have no implicit record (e.g. codeunit).
-//! 3. **Variable lookup** — searches `routine.params` then `routine.locals` then
+//! 2. **Variable lookup** — searches `routine.params` then `routine.locals` then
 //!    `object_globals` by lowercased name → calls [`classify_type_text`] on the
 //!    declared type → resolves Record table names and Object names against the graph.
-//! 4. **Unknown** — no positive typing found.
+//!    When the receiver name is `rec`/`xrec`, a variable with that name shadows
+//!    the implicit-Rec step (a Codeunit routine may declare `var Rec: Record
+//!    Customer`; the declared type is used in that case).
+//! 3. **Implicit Rec / xRec** — reached only when no variable named `rec`/`xrec`
+//!    was found in step 2: resolves to the enclosing object's implicit record type
+//!    (Table self-id, TableExtension base, or `Record{None}` for Page/Report where
+//!    the source table is not on `ObjectNode`). Returns `Unknown` for object kinds
+//!    that have no implicit record (e.g. Codeunit).
+//! 4. **Static framework type name** — when the receiver name matches a framework
+//!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
+//!    found, type it as `Framework(kind)` so Phase B dispatches the static method
+//!    via the builtin catalog.
+//! 5. **Unknown** — no positive typing found.
 //!
 //! # Clean-room note
 //!
@@ -96,6 +104,9 @@ pub enum FrameworkKind {
     SessionSettings,
     FilterPageBuilder,
     File,
+    FileUpload,
+    NumberSequence,
+    Version,
     // Dialog
     Dialog,
     // Page/Report singleton types (from receiver name, not declared type)
@@ -114,8 +125,13 @@ pub enum FrameworkKind {
     ControlAddIn,
     // Enum — static enum type used as a receiver (FromInteger / Names / Ordinals)
     Enum,
-    /// Catch-all for less-common types.  Carries the lowercased first token of
-    /// the declared type string so Phase B can still identify the catalog entry.
+    /// Programmatic-construction catch-all for less-common types encountered at
+    /// Phase-B dispatch time.  Carries the lowercased first token of the declared
+    /// type string.
+    ///
+    /// **Never emitted by [`classify_type_text`]** — all recognized type names map
+    /// to explicit variants.  This variant exists for callers (Phase B, tests) that
+    /// construct a [`FrameworkKind`] programmatically for unlisted types.
     Other(String),
 }
 
@@ -307,6 +323,9 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
         "sessionsettings" => ParsedType::Framework(FrameworkKind::SessionSettings),
         "filterpagebuilder" => ParsedType::Framework(FrameworkKind::FilterPageBuilder),
         "file" => ParsedType::Framework(FrameworkKind::File),
+        "fileupload" => ParsedType::Framework(FrameworkKind::FileUpload),
+        "numbersequence" => ParsedType::Framework(FrameworkKind::NumberSequence),
+        "version" => ParsedType::Framework(FrameworkKind::Version),
         "controladdin" => ParsedType::Framework(FrameworkKind::ControlAddIn),
         // Variant — runtime-typed, genuinely dynamic
         "variant" => ParsedType::Dynamic,
@@ -327,13 +346,18 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 /// Inference order:
 /// 1. **Singletons** — `this`, `currpage`/`page`, `currreport`/`report`, and
 ///    other platform-provided names that are never declared as AL variables.
-/// 2. **Implicit Rec / xRec** — `rec`/`xrec` resolve to the object's implicit
-///    record type; returns `Unknown` for object kinds with no implicit record.
-/// 3. **Variable lookup** — `routine.params` → `routine.locals` →
+/// 2. **Variable lookup** — `routine.params` → `routine.locals` →
 ///    `object_globals`, matched by lowercased name; the declared type is
 ///    classified via [`classify_type_text`] and names are resolved against the
-///    graph.
-/// 4. **Unknown** — no positive typing found.
+///    graph.  A variable named `rec`/`xrec` (idiomatic in Codeunits) is found
+///    here and classified by its declared type, shadowing the implicit-Rec step.
+/// 3. **Implicit Rec / xRec** — only when no variable named `rec`/`xrec` was
+///    found in step 2: resolves to the object's implicit record type; returns
+///    `Unknown` for object kinds with no implicit record (e.g. Codeunit).
+/// 4. **Static framework type name** — bare identifier matching a framework type
+///    (`XmlDocument`, `Text`, `File`, `Version`, …) with no variable found;
+///    returned as `Framework(kind)`.
+/// 5. **Unknown** — no positive typing found.
 pub fn infer_receiver_type(
     receiver_lc: &str,
     routine: &RoutineDecl,
@@ -372,15 +396,13 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — implicit Rec / xRec.
-    // -----------------------------------------------------------------------
-
-    if receiver_lc == "rec" || receiver_lc == "xrec" {
-        return infer_implicit_rec(from_object, graph, index);
-    }
-
-    // -----------------------------------------------------------------------
-    // Step 3 — variable lookup (params → locals → object globals).
+    // Step 2 — variable lookup (params → locals → object globals).
+    //
+    // NOTE: `rec`/`xrec` are looked up here too.  A Codeunit routine that
+    // declares `var Rec: Record Customer` must resolve to
+    // `Record{Some(customer_id)}`, not to `infer_implicit_rec(Codeunit)`
+    // which would return `Unknown`.  The implicit-Rec path fires only as a
+    // fallback in Step 3 when NO variable named `rec`/`xrec` was found.
     // -----------------------------------------------------------------------
 
     let declared_ty: Option<&str> = routine
@@ -407,7 +429,27 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 4 — Unknown.
+    // Step 3 — implicit Rec / xRec (fallback: no variable named rec/xrec).
+    // -----------------------------------------------------------------------
+
+    if receiver_lc == "rec" || receiver_lc == "xrec" {
+        return infer_implicit_rec(from_object, graph, index);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4 — static framework type name used as a static receiver
+    // (`XmlDocument.Create(...)`, `Text.CopyStr(...)`, `Version.Create(...)`).
+    // A real variable of the same name would have been found in Step 2 and
+    // would shadow this path.  Only framework value types classify here;
+    // Record/Object/Interface/Enum type names fall through to Unknown.
+    // -----------------------------------------------------------------------
+
+    if let ParsedType::Framework(kind) = classify_type_text(receiver_lc) {
+        return ReceiverType::Framework(kind);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 5 — Unknown.
     // -----------------------------------------------------------------------
 
     ReceiverType::Unknown
@@ -894,6 +936,31 @@ mod tests {
         );
     }
 
+    // Fix 2 — FileUpload / NumberSequence / Version
+    #[test]
+    fn classify_fileupload() {
+        assert_eq!(
+            classify_type_text("FileUpload"),
+            ParsedType::Framework(FrameworkKind::FileUpload)
+        );
+    }
+
+    #[test]
+    fn classify_numbersequence() {
+        assert_eq!(
+            classify_type_text("NumberSequence"),
+            ParsedType::Framework(FrameworkKind::NumberSequence)
+        );
+    }
+
+    #[test]
+    fn classify_version() {
+        assert_eq!(
+            classify_type_text("Version"),
+            ParsedType::Framework(FrameworkKind::Version)
+        );
+    }
+
     // -----------------------------------------------------------------------
     // infer_receiver_type tests
     // -----------------------------------------------------------------------
@@ -1290,5 +1357,81 @@ mod tests {
         );
         // Record with unresolvable table → Record{None} (not Unknown)
         assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    // Fix 1 — rec/xrec variable lookup before implicit-rec
+    #[test]
+    fn infer_rec_local_in_codeunit_resolves_via_variable() {
+        // A Codeunit routine with `var Rec: Record Customer` — `Rec.SetRange(...)`
+        // must resolve to Record{Some(customer_id)}, NOT Unknown (which was the
+        // bug: the old code hit infer_implicit_rec(Codeunit) → Unknown before the
+        // variable lookup).
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let o = test_origin();
+        let routine_with_rec_local = RoutineDecl {
+            kind: RoutineKind::Procedure,
+            name: "TestRecLocal".into(),
+            name_origin: o.clone(),
+            params: vec![],
+            return_type: None,
+            locals: vec![VarDecl {
+                name: "Rec".into(),
+                ty: Some("Record Customer".into()),
+                temporary: false,
+                origin: o.clone(),
+            }],
+            attributes: vec![],
+            attributes_parsed: vec![],
+            access_modifier: None,
+            parse_incomplete: false,
+            dataitem_source_table: None,
+            enclosing_member: None,
+            body: None,
+            origin: o,
+        };
+        let cu_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let customer_node = graph
+            .resolve_object(app, ObjectKind::Table, "Customer")
+            .unwrap();
+        let expected_id = customer_node.id.clone();
+
+        // receiver "rec" (lc) → local variable `Rec: Record Customer` → Record{Some(customer_id)}
+        let result =
+            infer_receiver_type("rec", &routine_with_rec_local, &[], &cu_obj, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(expected_id)
+            }
+        );
+    }
+
+    // Fix 3 — static framework type name as receiver
+    #[test]
+    fn infer_static_xml_document_receiver() {
+        // `XmlDocument.Create(...)` — bare `XmlDocument` with no matching variable
+        // must type as Framework(Xml), not Unknown.
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type("xmldocument", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Xml));
+    }
+
+    #[test]
+    fn infer_static_text_receiver() {
+        // `Text.CopyStr(...)` — bare `Text` with no matching variable must type
+        // as Framework(Text), not Unknown.
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type("text", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Text));
     }
 }
