@@ -646,13 +646,14 @@ pub fn run_harness(workspace_root: &Path) -> DiffReport {
 
     for m in &site_matches {
         match m {
-            SiteMatch::Paired(fi, _li) => {
+            SiteMatch::Paired(fi, li) => {
                 matched += 1;
-                // Regression: the fresh side emitted no concrete targets.
+                // Regression: the fresh side emitted no concrete targets but the L3 side did.
                 // In Phase-0 (stub) fresh.targets is ALWAYS empty, so
                 // regression == matched.  In Phases 1–4 this will shrink as
                 // the real resolver fills in targets.
-                if fresh_canonical[*fi].targets.is_empty() {
+                if fresh_canonical[*fi].targets.is_empty() && !l3_canonical[*li].targets.is_empty()
+                {
                     regression += 1;
                 }
             }
@@ -731,6 +732,41 @@ pub fn canonical_call_edge_for_test(caller: &str, span_start: u32, fp: u64) -> C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_side_object_kind_parity() {
+        // Fresh derives the caller key's object_kind via Debug-lowercase; L3 derives it from
+        // its `object_type` string lowercased. They MUST agree for every kind or sites silently
+        // drop out of `matched`. This asserts the canonical spelling for each variant.
+        use crate::program::node::ObjectKind;
+        let cases = [
+            (ObjectKind::Codeunit, "codeunit"),
+            (ObjectKind::Table, "table"),
+            (ObjectKind::TableExtension, "tableextension"),
+            (ObjectKind::Page, "page"),
+            (ObjectKind::PageExtension, "pageextension"),
+            (ObjectKind::Report, "report"),
+            (ObjectKind::ReportExtension, "reportextension"),
+            (ObjectKind::XmlPort, "xmlport"),
+            (ObjectKind::Query, "query"),
+            (ObjectKind::Enum, "enum"),
+            (ObjectKind::EnumExtension, "enumextension"),
+            (ObjectKind::Interface, "interface"),
+            (ObjectKind::ControlAddIn, "controladdin"),
+            (ObjectKind::Entitlement, "entitlement"),
+            (ObjectKind::PermissionSet, "permissionset"),
+            (ObjectKind::PermissionSetExtension, "permissionsetextension"),
+            (ObjectKind::Profile, "profile"),
+            (ObjectKind::Other, "other"),
+        ];
+        for (k, expected) in cases {
+            assert_eq!(
+                format!("{k:?}").to_ascii_lowercase(),
+                expected,
+                "kind {k:?}"
+            );
+        }
+    }
 
     #[test]
     fn project_fresh_round_trips_a_synthetic_edge() {
