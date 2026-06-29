@@ -17,7 +17,7 @@
 //! entry in `targets`.  The stub resolver emits only `Unresolved` routes, so
 //! every stub edge projects to an empty `targets` set.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
@@ -74,6 +74,24 @@ pub struct CanonicalEdge {
     /// `Unresolved` (stub phase) or when the edge is a genuine zero-route
     /// fan-out.
     pub targets: BTreeSet<CanonicalTarget>,
+}
+
+/// Outcome of aligning one call site between the fresh resolver and the L3 oracle.
+///
+/// Indices refer to positions in the `fresh` / `l3` slices passed to
+/// [`match_sites`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SiteMatch {
+    /// Both sides agree: `fresh[fi]` ↔ `l3[li]` share the same strong key.
+    Paired(usize, usize),
+    /// A fresh site that has no L3 peer in its `(from, kind)` partition.
+    FreshOnly(usize),
+    /// An L3 site that has no fresh peer in its `(from, kind)` partition.
+    L3Only(usize),
+    /// Genuinely ambiguous duplicate leftovers — multiple sites on both sides
+    /// share the same strong key and the counts are unequal after positional
+    /// pairing.  The vecs carry the excess `fresh` and `l3` indices respectively.
+    Unaligned(Vec<usize>, Vec<usize>),
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +393,165 @@ pub fn project_l3(workspace_root: &Path) -> Vec<CanonicalEdge> {
 
     edges.sort();
     edges
+}
+
+// ---------------------------------------------------------------------------
+// Span-based site matcher (spec §6.1)
+// ---------------------------------------------------------------------------
+
+/// Align fresh and L3 call sites WITHOUT relying on positional ordinals.
+///
+/// ## Algorithm (spec §6.1)
+///
+/// 1. **Partition** both slices into groups keyed by `(from, kind)`.  Sites
+///    only ever match within the same group.
+/// 2. **Within each group**, bucket sites by the *strong key*
+///    `(span.unit, span.start.line, callee_fp)`.  Column offsets are ignored
+///    because L3 uses UTF-16 columns while the fresh side uses byte columns —
+///    they agree on ASCII-only source, and may differ by a small delta on
+///    non-ASCII identifiers.
+/// 3. **Pair positionally** within each strong-key bucket:
+///    - Equal counts → all [`SiteMatch::Paired`].
+///    - One side absent → [`SiteMatch::FreshOnly`] / [`SiteMatch::L3Only`]
+///      for every site in that bucket.
+///    - Both sides present, unequal counts → pair the `min` count, then emit
+///      a single [`SiteMatch::Unaligned`] with the leftover indices.
+///
+/// **Cascade-resistance guarantee:** removing one L3 site changes at most ONE
+/// bucket (→ the corresponding fresh site becomes [`SiteMatch::FreshOnly`])
+/// and NEVER shifts the pairing of any other site.
+#[must_use]
+pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMatch> {
+    type GroupKey = (CanonicalKey, EdgeKind);
+    // Strong key: (unit, start_line, callee_fp) — col intentionally omitted.
+    type StrongKey = (String, u32, u64);
+
+    // Step 1: partition both slices into (from, kind) groups.
+    let mut fresh_groups: HashMap<GroupKey, Vec<usize>> = HashMap::new();
+    let mut l3_groups: HashMap<GroupKey, Vec<usize>> = HashMap::new();
+
+    for (i, e) in fresh.iter().enumerate() {
+        fresh_groups
+            .entry((e.from.clone(), e.kind))
+            .or_default()
+            .push(i);
+    }
+    for (i, e) in l3.iter().enumerate() {
+        l3_groups
+            .entry((e.from.clone(), e.kind))
+            .or_default()
+            .push(i);
+    }
+
+    let all_group_keys: HashSet<GroupKey> = fresh_groups
+        .keys()
+        .chain(l3_groups.keys())
+        .cloned()
+        .collect();
+
+    let mut result: Vec<SiteMatch> = Vec::new();
+    let empty: Vec<usize> = Vec::new();
+
+    for gk in all_group_keys {
+        let fresh_idxs = fresh_groups.get(&gk).unwrap_or(&empty);
+        let l3_idxs = l3_groups.get(&gk).unwrap_or(&empty);
+
+        // Step 2: bucket by strong key within this group.
+        let mut fresh_by_sk: HashMap<StrongKey, Vec<usize>> = HashMap::new();
+        let mut l3_by_sk: HashMap<StrongKey, Vec<usize>> = HashMap::new();
+
+        for &fi in fresh_idxs {
+            let e = &fresh[fi];
+            let sk = (
+                e.site.span.unit.clone(),
+                e.site.span.start.line,
+                e.site.callee_fp,
+            );
+            fresh_by_sk.entry(sk).or_default().push(fi);
+        }
+        for &li in l3_idxs {
+            let e = &l3[li];
+            let sk = (
+                e.site.span.unit.clone(),
+                e.site.span.start.line,
+                e.site.callee_fp,
+            );
+            l3_by_sk.entry(sk).or_default().push(li);
+        }
+
+        let all_sks: HashSet<StrongKey> =
+            fresh_by_sk.keys().chain(l3_by_sk.keys()).cloned().collect();
+
+        // Step 3: pair within each strong-key bucket.
+        for sk in all_sks {
+            let fis = fresh_by_sk.get(&sk).map(Vec::as_slice).unwrap_or(&[]);
+            let lis = l3_by_sk.get(&sk).map(Vec::as_slice).unwrap_or(&[]);
+
+            let pair_count = fis.len().min(lis.len());
+            for i in 0..pair_count {
+                result.push(SiteMatch::Paired(fis[i], lis[i]));
+            }
+
+            let extra_f = &fis[pair_count..];
+            let extra_l = &lis[pair_count..];
+
+            if pair_count == 0 {
+                // One side is entirely absent → unambiguous.
+                for &fi in extra_f {
+                    result.push(SiteMatch::FreshOnly(fi));
+                }
+                for &li in extra_l {
+                    result.push(SiteMatch::L3Only(li));
+                }
+            } else {
+                // Some pairings happened; leftovers are genuinely ambiguous duplicates.
+                if !extra_f.is_empty() || !extra_l.is_empty() {
+                    result.push(SiteMatch::Unaligned(extra_f.to_vec(), extra_l.to_vec()));
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Build a synthetic [`CanonicalEdge`] for use in matcher fixture tests.
+///
+/// * `caller` — colon-separated `"object_kind:object_lc:routine_lc"`,
+///   e.g. `"cu:c:run"`.  `app_guid` is left empty.
+/// * `span_start` — 0-based start line stored in the span.
+/// * `fp` — callee fingerprint.
+///
+/// `from` is set equal to the caller key, `kind` is [`EdgeKind::Call`], and
+/// `targets` is empty.  Column offsets default to 0 / 10.
+pub fn canonical_call_edge_for_test(caller: &str, span_start: u32, fp: u64) -> CanonicalEdge {
+    let parts: Vec<&str> = caller.splitn(4, ':').collect();
+    let caller_key = CanonicalKey {
+        app_guid: String::new(),
+        object_kind: parts.first().copied().unwrap_or("").to_string(),
+        object_lc: parts.get(1).copied().unwrap_or("").to_string(),
+        routine_lc: parts.get(2).copied().unwrap_or("").to_string(),
+    };
+    CanonicalEdge {
+        from: caller_key.clone(),
+        site: CanonicalSiteKey {
+            caller: caller_key,
+            span: CanonicalSpan {
+                unit: "test_unit".to_string(),
+                start: SourcePos {
+                    line: span_start,
+                    col: 0,
+                },
+                end: SourcePos {
+                    line: span_start,
+                    col: 10,
+                },
+            },
+            callee_fp: fp,
+        },
+        kind: EdgeKind::Call,
+        targets: BTreeSet::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
