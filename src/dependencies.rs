@@ -277,6 +277,25 @@ pub fn load_all_apps(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
             }
         }
     }
+
+    // Deterministic, filesystem-independent order so downstream AppRef/NodeId
+    // numbering is reproducible across machines (charter C8). Version is compared
+    // lexicographically purely as a stable tiebreak, not as semver.
+    out.sort_by(|a, b| {
+        (
+            &a.dependency.app_id,
+            &a.dependency.name,
+            &a.dependency.publisher,
+            &a.dependency.version,
+        )
+            .cmp(&(
+                &b.dependency.app_id,
+                &b.dependency.name,
+                &b.dependency.publisher,
+                &b.dependency.version,
+            ))
+    });
+
     Ok(out)
 }
 

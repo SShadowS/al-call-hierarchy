@@ -70,6 +70,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warnings`, `cargo fmt --check`, and `cargo test --workspace` all green.
 
 ### Fixed
+- **Deterministic dependency order + GUID-then-name topology matching.**
+  `load_all_apps` now sorts its output by the AppId 4-tuple (GUID, name, publisher,
+  version) before returning, making `AppRef`/`NodeId` numbering reproducible across
+  machines and filesystems (charter C8). Topology wiring in `build_program_graph`
+  previously fell through to name+version only when the dep carried no GUID; it now
+  tries GUID first and falls through to name+version when the GUID match yields
+  `None` — closing the gap where a dep carries a GUID but the matching snapshot unit
+  has an empty `id.guid`.
 - **Dependency apps now carry their real unique GUID (and publisher).** `AppMetadata`
   parsed only `name`/`version` from `NavxManifest.xml`, dropping the `App@Id` (the app's
   only globally-unique identity) and `Publisher` — so `SnapshotBuilder` built dependency

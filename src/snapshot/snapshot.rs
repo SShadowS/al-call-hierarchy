@@ -278,5 +278,14 @@ mod tests {
             some_dep_declares_deps,
             "expected at least one dep to declare its own GUID-bearing dependencies"
         );
+        // Dependency apps are in a deterministic, filesystem-independent order
+        // (sorted by AppId) so AppRef/NodeId numbering is reproducible (charter C8).
+        let dep_ids: Vec<_> = snap.apps[1..]
+            .iter()
+            .map(|u| (&u.id.guid, &u.id.name, &u.id.publisher, &u.id.version))
+            .collect();
+        let mut sorted = dep_ids.clone();
+        sorted.sort();
+        assert_eq!(dep_ids, sorted, "dependency apps must be sorted by AppId");
     }
 }

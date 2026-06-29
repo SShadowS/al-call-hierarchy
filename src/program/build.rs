@@ -47,15 +47,19 @@ pub fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph {
     for (i, unit) in snap.apps.iter().enumerate() {
         let from_ref = app_refs[i];
         for dep in &unit.declared_deps {
-            let dep_ref = if !dep.app_id.is_empty() {
-                // Primary: match by GUID (globally unique).
-                snap.apps
-                    .iter()
-                    .zip(app_refs.iter())
-                    .find(|(u, _)| !u.id.guid.is_empty() && u.id.guid == dep.app_id)
-                    .map(|(_, r)| *r)
-            } else {
-                // Fallback: name (case-insensitive) + version.
+            // Match the dep to a snapshot app: GUID is globally unique and tried
+            // first; fall through to name (case-insensitive) + version when no
+            // GUID match (e.g. a snapshot unit whose manifest GUID was unavailable).
+            let by_guid = (!dep.app_id.is_empty())
+                .then(|| {
+                    snap.apps
+                        .iter()
+                        .zip(app_refs.iter())
+                        .find(|(u, _)| !u.id.guid.is_empty() && u.id.guid == dep.app_id)
+                        .map(|(_, r)| *r)
+                })
+                .flatten();
+            let dep_ref = by_guid.or_else(|| {
                 snap.apps
                     .iter()
                     .zip(app_refs.iter())
@@ -63,7 +67,7 @@ pub fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph {
                         u.id.name.eq_ignore_ascii_case(&dep.name) && u.id.version == dep.version
                     })
                     .map(|(_, r)| *r)
-            };
+            });
 
             if let Some(dep_ref) = dep_ref {
                 topology.add_dependency(from_ref, dep_ref);
