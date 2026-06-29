@@ -569,15 +569,57 @@ pub fn resolve_member(
                 member_unknown_route()
             }
         }
-        ReceiverType::Record { .. } => {
+        ReceiverType::Record { table } => {
             // Catalog-first: Record built-in methods (SetRange, Find, Insert, ...) are
             // platform-intrinsic and don't have in-source bodies.
             if let Some(bid) = member_builtin_id(MemberCatalogKind::Record, method_lc) {
-                member_catalog_route(bid)
-            } else {
-                // TODO(Task 4): dispatch to the table's own procedures and extensions.
-                member_unknown_route()
+                return member_catalog_route(bid);
             }
+
+            // Non-builtin Record method: dispatch to the table's own procedures and
+            // its TableExtensions.  `table == None` means the table could not be
+            // resolved (e.g. implicit Rec on a Page/PageExtension where the source
+            // table is not on ObjectNode) — honest Unknown.
+            let Some(table_id) = table else {
+                return member_unknown_route();
+            };
+
+            // Look up the ObjectNode for the table to obtain its tier and name
+            // (needed for both resolve_in_object and table_extensions_of).
+            let Some((table_tier, table_name_lc)) = graph
+                .objects
+                .iter()
+                .find(|o| &o.id == table_id)
+                .map(|o| (o.tier, o.name.to_ascii_lowercase()))
+            else {
+                return member_unknown_route();
+            };
+
+            // 1. Try the base table first (single-dispatch; Exact not Multicast).
+            if let Some(route) =
+                resolve_in_object(table_id, table_tier, method_lc, arity, index, body_map)
+            {
+                return (DispatchShape::Exact, vec![route]);
+            }
+
+            // 2. Try each TableExtension of this table (whole-snapshot, reverse-dep).
+            //    The UNION is to FIND the proc — first hit wins (Exact, not Multicast).
+            for ext_id in index.table_extensions_of(&table_name_lc) {
+                let ext_tier = graph
+                    .objects
+                    .iter()
+                    .find(|o| &o.id == ext_id)
+                    .map(|o| o.tier)
+                    .unwrap_or(TrustTier::Workspace);
+                if let Some(route) =
+                    resolve_in_object(ext_id, ext_tier, method_lc, arity, index, body_map)
+                {
+                    return (DispatchShape::Exact, vec![route]);
+                }
+            }
+
+            // Method not found on base table or any extension.
+            member_unknown_route()
         }
         ReceiverType::Object { kind, name_lc } => {
             // Resolve the target object (topology-scoped from the calling app).
@@ -1924,6 +1966,293 @@ codeunit 50507 "OrphanCaller"
         let (shape, routes) = resolve_member(
             &receiver,
             "anymethod",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 Task 4 — Record table-procedure dispatch tests
+    // -----------------------------------------------------------------------
+
+    // (a) Record receiver + proc on base table → Exact, Source, SourceSpan
+    #[test]
+    fn resolve_member_record_table_proc_on_base_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 50700 Customer
+{
+    procedure GetBalance()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50701 "TableProcCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Customer.al", src_table);
+        let unit_caller = make_unit(app_id, "TableProcCaller.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Customer");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "TableProcCaller");
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "getbalance",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "must resolve to Routine on the base table; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(
+            matches!(routes[0].witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "getbalance");
+    }
+
+    // (b) Record receiver + proc only on a TableExtension → resolves via extension
+    #[test]
+    fn resolve_member_record_table_proc_on_extension_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // Base table has ExistingProc but NOT GetBalance.
+        let src_table: &'static str = r#"
+table 50800 Vendor
+{
+    procedure ExistingProc()
+    begin
+    end;
+}
+"#;
+        // Extension adds GetBalance.
+        let src_ext: &'static str = r#"
+tableextension 50801 "VendorExt" extends Vendor
+{
+    procedure GetBalance()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50802 "ExtCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Vendor.al", src_table);
+        let unit_ext = make_unit(app_id.clone(), "VendorExt.al", src_ext);
+        let unit_caller = make_unit(app_id, "ExtCaller.al", src_caller);
+        let units = [unit_table, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Vendor");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "ExtCaller");
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "getbalance",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "must resolve to Routine via extension; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(
+            matches!(routes[0].witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(
+            rid.object.kind,
+            ObjectKind::TableExtension,
+            "proc must resolve to the TableExtension, not the base table"
+        );
+        assert_eq!(rid.name_lc, "getbalance");
+    }
+
+    // (c) Record builtin method → Catalog (catalog-first wins over any in-source proc)
+    #[test]
+    fn resolve_member_record_builtin_wins_catalog_first() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 50900 "SomeTable"
+{
+    procedure GetBalance()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50901 "CatalogFirstCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "SomeTable.al", src_table);
+        let unit_caller = make_unit(app_id, "CatalogFirstCaller.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "SomeTable");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CatalogFirstCaller");
+
+        // "setview" is a Record catalog builtin — catalog check fires first;
+        // any in-source proc with this name cannot shadow a platform builtin.
+        let (shape, routes) =
+            resolve_member(&receiver, "setview", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "setview is a Record builtin — Catalog must win; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        assert!(matches!(routes[0].witness, Witness::CatalogEntry { .. }));
+    }
+
+    // (d) table == None → Exact, Unknown (table unresolved, e.g. implicit Rec on Page)
+    #[test]
+    fn resolve_member_record_table_none_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_caller: &'static str = r#"
+codeunit 51000 "NoneTableCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_caller = make_unit(app_id, "NoneTableCaller.al", src_caller);
+        let units = [unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "NoneTableCaller");
+        let receiver = ReceiverType::Record { table: None };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "getbalance",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // (e) Method exists on neither base table nor any extension → Exact, Unknown
+    #[test]
+    fn resolve_member_record_proc_not_found_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 51100 "Invoice"
+{
+    procedure ValidateTotal()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 51101 "NotFoundCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Invoice.al", src_table);
+        let unit_caller = make_unit(app_id, "NotFoundCaller.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Invoice");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "NotFoundCaller");
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "nonexistentmethod",
             0,
             from_obj,
             &graph,
