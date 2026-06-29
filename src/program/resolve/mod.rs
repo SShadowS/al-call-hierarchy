@@ -9,6 +9,7 @@ pub mod edge;
 pub mod extract;
 pub mod extract_min;
 pub mod index;
+pub mod resolver;
 pub mod stub;
 
 pub use edge::{

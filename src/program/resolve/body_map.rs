@@ -21,8 +21,14 @@ use crate::snapshot::ParsedUnit;
 /// stored under distinct keys.  True same-key collisions (two routines with the
 /// same name AND the same enclosing member, i.e. genuine AL overloads) still
 /// use last-write semantics.
+///
+/// Each entry also records the `virtual_path` of the file that declared the
+/// routine so that [`get_with_path`][`BodyMap::get_with_path`] can supply the
+/// file coordinate for `Witness::SourceSpan` construction in the resolver.
 pub struct BodyMap<'a> {
-    map: HashMap<RoutineNodeId, &'a RoutineDecl>,
+    /// `(RoutineDecl, virtual_path)` — virtual_path is owned so it can outlive
+    /// the `ParsedFile` it came from without additional lifetime coupling.
+    map: HashMap<RoutineNodeId, (&'a RoutineDecl, String)>,
 }
 
 impl<'a> BodyMap<'a> {
@@ -59,7 +65,7 @@ impl<'a> BodyMap<'a> {
                         // Last-write wins on true same-key collision (same
                         // object + name + enclosing_member); distinct
                         // enclosing_member_lc values produce distinct keys.
-                        map.insert(r_id, routine);
+                        map.insert(r_id, (routine, pf.virtual_path.clone()));
                     }
                 }
             }
@@ -69,7 +75,15 @@ impl<'a> BodyMap<'a> {
 
     /// Return the `RoutineDecl` for `id`, or `None` if not present.
     pub fn get(&self, id: &RoutineNodeId) -> Option<&'a RoutineDecl> {
-        self.map.get(id).copied()
+        self.map.get(id).map(|(d, _)| *d)
+    }
+
+    /// Return the `RoutineDecl` and the `virtual_path` of the file it came from,
+    /// or `None` if the routine was not parsed (symbol-only / absent).
+    ///
+    /// The virtual path is suitable for `Witness::SourceSpan { file, .. }`.
+    pub fn get_with_path(&self, id: &RoutineNodeId) -> Option<(&'a RoutineDecl, &str)> {
+        self.map.get(id).map(|(d, p)| (*d, p.as_str()))
     }
 }
 
