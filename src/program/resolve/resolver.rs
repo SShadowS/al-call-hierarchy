@@ -31,11 +31,13 @@
 use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
-use crate::program::node::{ObjectNodeId, RoutineNodeId};
+use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
-use crate::program::resolve::edge::{Evidence, Route, RouteTarget, Witness};
+use crate::program::resolve::edge::{
+    DispatchShape, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, Witness,
+};
 use crate::program::resolve::index::ResolveIndex;
 use crate::snapshot::TrustTier;
 
@@ -215,6 +217,215 @@ pub fn resolve_bare(
 }
 
 // ---------------------------------------------------------------------------
+// ObjectRun resolution
+// ---------------------------------------------------------------------------
+
+/// Entry-trigger name for an object kind (Phase-2 correction over L3's always-"OnRun").
+///
+/// | Kind       | Trigger         |
+/// |------------|-----------------|
+/// | Codeunit   | `"onrun"`       |
+/// | Page       | `"onopenpage"`  |
+/// | Report     | `"onprereport"` |
+/// | Query/Other| `"onrun"` (best-effort) |
+fn entry_trigger_name(kind: ObjectKind) -> &'static str {
+    match kind {
+        ObjectKind::Page => "onopenpage",
+        ObjectKind::Report => "onprereport",
+        _ => "onrun",
+    }
+}
+
+/// Build a single Opaque boundary route (target exists but is not in our source).
+fn opaque_boundary_route() -> Route {
+    Route {
+        target: RouteTarget::Unresolved,
+        evidence: Evidence::Opaque,
+        condition: None,
+        witness: Witness::None,
+    }
+}
+
+/// Resolve an `ObjectRun` dispatch (Codeunit.Run / Page.RunModal / Report.Run …)
+/// to the entry trigger of the statically-named/numbered target object.
+///
+/// # Dispatch semantics
+///
+/// | Situation | Shape | Completeness | Routes |
+/// |-----------|-------|-------------|--------|
+/// | `target_ref` is `None` (runtime variable) | `DynamicOpen` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Unknown, None}]` |
+/// | Target named/numbered but absent from graph | `Exact` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Opaque, None}]` |
+/// | Target found; entry trigger resolved | `Exact` | `Complete` | `[{Routine(trigger), Source/Abi, SourceSpan/…}]` |
+/// | Target found; entry trigger absent from index | `Exact` | `Partial{RuntimeTypeUnbounded}` | `[{Unresolved, Opaque, None}]` |
+///
+/// # Opaque-vs-Unknown choice (Phase 2 note)
+///
+/// When the target is not found in the graph we use `Evidence::Opaque` (not
+/// `Unknown`) because we know the target *exists* somewhere — it just isn't in
+/// our source snapshot.  The `classify_obligation` metric still counts this as
+/// `Unknown` (since `RouteTarget::Unresolved` is the target), which is honest:
+/// it surfaces as a gap to close when dependency source is added.
+pub fn resolve_object_run(
+    from: AppRef,
+    object_kind: ObjectKind,
+    target_ref: Option<&str>,
+    target_is_name: bool,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> (DispatchShape, SetCompleteness, Vec<Route>) {
+    let Some(target_ref) = target_ref else {
+        // Dynamic target (a runtime variable) — known shape, open world.
+        return (
+            DispatchShape::DynamicOpen,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::RuntimeTypeUnbounded,
+            },
+            vec![Route {
+                target: RouteTarget::Unresolved,
+                evidence: Evidence::Unknown,
+                condition: None,
+                witness: Witness::None,
+            }],
+        );
+    };
+
+    // Resolve the target object.
+    let target_obj: Option<&ObjectNode> = if target_is_name {
+        graph.resolve_object(from, object_kind, target_ref)
+    } else {
+        match target_ref.parse::<i64>() {
+            Ok(n) => index
+                .object_by_number(graph, from, object_kind, n)
+                .and_then(|oid| graph.objects.iter().find(|o| o.id == oid)),
+            Err(_) => None,
+        }
+    };
+
+    let Some(target_obj) = target_obj else {
+        // Target is named/numbered but absent from the graph: not-in-source boundary.
+        return (
+            DispatchShape::Exact,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::RuntimeTypeUnbounded,
+            },
+            vec![opaque_boundary_route()],
+        );
+    };
+
+    // Look up the entry trigger by kind-specific name.
+    let trigger_name = entry_trigger_name(object_kind);
+    let candidates = index.routines_in_object(&target_obj.id, trigger_name);
+
+    // Object-level triggers have `enclosing_member_lc == None`.
+    let entry_rid = candidates
+        .iter()
+        .find(|r| r.enclosing_member_lc.is_none())
+        .or_else(|| candidates.first());
+
+    let Some(entry_rid) = entry_rid else {
+        // Trigger not found in index — Opaque (e.g. an object with no explicit trigger).
+        return (
+            DispatchShape::Exact,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::RuntimeTypeUnbounded,
+            },
+            vec![opaque_boundary_route()],
+        );
+    };
+
+    let route = make_routine_route(entry_rid, target_obj.tier, body_map);
+    (DispatchShape::Exact, SetCompleteness::Complete, vec![route])
+}
+
+// ---------------------------------------------------------------------------
+// Implicit-trigger resolution (data-is-control-flow edges)
+// ---------------------------------------------------------------------------
+
+/// Resolve an implicit record-operation trigger fan-out.
+///
+/// Maps the AL record operation name to the corresponding object/field trigger
+/// and collects routes from both the base table and all `TableExtension`s visible
+/// in the whole-program snapshot.
+///
+/// # Trigger mapping
+///
+/// | `op`        | Trigger         |
+/// |-------------|-----------------|
+/// | `"insert"`  | `"oninsert"`    |
+/// | `"modify"`  | `"onmodify"`    |
+/// | `"delete"`  | `"ondelete"`    |
+/// | `"validate"`| `"onvalidate"`  |
+/// | `"rename"`  | `"onrename"`    |
+///
+/// # Validate-field approximation (Phase 2)
+///
+/// `Rec.Validate(FieldName)` targets `OnValidate` on **one specific field**,
+/// but the field argument may not be captured in the extraction layer.  For
+/// Phase 2 this function fans out to **all** `onvalidate` triggers on the
+/// table and its extensions (one route per `(object, field)` pair), using
+/// [`DispatchShape::Multicast`] with
+/// `SetCompleteness::Partial{ReverseDependentExtensions}`.  The Task-6
+/// differential gate measures the residual versus L3's per-field resolution.
+///
+/// For `insert/modify/delete/rename` (object-level triggers,
+/// `enclosing_member_lc == None`) the fan-out is clean.
+pub fn resolve_implicit_trigger(
+    op: &str,
+    table_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> (DispatchShape, SetCompleteness, Vec<Route>) {
+    let trigger_name: &str = match op.to_ascii_lowercase().as_str() {
+        "insert" => "oninsert",
+        "modify" => "onmodify",
+        "delete" => "ondelete",
+        "validate" => "onvalidate",
+        "rename" => "onrename",
+        _ => {
+            // Unrecognised op: honest empty Multicast.
+            return (
+                DispatchShape::Multicast,
+                SetCompleteness::Partial {
+                    reason: OpenWorldReason::ReverseDependentExtensions,
+                },
+                vec![],
+            );
+        }
+    };
+
+    let mut routes: Vec<Route> = Vec::new();
+
+    // Triggers on the base table itself.
+    for rid in index.routines_in_object(&table_object.id, trigger_name) {
+        routes.push(make_routine_route(rid, table_object.tier, body_map));
+    }
+
+    // Triggers on every TableExtension of this table (reverse-dep; whole-snapshot).
+    let table_name_lc = table_object.name.to_ascii_lowercase();
+    for ext_id in index.table_extensions_of(&table_name_lc) {
+        let ext_tier = graph
+            .objects
+            .iter()
+            .find(|o| &o.id == ext_id)
+            .map(|o| o.tier)
+            .unwrap_or(TrustTier::Workspace);
+        for rid in index.routines_in_object(ext_id, trigger_name) {
+            routes.push(make_routine_route(rid, ext_tier, body_map));
+        }
+    }
+
+    (
+        DispatchShape::Multicast,
+        SetCompleteness::Partial {
+            reason: OpenWorldReason::ReverseDependentExtensions,
+        },
+        routes,
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -226,7 +437,9 @@ mod tests {
     use crate::program::node::AppRegistry;
     use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
     use crate::program::resolve::body_map::BodyMap;
-    use crate::program::resolve::edge::{Evidence, RouteTarget, Witness};
+    use crate::program::resolve::edge::{
+        DispatchShape, Evidence, OpenWorldReason, RouteTarget, SetCompleteness, Witness,
+    };
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
     use crate::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
@@ -628,6 +841,266 @@ codeunit 50103 "ArityMismatchCU"
             Witness::None,
             "arity-mismatch must yield None witness"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 helper: find the AppRef for the first (and only) app in graph
+    // -----------------------------------------------------------------------
+
+    fn sole_app_ref(graph: &ProgramGraph) -> AppRef {
+        graph
+            .apps
+            .find_by_name("TestApp")
+            .expect("TestApp must be registered")
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (a): Codeunit.Run to a known codeunit → Exact, OnRun, Source
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn object_run_codeunit_to_known_codeunit_resolves_to_onrun() {
+        let src: &'static str = r#"
+codeunit 50200 "TargetCU"
+{
+    trigger OnRun()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "TargetCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from = sole_app_ref(&graph);
+        let (shape, completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            Some("TargetCU"),
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(
+            shape,
+            DispatchShape::Exact,
+            "shape must be Exact for resolved target"
+        );
+        assert_eq!(
+            completeness,
+            SetCompleteness::Complete,
+            "completeness must be Complete"
+        );
+        assert_eq!(routes.len(), 1, "expected exactly one route");
+        let r = &routes[0];
+        assert!(
+            matches!(r.target, RouteTarget::Routine(_)),
+            "target must be Routine(onrun), got {:?}",
+            r.target
+        );
+        assert_eq!(r.evidence, Evidence::Source);
+        assert!(
+            matches!(r.witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan"
+        );
+        let RouteTarget::Routine(ref rid) = r.target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "onrun", "must resolve to the onrun trigger");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (b): Page.RunModal to a page → Exact, OnOpenPage (NOT OnRun)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn object_run_page_resolves_to_onopenpage_not_onrun() {
+        let src: &'static str = r#"
+page 50300 "SomePage"
+{
+    trigger OnOpenPage()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "SomePage.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from = sole_app_ref(&graph);
+        let (shape, completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Page,
+            Some("SomePage"),
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(completeness, SetCompleteness::Complete);
+        assert_eq!(routes.len(), 1);
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            panic!("target must be Routine, got {:?}", routes[0].target)
+        };
+        assert_eq!(
+            rid.name_lc, "onopenpage",
+            "Page must resolve to onopenpage, NOT onrun"
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (c): No static target → DynamicOpen + Unknown blocker
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn object_run_no_target_emits_dynamic_open_with_unknown_blocker() {
+        let src: &'static str = r#"
+codeunit 50201 "CallerCU"
+{
+    procedure Run()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "CallerCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from = sole_app_ref(&graph);
+        let (shape, completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            None, // no static target
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(
+            shape,
+            DispatchShape::DynamicOpen,
+            "no-target must be DynamicOpen"
+        );
+        assert_eq!(
+            completeness,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::RuntimeTypeUnbounded
+            },
+        );
+        // Must include a blocker route — not an empty list (open world, not false resolved).
+        assert!(!routes.is_empty(), "must include a blocker route");
+        let r = &routes[0];
+        assert_eq!(r.target, RouteTarget::Unresolved);
+        assert_eq!(r.evidence, Evidence::Unknown);
+        assert_eq!(r.witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (d): Target named but not in graph → Opaque evidence
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn object_run_target_not_in_graph_emits_opaque() {
+        let src: &'static str = r#"
+codeunit 50202 "AnotherCaller"
+{
+    procedure Run()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "AnotherCaller.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from = sole_app_ref(&graph);
+        let (shape, _completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            Some("NonExistentCU"), // not in graph
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(
+            shape,
+            DispatchShape::Exact,
+            "not-in-graph is still an exact dispatch"
+        );
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.target, RouteTarget::Unresolved);
+        assert_eq!(
+            r.evidence,
+            Evidence::Opaque,
+            "not-in-source boundary must use Opaque evidence"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task-5 (e): insert implicit-trigger on table with OnInsert → Multicast
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn implicit_trigger_insert_resolves_to_oninsert_multicast() {
+        let src: &'static str = r#"
+table 50400 "SomeTable"
+{
+    trigger OnInsert()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "SomeTable.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "SomeTable");
+        let (shape, completeness, routes) =
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Multicast,
+            "implicit trigger must be Multicast"
+        );
+        assert_eq!(
+            completeness,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions
+            },
+        );
+        assert_eq!(routes.len(), 1, "one oninsert trigger from the base table");
+        let r = &routes[0];
+        let RouteTarget::Routine(ref rid) = r.target else {
+            panic!("target must be Routine, got {:?}", r.target)
+        };
+        assert_eq!(rid.name_lc, "oninsert");
+        assert_eq!(r.evidence, Evidence::Source);
+        assert!(matches!(r.witness, Witness::SourceSpan { .. }));
     }
 
     // -----------------------------------------------------------------------
