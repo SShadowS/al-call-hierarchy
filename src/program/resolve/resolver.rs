@@ -38,9 +38,12 @@ use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
-    DispatchShape, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, Witness,
+    BuiltinId, DispatchShape, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness,
+    Witness,
 };
 use crate::program::resolve::index::ResolveIndex;
+use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
+use crate::program::resolve::receiver::ReceiverType;
 use crate::snapshot::TrustTier;
 
 // ---------------------------------------------------------------------------
@@ -466,6 +469,131 @@ pub fn resolve_implicit_trigger(
         },
         routes,
     )
+}
+
+// ---------------------------------------------------------------------------
+// Member-call resolution (Phase 3 Task 2)
+// ---------------------------------------------------------------------------
+
+/// Build a `(Exact, [Catalog route])` outcome for a recognized member builtin.
+fn member_catalog_route(bid: BuiltinId) -> (DispatchShape, Vec<Route>) {
+    (
+        DispatchShape::Exact,
+        vec![Route {
+            target: RouteTarget::Builtin(bid.clone()),
+            evidence: Evidence::Catalog,
+            condition: None,
+            witness: Witness::CatalogEntry {
+                id: bid,
+                catalog_version: catalog_version().to_string(),
+            },
+        }],
+    )
+}
+
+/// Build a `(Exact, [Unknown route])` outcome.
+fn member_unknown_route() -> (DispatchShape, Vec<Route>) {
+    (
+        DispatchShape::Exact,
+        vec![Route {
+            target: RouteTarget::Unresolved,
+            evidence: Evidence::Unknown,
+            condition: None,
+            witness: Witness::None,
+        }],
+    )
+}
+
+/// Build a `(DynamicOpen, [Unknown blocker])` outcome for Dynamic receivers.
+fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
+    (
+        DispatchShape::DynamicOpen,
+        vec![Route {
+            target: RouteTarget::Unresolved,
+            evidence: Evidence::Unknown,
+            condition: None,
+            witness: Witness::None,
+        }],
+    )
+}
+
+/// Resolve a member call (`receiver.method_lc(...)`) to its `(DispatchShape, Vec<Route>)`.
+///
+/// # Implemented arms (Phase 3 Task 2)
+/// - `RecordRef` / `FieldRef` / `KeyRef` / `Framework(_)` → catalog lookup.
+/// - `Record{..}` → catalog-first (builtin Record methods); non-builtin → Unknown
+///   (TODO Task 4: full table-proc dispatch).
+///
+/// # Deferred arms (TODO markers only)
+/// - `Object{..}` / `SelfObject` → Unknown (TODO Task 3).
+/// - `Interface` / `EnumType` → Unknown (TODO Phase 4).
+/// - `Primitive` → Unknown; `Dynamic` → `DynamicOpen`; `Unknown` → Unknown.
+pub fn resolve_member(
+    receiver: &ReceiverType,
+    method_lc: &str,
+    _arity: usize,
+    _from_object: &ObjectNode,
+    _graph: &ProgramGraph,
+    _index: &ResolveIndex,
+    _body_map: &BodyMap<'_>,
+) -> (DispatchShape, Vec<Route>) {
+    match receiver {
+        ReceiverType::RecordRef => {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::RecordRef, method_lc) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route()
+            }
+        }
+        ReceiverType::FieldRef => {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::FieldRef, method_lc) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route()
+            }
+        }
+        ReceiverType::KeyRef => {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::KeyRef, method_lc) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route()
+            }
+        }
+        ReceiverType::Framework(kind) => {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::Framework(kind), method_lc) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route()
+            }
+        }
+        ReceiverType::Record { .. } => {
+            // Catalog-first: Record built-in methods (SetRange, Find, Insert, ...) are
+            // platform-intrinsic and don't have in-source bodies.
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::Record, method_lc) {
+                member_catalog_route(bid)
+            } else {
+                // TODO(Task 4): dispatch to the table's own procedures and extensions.
+                member_unknown_route()
+            }
+        }
+        ReceiverType::Object { .. } | ReceiverType::SelfObject => {
+            // TODO(Task 3): resolve against the object's own declared procedures.
+            member_unknown_route()
+        }
+        ReceiverType::Interface { .. } | ReceiverType::EnumType { .. } => {
+            // TODO(Phase 4): interface member fan-out / enum type statics.
+            member_unknown_route()
+        }
+        ReceiverType::Primitive => {
+            // Non-catalog type — honest Unknown (not a false resolution gap).
+            member_unknown_route()
+        }
+        ReceiverType::Dynamic => {
+            // Variant-typed receiver — genuinely dynamic, not a resolution hole.
+            member_dynamic_open_route()
+        }
+        ReceiverType::Unknown => member_unknown_route(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1348,5 +1476,150 @@ codeunit 50300 "OverloadCU"
             rid0.params_count, 0,
             "arity=0 call must resolve to the 0-param overload"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 Task 2 — resolve_member tests
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal test graph, index and body_map for resolve_member tests.
+    fn minimal_resolve_member_fixtures() -> (
+        ProgramGraph,
+        ResolveIndex,
+        crate::program::resolve::body_map::BodyMap<'static>,
+        crate::program::node_extract::ObjectNode,
+    ) {
+        use crate::program::node::{AppRegistry, ObjKey, ObjectNodeId};
+        use crate::program::node_extract::ObjectNode;
+        use crate::snapshot::{AppId, TrustTier};
+        use al_syntax::ir::ObjectKind;
+
+        let mut apps = AppRegistry::default();
+        let app_id = AppId {
+            guid: String::new(),
+            name: "T".into(),
+            publisher: "T".into(),
+            version: "1.0.0.0".into(),
+        };
+        let app = apps.intern(&app_id);
+        let graph = ProgramGraph {
+            apps,
+            topology: crate::program::topology::DependencyGraph::default(),
+            objects: vec![],
+            routines: vec![],
+            obj_index: crate::program::graph::ObjectIndex::build(&[]),
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+        let from_obj = ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name: "T".into(),
+            declared_id: Some(1),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::Workspace,
+        };
+        (graph, index, body_map, from_obj)
+    }
+
+    #[test]
+    fn resolve_member_framework_json_object_catalog_route() {
+        use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::Framework(FrameworkKind::JsonObject);
+        let (shape, routes) =
+            resolve_member(&receiver, "add", 1, &from_obj, &graph, &index, &body_map);
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "must be Builtin"
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        assert!(matches!(routes[0].witness, Witness::CatalogEntry { .. }));
+        if let RouteTarget::Builtin(ref bid) = routes[0].target {
+            assert_eq!(bid.0, "JsonObject::add");
+        }
+    }
+
+    #[test]
+    fn resolve_member_fieldref_value_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::FieldRef;
+        let (shape, routes) =
+            resolve_member(&receiver, "value", 0, &from_obj, &graph, &index, &body_map);
+        assert_eq!(shape, DispatchShape::Exact);
+        assert!(matches!(routes[0].target, RouteTarget::Builtin(_)));
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+    }
+
+    #[test]
+    fn resolve_member_record_builtin_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        // Record builtin → Catalog route
+        let receiver = ReceiverType::Record { table: None };
+        let (shape, routes) = resolve_member(
+            &receiver, "setrange", 2, &from_obj, &graph, &index, &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert!(matches!(routes[0].target, RouteTarget::Builtin(_)));
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+
+        // Non-builtin Record method → Unknown
+        let (_, routes2) = resolve_member(
+            &receiver,
+            "calculatediscount",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(routes2[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes2[0].evidence, Evidence::Unknown);
+    }
+
+    #[test]
+    fn resolve_member_primitive_is_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let (shape, routes) = resolve_member(
+            &ReceiverType::Primitive,
+            "totext",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    #[test]
+    fn resolve_member_dynamic_is_dynamic_open() {
+        use crate::program::resolve::receiver::ReceiverType;
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let (shape, _routes) = resolve_member(
+            &ReceiverType::Dynamic,
+            "whatever",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, DispatchShape::DynamicOpen);
     }
 }
