@@ -5,6 +5,7 @@ pub mod build;
 pub mod graph;
 pub mod node;
 pub mod node_extract;
+pub mod resolve;
 pub mod topology;
 
 pub use build::build_program_graph;

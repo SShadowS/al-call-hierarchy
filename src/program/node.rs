@@ -1,7 +1,7 @@
 //! Canonical, app-qualified identity for whole-program graph nodes.
 
 use crate::snapshot::AppId;
-use al_syntax::ir::ObjectKind;
+pub use al_syntax::ir::ObjectKind;
 use std::collections::HashMap;
 
 /// Interned handle for an `AppId` (cheap to copy/compare/sort).
