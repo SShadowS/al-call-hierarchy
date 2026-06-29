@@ -16,15 +16,15 @@
 //! `routines_in_object` returns all overloads for a name.  An overload matches
 //! when `params.len() == arity`.  When multiple overloads match the first (by
 //! sorted `RoutineNodeId` order) is returned.  When the name is found but NO
-//! overload matches the arity, the first name-matched overload is still returned
-//! rather than falling through to the next precedence level — mirroring L3's
-//! `MemberNotFound` behaviour but emitting a route (Phase 2 choice; the Task-6
-//! gate measures the arity-mismatch residual).  Name-absent ⇒ fall through.
+//! overload matches the arity, an `Unknown` route is emitted — no false-confident
+//! edge to a wrong-arity target.  The caller still stops at that precedence level
+//! (does NOT fall through to extension-base / global-builtin), mirroring L3's
+//! MemberNotFound stop semantics while surfacing the gap honestly.
+//! Name-absent ⇒ `None` ⇒ fall through.
 //!
 //! # Witness↔evidence contract
 //!
 //! `Evidence::Source` ⇒ `Witness::SourceSpan`
-//! `Evidence::Abi`    ⇒ `Witness::AbiSymbol`  (BodyMap miss — symbol-only boundary)
 //! `Evidence::Catalog`⇒ `Witness::CatalogEntry`
 //! `Evidence::Unknown`⇒ `Witness::None`
 
@@ -75,12 +75,9 @@ fn extension_base_kind(kind: ObjectKind) -> Option<ObjectKind> {
 ///
 /// - If the routine is in the `BodyMap` (source-bearing): `Evidence::Source` +
 ///   `Witness::SourceSpan { file: virtual_path, span: (start_byte, end_byte) }`.
-/// - If the routine is NOT in the `BodyMap` (symbol-only / integration gap):
-///   `Evidence::Abi` + `Witness::AbiSymbol`.
-///
-/// The tier parameter is used as the *expected* evidence level; the BodyMap
-/// presence overrides it for the Abi fallback so the witness↔evidence contract
-/// always holds.
+/// - If the routine is NOT in the `BodyMap` (integration gap): `Evidence::Unknown` +
+///   `Witness::None`.  In Phase 2 all ProgramGraph routines are source-tier, so a
+///   BodyMap miss is a real integration bug that must surface in `real_unknown_rate`.
 fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyMap<'_>) -> Route {
     if let Some((decl, path)) = body_map.get_with_path(rid) {
         Route {
@@ -93,27 +90,26 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
             },
         }
     } else {
-        // BodyMap miss: symbol-only boundary or integration gap (BodyMap was not
-        // built from the relevant parsed units).  Degrade to Abi+AbiSymbol so the
-        // witness↔evidence contract is preserved.
+        // BodyMap miss: the routine was resolved from the ProgramGraph (always
+        // source-tier in Phase 2) but is absent from the parsed snapshot — a
+        // real integration gap.  Surface it as Unknown so the gap shows up in
+        // `real_unknown_rate` rather than being silently hidden.
         Route {
-            target: RouteTarget::Routine(rid.clone()),
-            evidence: Evidence::Abi,
+            target: RouteTarget::Unresolved,
+            evidence: Evidence::Unknown,
             condition: None,
-            witness: Witness::AbiSymbol {
-                app: rid.object.app,
-                symbol_key: rid.name_lc.clone(),
-            },
+            witness: Witness::None,
         }
     }
 }
 
 /// Try to resolve `name_lc` with `arity` arguments inside `obj_id`.
 ///
-/// Returns the first arity-matched overload; if the name is found but no
-/// overload matches arity, returns the first name-matched overload (Phase 2
-/// choice — do NOT fall through; see module-level doc).  Returns `None` only
-/// when the name is absent entirely in `obj_id`.
+/// Returns the first arity-matched overload as a `Source` route.  When the name
+/// is found but NO overload matches the arity, returns an `Unknown` route — no
+/// false-confident edge to a wrong-arity candidate (does NOT fall through to the
+/// next precedence level; see module-level doc).  Returns `None` only when the
+/// name is absent entirely in `obj_id`.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -127,19 +123,24 @@ fn resolve_in_object(
         return None;
     }
 
-    // Arity-exact match preferred; fall back to first name-match on arity miss.
-    let rid = candidates
-        .iter()
-        .find(|rid| {
-            body_map
-                .get(rid)
-                .map(|d| d.params.len() == arity)
-                .unwrap_or(false)
-        })
-        .or_else(|| candidates.first())
-        .expect("candidates is non-empty — guarded by the is_empty check above");
+    // Arity-exact match preferred.
+    if let Some(rid) = candidates.iter().find(|rid| {
+        body_map
+            .get(rid)
+            .map(|d| d.params.len() == arity)
+            .unwrap_or(false)
+    }) {
+        return Some(make_routine_route(rid, obj_tier, body_map));
+    }
 
-    Some(make_routine_route(rid, obj_tier, body_map))
+    // Name found but no overload matches the requested arity: emit Unknown
+    // rather than a false-confident route to the wrong-arity candidate.
+    Some(Route {
+        target: RouteTarget::Unresolved,
+        evidence: Evidence::Unknown,
+        condition: None,
+        witness: Witness::None,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -222,8 +223,8 @@ mod tests {
     use super::*;
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
-    use crate::program::node::{AppRef, AppRegistry, ObjKey, ObjectNodeId};
-    use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
+    use crate::program::node::AppRegistry;
+    use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{Evidence, RouteTarget, Witness};
     use crate::program::resolve::index::ResolveIndex;
@@ -580,6 +581,100 @@ codeunit 50200 "ContractCU"
             unk_route.witness,
             Witness::None,
             "Unknown evidence must pair with None witness"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // (e) name-found-but-no-arity-match → Unknown, NOT a wrong-arity Source
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bare_name_match_arity_mismatch_emits_unknown_route() {
+        // DoFoo takes 0 params.  Calling with arity 2 → name found, no overload
+        // matches → Unknown route (not a false-confident Source to DoFoo).
+        let src: &'static str = r#"
+codeunit 50103 "ArityMismatchCU"
+{
+    procedure DoFoo()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "ArityMismatchCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ArityMismatchCU");
+        // "dofoo" exists with arity 0; we request arity 2 → no match.
+        let routes = resolve_bare(from_obj, "dofoo", 2, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "arity-mismatch must yield Unresolved target, not a Source route to the wrong-arity proc"
+        );
+        assert_eq!(
+            r.evidence,
+            Evidence::Unknown,
+            "arity-mismatch must yield Unknown evidence"
+        );
+        assert_eq!(
+            r.witness,
+            Witness::None,
+            "arity-mismatch must yield None witness"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // (f) BodyMap-miss on a source-tier graph routine → Unknown, NOT silent Abi
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bare_bodymap_miss_emits_unknown_route() {
+        // Build graph with a codeunit containing MyProc, but supply an EMPTY
+        // slice to BodyMap::build so the BodyMap has no entries.  MyProc is in
+        // the graph (ResolveIndex sees it) but absent from the BodyMap — a real
+        // integration gap that must surface as Unknown, not silent Abi degradation.
+        let src: &'static str = r#"
+codeunit 50104 "BodyMissCU"
+{
+    procedure MyProc()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "BodyMissCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        // Empty parsed slice: every graph routine is absent from the BodyMap.
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let from_obj = find_obj(&graph, "BodyMissCU");
+        let routes = resolve_bare(from_obj, "myproc", 0, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "BodyMap-miss must yield Unresolved (not Routine+Abi)"
+        );
+        assert_eq!(
+            r.evidence,
+            Evidence::Unknown,
+            "BodyMap-miss must yield Unknown evidence"
+        );
+        assert_eq!(
+            r.witness,
+            Witness::None,
+            "BodyMap-miss must yield None witness"
         );
     }
 }
