@@ -3,6 +3,7 @@
 
 pub mod differential;
 pub mod edge;
+pub mod extract;
 pub mod extract_min;
 pub mod stub;
 
