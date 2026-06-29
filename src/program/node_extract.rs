@@ -73,6 +73,10 @@ pub fn extract_nodes(
                 id: RoutineNodeId {
                     object: obj_id.clone(),
                     name_lc: r.name.to_ascii_lowercase(),
+                    enclosing_member_lc: r
+                        .enclosing_member
+                        .as_ref()
+                        .map(|(n, _)| n.to_ascii_lowercase()),
                 },
                 name: r.name.clone(),
                 is_trigger: matches!(r.kind, RoutineKind::Trigger),

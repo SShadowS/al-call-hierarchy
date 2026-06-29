@@ -57,6 +57,10 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                     let caller = RoutineNodeId {
                         object: obj_id.clone(),
                         name_lc: name_lc.clone(),
+                        enclosing_member_lc: routine
+                            .enclosing_member
+                            .as_ref()
+                            .map(|(n, _)| n.to_ascii_lowercase()),
                     };
 
                     for site in sites.iter().filter(|s| s.caller_routine == name_lc) {
@@ -102,6 +106,7 @@ pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
             key: ObjKey::Id(99_999),
         },
         name_lc: "test_routine".to_string(),
+        enclosing_member_lc: None,
     };
     vec![Edge {
         from: caller.clone(),

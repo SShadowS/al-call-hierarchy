@@ -81,11 +81,18 @@ pub struct ObjectNodeId {
 }
 
 /// Canonical identity of a routine within one object. `name_lc` is lowercased
-/// (AL identifiers are case-insensitive).
+/// (AL identifiers are case-insensitive). `enclosing_member_lc` is the
+/// lowercased name of the field/member that a member-trigger is nested in (e.g.
+/// the field name for a table-field `OnValidate`); `None` for regular
+/// procedures and object-level triggers. This discriminator prevents same-named
+/// member triggers on different fields from colliding in maps/sets.
+/// `None < Some(…)` under `Ord`, so object-level triggers sort before field
+/// triggers — intentional.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct RoutineNodeId {
     pub object: ObjectNodeId,
     pub name_lc: String,
+    pub enclosing_member_lc: Option<String>,
 }
 
 #[cfg(test)]

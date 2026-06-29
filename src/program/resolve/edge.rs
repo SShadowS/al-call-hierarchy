@@ -232,6 +232,7 @@ mod tests {
                 key: ObjKey::Id(1),
             },
             name_lc: name.to_string(),
+            enclosing_member_lc: None,
         }
     }
 

@@ -257,6 +257,7 @@ mod tests {
             id: RoutineNodeId {
                 object: obj_id,
                 name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
             },
             name: name.to_string(),
             is_trigger: false,
@@ -466,6 +467,7 @@ mod tests {
                 key: ObjKey::Id(50200),
             },
             name_lc: "publisher".into(),
+            enclosing_member_lc: None,
         };
         assert!(
             idx.subscribers_of(&fake_pub).is_empty(),
