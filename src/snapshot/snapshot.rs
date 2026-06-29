@@ -159,6 +159,17 @@ impl SnapshotBuilder {
                 },
             };
 
+            // Self-dependency guard: the workspace's own compiled .app can sit in an ancestor
+            // `.alpackages` (monorepo / CI cache). It interns to the SAME AppRef as the workspace
+            // source, polluting the graph with duplicate nodes. Exclude it.
+            if (!workspace_app.guid.is_empty() && dep_id.guid == workspace_app.guid)
+                || (workspace_app.guid.is_empty()
+                    && dep_id.name.eq_ignore_ascii_case(&workspace_app.name)
+                    && dep_id.version == workspace_app.version)
+            {
+                continue;
+            }
+
             // Build provider chain: EmbeddedAppProvider → LocalRepoProvider (if matched) → SymbolOnlyProvider.
             let mut providers: Vec<Box<dyn SourceProvider>> = vec![Box::new(EmbeddedAppProvider {
                 app_path: rd.app_path.clone(),
@@ -287,5 +298,32 @@ mod tests {
         let mut sorted = dep_ids.clone();
         sorted.sort();
         assert_eq!(dep_ids, sorted, "dependency apps must be sorted by AppId");
+    }
+
+    #[test]
+    fn workspace_is_not_its_own_dependency() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            return;
+        };
+        let snap = SnapshotBuilder {
+            workspace_root: ws,
+            local_providers: vec![],
+        }
+        .build()
+        .expect("snapshot");
+        // The workspace app identity must appear exactly once across all units.
+        let ws_id = &snap.workspace_app;
+        let same = snap
+            .apps
+            .iter()
+            .filter(|u| u.id.guid == ws_id.guid && !ws_id.guid.is_empty())
+            .count();
+        assert_eq!(
+            same, 1,
+            "workspace .app cached in .alpackages must not be added as a self-dependency"
+        );
     }
 }
