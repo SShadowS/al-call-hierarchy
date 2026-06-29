@@ -11,15 +11,17 @@
 //! 4. **Global builtin** — `is_global_builtin(name_lc)` → `Catalog` route.
 //! 5. **Unknown** — genuine resolution failure.
 //!
-//! # Arity matching (Phase 2)
+//! # Arity matching (Phase 2 / Phase 3 Task 0)
 //!
-//! `routines_in_object` returns all overloads for a name.  An overload matches
-//! when `params.len() == arity`.  When multiple overloads match the first (by
-//! sorted `RoutineNodeId` order) is returned.  When the name is found but NO
-//! overload matches the arity, an `Unknown` route is emitted — no false-confident
-//! edge to a wrong-arity target.  The caller still stops at that precedence level
-//! (does NOT fall through to extension-base / global-builtin), mirroring L3's
-//! MemberNotFound stop semantics while surfacing the gap honestly.
+//! `RoutineNodeId` now carries `params_count`, so each overload (same name,
+//! different arity) is a distinct node in the graph and index.
+//! `routines_in_object` returns one entry per distinct overload.  An overload
+//! matches when `rid.params_count == arity`.  When the first (by sorted
+//! `RoutineNodeId` order) match is found it is returned.  When the name is found
+//! but NO overload matches the arity, an `Unknown` route is emitted — no
+//! false-confident edge to a wrong-arity target.  The caller still stops at that
+//! precedence level (does NOT fall through to extension-base / global-builtin),
+//! mirroring L3's MemberNotFound stop semantics while surfacing the gap honestly.
 //! Name-absent ⇒ `None` ⇒ fall through.
 //!
 //! # Witness↔evidence contract
@@ -132,10 +134,11 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
 /// next precedence level; see module-level doc).  Returns `None` only when the
 /// name is absent entirely in `obj_id`.
 ///
-/// **SymbolOnly tier exception:** parameter info is unavailable (no parsed body),
-/// so arity matching is impossible.  Any name match immediately produces an
-/// `Opaque` boundary route (via [`make_routine_route`]) rather than a false
-/// Unknown that would regress vs L3's External resolution.
+/// **SymbolOnly tier exception:** `params_count` is 0 for all SymbolOnly routines
+/// (loaded from .app SymbolReference, no source parse), so arity matching is
+/// impossible.  Any name match immediately produces an `Opaque` boundary route
+/// (via [`make_routine_route`]) rather than a false Unknown that would regress
+/// vs L3's External resolution.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -149,8 +152,9 @@ fn resolve_in_object(
         return None;
     }
 
-    // SymbolOnly: no params info is available, so arity checking is impossible.
-    // Use the first candidate directly; `make_routine_route` returns an Opaque
+    // SymbolOnly: params info is unavailable (loaded from .app SymbolReference,
+    // no source parse) so params_count is always 0. Arity checking is impossible;
+    // use the first candidate directly. `make_routine_route` returns an Opaque
     // boundary route for SymbolOnly BodyMap misses.
     if obj_tier == TrustTier::SymbolOnly {
         // SAFETY: candidates is non-empty (checked above).
@@ -161,35 +165,19 @@ fn resolve_in_object(
         ));
     }
 
-    // Arity-exact match preferred (source-bearing tiers only).
-    if let Some(rid) = candidates.iter().find(|rid| {
-        body_map
-            .get(rid)
-            .map(|d| d.params.len() == arity)
-            .unwrap_or(false)
-    }) {
+    // Arity-exact match: find the first (by sorted RoutineNodeId order) overload
+    // whose params_count == arity. With params_count in RoutineNodeId, each
+    // overload is a distinct node in the graph and index.
+    if let Some(rid) = candidates.iter().find(|rid| rid.params_count == arity) {
+        // TODO: disambiguate_by_arg_types when multiple same-arity overloads exist
+        // (overloads differing only by param type, rare in AL). Deferred to a
+        // later task; deterministic: first by RoutineNodeId sorted order.
         return Some(make_routine_route(rid, obj_tier, body_map));
     }
 
-    // AL overloads: multiple procedures share the same `RoutineNodeId` (same
-    // object + name_lc + enclosing_member_lc) because the node model has no
-    // per-overload discriminant.  The ResolveIndex pushes one entry per IR
-    // routine so `candidates.len() > 1` is the reliable overload signal.
-    // BodyMap stores the last-written overload's params, so the arity-exact
-    // search above only sees ONE overload's params.  When the name unambiguously
-    // exists in this object (overloads present) use the first candidate; the
-    // canonical target is the same for every overload (shared RoutineNodeId).
-    if candidates.len() > 1 {
-        // SAFETY: candidates.len() > 1 implies non-empty.
-        return Some(make_routine_route(
-            candidates.first().unwrap(),
-            obj_tier,
-            body_map,
-        ));
-    }
-
-    // Single candidate, name found but arity mismatch: emit Unknown rather than
-    // a false-confident route to the wrong-arity procedure.
+    // Name found but no arity-matched overload: emit Unknown rather than a
+    // false-confident route to a wrong-arity candidate. Does NOT fall through
+    // to extension-base / global-builtin — mirrors L3's MemberNotFound stop.
     Some(Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,
@@ -1270,6 +1258,95 @@ codeunit 50104 "BodyMissCU"
             r.witness,
             Witness::None,
             "BodyMap-miss must yield None witness"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 0 (Phase 3): overloads with distinct params_count → distinct
+    // RoutineNodeIds, resolved by arity
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn overloads_distinct_by_arity_and_resolved_by_arity() {
+        // A codeunit with Post() (0 params) and Post(x: Integer) (1 param).
+        // After the arity discriminant, both must produce DISTINCT RoutineNodeIds
+        // and resolve_bare must pick the arity-matched overload.
+        let src: &'static str = r#"
+codeunit 50300 "OverloadCU"
+{
+    procedure Post()
+    begin
+    end;
+    procedure Post(x: Integer)
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "OverloadCU.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        // Collect the RoutineNodeIds for "post" from the graph.
+        let post_rids: Vec<_> = graph
+            .routines
+            .iter()
+            .filter(|r| r.id.name_lc == "post")
+            .map(|r| r.id.clone())
+            .collect();
+        assert_eq!(post_rids.len(), 2, "IR must expose two Post overloads");
+
+        // Their params_counts must be 0 and 1.
+        let mut counts: Vec<usize> = post_rids.iter().map(|r| r.params_count).collect();
+        counts.sort();
+        assert_eq!(
+            counts,
+            vec![0, 1],
+            "Post() and Post(x: Integer) must have params_count 0 and 1"
+        );
+
+        // The two RoutineNodeIds must be DISTINCT (params_count is part of the key).
+        assert_ne!(
+            post_rids[0], post_rids[1],
+            "overloads must have distinct RoutineNodeIds after adding params_count"
+        );
+
+        let from_obj = find_obj(&graph, "OverloadCU");
+
+        // Resolve with arity=1 → must get the Post(x: Integer) overload (params_count=1).
+        let routes1 = resolve_bare(from_obj, "post", 1, &graph, &index, &body_map);
+        assert_eq!(routes1.len(), 1);
+        let r1 = &routes1[0];
+        assert!(
+            matches!(r1.target, RouteTarget::Routine(_)),
+            "arity=1 call must resolve to a Routine, not Unknown; got {:?}",
+            r1.target
+        );
+        let RouteTarget::Routine(ref rid1) = r1.target else {
+            unreachable!()
+        };
+        assert_eq!(
+            rid1.params_count, 1,
+            "arity=1 call must resolve to the 1-param overload"
+        );
+
+        // Resolve with arity=0 → must get the Post() overload (params_count=0).
+        let routes0 = resolve_bare(from_obj, "post", 0, &graph, &index, &body_map);
+        assert_eq!(routes0.len(), 1);
+        let r0 = &routes0[0];
+        assert!(
+            matches!(r0.target, RouteTarget::Routine(_)),
+            "arity=0 call must resolve to a Routine; got {:?}",
+            r0.target
+        );
+        let RouteTarget::Routine(ref rid0) = r0.target else {
+            unreachable!()
+        };
+        assert_eq!(
+            rid0.params_count, 0,
+            "arity=0 call must resolve to the 0-param overload"
         );
     }
 }

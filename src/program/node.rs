@@ -86,6 +86,10 @@ pub struct ObjectNodeId {
 /// the field name for a table-field `OnValidate`); `None` for regular
 /// procedures and object-level triggers. This discriminator prevents same-named
 /// member triggers on different fields from colliding in maps/sets.
+/// `params_count` is the parameter count of the routine, used to distinguish
+/// AL overloads (same name, different arity) so each overload maps to a unique
+/// node. For SymbolOnly (dep boundary) routines where params are unavailable,
+/// `params_count` is 0 and arity checking is bypassed in resolution.
 /// `None < Some(…)` under `Ord`, so object-level triggers sort before field
 /// triggers — intentional.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -93,6 +97,7 @@ pub struct RoutineNodeId {
     pub object: ObjectNodeId,
     pub name_lc: String,
     pub enclosing_member_lc: Option<String>,
+    pub params_count: usize,
 }
 
 #[cfg(test)]

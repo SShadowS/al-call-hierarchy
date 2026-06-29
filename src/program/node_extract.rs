@@ -77,6 +77,7 @@ pub fn extract_nodes(
                         .enclosing_member
                         .as_ref()
                         .map(|(n, _)| n.to_ascii_lowercase()),
+                    params_count: r.params.len(),
                 },
                 name: r.name.clone(),
                 is_trigger: matches!(r.kind, RoutineKind::Trigger),

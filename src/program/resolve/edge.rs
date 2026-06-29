@@ -233,6 +233,7 @@ mod tests {
             },
             name_lc: name.to_string(),
             enclosing_member_lc: None,
+            params_count: 0,
         }
     }
 

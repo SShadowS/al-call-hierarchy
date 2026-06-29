@@ -61,6 +61,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                             .enclosing_member
                             .as_ref()
                             .map(|(n, _)| n.to_ascii_lowercase()),
+                        params_count: routine.params.len(),
                     };
 
                     for site in sites.iter().filter(|s| s.caller_routine == name_lc) {
@@ -107,6 +108,7 @@ pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
         },
         name_lc: "test_routine".to_string(),
         enclosing_member_lc: None,
+        params_count: 0,
     };
     vec![Edge {
         from: caller.clone(),

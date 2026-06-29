@@ -16,11 +16,11 @@ use crate::snapshot::ParsedUnit;
 ///
 /// The object-key logic mirrors [`crate::program::node_extract::extract_nodes`]:
 /// use the numeric id when present, otherwise lowercase-name.
-/// [`RoutineNodeId`] now includes `enclosing_member_lc`, so same-named member
-/// triggers on different fields (e.g. two `OnValidate` field triggers) are
-/// stored under distinct keys.  True same-key collisions (two routines with the
-/// same name AND the same enclosing member, i.e. genuine AL overloads) still
-/// use last-write semantics.
+/// [`RoutineNodeId`] now includes `enclosing_member_lc` and `params_count`, so
+/// same-named member triggers on different fields (e.g. two `OnValidate` field
+/// triggers) are stored under distinct keys.  Genuine AL overloads (same name,
+/// same enclosing member, DIFFERENT `params_count`) also produce distinct keys
+/// and are stored under separate entries.
 ///
 /// Each entry also records the `virtual_path` of the file that declared the
 /// routine so that [`get_with_path`][`BodyMap::get_with_path`] can supply the
@@ -61,6 +61,7 @@ impl<'a> BodyMap<'a> {
                                 .enclosing_member
                                 .as_ref()
                                 .map(|(n, _)| n.to_ascii_lowercase()),
+                            params_count: routine.params.len(),
                         };
                         // Last-write wins on true same-key collision (same
                         // object + name + enclosing_member); distinct
@@ -167,6 +168,7 @@ codeunit 50100 "My Codeunit"
             object: obj_id.clone(),
             name_lc: "dosomething".into(),
             enclosing_member_lc: None,
+            params_count: 0,
         };
         let decl = body_map.get(&r1).expect("DoSomething must be found");
         assert_eq!(decl.name, "DoSomething");
@@ -175,6 +177,7 @@ codeunit 50100 "My Codeunit"
             object: obj_id.clone(),
             name_lc: "doother".into(),
             enclosing_member_lc: None,
+            params_count: 0,
         };
         let decl2 = body_map.get(&r2).expect("DoOther must be found");
         assert_eq!(decl2.name, "DoOther");
@@ -184,6 +187,7 @@ codeunit 50100 "My Codeunit"
             object: obj_id,
             name_lc: "notexist".into(),
             enclosing_member_lc: None,
+            params_count: 0,
         };
         assert!(
             body_map.get(&absent).is_none(),
@@ -217,6 +221,7 @@ tableextension 50100 "Customer Ext" extends Customer
             object: obj_id,
             name_lc: "extrahelper".into(),
             enclosing_member_lc: None,
+            params_count: 0,
         };
         // Verify the routine is found and correctly indexed.
         assert!(
@@ -309,11 +314,13 @@ tableextension 50100 "Cust Ext" extends Customer
             object: obj_id.clone(),
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("foo".into()),
+            params_count: 0,
         };
         let baz_id = RoutineNodeId {
             object: obj_id.clone(),
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("baz".into()),
+            params_count: 0,
         };
 
         // The two RoutineNodeIds must be distinct (the discriminator must differ).

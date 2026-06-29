@@ -258,6 +258,7 @@ mod tests {
                 object: obj_id,
                 name_lc: name.to_ascii_lowercase(),
                 enclosing_member_lc: None,
+                params_count: 0,
             },
             name: name.to_string(),
             is_trigger: false,
@@ -468,6 +469,7 @@ mod tests {
             },
             name_lc: "publisher".into(),
             enclosing_member_lc: None,
+            params_count: 0,
         };
         assert!(
             idx.subscribers_of(&fake_pub).is_empty(),
