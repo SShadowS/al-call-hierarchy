@@ -414,8 +414,11 @@ fn phase3_member_resolution_matches_or_beats_l3() {
          regression_unexplained={} regression_interface={} regression_enum_static={}\n\
          regression_page_rec={} regression_scalar={}\n\
          regression_compound_receiver={} regression_codeunit_implicit_rec={}\n\
-         evidence_overclaim={}\n\
-         missing_site={} extra_site={} unaligned={}\n\
+         evidence_overclaim={} unverified_extra={}\n\
+         missing_site={} extra_site={}\n\
+         fresh_ahead_interface={} fresh_ahead_instance_builtin={} \
+         fresh_ahead_enum_static={}\n\
+         unaligned={}\n\
          fresh_total={} l3_total={}\n\
          fresh_unknown={} fresh_resolved={} ({:.1}% unknown on fresh Member sites)\n\
          l3_unknown={} l3_resolved={} ({:.1}% unknown on L3 Member oracle)\n\
@@ -440,8 +443,12 @@ fn phase3_member_resolution_matches_or_beats_l3() {
         report.regression_compound_receiver,
         report.regression_codeunit_implicit_rec,
         report.evidence_overclaim,
+        report.unverified_extra,
         report.missing_site,
         report.extra_site,
+        report.fresh_ahead_interface,
+        report.fresh_ahead_instance_builtin,
+        report.fresh_ahead_enum_static,
         report.unaligned,
         report.fresh_total,
         report.l3_total,
@@ -484,6 +491,11 @@ fn phase3_member_resolution_matches_or_beats_l3() {
     assert_eq!(
         report.evidence_overclaim, 0,
         "no Source/Abi/Catalog claim without a valid witness: {report:?}"
+    );
+    assert_eq!(
+        report.unverified_extra, 0,
+        "no fresh-only fan-out route may fail the applicability predicate \
+         (unverified_extra is inert at Task 0, gains teeth in Tasks 1-3): {report:?}"
     );
 
     // Divergence cap: all 45 CDO divergences have been adjudicated (see task-5-report.md).

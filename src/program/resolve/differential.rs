@@ -1551,6 +1551,11 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
     let mut divergence = 0usize;
     let mut missing_site = 0usize;
     let mut extra_site = 0usize;
+    // `unverified_extra` is a live counter (not the former hardcoded-0 struct
+    // field).  At Task 0 it stays 0 because the FreshOnly block routes all
+    // Phase-2 sites to `extra_site` (no fan-out resolver yet).  Tasks 1-3 will
+    // add `mut` and increment it via applicability-predicate classification.
+    let unverified_extra = 0usize;
     let mut unaligned = 0usize;
 
     for m in &site_matches {
@@ -1597,8 +1602,10 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
                 //  • interface-dispatch Bare calls where L3 uses Interface/Method
                 //    (excluded) but fresh correctly resolves to the concrete
                 //    own-object procedure.
-                // Both are informational; witness quality is guaranteed by the
-                // global evidence_overclaim check above.
+                // Witness quality is guaranteed by the global evidence_overclaim
+                // check above.  Phase 4 fan-out routes (Tasks 1-3) will add
+                // applicability-predicate classification here; until then all
+                // FreshOnly sites are counted as extra_site (inert).
                 extra_site += 1;
             }
             SiteMatch::L3Only(_) => {
@@ -1616,7 +1623,11 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
         regression_implicit_rec,
         regression_cross_app,
         evidence_overclaim,
-        unverified_extra: 0, // always 0 by design; see field doc.
+        // `unverified_extra` is a live counter (not hardcoded 0).  At Phase 2,
+        // the FreshOnly block still routes all sites to `extra_site` because no
+        // fan-out resolver exists yet.  Phase 4 Tasks 1-3 will wire applicability
+        // classification here; `unverified_extra` will stay 0 until then.
+        unverified_extra,
         verified_win,
         divergence,
         missing_site,
@@ -1681,8 +1692,24 @@ pub struct MemberResolutionReport {
     pub divergence: usize,
     /// L3-only Member sites: fresh extracted no matching site.
     pub missing_site: usize,
-    /// Fresh-only Member sites: no L3 Member-oracle peer.
+    /// Fresh-only Member sites: no L3 Member-oracle peer — valid extra (empty
+    /// targets, no witness claim to validate) or categorised by `fresh_ahead_*`.
     pub extra_site: usize,
+    /// Fresh-only sites with concrete targets validated as justified interface
+    /// fan-out by [`applicability::interface_route_applicable`] — populated by
+    /// Tasks 1-3.  Zero at Task 0 (no fan-out resolver yet).
+    pub fresh_ahead_interface: usize,
+    /// Fresh-only sites with concrete targets validated as justified
+    /// instance-builtin by [`applicability::instance_builtin_route_applicable`]
+    /// — populated by Tasks 1-3.  Zero at Task 0.
+    pub fresh_ahead_instance_builtin: usize,
+    /// Fresh-only sites with concrete targets validated as justified enum-static
+    /// dispatch — populated by Tasks 1-3.  Zero at Task 0.
+    pub fresh_ahead_enum_static: usize,
+    /// Fresh-only sites with concrete targets that FAILED the matching
+    /// applicability predicate — a real false edge (must be 0).
+    /// Gains teeth in Phase 4 when Tasks 1-3 emit fan-out routes; zero until then.
+    pub unverified_extra: usize,
     /// Sum of excess indices from `Unaligned` buckets.
     pub unaligned: usize,
     /// Total fresh `Member` sites extracted from the workspace.
@@ -2072,6 +2099,13 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     let mut divergence = 0usize;
     let mut missing_site = 0usize;
     let mut extra_site = 0usize;
+    // These Phase-4 applicability counters are inert at Task 0 (no fan-out
+    // resolver emits routes yet).  Tasks 1-3 will add `mut` and wire the
+    // applicability predicates into the FreshOnly block.
+    let fresh_ahead_interface = 0usize;
+    let fresh_ahead_instance_builtin = 0usize;
+    let fresh_ahead_enum_static = 0usize;
+    let unverified_extra = 0usize;
     let mut unaligned = 0usize;
 
     // Diagnostics for unexplained regressions (first 30, to avoid noise).
@@ -2188,6 +2222,12 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                 }
             }
             SiteMatch::FreshOnly(_) => {
+                // Phase 4 Tasks 1-3 will emit fan-out routes (interface /
+                // instance-builtin / enum-static) that need to be validated by
+                // the applicability predicates in `applicability.rs` before
+                // being counted as `fresh_ahead_*` vs `unverified_extra`.
+                // At Task 0 no fan-out resolver exists yet → all FreshOnly
+                // sites go to extra_site (applicability layer is inert).
                 extra_site += 1;
             }
             SiteMatch::L3Only(_) => {
@@ -2229,6 +2269,10 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
         divergence,
         missing_site,
         extra_site,
+        fresh_ahead_interface,
+        fresh_ahead_instance_builtin,
+        fresh_ahead_enum_static,
+        unverified_extra,
         unaligned,
         fresh_total,
         l3_total,

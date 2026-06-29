@@ -1,0 +1,706 @@
+//! Route-level APPLICABILITY predicates for Phase 4 fan-out resolution.
+//!
+//! A WITNESS proves a route's target EXISTS; it does NOT prove the call SITE
+//! dispatches to it.  A fresh-only fan-out route is justified (`fresh_ahead_*`)
+//! ONLY when a route-level, SITE-CONTEXTUAL applicability predicate passes;
+//! FAIL → `unverified_extra` (a real false edge).
+//!
+//! Three predicates are provided:
+//! - [`interface_route_applicable`] — validates an interface-dispatch fan-out
+//!   route against the call site's interface name, called member, and arity.
+//! - [`implicit_trigger_route_applicable`] — validates an implicit-trigger
+//!   fan-out route (OnInsert / OnModify / OnDelete / OnRename / OnValidate)
+//!   against the record-op context.
+//! - [`instance_builtin_route_applicable`] — validates that a method name is in
+//!   THAT object-kind's instance-builtin catalog (kind-uniform, no per-site state).
+//!
+//! Clean-room: this module does NOT import from L3 logic.
+
+use al_syntax::ir::ObjectKind;
+
+use crate::program::graph::ProgramGraph;
+use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::resolve::index::ResolveIndex;
+use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
+use crate::program::resolve::receiver::FrameworkKind;
+
+// ---------------------------------------------------------------------------
+// Types for RecordOpCtx
+// ---------------------------------------------------------------------------
+
+/// Lowercased field name used as the field identity for a `Validate` trigger.
+///
+/// When the call site is `Rec.Validate(FieldName)`, the field name is lowercased
+/// and stored here.  The corresponding `RoutineNodeId.enclosing_member_lc` on a
+/// field-level `OnValidate` trigger carries the same lowercased field name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldRef(pub String);
+
+/// The specific record-database operation kind at a call site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordOpKind {
+    Insert,
+    Modify,
+    Delete,
+    Rename,
+    Validate,
+}
+
+/// Whether the record operation's run-trigger argument is `true`, `false`, or
+/// conditionally guarded at the call site.
+///
+/// `False` suppresses all trigger edges unconditionally.
+/// `True` fires triggers unconditionally.
+/// `Guarded` fires triggers conditionally; the route is emitted with a
+/// `RunTriggerGuarded` condition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunTrigger {
+    True,
+    False,
+    Guarded,
+}
+
+/// Site-contextual description of a record-operation implicit-trigger dispatch.
+///
+/// This struct captures the CALL-SITE context needed by
+/// [`implicit_trigger_route_applicable`] to validate that a proposed fan-out
+/// route to a trigger really does fire for this particular operation and field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordOpCtx {
+    /// The database operation kind (Insert / Modify / Delete / Rename / Validate).
+    pub kind: RecordOpKind,
+    /// The table node on which the operation is being called.
+    pub table: ObjectNodeId,
+    /// For `Validate`: the specific field being validated (lowercased name).
+    /// `None` for Insert / Modify / Delete / Rename.
+    pub field: Option<FieldRef>,
+    /// Whether the run-trigger flag is statically true, false, or guarded.
+    pub run_trigger: RunTrigger,
+}
+
+// ---------------------------------------------------------------------------
+// Predicate: interface_route_applicable
+// ---------------------------------------------------------------------------
+
+/// Returns `true` iff a fresh fan-out route to `target` is applicable for a
+/// call site that dispatches via interface `iface_lc` calling member
+/// `called_member_lc` with arity `called_arity`.
+///
+/// # Conditions (all must hold)
+/// 1. `target.name_lc == called_member_lc` — the route targets the right method.
+/// 2. `target.params_count == called_arity` — arity matches the call site.
+/// 3. The target's OBJECT implements `iface_lc` (exact case-insensitive match via
+///    `ObjectNode.implements`, already lowercased).
+/// 4. The match is UNAMBIGUOUS: exactly one routine in the target object has
+///    `(name_lc == called_member_lc, params_count == called_arity)`.  Multiple
+///    → `false` (caller emits Unresolved rather than a false-confident route).
+///
+/// AL has no explicit method-level interface wiring; the contract is an implicit
+/// public-signature match.  Same-name-same-arity type-disambiguation is deferred
+/// to Phase 1B.3 → those punt to `false` here.
+pub fn interface_route_applicable(
+    iface_lc: &str,
+    called_member_lc: &str,
+    called_arity: usize,
+    target: &RoutineNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    // 1+2. Name + arity must match the call site.
+    if target.name_lc != called_member_lc {
+        return false;
+    }
+    if target.params_count != called_arity {
+        return false;
+    }
+
+    // 3. Target's object must implement the interface.
+    let Some(obj_node) = graph.objects.iter().find(|o| o.id == target.object) else {
+        return false;
+    };
+    let implements_iface = obj_node
+        .implements
+        .iter()
+        .any(|s| s.to_ascii_lowercase() == iface_lc);
+    if !implements_iface {
+        return false;
+    }
+
+    // 4. Unambiguous: exactly one routine in this object matches (name, arity).
+    let candidates = index.routines_in_object(&target.object, called_member_lc);
+    let matching_arity = candidates
+        .iter()
+        .filter(|r| r.params_count == called_arity)
+        .count();
+    matching_arity == 1
+}
+
+// ---------------------------------------------------------------------------
+// Predicate: implicit_trigger_route_applicable
+// ---------------------------------------------------------------------------
+
+/// Returns `true` iff a fresh fan-out route to `target` is applicable for the
+/// record-operation implicit-trigger dispatch described by `ctx`.
+///
+/// # Rules
+/// - `ctx.run_trigger == False` → ALWAYS `false` (no trigger fires for
+///   `Insert(false)`, `Modify(false)`, etc.).
+/// - The target's `name_lc` must match the correct trigger name for `ctx.kind`:
+///   - `Insert`   → `oninsert`   (object-level trigger; `enclosing_member_lc` is `None`)
+///   - `Modify`   → `onmodify`   (same)
+///   - `Delete`   → `ondelete`   (same)
+///   - `Rename`   → `onrename`   (same)
+///   - `Validate` → `onvalidate` AND `target.enclosing_member_lc` must equal
+///     `ctx.field` (the SPECIFIC field being validated — a route to a different
+///     field's `OnValidate` is NOT applicable).
+/// - The target's object must be `ctx.table` (the base table) OR a
+///   `TableExtension` of it (resolved via `index.table_extensions_of`).
+pub fn implicit_trigger_route_applicable(
+    ctx: &RecordOpCtx,
+    target: &RoutineNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    // run_trigger == False → never fires any trigger.
+    if ctx.run_trigger == RunTrigger::False {
+        return false;
+    }
+
+    // Trigger name + field specificity check.
+    let trigger_name_ok = match &ctx.kind {
+        RecordOpKind::Insert => {
+            target.name_lc == "oninsert" && target.enclosing_member_lc.is_none()
+        }
+        RecordOpKind::Modify => {
+            target.name_lc == "onmodify" && target.enclosing_member_lc.is_none()
+        }
+        RecordOpKind::Delete => {
+            target.name_lc == "ondelete" && target.enclosing_member_lc.is_none()
+        }
+        RecordOpKind::Rename => {
+            target.name_lc == "onrename" && target.enclosing_member_lc.is_none()
+        }
+        RecordOpKind::Validate => {
+            if target.name_lc != "onvalidate" {
+                return false;
+            }
+            // Must target the SPECIFIC field's OnValidate.
+            match (&ctx.field, &target.enclosing_member_lc) {
+                (Some(FieldRef(field_lc)), Some(enc_lc)) => field_lc == enc_lc,
+                // ctx has no field (shouldn't happen for Validate) or target
+                // has no enclosing_member (an object-level trigger, not a field one).
+                _ => false,
+            }
+        }
+    };
+    if !trigger_name_ok {
+        return false;
+    }
+
+    // Object identity: target must be on ctx.table or a TableExtension of it.
+    if target.object == ctx.table {
+        return true;
+    }
+
+    // Look up the base table's lowercased name for the extension index.
+    let table_name_lc: String = match &ctx.table.key {
+        ObjKey::Name(s) => s.clone(),
+        ObjKey::Id(_) => {
+            // Resolve the name from the graph (needed when the table is id-keyed).
+            graph
+                .objects
+                .iter()
+                .find(|o| o.id == ctx.table)
+                .map(|n| n.name.to_ascii_lowercase())
+                .unwrap_or_default()
+        }
+    };
+
+    if table_name_lc.is_empty() {
+        return false;
+    }
+
+    index
+        .table_extensions_of(&table_name_lc)
+        .contains(&target.object)
+}
+
+// ---------------------------------------------------------------------------
+// Predicate: instance_builtin_route_applicable
+// ---------------------------------------------------------------------------
+
+/// Returns `true` iff `method_lc` (already lowercased) is a known
+/// instance-builtin method for the given object `kind`.
+///
+/// Delegates to the `member_builtin` catalog (Phase 3 clean-room catalog):
+/// - `Page`   → `PAGE_INSTANCE` catalog via
+///   `MemberCatalogKind::Framework(FrameworkKind::PageInstance)`.
+/// - `Report` → `REPORT_INSTANCE` catalog via
+///   `MemberCatalogKind::Framework(FrameworkKind::ReportInstance)`.
+/// - All other kinds → `false`.
+///
+/// This predicate is kind-uniform (no per-object-instance data), which covers
+/// the `RunModal`/`Run`/`Close`/`SaveAsPdf`-class category methods.
+/// Object-metadata-sensitive methods (`SetRecord`/`SetTableView`, which depend
+/// on the object's specific source table) are in the catalog but Task 1 keeps
+/// them OUT of confident fan-out until the per-object table constraint is
+/// modelled.
+pub fn instance_builtin_route_applicable(kind: ObjectKind, method_lc: &str) -> bool {
+    match kind {
+        ObjectKind::Page => member_builtin(
+            MemberCatalogKind::Framework(&FrameworkKind::PageInstance),
+            method_lc,
+        ),
+        ObjectKind::Report => member_builtin(
+            MemberCatalogKind::Framework(&FrameworkKind::ReportInstance),
+            method_lc,
+        ),
+        _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::program::graph::{ObjectIndex, ProgramGraph};
+    use crate::program::node::{AppRef, AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
+    use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
+    use crate::program::topology::DependencyGraph;
+    use crate::snapshot::{AppId, TrustTier};
+    use al_syntax::ir::ObjectKind;
+
+    // -------------------------------------------------------------------------
+    // Fixture helpers
+    // -------------------------------------------------------------------------
+
+    fn make_app() -> (AppRegistry, AppRef) {
+        let mut apps = AppRegistry::default();
+        let r = apps.intern(&AppId {
+            guid: String::new(),
+            name: "TestApp".into(),
+            publisher: "T".into(),
+            version: "1.0.0.0".into(),
+        });
+        (apps, r)
+    }
+
+    fn make_obj(
+        app: AppRef,
+        kind: ObjectKind,
+        name: &str,
+        implements: Vec<&str>,
+        extends_target: Option<&str>,
+    ) -> ObjectNode {
+        ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind,
+                key: ObjKey::Name(name.to_ascii_lowercase()),
+            },
+            name: name.to_string(),
+            declared_id: None,
+            extends_target: extends_target.map(str::to_string),
+            implements: implements.into_iter().map(str::to_string).collect(),
+            tier: TrustTier::Workspace,
+        }
+    }
+
+    fn make_routine(
+        obj_id: &ObjectNodeId,
+        name: &str,
+        params: usize,
+        enclosing: Option<&str>,
+    ) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id.clone(),
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: enclosing.map(|s| s.to_ascii_lowercase()),
+                params_count: params,
+            },
+            name: name.to_string(),
+            is_trigger: enclosing.is_some()
+                || matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "oninsert" | "onmodify" | "ondelete" | "onrename" | "onvalidate"
+                ),
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+        }
+    }
+
+    fn build_graph(
+        apps: AppRegistry,
+        objects: Vec<ObjectNode>,
+        routines: Vec<RoutineNode>,
+    ) -> (ProgramGraph, ResolveIndex) {
+        let mut sorted_objects = objects;
+        sorted_objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&sorted_objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects: sorted_objects,
+            routines: routines.iter().map(RoutineNode::clone).collect(),
+            obj_index,
+        };
+        let index = ResolveIndex::build(&graph);
+        (graph, index)
+    }
+
+    // -------------------------------------------------------------------------
+    // Interface-route fixture
+    // -------------------------------------------------------------------------
+
+    /// Builds a minimal fixture:
+    /// - Interface "IFoo"
+    /// - Codeunit "FooImpl" implements IFoo, declares `Bar()` (0 params) and
+    ///   `Baz(x)` (1 param).
+    /// - Codeunit "Other" does NOT implement IFoo.
+    fn iface_fixture() -> (ProgramGraph, ResolveIndex, ObjectNodeId, ObjectNodeId) {
+        let (apps, app) = make_app();
+
+        let iface_obj = make_obj(app, ObjectKind::Interface, "IFoo", vec![], None);
+        let impl_obj = make_obj(app, ObjectKind::Codeunit, "FooImpl", vec!["IFoo"], None);
+        let other_obj = make_obj(app, ObjectKind::Codeunit, "Other", vec![], None);
+
+        let iface_id = iface_obj.id.clone();
+        let impl_id = impl_obj.id.clone();
+
+        let bar = make_routine(&impl_id, "bar", 0, None);
+        let baz = make_routine(&impl_id, "baz", 1, None);
+
+        let objects = vec![iface_obj, impl_obj, other_obj];
+        let routines = vec![bar, baz];
+        let (graph, index) = build_graph(apps, objects, routines);
+        (graph, index, iface_id, impl_id)
+    }
+
+    // -------------------------------------------------------------------------
+    // interface_route_applicable — positive
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn interface_applicable_happy_path_bar() {
+        let (graph, index, _iface_id, impl_id) = iface_fixture();
+        let target = RoutineNodeId {
+            object: impl_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
+            "FooImpl implements IFoo and has a unique Bar() → applicable"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // interface_route_applicable — negative (the brief's mandatory negatives)
+    // -------------------------------------------------------------------------
+
+    /// Critical site-context test (gpt flagged): a UNIQUE Baz() route for a Bar()
+    /// call is NOT applicable — the method name does not match the call site.
+    #[test]
+    fn interface_applicable_baz_route_for_bar_call_is_false() {
+        let (graph, index, _iface_id, impl_id) = iface_fixture();
+        // A route pointing at Baz (1-param) being considered for a call to Bar(0).
+        let target = RoutineNodeId {
+            object: impl_id,
+            name_lc: "baz".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+        };
+        assert!(
+            !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
+            "Baz() route for Bar() call must be false — name mismatch (site-context guard)"
+        );
+    }
+
+    #[test]
+    fn interface_applicable_object_does_not_implement_iface_is_false() {
+        let (graph, index, _iface_id, _impl_id) = iface_fixture();
+        let other_id = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "Other")
+            .unwrap()
+            .id
+            .clone();
+        let target = RoutineNodeId {
+            object: other_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
+            "Object does not implement IFoo → not applicable"
+        );
+    }
+
+    #[test]
+    fn interface_applicable_ambiguous_two_same_name_same_arity_is_false() {
+        // Two routines with identical (name_lc, params_count) in the same object.
+        let (apps, app) = make_app();
+        let impl_obj = make_obj(app, ObjectKind::Codeunit, "FooImpl", vec!["IFoo"], None);
+        let impl_id = impl_obj.id.clone();
+
+        let bar1 = make_routine(&impl_id, "bar", 0, None);
+        let bar2 = make_routine(&impl_id, "bar", 0, None); // exact duplicate
+
+        let (graph, index) = build_graph(apps, vec![impl_obj], vec![bar1, bar2]);
+
+        let target = RoutineNodeId {
+            object: impl_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
+            "Ambiguous (two Bar() in implementer) → not applicable"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // implicit_trigger_route_applicable fixture
+    // -------------------------------------------------------------------------
+
+    /// Builds a trigger fixture:
+    /// - Table "Customer" with OnInsert, OnModify, OnValidate(Name), OnValidate(No.)
+    /// - TableExtension "CustomerExt" extending "Customer" with OnInsert
+    /// - Table "Vendor" (unrelated)
+    fn trigger_fixture() -> (ProgramGraph, ResolveIndex, ObjectNodeId, ObjectNodeId) {
+        let (apps, app) = make_app();
+
+        let table = make_obj(app, ObjectKind::Table, "Customer", vec![], None);
+        let table_ext = make_obj(
+            app,
+            ObjectKind::TableExtension,
+            "CustomerExt",
+            vec![],
+            Some("Customer"),
+        );
+        let unrelated = make_obj(app, ObjectKind::Table, "Vendor", vec![], None);
+
+        let table_id = table.id.clone();
+        let ext_id = table_ext.id.clone();
+
+        let oninsert = make_routine(&table_id, "oninsert", 0, None);
+        let onmodify = make_routine(&table_id, "onmodify", 0, None);
+        let onvalidate_name = make_routine(&table_id, "onvalidate", 0, Some("Name"));
+        let onvalidate_no = make_routine(&table_id, "onvalidate", 0, Some("No."));
+        let ext_oninsert = make_routine(&ext_id, "oninsert", 0, None);
+
+        let objects = vec![table, table_ext, unrelated];
+        let routines = vec![
+            oninsert,
+            onmodify,
+            onvalidate_name,
+            onvalidate_no,
+            ext_oninsert,
+        ];
+        let (graph, index) = build_graph(apps, objects, routines);
+        (graph, index, table_id, ext_id)
+    }
+
+    // -------------------------------------------------------------------------
+    // implicit_trigger_route_applicable — positive
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn trigger_applicable_insert_base_table_true() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Insert,
+            table: table_id.clone(),
+            field: None,
+            run_trigger: RunTrigger::True,
+        };
+        let target = RoutineNodeId {
+            object: table_id,
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(implicit_trigger_route_applicable(
+            &ctx, &target, &graph, &index
+        ));
+    }
+
+    #[test]
+    fn trigger_applicable_insert_table_extension_true() {
+        let (graph, index, table_id, ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Insert,
+            table: table_id,
+            field: None,
+            run_trigger: RunTrigger::True,
+        };
+        let target = RoutineNodeId {
+            object: ext_id,
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
+            "TableExtension of Customer also fires OnInsert"
+        );
+    }
+
+    #[test]
+    fn trigger_applicable_validate_correct_field_no_true() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Validate,
+            table: table_id.clone(),
+            field: Some(FieldRef("no.".into())),
+            run_trigger: RunTrigger::True,
+        };
+        let target = RoutineNodeId {
+            object: table_id,
+            name_lc: "onvalidate".into(),
+            enclosing_member_lc: Some("no.".into()),
+            params_count: 0,
+        };
+        assert!(implicit_trigger_route_applicable(
+            &ctx, &target, &graph, &index
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // implicit_trigger_route_applicable — negative (brief's mandatory negatives)
+    // -------------------------------------------------------------------------
+
+    /// `Insert(false)` must never fire triggers regardless of the trigger target.
+    #[test]
+    fn trigger_applicable_insert_false_always_false() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Insert,
+            table: table_id.clone(),
+            field: None,
+            run_trigger: RunTrigger::False, // <— the critical flag
+        };
+        let target = RoutineNodeId {
+            object: table_id,
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
+            "Insert(false) must never emit a trigger edge"
+        );
+    }
+
+    /// Wrong trigger name: OnModify target for an Insert context.
+    #[test]
+    fn trigger_applicable_wrong_trigger_name_onmodify_for_insert_is_false() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Insert,
+            table: table_id.clone(),
+            field: None,
+            run_trigger: RunTrigger::True,
+        };
+        let target = RoutineNodeId {
+            object: table_id,
+            name_lc: "onmodify".into(), // <— wrong trigger
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
+            "OnModify target for Insert context must be false"
+        );
+    }
+
+    /// Validate with the WRONG field: ctx.field is "No." but target is Name's OnValidate.
+    #[test]
+    fn trigger_applicable_validate_wrong_field_name_for_no_is_false() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Validate,
+            table: table_id.clone(),
+            field: Some(FieldRef("no.".into())),
+            run_trigger: RunTrigger::True,
+        };
+        // Target is the Name field's OnValidate, but ctx says No. is being validated.
+        let target = RoutineNodeId {
+            object: table_id,
+            name_lc: "onvalidate".into(),
+            enclosing_member_lc: Some("name".into()), // <— different field
+            params_count: 0,
+        };
+        assert!(
+            !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
+            "Validate(No.) must NOT fire Name's OnValidate"
+        );
+    }
+
+    /// Trigger on an unrelated table (Vendor) must not fire for Customer Insert.
+    #[test]
+    fn trigger_applicable_unrelated_table_is_false() {
+        let (graph, index, table_id, _ext_id) = trigger_fixture();
+        let vendor_id = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "Vendor")
+            .unwrap()
+            .id
+            .clone();
+        let ctx = RecordOpCtx {
+            kind: RecordOpKind::Insert,
+            table: table_id, // Customer
+            field: None,
+            run_trigger: RunTrigger::True,
+        };
+        let target = RoutineNodeId {
+            object: vendor_id, // Vendor — unrelated
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        assert!(
+            !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
+            "Vendor's OnInsert must not fire for Customer.Insert"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // instance_builtin_route_applicable (brief's mandatory negatives + positive)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn instance_builtin_page_runmodal_is_true() {
+        assert!(
+            instance_builtin_route_applicable(ObjectKind::Page, "runmodal"),
+            "(Page, runmodal) must be in PAGE_INSTANCE catalog"
+        );
+    }
+
+    #[test]
+    fn instance_builtin_page_unknown_method_is_false() {
+        assert!(
+            !instance_builtin_route_applicable(ObjectKind::Page, "notamethod"),
+            "(Page, notamethod) must NOT be in the catalog"
+        );
+    }
+
+    /// Critical: `RunModal` on Codeunit is NOT an instance-builtin (kind mismatch).
+    #[test]
+    fn instance_builtin_codeunit_runmodal_is_false() {
+        assert!(
+            !instance_builtin_route_applicable(ObjectKind::Codeunit, "runmodal"),
+            "(Codeunit, runmodal) must be false — Codeunit has no PAGE_INSTANCE catalog"
+        );
+    }
+}
