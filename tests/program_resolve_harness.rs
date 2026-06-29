@@ -5,7 +5,7 @@
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    SiteMatch, canonical_call_edge_for_test, match_sites,
+    DiffReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_harness,
 };
 
 // ---------------------------------------------------------------------------
@@ -114,3 +114,85 @@ fn fresh_only_different_caller_does_not_cascade() {
     assert_eq!(fresh_only, 1, "the cu:c:post site has no L3 peer");
     assert_eq!(l3_only, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Test 4 (Phase 0 Task 7 CDO gate): end-to-end dual-run differential harness
+// ---------------------------------------------------------------------------
+
+/// End-to-end CDO gate: verifies that the dual-run differential harness wires
+/// the full pipeline (snapshot → graph → fresh resolve → canonical projection
+/// → L3 oracle projection → span matcher → diff buckets) and that:
+///
+/// 1. Both projections produce >1000 edges (real data, not empty).
+/// 2. The site matcher aligns >1000 sites between the two projections,
+///    proving that Tasks 4–6 key encodings agree on real data.
+/// 3. Phase-0 stub resolves nothing → every matched site is a regression.
+/// 4. UNALIGNED is <5% of the site population (matcher is stable).
+/// 5. Two consecutive runs produce identical output (determinism).
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace with
+/// `.alpackages` deps.  Plain `cargo test` skips this automatically.
+#[test]
+fn harness_runs_end_to_end_on_cdo_and_measures_the_gap() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_harness(&ws);
+
+    // Print the full breakdown so `-- --nocapture` shows the real numbers.
+    eprintln!(
+        "DiffReport: fresh_total_all_apps={} fresh_total_workspace={} l3_edges={} \
+         matched={} regression={} missing_site={} extra_site={} unaligned={}",
+        report.fresh_total_all_apps,
+        report.fresh_total_workspace,
+        report.l3_edges,
+        report.matched,
+        report.regression,
+        report.missing_site,
+        report.extra_site,
+        report.unaligned,
+    );
+
+    // L3 oracle has many edges; fresh stub extracted many workspace sites.
+    assert!(report.l3_edges > 1000, "{report:?}");
+    assert!(report.fresh_total_workspace > 1000, "{report:?}");
+
+    // Pipeline health: the strong site-key must match thousands of sites,
+    // proving that Tasks 4–6 (fresh keys / L3 keys / span matcher) all agree
+    // on real data.  A value near 0 means a key encoding mismatch to fix.
+    assert!(
+        report.matched > 1000,
+        "keys must align across the two projections: {report:?}"
+    );
+
+    // Phase-0 baseline: stub fresh resolves nothing (all empty targets), so
+    // every matched site is a regression.
+    assert_eq!(
+        report.regression, report.matched,
+        "stub fresh resolves nothing -> all matched sites regress: {report:?}"
+    );
+
+    // Alignment quality: UNALIGNED must be <5% of the site population.
+    let denom = (report.matched + report.missing_site + report.extra_site).max(1);
+    assert!(
+        report.unaligned * 20 < denom,
+        "UNALIGNED must be <5%: {} of {}",
+        report.unaligned,
+        denom
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(
+        report,
+        run_harness(&ws),
+        "run_harness must be deterministic"
+    );
+}
+
+// Suppress unused-import warning when CDO_WS is not set (no CDO test runs).
+#[allow(dead_code)]
+fn _assert_diff_report_importable(_: DiffReport) {}

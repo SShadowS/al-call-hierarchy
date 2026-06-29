@@ -342,8 +342,16 @@ pub fn project_l3(workspace_root: &Path) -> Vec<CanonicalEdge> {
             let cs = callsite_by_id.get(edge.callsite_id.as_str())?;
             let a = &cs.source_anchor;
             // PAnchor line/col are 0-based (from tree-sitter row + utf-16 col).
+            // L3 workspace anchors carry `source_unit_id = "ws:<rel-posix-path>"`.
+            // Strip the "ws:" prefix so the canonical span unit matches the
+            // fresh side's `virtual_path` (a plain relative POSIX path).
+            let unit_str = a
+                .source_unit_id
+                .strip_prefix("ws:")
+                .unwrap_or(&a.source_unit_id)
+                .to_string();
             let span = CanonicalSpan {
-                unit: a.source_unit_id.clone(),
+                unit: unit_str,
                 start: SourcePos {
                     line: a.start_line,
                     col: a.start_column,
@@ -518,6 +526,163 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
 
     result
 }
+
+// ---------------------------------------------------------------------------
+// Diff engine — Task 7
+// ---------------------------------------------------------------------------
+
+/// Bucket counts from one dual-run differential run.
+///
+/// `matched` = total `Paired` site count.  `regression` = Paired sites where
+/// the fresh side resolved nothing (empty `targets`) — in Phase-0 this equals
+/// `matched` because the stub resolver emits only `Unresolved` routes.
+/// `missing_site` = L3-only sites; `extra_site` = fresh-only sites.
+/// `unaligned` = total leftover indices across all `Unaligned` buckets (see
+/// [`match_sites`] docs for the cascade-resistance guarantee).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiffReport {
+    /// Fresh edges across ALL apps in the snapshot (workspace + embedded deps).
+    pub fresh_total_all_apps: usize,
+    /// Fresh edges scoped to the workspace app only (matched against L3).
+    pub fresh_total_workspace: usize,
+    /// Total canonical edges emitted by the L3 oracle for the workspace.
+    pub l3_edges: usize,
+    /// Count of `Paired` site matches (fresh + L3 share the same strong key).
+    pub matched: usize,
+    /// Paired sites where the fresh resolver emitted no concrete targets.
+    /// Equals `matched` in Phase-0 (stub is all-Unknown).
+    pub regression: usize,
+    /// L3 sites with no fresh peer — the resolver MISSED these call sites.
+    pub missing_site: usize,
+    /// Fresh sites with no L3 peer — fresh extracted sites L3 did not see.
+    pub extra_site: usize,
+    /// Sum of leftover indices from `Unaligned` buckets — genuinely ambiguous
+    /// duplicate call sites that the span matcher could not pair deterministically.
+    pub unaligned: usize,
+}
+
+/// Run the full dual-run differential harness over `workspace_root`.
+///
+/// Steps:
+/// 1. Build `AppSetSnapshot` + `ProgramGraph` from the workspace.
+/// 2. Call the fresh (stub) resolver → `Vec<Edge>` over all apps.
+/// 3. Filter fresh edges to the WORKSPACE APP only and project to
+///    [`CanonicalEdge`]s via [`project_fresh`].
+/// 4. Run [`project_l3`] for the L3 oracle (also workspace-source-only).
+/// 5. Run [`match_sites`] and bucket the results into [`DiffReport`] fields.
+///
+/// Fail-closed: any error during setup returns a zero `DiffReport`.
+///
+/// # Why filter fresh to the workspace app?
+/// `resolve_program` processes ALL snapshot apps (workspace + embedded dep
+/// source), but `project_l3` is workspace-source-only.  Comparing them raw
+/// would flood the diff with spurious `FreshOnly` entries for every dep-app
+/// call site.  Scoping fresh to the workspace app makes the comparison apples-
+/// to-apples.  The unfiltered all-apps count is reported separately as
+/// `fresh_total_all_apps`.
+#[must_use]
+pub fn run_harness(workspace_root: &Path) -> DiffReport {
+    use crate::program::build::build_program_graph;
+    use crate::program::resolve::stub::resolve_program;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    // ── Step 1: Build snapshot ───────────────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return DiffReport::default(),
+    };
+
+    // ── Step 2: Build program graph (interns apps + extracts nodes) ──────────
+    let graph = build_program_graph(&snap);
+
+    // ── Step 3: Parse snapshot for the stub resolver (second parse pass) ────
+    // `build_program_graph` parses internally for node extraction; a second
+    // pass here provides the per-file texts the stub resolver needs for call-
+    // site extraction.  Phase-0 design accepts the double-parse cost.
+    let parsed = parse_snapshot(&snap);
+
+    // ── Step 4: Resolve fresh edges (all apps) ────────────────────────────────
+    let fresh_all = resolve_program(&graph, &parsed);
+    let fresh_total_all_apps = fresh_all.len();
+
+    // ── Step 5: Filter to workspace app ──────────────────────────────────────
+    let workspace_ref = graph.apps.find(&snap.workspace_app);
+    let fresh_workspace: Vec<Edge> = match workspace_ref {
+        Some(ws_ref) => fresh_all
+            .into_iter()
+            .filter(|e| e.from.object.app == ws_ref)
+            .collect(),
+        None => {
+            // Workspace app not interned — return a fail-closed zero report.
+            return DiffReport {
+                fresh_total_all_apps,
+                ..DiffReport::default()
+            };
+        }
+    };
+    let fresh_total_workspace = fresh_workspace.len();
+
+    // ── Step 6: Project fresh (workspace-only) to canonical ──────────────────
+    let fresh_canonical = project_fresh(&fresh_workspace, &graph.apps);
+
+    // ── Step 7: Project L3 oracle ─────────────────────────────────────────────
+    let l3_canonical = project_l3(workspace_root);
+    let l3_edges = l3_canonical.len();
+
+    // ── Step 8: Match sites ───────────────────────────────────────────────────
+    let site_matches = match_sites(&fresh_canonical, &l3_canonical);
+
+    // ── Step 9: Bucket ────────────────────────────────────────────────────────
+    let mut matched = 0usize;
+    let mut regression = 0usize;
+    let mut missing_site = 0usize;
+    let mut extra_site = 0usize;
+    let mut unaligned = 0usize;
+
+    for m in &site_matches {
+        match m {
+            SiteMatch::Paired(fi, _li) => {
+                matched += 1;
+                // Regression: the fresh side emitted no concrete targets.
+                // In Phase-0 (stub) fresh.targets is ALWAYS empty, so
+                // regression == matched.  In Phases 1–4 this will shrink as
+                // the real resolver fills in targets.
+                if fresh_canonical[*fi].targets.is_empty() {
+                    regression += 1;
+                }
+            }
+            SiteMatch::FreshOnly(_) => {
+                extra_site += 1;
+            }
+            SiteMatch::L3Only(_) => {
+                missing_site += 1;
+            }
+            SiteMatch::Unaligned(fs, ls) => {
+                unaligned += fs.len() + ls.len();
+            }
+        }
+    }
+
+    DiffReport {
+        fresh_total_all_apps,
+        fresh_total_workspace,
+        l3_edges,
+        matched,
+        regression,
+        missing_site,
+        extra_site,
+        unaligned,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test helper
+// ---------------------------------------------------------------------------
 
 /// Build a synthetic [`CanonicalEdge`] for use in matcher fixture tests.
 ///

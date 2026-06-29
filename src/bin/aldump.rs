@@ -51,7 +51,7 @@ fn usage() -> ExitCode {
          --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
          --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
-         --r4f-digest-effects | --r4f-scoped-guarantees] \
+         --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -63,6 +63,7 @@ fn main() -> ExitCode {
     let mut l3_call_graph = false;
     let mut l3_call_graph_stats = false;
     let mut l3_call_graph_stats_cross_app = false;
+    let mut program_call_graph_stats = false;
     let mut l3_unknown_breakdown = false;
     let mut l3_unknown_breakdown_cross_app = false;
     let mut l3_event_graph = false;
@@ -184,6 +185,10 @@ fn main() -> ExitCode {
             r4f_ordering_facts = true;
             continue;
         }
+        if arg == "--program-call-graph-stats" {
+            program_call_graph_stats = true;
+            continue;
+        }
         if workspace_arg.is_some() {
             eprintln!("aldump: error: more than one workspace argument");
             return usage();
@@ -216,6 +221,7 @@ fn main() -> ExitCode {
         r4f_digest_effects,
         r4f_scoped_guarantees,
         r4f_ordering_facts,
+        program_call_graph_stats,
     ]
     .iter()
     .filter(|f| **f)
@@ -1200,6 +1206,38 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize L3 projection: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if program_call_graph_stats {
+        // Dual-run differential harness (Phase 0 Task 7): run the fresh
+        // whole-program stub resolver + the L3 oracle over the workspace,
+        // project both to canonical edges, span-match them, and report the
+        // Phase-0 gap (regression count = what Phases 1–4 will close).
+        // Mirrors the `--l3-call-graph-stats` plumbing. Fail-closed.
+        use al_call_hierarchy::program::resolve::differential::run_harness;
+        let report = run_harness(&workspace);
+        // Fresh Phase-0 is all-stub (all-Unknown) → real_unknown_rate = 1.0.
+        let value = serde_json::json!({
+            "freshTotalAllApps": report.fresh_total_all_apps,
+            "freshTotalWorkspace": report.fresh_total_workspace,
+            "l3Edges": report.l3_edges,
+            "matched": report.matched,
+            "regression": report.regression,
+            "missingSite": report.missing_site,
+            "extraSite": report.extra_site,
+            "unaligned": report.unaligned,
+            "freshRealUnknownRate": 1.0,
+        });
+        return match serde_json::to_string_pretty(&value) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize program-call-graph-stats: {e}");
                 ExitCode::FAILURE
             }
         };

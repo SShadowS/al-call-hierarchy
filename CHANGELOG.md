@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dual-run differential harness + `aldump --program-call-graph-stats`**
+  (`src/program/resolve/differential.rs`, `src/bin/aldump.rs`, Phase 0 Task 7) —
+  `run_harness(&Path) -> DiffReport` wires the full pipeline (snapshot →
+  ProgramGraph → fresh stub resolve → workspace-scoped canonical projection →
+  L3 oracle projection → span-based site matcher → diff buckets). `DiffReport`
+  fields: `fresh_total_all_apps`, `fresh_total_workspace`, `l3_edges`, `matched`,
+  `regression`, `missing_site`, `extra_site`, `unaligned`. Phase-0 baseline:
+  stub resolves nothing → `regression == matched` (all paired sites regress); this
+  is the gap Phases 1–4 will close. `aldump --program-call-graph-stats <workspace>`
+  prints the `DiffReport` as JSON. CDO gate: `matched > 1000` and `unaligned < 5%`
+  confirm the Tasks 4–6 key encodings align on real data; determinism asserted by
+  two consecutive runs.
 - **L3 → canonical oracle adapter** (`src/program/resolve/differential.rs`,
   Phase 0 Task 5) — `project_l3(&Path) -> Vec<CanonicalEdge>` runs the existing
   L3 resolver over a workspace and projects its `CallEdge`s into the same
