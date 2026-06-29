@@ -519,23 +519,26 @@ fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
 
 /// Resolve a member call (`receiver.method_lc(...)`) to its `(DispatchShape, Vec<Route>)`.
 ///
-/// # Implemented arms (Phase 3 Task 2)
+/// # Implemented arms (Phase 3 Task 2 + Task 3)
 /// - `RecordRef` / `FieldRef` / `KeyRef` / `Framework(_)` → catalog lookup.
 /// - `Record{..}` → catalog-first (builtin Record methods); non-builtin → Unknown
 ///   (TODO Task 4: full table-proc dispatch).
+/// - `Object{kind, name_lc}` → resolve target object via `graph.resolve_object`, then
+///   dispatch method via `resolve_in_object`.  Special case: `Codeunit.Run(arity≤1)` →
+///   entry `OnRun` trigger (mirrors `resolve_object_run`).
+/// - `SelfObject` → `resolve_in_object` on the calling object itself.
 ///
 /// # Deferred arms (TODO markers only)
-/// - `Object{..}` / `SelfObject` → Unknown (TODO Task 3).
 /// - `Interface` / `EnumType` → Unknown (TODO Phase 4).
 /// - `Primitive` → Unknown; `Dynamic` → `DynamicOpen`; `Unknown` → Unknown.
 pub fn resolve_member(
     receiver: &ReceiverType,
     method_lc: &str,
-    _arity: usize,
-    _from_object: &ObjectNode,
-    _graph: &ProgramGraph,
-    _index: &ResolveIndex,
-    _body_map: &BodyMap<'_>,
+    arity: usize,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
 ) -> (DispatchShape, Vec<Route>) {
     match receiver {
         ReceiverType::RecordRef => {
@@ -576,9 +579,64 @@ pub fn resolve_member(
                 member_unknown_route()
             }
         }
-        ReceiverType::Object { .. } | ReceiverType::SelfObject => {
-            // TODO(Task 3): resolve against the object's own declared procedures.
-            member_unknown_route()
+        ReceiverType::Object { kind, name_lc } => {
+            // Resolve the target object (topology-scoped from the calling app).
+            let Some(target) = graph.resolve_object(from_object.id.app, *kind, name_lc) else {
+                // Target not in the graph — honest Unknown (not Opaque: we have no
+                // identity for an unresolvable typed receiver).
+                return member_unknown_route();
+            };
+            let target_id = target.id.clone();
+            let target_tier = target.tier;
+
+            // Codeunit.Run(arity≤1) special case: dispatch to the OnRun entry
+            // trigger, mirroring `resolve_object_run`'s entry-trigger semantics.
+            if *kind == ObjectKind::Codeunit && method_lc == "run" && arity <= 1 {
+                let candidates = index.routines_in_object(&target_id, "onrun");
+                // Object-level triggers have `enclosing_member_lc == None`.
+                let entry_rid = candidates
+                    .iter()
+                    .find(|r| r.enclosing_member_lc.is_none())
+                    .or_else(|| candidates.first());
+                return if let Some(entry_rid) = entry_rid {
+                    (
+                        DispatchShape::Exact,
+                        vec![make_routine_route(entry_rid, target_tier, body_map)],
+                    )
+                } else {
+                    // OnRun not indexed — Opaque boundary (object exists, trigger absent).
+                    (
+                        DispatchShape::Exact,
+                        vec![opaque_boundary_route(target_id.app, name_lc.clone())],
+                    )
+                };
+            }
+
+            // General dispatch: resolve the method among the target object's procedures.
+            if let Some(route) =
+                resolve_in_object(&target_id, target_tier, method_lc, arity, index, body_map)
+            {
+                (DispatchShape::Exact, vec![route])
+            } else {
+                // Method name absent from target object.
+                member_unknown_route()
+            }
+        }
+        ReceiverType::SelfObject => {
+            // Dispatch to the calling object's own declared procedures.
+            if let Some(route) = resolve_in_object(
+                &from_object.id,
+                from_object.tier,
+                method_lc,
+                arity,
+                index,
+                body_map,
+            ) {
+                (DispatchShape::Exact, vec![route])
+            } else {
+                // Method not found in own object.
+                member_unknown_route()
+            }
         }
         ReceiverType::Interface { .. } | ReceiverType::EnumType { .. } => {
             // TODO(Phase 4): interface member fan-out / enum type statics.
@@ -1621,5 +1679,262 @@ codeunit 50300 "OverloadCU"
             &body_map,
         );
         assert_eq!(shape, DispatchShape::DynamicOpen);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 Task 3 — Object dispatch + SelfObject tests
+    // -----------------------------------------------------------------------
+
+    // (a) Object receiver (Codeunit "MyTarget") + known method "dowork"
+    //     → Exact, Routine, Source evidence, SourceSpan witness
+    #[test]
+    fn resolve_member_object_known_method_resolves_to_source_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 50500 "MyTarget"
+{
+    procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50501 "Caller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "MyTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "Caller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "Caller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "mytarget".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "target must be Routine; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(
+            matches!(routes[0].witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "dowork");
+    }
+
+    // (b) Codeunit.Run() (arity 0) → Exact, Routine(onrun), Source, SourceSpan
+    #[test]
+    fn resolve_member_codeunit_run_dispatches_to_onrun_trigger() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 50502 "RunTarget"
+{
+    trigger OnRun()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50503 "RunCaller"
+{
+    procedure CallRun()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "RunTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "RunCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RunCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "runtarget".into(),
+        };
+        // arity=0 is Cu.Run() with no record argument
+        let (shape, routes) =
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "Codeunit.Run must resolve to the OnRun trigger; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "onrun", "must target the OnRun trigger");
+    }
+
+    // (c) SelfObject + "helper" proc on the from_object → Exact, Routine, Source
+    #[test]
+    fn resolve_member_self_object_resolves_own_procedure() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_self: &'static str = r#"
+codeunit 50504 "SelfCU"
+{
+    procedure Helper()
+    begin
+    end;
+    procedure Caller()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_self = make_unit(app_id, "SelfCU.al", src_self);
+        let units = [unit_self];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SelfCU");
+        let (shape, routes) = resolve_member(
+            &ReceiverType::SelfObject,
+            "helper",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "SelfObject must resolve to own-object Routine; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "helper");
+    }
+
+    // (d) Object receiver + nonexistent method → Exact, Unresolved, Unknown, None
+    #[test]
+    fn resolve_member_object_nonexistent_method_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 50505 "AnotherTarget"
+{
+    procedure RealProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50506 "AnotherCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "AnotherTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "AnotherCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "AnotherCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "anothertarget".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "doesnotexistatall",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // (e) Object receiver where the target object isn't in the graph → Unknown
+    #[test]
+    fn resolve_member_object_target_not_in_graph_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_caller: &'static str = r#"
+codeunit 50507 "OrphanCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_caller = make_unit(app_id, "OrphanCaller.al", src_caller);
+        let units = [unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "OrphanCaller");
+        // "ghosttarget" does not exist in the graph at all
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "ghosttarget".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "anymethod",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
     }
 }

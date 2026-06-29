@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-3 Task 3: Object/SelfObject member dispatch** (`src/program/resolve/resolver.rs`) —
+  `resolve_member` now handles `ReceiverType::Object{kind, name_lc}` and `ReceiverType::SelfObject`.
+  Object dispatch: resolves the target object via `graph.resolve_object`, then calls
+  `resolve_in_object` for arity-matched procedure lookup.  Special case: `Codeunit.Run(arity≤1)`
+  dispatches to the codeunit's `OnRun` entry trigger (mirrors `resolve_object_run` entry-trigger
+  semantics).  SelfObject dispatch: `resolve_in_object` on the calling object itself.
+  Both arms produce `Exact` shape with `Source`/`Abi`/`Unknown` evidence matching the target
+  tier; OnRun-absent → Opaque boundary route.  Five new unit tests cover all branches.
+  Addresses ~800–1200 previously-Unknown member sites.
 - **Phase-2 Bare/Run resolution gate vs L3** (`src/program/resolve/differential.rs`,
   `src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
   `tests/program_resolve_harness.rs`, Phase 2 Task 6) — `run_resolution_harness(&Path)
