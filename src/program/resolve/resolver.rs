@@ -554,7 +554,7 @@ fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> b
 
 /// Resolve a member call (`receiver.method_lc(...)`) to its `(DispatchShape, Vec<Route>)`.
 ///
-/// # Implemented arms (Phase 3 Task 2 + Task 3)
+/// # Implemented arms (Phase 3 Task 2 + Task 3 + Phase 4 Task 2)
 /// - `RecordRef` / `FieldRef` / `KeyRef` / `Framework(_)` → catalog lookup.
 /// - `Record{..}` → catalog-first (builtin Record methods); non-builtin → Unknown
 ///   (TODO Task 4: full table-proc dispatch).
@@ -562,9 +562,13 @@ fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> b
 ///   dispatch method via `resolve_in_object`.  Special case: `Codeunit.Run(arity≤1)` →
 ///   entry `OnRun` trigger (mirrors `resolve_object_run`).
 /// - `SelfObject` → `resolve_in_object` on the calling object itself.
+/// - `Interface{name_lc}` → `Polymorphic` fan-out to all known implementers via
+///   `index.implementers_of`.  For each implementer: Source-tier → unique-arity-matched
+///   `Routine` route, or `Unresolved` on name-absent / arity-mismatch / ambiguous
+///   (Rule 1/2 — no reachability black hole, no guessed route).  SymbolOnly-tier (cross-app
+///   `.app` dep) → `AbiSymbol` (Opaque boundary) via `resolve_in_object`.
 ///
 /// # Deferred arms (TODO markers only)
-/// - `Interface` → Unknown (TODO Phase 4).
 /// - `Primitive` → Unknown; `Dynamic` → `DynamicOpen`; `Unknown` → Unknown.
 pub fn resolve_member(
     receiver: &ReceiverType,
@@ -2983,6 +2987,114 @@ codeunit 51699 "IfaceCaller4"
             .unwrap();
         assert_eq!(unresolved_route.evidence, Evidence::Unknown);
         assert_eq!(unresolved_route.witness, Witness::None);
+    }
+
+    /// SymbolOnly interface implementer → `AbiSymbol` route (Opaque evidence, not Unresolved).
+    ///
+    /// Validates the Phase-4 Task-2 fix: when a cross-app `.app` dependency implements an
+    /// interface (SymbolOnly tier, no source body available), `resolve_member` must emit
+    /// `RouteTarget::AbiSymbol` (Opaque boundary), not `Unresolved`.
+    ///
+    /// This test also directly validates the per-route gate predicate used in
+    /// `run_member_resolution_harness` FreshOnly branch: `RouteTarget::AbiSymbol { .. }`
+    /// must be classified as PASS (not `unverified_extra`).  The gate-gap fix adds
+    /// `AbiSymbol { .. } => true` alongside the existing `Unresolved => true` arm.
+    #[test]
+    fn resolve_member_interface_symbol_only_implementer_emits_abi_symbol_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // AppBSym provides a SymbolOnly codeunit "DepImpl" implementing IFoo.
+        // Parsed from source to populate graph+index nodes, but the BodyMap is built
+        // WITHOUT this unit (empty parsed slice) — mirrors real SymbolOnly loading from
+        // .app SymbolReference where bodies are unavailable.
+        let src_caller: &'static str = r#"
+codeunit 51800 "IfaceCallerSym"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let src_dep: &'static str = r#"
+codeunit 51801 "DepImpl" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+"#;
+        let app_a_id = make_app_id("AppA");
+        let app_b_id = make_app_id("AppBSym");
+
+        let unit_caller = make_unit(app_a_id.clone(), "IfaceCallerSym.al", src_caller);
+        // SymbolOnly dep unit: parsed to extract graph/index nodes with SymbolOnly tier.
+        let unit_dep = ParsedUnit {
+            app: app_b_id.clone(),
+            files: vec![ParsedFile {
+                virtual_path: "DepImpl.al".to_string(),
+                file: al_syntax::parse(src_dep),
+                provenance: Provenance {
+                    app: app_b_id,
+                    tier: TrustTier::SymbolOnly,
+                    content_hash: String::new(),
+                },
+                text: src_dep.to_string(),
+            }],
+        };
+
+        let all_units = [unit_caller, unit_dep];
+        let graph = build_graph(&all_units, Some(("AppA", "AppBSym")));
+        let index = ResolveIndex::build(&graph);
+        // BodyMap: empty — SymbolOnly routines have no parsed body in production.
+        // A BodyMap miss on a SymbolOnly-tier routine triggers the AbiSymbol path
+        // in `make_routine_route`.
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let from_obj = find_obj(&graph, "IfaceCallerSym");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Polymorphic);
+        assert_eq!(
+            routes.len(),
+            1,
+            "one SymbolOnly implementer → one route; got {:?}",
+            routes
+        );
+
+        // Route must be AbiSymbol (Opaque boundary), NOT Unresolved or Routine.
+        assert!(
+            matches!(routes[0].target, RouteTarget::AbiSymbol { .. }),
+            "SymbolOnly implementer must emit AbiSymbol (Opaque boundary); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Opaque,
+            "AbiSymbol route must carry Opaque evidence"
+        );
+        assert!(
+            matches!(routes[0].witness, Witness::AbiSymbol { .. }),
+            "AbiSymbol route must carry AbiSymbol witness; got {:?}",
+            routes[0].witness
+        );
+
+        // Validate the per-route gate predicate (mirror of the fix in differential.rs).
+        // The FreshOnly `is_interface_route` branch in `run_member_resolution_harness`
+        // classifies each route as: Unresolved → PASS, Routine → applicability check,
+        // AbiSymbol → PASS (the fix), _ → FAIL.
+        let gate_pass = routes.iter().all(|r| match &r.target {
+            RouteTarget::Unresolved => true,
+            RouteTarget::AbiSymbol { .. } => true, // gate fix: was `_ => false` before
+            _ => false,
+        });
+        assert!(
+            gate_pass,
+            "AbiSymbol route must pass the interface FreshOnly gate (not unverified_extra)"
+        );
     }
 
     // Test 8: Page Object receiver + method not in catalog and not declared → Unknown

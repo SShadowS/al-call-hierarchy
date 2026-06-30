@@ -2308,6 +2308,16 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                             RouteTarget::Routine(rid) => interface_route_applicable(
                                 iface_lc, method_lc, site_arity, rid, &graph, &index,
                             ),
+                            // AbiSymbol: a SymbolOnly (cross-app .app) implementer emitted
+                            // from `implementers_of`.  Object-level applicability holds by
+                            // construction — the object is a known interface implementer read
+                            // from SymbolReference.  The member is opaque (no source to verify
+                            // the signature) but the ABI boundary is known → PASS, exactly as
+                            // the Phase-2 ObjectRun opaque-boundary treatment.  Classifying it
+                            // as `unverified_extra` would be a false gate failure.
+                            RouteTarget::AbiSymbol { .. } => true,
+                            // Builtin on an interface fan-out site is genuinely anomalous —
+                            // leave as FAIL so it surfaces as a real gate violation.
                             _ => false,
                         });
 
