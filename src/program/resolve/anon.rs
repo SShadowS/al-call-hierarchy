@@ -13,28 +13,50 @@
 //! so the diff aligns on opaque ids — a regression shows as a reviewable
 //! anonymized ±edge diff.
 //!
-//! # Governance: HMAC with a non-committed key, not a fixed committed salt
+//! # Governance: a FIXED, COMMITTED salt (1B.3b Task 1 fix)
 //!
-//! A fixed, committed salt is deterministic and adequate purely for DIFFING
-//! (stable id ↔ stable id across runs) but is weak against an adversary: AL
+//! **Decision: HMAC-SHA256 keyed by [`ANON_SALT`], a FIXED, COMMITTED constant.**
+//! This module previously keyed the HMAC by [`ANON_KEY_ENV`], a secret meant to
+//! live only in the gated/internal CDO runner's secret store. In practice that
+//! secret was SESSION-LOCAL: it was never persisted anywhere, so the FIRST
+//! committed `cdo-anon.json`/`cdo-trigger-anon.json`/`cdo-event-anon.json` were
+//! minted with a key nobody could reproduce. Every subsequent mint or audit
+//! either used a DIFFERENT key (every `AnonSiteKey` lookup misses,
+//! `checked_sites == 0`, and `ENFORCE_CDO_WS=1` PANICS) or fell back to
+//! [`ANON_SALT`] (silently auditing nothing on the default dev path, since
+//! `checked_sites == 0` was previously gated behind `ENFORCE_CDO_WS=1` — see
+//! Fix 3 in `tests/program_resolve_harness.rs`'s `enforce_audit_ran`). The
+//! committed goldens were UNAUDITABLE. A committed artifact that nobody can
+//! reproduce is worse than a weaker one that everybody can: REPRODUCIBILITY is
+//! the load-bearing property here, not secrecy.
+//!
+//! **Trade-off, made explicit:** a fixed, committed salt is deterministic and
+//! reproducible — anyone with CDO source access can re-run the dev-mint tool
+//! and byte-match the committed goldens, with no secret to lose, rotate, or
+//! fail to persist. It is, however, weak against an adversary: AL
 //! object/procedure names are drawn from a small, guessable vocabulary
 //! (`OnInsert`, `PostInvoice`, `"Sales Header"`, …), so a fixed public salt
-//! lets anyone dictionary-attack the committed golden back to plaintext.
+//! lets anyone dictionary-attack the committed golden back to plaintext. The
+//! round-2 external reviewers (1B.3b plan) endorsed a fixed salt as
+//! **"adequate for diffing"** — this golden's job is regression detection
+//! (stable id ↔ stable id across runs), not secrecy. The dictionary-attack
+//! weakness is ACCEPTABLE here because: (a) this is an INTERNAL regression
+//! artifact, not a public-facing one; (b) the de-anonymization map
+//! (`cdo-deanon-map.json`, `AnonId -> plaintext`) is GITIGNORED and never
+//! committed, so even a successful dictionary attack only recovers what the
+//! committed golden's STRUCTURE already implies (which sites resolve to which
+//! targets), not fresh plaintext beyond that; (c) the committed golden has no
+//! public exposure (this is a private repo's test fixture, not a published
+//! artifact). If this trade-off is ever revisited (e.g. the repo goes public),
+//! bump the domain version tags and re-mint — see "Domain separation" below.
 //!
-//! **Decision: HMAC-SHA256 keyed by [`ANON_KEY_ENV`], a NON-COMMITTED secret.**
-//! The key lives in the gated/internal CDO runner's secret store (and a
-//! developer's local shell when reproducing locally with real CDO access) —
-//! never in the repo. Both the dev-mint tool (writes the committed golden) and
-//! the runtime audit (anonymizes the fresh side to compare against it) read the
-//! SAME env var, so the two sides agree without the key ever touching git.
-//!
-//! When [`ANON_KEY_ENV`] is unset — i.e. every `cargo test --workspace` run
-//! without CDO access, including public CI — [`anon`] falls back to
-//! [`TEST_KEY`], a key that IS committed (it has to be, to make the fallback
-//! deterministic). This is safe specifically because public CI never has
-//! `CDO_WS` either, so it never mints or audits real CDO data with this
-//! fallback; the fallback only has to make [`anon`]'s own unit tests and the
-//! synthetic, non-proprietary fixtures deterministic.
+//! [`ANON_KEY_ENV`] still exists as an OPTIONAL override for a developer who
+//! wants a non-reproducible, session-local anonymization (e.g. testing key
+//! rotation, or genuinely wanting the stronger-secrecy scheme back for some
+//! ad hoc local comparison) — but the DEFAULT, and the key every COMMITTED
+//! golden must be minted with, is [`ANON_SALT`]. A golden minted with the
+//! override set must NEVER be committed (the dev-mint tool warns when this
+//! happens — see `src/bin/mint-goldens.rs`).
 //!
 //! # Domain separation
 //!
@@ -83,9 +105,11 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Env var carrying the keyed-hash secret used by [`anon`]. Set on the gated/
-/// internal CDO runner (and a developer's local shell, when reproducing with
-/// real CDO access) to a private value; NEVER committed.
+/// OPTIONAL override env var for the HMAC key used by [`anon`]. When unset
+/// (the default — and the ONLY state every COMMITTED golden may be minted
+/// under), [`anon_key`] uses [`ANON_SALT`]. Setting this to a private value
+/// produces a DIFFERENT, non-reproducible anonymization — never commit a
+/// golden minted with it set. See the module docs' "Governance" section.
 pub const ANON_KEY_ENV: &str = "CDO_ANON_KEY";
 
 /// Domain for regular call-site identity fields — the Member/Interface
@@ -104,15 +128,15 @@ pub const TRIGGER_OP_DOMAIN_V1: &str = "trigger-op:v1";
 /// (`cdo-event-anon.json`).
 pub const EVENT_PAIR_DOMAIN_V1: &str = "event-pair:v1";
 
-/// Deterministic fallback key used when [`ANON_KEY_ENV`] is unset — i.e.
-/// every `cargo test --workspace` run without CDO access, including public
-/// CI. INTENTIONALLY committed/public: it exists only to make [`anon`]'s unit
-/// tests and the L3-independent synthetic fixtures deterministic. It must
-/// NEVER anonymize real CDO data — the dev-mint tool and the gated CDO audit
-/// MUST run with [`ANON_KEY_ENV`] set to a real secret on the internal
-/// runner, or the resulting committed golden's ids are dictionary-attackable
-/// (see the module docs' governance section).
-const TEST_KEY: &[u8] = b"al-call-hierarchy/1B.3b/anon-test-key/NOT-FOR-CDO-DATA/v1";
+/// The FIXED, COMMITTED HMAC key (1B.3b Task 1 fix). This is the DEFAULT key
+/// for every call to [`anon`] — used by the dev-mint tool when minting the
+/// committed goldens, by every runtime audit re-anonymizing the fresh side,
+/// and by `cargo test --workspace` (no CDO access, including public CI). A
+/// fixed, public, committed salt is INTENTIONAL: see the module docs'
+/// "Governance" section for the full reproducibility-over-secrecy rationale.
+/// Bump the trailing version tag (and re-mint every committed golden) if this
+/// value ever needs to change.
+const ANON_SALT: &[u8] = b"al-call-hierarchy/1B.3b/anon-fixed-salt/v1";
 
 /// Number of HMAC-SHA256 output bytes kept per [`AnonId`] (truncated from the
 /// full 32-byte digest). 128 bits is collision-safe for the ~13k-site CDO
@@ -133,22 +157,25 @@ impl std::fmt::Display for AnonId {
     }
 }
 
-/// Resolve the HMAC key: [`ANON_KEY_ENV`] when set and non-empty, else
-/// [`TEST_KEY`]. See the module docs' governance section.
+/// Resolve the HMAC key: [`ANON_KEY_ENV`] when set and non-empty (an
+/// intentional, non-reproducible OVERRIDE — see the module docs), else the
+/// committed [`ANON_SALT`] (the default every committed golden uses).
 fn anon_key() -> Vec<u8> {
     match std::env::var(ANON_KEY_ENV) {
         Ok(k) if !k.is_empty() => k.into_bytes(),
-        _ => TEST_KEY.to_vec(),
+        _ => ANON_SALT.to_vec(),
     }
 }
 
 /// Domain-separated, versioned, stable (deterministic) anonymization.
 ///
 /// `anon(domain, s) = HMAC-SHA256(key, domain || 0x00 || s)[..16]`, hex-encoded.
-/// `key` is [`ANON_KEY_ENV`] when set, else the committed [`TEST_KEY`] (see the
-/// module docs). Deterministic: the same `(domain, s)` pair under the same key
-/// always yields the same [`AnonId`] — across processes, across runs, at both
-/// mint time and audit time.
+/// `key` is the committed [`ANON_SALT`] by default, or [`ANON_KEY_ENV`] when
+/// that override is set (see the module docs). Deterministic: the same
+/// `(domain, s)` pair under the same key always yields the same [`AnonId`] —
+/// across processes, across runs, at both mint time and audit time. With the
+/// default fixed salt, this means the committed goldens are REPRODUCIBLE:
+/// re-minting from the same workspace state yields byte-identical output.
 ///
 /// The `domain` value is expected to be one of the `*_DOMAIN_V1` constants in
 /// this module (or a future versioned successor); it is not itself validated
@@ -318,19 +345,46 @@ mod tests {
         assert_eq!(back, id);
     }
 
-    /// The committed fallback [`TEST_KEY`] path is exercised whenever
+    /// The committed fixed [`ANON_SALT`] path is exercised whenever
     /// [`ANON_KEY_ENV`] is unset — confirm `anon_key()` does not panic and
-    /// produces the documented fallback when the env var is absent. Run
+    /// produces the documented default when the env var is absent. Run
     /// serially with the env-var-set test would race; this test only reads
     /// state when the var happens to be unset, which is the default for
-    /// `cargo test --workspace` (no CDO secret configured).
+    /// `cargo test --workspace` (no CDO override configured).
     #[test]
-    fn anon_key_falls_back_when_env_var_unset() {
-        // Best-effort: only assert the fallback path when the var is not
+    fn anon_key_falls_back_to_fixed_salt_when_env_var_unset() {
+        // Best-effort: only assert the default path when the var is not
         // already set in this process's environment (avoids flaking under
-        // `cargo test -- --test-threads=1` with a real secret exported).
+        // `cargo test -- --test-threads=1` with an override exported).
         if std::env::var(ANON_KEY_ENV).is_err() {
-            assert_eq!(anon_key(), TEST_KEY.to_vec());
+            assert_eq!(anon_key(), ANON_SALT.to_vec());
         }
+    }
+
+    /// 1B.3b Task 1 fix (Fix 5): pins the FIXED SALT's effect on a known
+    /// `(domain, input)` pair. This is the reproducibility contract the
+    /// re-mint relies on: anyone with CDO source + this crate can re-mint and
+    /// byte-match the committed goldens, with no secret required. If this
+    /// test ever needs to change, [`ANON_SALT`] (or the HMAC scheme) changed,
+    /// which means EVERY committed golden (`cdo-anon.json`,
+    /// `cdo-trigger-anon.json`, `cdo-event-anon.json`) is now keyed
+    /// differently and MUST be re-minted via `cargo run --bin mint-goldens`
+    /// before the change can be committed.
+    #[test]
+    fn fixed_salt_pins_known_id_for_known_input() {
+        // Best-effort: only meaningful under the default (no override) key —
+        // an exported CDO_ANON_KEY legitimately changes the result without
+        // the committed salt itself having changed.
+        if std::env::var(ANON_KEY_ENV).is_ok() {
+            return;
+        }
+        let id = anon(SITE_DOMAIN_V1, "Codeunit 50100 PostInvoice");
+        assert_eq!(
+            id.0, "dbeef6ec4e976b1c0abb5c59db894de8",
+            "anon()'s output for a known (domain, input) pair under the committed \
+             fixed salt changed. If this is an intentional salt/scheme bump, \
+             update this pin AND re-mint every committed golden under \
+             tests/goldens/semantic-edges/ before committing either change."
+        );
     }
 }

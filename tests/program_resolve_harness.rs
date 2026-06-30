@@ -1981,21 +1981,38 @@ fn cdo_ws_or_enforce() -> Option<std::path::PathBuf> {
 }
 
 /// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 2 — the audit-ran-and-checked-something
-/// check). When `ENFORCE_CDO_WS=1`, PANICS if the committed golden failed to
-/// load or the audit paired zero sites — the floor evaporating silently
-/// (e.g. a renamed golden file, a CDO_WS pointed at the wrong tree) is
-/// exactly the failure mode this guards against.
+/// check).
+///
+/// `golden_loaded` stays ENFORCE-gated here (a missing/invalid committed
+/// golden is hard-failed only on the gated/internal runner) — but every
+/// caller of this function ALSO asserts `audit.golden_loaded` unconditionally
+/// in the test body, so a missing golden fails everywhere regardless.
+///
+/// **1B.3b Task 1 fix (Fix 3): `checked_sites > 0` is now UNCONDITIONAL** —
+/// it no longer requires `ENFORCE_CDO_WS=1`. This function is only ever
+/// reached after `cdo_ws_or_enforce()` returned `Some` (i.e. `CDO_WS` is
+/// present), so "unconditional" here means "whenever CDO_WS is set", which is
+/// exactly the scope Fix 3 closes: before this fix, an orphaned anonymization
+/// key (mint and audit hashing under different keys, so every `AnonSiteKey`
+/// lookup silently misses) was caught ONLY on the gated/internal runner
+/// (`ENFORCE_CDO_WS=1`) — the default local dev path (`CDO_WS` set, `ENFORCE`
+/// unset) compared nothing and reported success. A golden that loaded but
+/// paired zero sites is exactly as broken as one that failed to load; both
+/// must fail loudly on every CDO-capable run, not just the gated one.
 fn enforce_audit_ran(golden_loaded: bool, checked_sites: usize) {
     if std::env::var("ENFORCE_CDO_WS").as_deref() == Ok("1") {
         assert!(
             golden_loaded,
             "ENFORCE_CDO_WS=1: committed golden missing/invalid"
         );
-        assert!(
-            checked_sites > 0,
-            "ENFORCE_CDO_WS=1: checked_sites==0 (audit ran but paired nothing — floor evaporated)"
-        );
     }
+    assert!(
+        checked_sites > 0,
+        "checked_sites==0 (audit ran but paired nothing — floor evaporated, e.g. an \
+         anon-key mismatch between mint and audit, a renamed golden file, or CDO_WS \
+         pointed at the wrong tree). UNCONDITIONAL: this check does not require \
+         ENFORCE_CDO_WS=1 (1B.3b Task 1 fix, Fix 3)."
+    );
 }
 
 // ---------------------------------------------------------------------------

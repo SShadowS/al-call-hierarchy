@@ -168,7 +168,92 @@ impl SemanticGolden {
 /// when the anonymization scheme or a golden's field shape changes; the
 /// public-CI metadata-validation test asserts every committed golden carries
 /// this value.
-pub const ANON_GOLDEN_SCHEMA_VERSION: u32 = 1;
+///
+/// Bumped 1 -> 2 by the 1B.3b Task 1 fix: switched [`anon::anon`]'s key from a
+/// lost session-local `CDO_ANON_KEY` to the fixed, committed `ANON_SALT` (see
+/// `anon.rs`'s module docs), which changes every emitted [`AnonId`] for the
+/// same plaintext, AND added the [`MintMetadata`] field to both
+/// [`AnonSemanticGolden`] and [`AnonEventGolden`] (a golden's field shape
+/// change).
+pub const ANON_GOLDEN_SCHEMA_VERSION: u32 = 2;
+
+/// Mint-time provenance metadata stamped into every committed golden (1B.3b
+/// Task 1 fix, Fix 4): the CDO workspace's git HEAD SHA and dirty state at
+/// mint time, captured by [`workspace_git_info`]. Audit time re-probes the
+/// CURRENT workspace and WARNS (does not fail — drift is operational, not a
+/// correctness signal) when it differs from the stamp; see
+/// `run_cdo_semantic_audit`/`run_cdo_trigger_audit`/`run_cdo_event_audit`'s
+/// drift-warning step. `#[serde(default)]` on both fields so a golden minted
+/// before this field existed (or from a non-git workspace export) still
+/// deserializes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MintMetadata {
+    /// `git -C <CDO_WS> rev-parse HEAD` at mint time. `None` when the
+    /// workspace isn't inside a git repo, `git` isn't on `PATH`, or the
+    /// command failed — this is best-effort provenance, never a hard
+    /// requirement (mint/audit must still work against a non-git workspace
+    /// export).
+    #[serde(default)]
+    pub workspace_git_sha: Option<String>,
+    /// `true` when `git -C <CDO_WS> status --porcelain` produced non-empty
+    /// output at mint time (uncommitted changes present). `None` when the
+    /// git probe failed (same best-effort caveat as `workspace_git_sha`).
+    #[serde(default)]
+    pub workspace_dirty: Option<bool>,
+}
+
+/// Probe `workspace_root`'s git HEAD SHA + dirty state via the `git` CLI
+/// (1B.3b Task 1 fix, Fix 4). Best-effort: returns `(None, None)` fields when
+/// `workspace_root` isn't inside a git repo, `git` isn't on `PATH`, or either
+/// command fails — this is provenance metadata, not a hard requirement. Used
+/// by the dev-mint tool (to STAMP [`MintMetadata`] at mint time) and by the
+/// `run_cdo_*_audit` functions (to compare the CURRENT workspace against the
+/// loaded golden's stamp and warn on drift).
+#[must_use]
+pub fn workspace_git_info(workspace_root: &Path) -> (Option<String>, Option<bool>) {
+    let sha = std::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace_root)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let dirty = std::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace_root)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| !s.trim().is_empty());
+
+    (sha, dirty)
+}
+
+/// Emit a `WARNING` on stderr when the CURRENT `workspace_root`'s git SHA/
+/// dirty state differs from `stamped` (the golden's mint-time
+/// [`MintMetadata`]). Never fails the audit — drift is operational (a
+/// developer pointing `CDO_WS` at a workspace that has moved on since the
+/// last mint), not a resolver regression; see [`MintMetadata`]'s doc comment.
+fn warn_on_workspace_drift(stamped: &MintMetadata, workspace_root: &Path) {
+    let (current_sha, current_dirty) = workspace_git_info(workspace_root);
+    if current_sha != stamped.workspace_git_sha || current_dirty != stamped.workspace_dirty {
+        eprintln!(
+            "WARNING: CDO workspace drifted from mint-time SHA {:?} (dirty={:?}); \
+             current SHA {:?} (dirty={:?}). Audit diffs may reflect workspace drift, \
+             not engine regressions — re-mint to advance the pin (see \
+             src/bin/mint-goldens.rs).",
+            stamped.workspace_git_sha, stamped.workspace_dirty, current_sha, current_dirty,
+        );
+    }
+}
 
 /// Anonymized, serde-able mirror of [`GoldenSiteKey`]. The four identifying
 /// string fields (`from_app_guid`, `from_object_lc`, `from_routine_lc`,
@@ -218,6 +303,11 @@ pub struct AnonGoldenEntry {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AnonSemanticGolden {
     pub schema_version: u32,
+    /// Mint-time CDO workspace provenance (1B.3b Task 1 fix). `#[serde(default)]`
+    /// so a pre-fix golden without this field still deserializes (though it
+    /// would fail the `schema_version` check first in practice).
+    #[serde(default)]
+    pub metadata: MintMetadata,
     pub entries: Vec<AnonGoldenEntry>,
 }
 
@@ -257,6 +347,10 @@ pub struct AnonEventEntry {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AnonEventGolden {
     pub schema_version: u32,
+    /// Mint-time CDO workspace provenance (1B.3b Task 1 fix) — see
+    /// [`AnonSemanticGolden::metadata`].
+    #[serde(default)]
+    pub metadata: MintMetadata,
     pub entries: Vec<AnonEventEntry>,
 }
 
@@ -381,6 +475,11 @@ pub fn anonymize_golden_with_deanon(
     entries.sort_by(|a, b| a.site.cmp(&b.site));
     AnonSemanticGolden {
         schema_version: ANON_GOLDEN_SCHEMA_VERSION,
+        // Caller (the dev-mint tool) overwrites this with the real mint-time
+        // stamp via `workspace_git_info`; callers that don't care (e.g. the
+        // runtime audits anonymizing the fresh side for an in-memory
+        // comparison, never serialized) leave the default.
+        metadata: MintMetadata::default(),
         entries,
     }
 }
@@ -446,6 +545,9 @@ pub fn anonymize_event_rows_with_deanon(
     entries.sort_by(|a, b| a.pair.cmp(&b.pair));
     AnonEventGolden {
         schema_version: ANON_GOLDEN_SCHEMA_VERSION,
+        // See the analogous comment in `anonymize_golden_with_deanon` —
+        // overwritten by the dev-mint tool's caller with the real stamp.
+        metadata: MintMetadata::default(),
         entries,
     }
 }
@@ -1209,6 +1311,11 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
     let l3_total = golden.entries.len();
+    // 1B.3b Task 1 fix (Fix 4): warn (never fail) when CDO_WS has drifted
+    // from the golden's mint-time stamp.
+    if golden_loaded {
+        warn_on_workspace_drift(&golden.metadata, workspace_root);
+    }
 
     // ── Build graph for AppRegistry (needed for project_fresh) ───────────────
     let snap = match (SnapshotBuilder {
@@ -1346,6 +1453,9 @@ pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
     let l3_total = golden.entries.len();
+    if golden_loaded {
+        warn_on_workspace_drift(&golden.metadata, workspace_root);
+    }
 
     let fresh_golden = mint_fresh_golden_for_kind(workspace_root, EdgeKind::ImplicitTrigger);
     let fresh_total = fresh_golden.entries.len();
@@ -1408,6 +1518,9 @@ pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
     let l3_total = golden.entries.len();
+    if golden_loaded {
+        warn_on_workspace_drift(&golden.metadata, workspace_root);
+    }
 
     let fresh_rows = project_fresh_event_rows(workspace_root);
     let fresh_total = fresh_rows.len();

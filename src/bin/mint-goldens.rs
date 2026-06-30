@@ -8,8 +8,8 @@
 //! LOAD the committed output instead.
 //!
 //! Mints + ANONYMIZES (via [`anon::anon`] — see that module's docs for the
-//! domain-separation + HMAC-governance writeup) the three committed goldens
-//! under `tests/goldens/semantic-edges/`:
+//! domain-separation + fixed-salt-governance writeup) the three committed
+//! goldens under `tests/goldens/semantic-edges/`:
 //!   - `cdo-anon.json`         — Member/Interface ([`mint_l3_validated_golden`])
 //!   - `cdo-trigger-anon.json` — ImplicitTrigger ([`mint_l3_trigger_golden`])
 //!   - `cdo-event-anon.json`   — EventFlow (`project_l3_event_rows`)
@@ -24,10 +24,27 @@
 //! the exact broken AL code (the committed goldens themselves never carry
 //! plaintext).
 //!
-//! Usage: `CDO_WS=<workspace> CDO_ANON_KEY=<secret> cargo run --release --bin
-//! mint-goldens` (workspace defaults to `$CDO_WS`; an explicit positional arg
-//! overrides it). Output discipline: progress/summary goes to stderr; the
-//! tool writes files directly, nothing meaningful goes to stdout.
+//! # Reproducibility (1B.3b Task 1 fix)
+//!
+//! Anonymization uses the FIXED, COMMITTED salt (`anon::ANON_SALT`) by
+//! default — running this tool twice against the SAME `CDO_WS` state produces
+//! BYTE-IDENTICAL committed goldens, with no secret required. [`ANON_KEY_ENV`]
+//! remains as an OPTIONAL override for a non-reproducible, session-local
+//! anonymization; a golden minted with it set must NEVER be committed (this
+//! tool warns loudly when it's set).
+//!
+//! # Workspace pinning
+//!
+//! PIN `CDO_WS` to a clean (or at least a known, tagged) ref at mint time —
+//! this tool stamps the workspace's git HEAD SHA + dirty flag into each
+//! golden's [`MintMetadata`], and a later audit run warns (not fails) when
+//! the workspace it sees has drifted from that stamp. Re-run this tool
+//! (re-mint) when intentionally advancing the pin to a new workspace state.
+//!
+//! Usage: `CDO_WS=<workspace> cargo run --release --bin mint-goldens`
+//! (workspace defaults to `$CDO_WS`; an explicit positional arg overrides
+//! it). Output discipline: progress/summary goes to stderr; the tool writes
+//! files directly, nothing meaningful goes to stdout.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -36,15 +53,16 @@ use std::process::ExitCode;
 use al_call_hierarchy::program::resolve::anon::{self, ANON_KEY_ENV};
 use al_call_hierarchy::program::resolve::differential::project_l3_event_rows;
 use al_call_hierarchy::program::resolve::semantic_golden::{
-    anonymize_event_rows_with_deanon, anonymize_golden_with_deanon, cdo_anon_golden_path,
-    cdo_deanon_map_path, cdo_event_anon_golden_path, cdo_trigger_anon_golden_path,
-    merge_deanon_map, mint_l3_trigger_golden, mint_l3_validated_golden,
+    MintMetadata, anonymize_event_rows_with_deanon, anonymize_golden_with_deanon,
+    cdo_anon_golden_path, cdo_deanon_map_path, cdo_event_anon_golden_path,
+    cdo_trigger_anon_golden_path, merge_deanon_map, mint_l3_trigger_golden,
+    mint_l3_validated_golden, workspace_git_info,
 };
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: CDO_WS=<workspace> {ANON_KEY_ENV}=<secret> cargo run --release \
-         --bin mint-goldens [-- <workspace-root>] [--insecure-test-key]\n\
+        "usage: CDO_WS=<workspace> cargo run --release --bin mint-goldens \
+         [-- <workspace-root>]\n\
          \n\
          Mints + anonymizes the three committed CDO-derived goldens under\n\
          tests/goldens/semantic-edges/ (cdo-anon.json, cdo-trigger-anon.json,\n\
@@ -53,19 +71,23 @@ fn usage() -> ExitCode {
          \n\
          <workspace-root> defaults to $CDO_WS when omitted as a positional arg.\n\
          \n\
-         {ANON_KEY_ENV} MUST be set to a real, NON-COMMITTED secret when minting\n\
-         real CDO data — without it, anon() falls back to a committed test key,\n\
-         which would make the committed golden's ids dictionary-attackable (see\n\
-         anon.rs's module docs, \"Governance\" section). Pass --insecure-test-key\n\
-         to override ONLY for local tool development against synthetic/\n\
-         non-proprietary fixtures."
+         Anonymization uses the FIXED, COMMITTED salt by default — re-running\n\
+         this tool against the SAME CDO_WS state reproduces byte-identical\n\
+         committed goldens, no secret required (see anon.rs's module docs,\n\
+         \"Governance\" section). {ANON_KEY_ENV} is an OPTIONAL override for a\n\
+         non-reproducible, session-local anonymization; NEVER commit a golden\n\
+         minted with it set.\n\
+         \n\
+         PIN CDO_WS to a clean/tagged ref at mint time — the mint-time git SHA\n\
+         + dirty flag are stamped into each golden's metadata, so a later audit\n\
+         can warn on workspace drift. Re-mint when intentionally advancing the\n\
+         pin."
     );
     ExitCode::FAILURE
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let insecure_test_key = args.iter().any(|a| a == "--insecure-test-key");
     let positional = args.iter().find(|a| !a.starts_with("--"));
 
     let workspace_root: PathBuf = match positional {
@@ -86,23 +108,34 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let key_is_set = std::env::var(ANON_KEY_ENV)
+    // 1B.3b Task 1 fix: anonymization defaults to the FIXED, COMMITTED salt
+    // (`anon::ANON_SALT`) — no secret required, and the result is
+    // REPRODUCIBLE (re-running this tool against the same CDO_WS state
+    // byte-matches the committed goldens). `ANON_KEY_ENV` remains an OPTIONAL
+    // override for a non-reproducible anonymization; warn loudly when it's
+    // set so a developer doesn't accidentally commit a non-reproducible
+    // golden.
+    let key_overridden = std::env::var(ANON_KEY_ENV)
         .map(|v| !v.is_empty())
         .unwrap_or(false);
-    if !key_is_set && !insecure_test_key {
+    if key_overridden {
         eprintln!(
-            "error: {ANON_KEY_ENV} is unset/empty. Minting real CDO data with the \
-             committed fallback test key would make the result dictionary-attackable."
-        );
-        return usage();
-    }
-    if !key_is_set {
-        eprintln!(
-            "WARNING: --insecure-test-key set, {ANON_KEY_ENV} unset — using the \
-             committed fallback key. Output is NOT safe to commit if `workspace_root` \
-             contains proprietary data."
+            "WARNING: {ANON_KEY_ENV} is set — anonymizing with the OVERRIDE key, \
+             NOT the committed fixed salt. This run's output will NOT match the \
+             currently-committed goldens and will NOT reproduce on a second run \
+             without the same override. Do NOT commit goldens minted this way."
         );
     }
+
+    // 1B.3b Task 1 fix (Fix 4): stamp the mint-time CDO_WS git SHA + dirty
+    // flag into every golden's metadata. PIN CDO_WS to a clean/tagged ref
+    // before minting; re-mint when intentionally advancing the pin.
+    let (workspace_git_sha, workspace_dirty) = workspace_git_info(&workspace_root);
+    eprintln!("  workspace git: sha={workspace_git_sha:?} dirty={workspace_dirty:?}");
+    let mint_metadata = MintMetadata {
+        workspace_git_sha,
+        workspace_dirty,
+    };
 
     eprintln!(
         "mint-goldens: workspace={} (1B.3b Task 1 — LAST sanctioned L3 use)",
@@ -114,8 +147,9 @@ fn main() -> ExitCode {
     // ── (a) Member/Interface ─────────────────────────────────────────────────
     eprintln!("  minting Member/Interface golden (mint_l3_validated_golden / project_l3)...");
     let member_golden = mint_l3_validated_golden(&workspace_root);
-    let member_anon =
+    let mut member_anon =
         anonymize_golden_with_deanon(&member_golden, anon::SITE_DOMAIN_V1, &mut deanon);
+    member_anon.metadata = mint_metadata.clone();
     let member_path = cdo_anon_golden_path();
     write_minified(&member_path, &member_anon);
     eprintln!(
@@ -129,8 +163,9 @@ fn main() -> ExitCode {
         "  minting ImplicitTrigger golden (mint_l3_trigger_golden / project_l3_implicit_trigger_in_scope)..."
     );
     let trigger_golden = mint_l3_trigger_golden(&workspace_root);
-    let trigger_anon =
+    let mut trigger_anon =
         anonymize_golden_with_deanon(&trigger_golden, anon::TRIGGER_OP_DOMAIN_V1, &mut deanon);
+    trigger_anon.metadata = mint_metadata.clone();
     let trigger_path = cdo_trigger_anon_golden_path();
     write_minified(&trigger_path, &trigger_anon);
     eprintln!(
@@ -142,7 +177,8 @@ fn main() -> ExitCode {
     // ── (c) EventFlow ─────────────────────────────────────────────────────────
     eprintln!("  minting EventFlow golden (project_l3_event_rows)...");
     let event_rows = project_l3_event_rows(&workspace_root);
-    let event_anon = anonymize_event_rows_with_deanon(&event_rows, &mut deanon);
+    let mut event_anon = anonymize_event_rows_with_deanon(&event_rows, &mut deanon);
+    event_anon.metadata = mint_metadata.clone();
     let event_path = cdo_event_anon_golden_path();
     write_minified(&event_path, &event_anon);
     eprintln!(
