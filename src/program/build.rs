@@ -12,8 +12,8 @@ use crate::snapshot::{AppSetSnapshot, parse_snapshot};
 /// Steps:
 /// 1. Intern every app identity from the snapshot into an `AppRegistry`.
 /// 2. Deep-parse all source-bearing units (via `parse_snapshot`) and extract
-///    object + routine nodes.
-/// 2b. Ingest SymbolOnly dep ABI nodes from `abi_cache`.
+///    object + routine nodes; then ingest SymbolOnly dep ABI nodes from
+///    `abi_cache` (step 2b).
 /// 3. Wire the real dependency topology from each unit's `declared_deps`
 ///    (GUID-match preferred; name+version fallback; deps absent from the
 ///    snapshot are silently skipped — open-world assumption).
