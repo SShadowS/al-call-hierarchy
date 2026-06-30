@@ -943,6 +943,34 @@ pub struct ApplicabilityReport {
     /// does not name the publisher object+event the edge claims, or whose
     /// arity exceeds the publisher's.
     pub event_violations: usize,
+    /// NON-VACUITY: number of routes [`interface_route_applicable`] was
+    /// actually invoked on (i.e. `RouteTarget::Routine` routes on a Polymorphic
+    /// edge WITH recovered call-site context — fail-closed routes don't call
+    /// the predicate and are excluded). A collapse toward 0 with
+    /// `interface_applicability_violations == 0` signals a vacuous pass (e.g.
+    /// a [`build_fan_out_site_context`] regression silently dropping context),
+    /// distinguishable from a genuine clean run.
+    pub interface_routes_checked: usize,
+    /// NON-VACUITY: number of `Builtin` routes whose `BuiltinId` matched a
+    /// fan-out catalog prefix (`PageInstance::` / `ReportInstance::` /
+    /// `Enum::`), i.e. routes the instance-builtin/enum-static re-check
+    /// actually ran on. See `interface_routes_checked`'s doc comment for the
+    /// non-vacuity rationale.
+    pub instance_builtin_routes_checked: usize,
+    /// NON-VACUITY: number of routes [`implicit_trigger_route_applicable`] (or
+    /// its `Validate` table/extension-identity fallback,
+    /// `target_is_on_table_or_extension`) was actually invoked on — `Routine`
+    /// routes on a Multicast `ImplicitTrigger` edge WITH recovered call-site
+    /// context. See `interface_routes_checked`'s doc comment for the
+    /// non-vacuity rationale.
+    pub implicit_trigger_routes_checked: usize,
+    /// NON-VACUITY: number of `Routine` (subscriber) routes
+    /// [`verify_event_subscriber_route`] was actually invoked on — excludes
+    /// routes skipped because the publisher object could not be projected
+    /// (1B.3b Task 2 fix; see `route_applicability`'s `EdgeKind::EventFlow`
+    /// arm). See `interface_routes_checked`'s doc comment for the non-vacuity
+    /// rationale.
+    pub event_routes_checked: usize,
 }
 
 impl ApplicabilityReport {
@@ -1308,6 +1336,30 @@ pub enum FanOutSiteContext {
     Trigger(RecordOpCtx),
 }
 
+/// Map a (lowercased) `CalleeShape::RecordOp` method name to the
+/// [`RecordOpKind`] of the implicit trigger it fires — the inverse of
+/// `resolver::resolve_implicit_trigger`'s `op → trigger_name` table.
+/// `None` for any record-op method that is NOT an implicit-trigger-firing DML
+/// operation (e.g. `SetRange`, `FindSet`, `CalcFields`, …) — the caller skips
+/// those sites entirely (no [`FanOutSiteContext`] is recoverable, or needed,
+/// for them).
+///
+/// 1B.3b Task 2 fix: previously had no `"rename"` arm, so a real
+/// `Rec.Rename(...)` call site whose target table has an `OnRename` trigger
+/// would silently drop context here, fall into `route_applicability`'s
+/// fail-closed branch, and wrongly count the trigger's route a VIOLATION
+/// (flagging a genuinely sound route as a false positive).
+fn record_op_kind_for_method(op_lc: &str) -> Option<RecordOpKind> {
+    match op_lc {
+        "insert" => Some(RecordOpKind::Insert),
+        "modify" => Some(RecordOpKind::Modify),
+        "delete" => Some(RecordOpKind::Delete),
+        "rename" => Some(RecordOpKind::Rename),
+        "validate" => Some(RecordOpKind::Validate),
+        _ => None,
+    }
+}
+
 /// Re-walk every workspace `Member`/`RecordOp` call site to recover the
 /// [`FanOutSiteContext`] the fan-out applicability predicates need.
 ///
@@ -1431,13 +1483,7 @@ fn build_fan_out_site_context(
                             CalleeShape::RecordOp { receiver_text, op } => {
                                 let receiver_lc = receiver_text.to_ascii_lowercase();
                                 let op_lc = op.to_ascii_lowercase();
-                                let Some(op_kind) = (match op_lc.as_str() {
-                                    "insert" => Some(RecordOpKind::Insert),
-                                    "modify" => Some(RecordOpKind::Modify),
-                                    "delete" => Some(RecordOpKind::Delete),
-                                    "validate" => Some(RecordOpKind::Validate),
-                                    _ => None,
-                                }) else {
+                                let Some(op_kind) = record_op_kind_for_method(&op_lc) else {
                                     continue;
                                 };
                                 let recv = infer_receiver_type(
@@ -1535,8 +1581,10 @@ fn target_is_on_table_or_extension(
 /// AND, since 1B.3b Task 2, per-route fan-out SOUNDNESS (Interface,
 /// instance-builtin/enum-static, ImplicitTrigger, EventFlow) — see
 /// [`ApplicabilityReport`]'s doc comment for the soundness-vs-completeness
-/// framing. All six counters must be zero for
-/// [`ApplicabilityReport::is_clean`] to return `true`.
+/// framing. All six violation counters must be zero for
+/// [`ApplicabilityReport::is_clean`] to return `true`; the four
+/// `*_routes_checked` counters are a NON-VACUITY audit (see their doc
+/// comments) and are not part of `is_clean`.
 ///
 /// `fan_out_ctx` (built by [`build_fan_out_site_context`]) supplies the
 /// Interface/`RecordOp` call-site context `edges` alone cannot carry;
@@ -1557,6 +1605,10 @@ pub fn route_applicability(
     let mut instance_builtin_violations = 0usize;
     let mut implicit_trigger_violations = 0usize;
     let mut event_violations = 0usize;
+    let mut interface_routes_checked = 0usize;
+    let mut instance_builtin_routes_checked = 0usize;
+    let mut implicit_trigger_routes_checked = 0usize;
+    let mut event_routes_checked = 0usize;
 
     for edge in edges {
         for route in edge.all_routes() {
@@ -1577,14 +1629,17 @@ pub fn route_applicability(
                     }) => {
                         for route in edge.all_routes() {
                             let ok = match &route.target {
-                                RouteTarget::Routine(rid) => interface_route_applicable(
-                                    iface_lc,
-                                    called_member_lc,
-                                    *arity,
-                                    rid,
-                                    graph,
-                                    index,
-                                ),
+                                RouteTarget::Routine(rid) => {
+                                    interface_routes_checked += 1;
+                                    interface_route_applicable(
+                                        iface_lc,
+                                        called_member_lc,
+                                        *arity,
+                                        rid,
+                                        graph,
+                                        index,
+                                    )
+                                }
                                 // A SymbolOnly (cross-app dep) implementer: object-level
                                 // applicability holds by construction (a known interface
                                 // implementer read from SymbolReference); the member is
@@ -1623,6 +1678,7 @@ pub fn route_applicability(
                         for route in edge.all_routes() {
                             let ok = match &route.target {
                                 RouteTarget::Routine(rid) => {
+                                    implicit_trigger_routes_checked += 1;
                                     if matches!(ctx.kind, RecordOpKind::Validate) {
                                         target_is_on_table_or_extension(
                                             &rid.object,
@@ -1655,26 +1711,30 @@ pub fn route_applicability(
 
             // ── EventFlow ────────────────────────────────────────────────────
             EdgeKind::EventFlow => {
-                let pub_name_lc = graph
-                    .objects
-                    .iter()
-                    .find(|o| o.id == edge.from.object)
-                    .map(|o| o.name.to_ascii_lowercase())
-                    .unwrap_or_default();
-                let pub_type_lc = format!("{:?}", edge.from.object.kind).to_ascii_lowercase();
-                for route in edge.all_routes() {
-                    if let RouteTarget::Routine(sub_rid) = &route.target {
-                        let ok = verify_event_subscriber_route(
-                            sub_rid,
-                            &pub_type_lc,
-                            &pub_name_lc,
-                            &edge.from.name_lc,
-                            edge.from.params_count,
-                            parsed,
-                            &graph.apps,
-                        );
-                        if !ok {
-                            event_violations += 1;
+                // If the publisher object doesn't resolve in the graph, SKIP —
+                // matching the live `differential::run_event_flow_gate`'s
+                // `continue` + `fresh_unprojectable` counting (1B.3b Task 2
+                // fix). Running the teeth against a `pub_name_lc` that silently
+                // fell back to "" via `unwrap_or_default()` would be a
+                // meaningless check, not a sound one.
+                if let Some(pub_obj) = graph.objects.iter().find(|o| o.id == edge.from.object) {
+                    let pub_name_lc = pub_obj.name.to_ascii_lowercase();
+                    let pub_type_lc = format!("{:?}", edge.from.object.kind).to_ascii_lowercase();
+                    for route in edge.all_routes() {
+                        if let RouteTarget::Routine(sub_rid) = &route.target {
+                            event_routes_checked += 1;
+                            let ok = verify_event_subscriber_route(
+                                sub_rid,
+                                &pub_type_lc,
+                                &pub_name_lc,
+                                &edge.from.name_lc,
+                                edge.from.params_count,
+                                parsed,
+                                &graph.apps,
+                            );
+                            if !ok {
+                                event_violations += 1;
+                            }
                         }
                     }
                 }
@@ -1708,6 +1768,9 @@ pub fn route_applicability(
                         )),
                         _ => None,
                     };
+                if ok.is_some() {
+                    instance_builtin_routes_checked += 1;
+                }
                 if ok == Some(false) {
                     instance_builtin_violations += 1;
                 }
@@ -1724,6 +1787,10 @@ pub fn route_applicability(
         instance_builtin_violations,
         implicit_trigger_violations,
         event_violations,
+        interface_routes_checked,
+        instance_builtin_routes_checked,
+        implicit_trigger_routes_checked,
+        event_routes_checked,
     }
 }
 
@@ -2567,6 +2634,150 @@ mod tests {
             report.implicit_trigger_violations, 1,
             "Vendor's OnInsert must not fire for a Customer Insert — the ported teeth \
              must catch it"
+        );
+    }
+
+    #[test]
+    fn implicit_trigger_edge_with_no_recovered_context_fails_closed() {
+        // Mirrors `interface_polymorphic_edge_with_no_recovered_context_fails_closed`
+        // for the ImplicitTrigger/Multicast side (1B.3b Task 2 fix): a Multicast
+        // ImplicitTrigger edge whose site has no recoverable RecordOpCtx must fail
+        // closed, not silently pass.
+        let (apps, app) = make_app();
+        let table = make_obj(app, ObjectKind::Table, "Customer", vec![]);
+        let table_id = table.id.clone();
+        let oninsert = make_routine_node(&table_id, "oninsert", 0);
+        let (graph, index) = build_synth_graph(apps, vec![table], vec![oninsert]);
+
+        let caller_rid = RoutineNodeId {
+            object: table_id.clone(),
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: table_id,
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: caller_rid.clone(),
+            site: SiteId {
+                caller: caller_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::ImplicitTrigger,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+
+        // No fan_out_ctx entry for this edge's SiteId — fail-closed.
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &[]);
+        assert_eq!(
+            report.implicit_trigger_violations, 1,
+            "a Multicast ImplicitTrigger edge with no recovered call-site context must \
+             fail closed, not silently pass"
+        );
+    }
+
+    #[test]
+    fn record_op_kind_for_method_recognizes_all_five_dml_ops() {
+        // Proves the `build_fan_out_site_context` op-kind match arm directly
+        // (1B.3b Task 2 fix) — including the previously-missing `"rename"` arm.
+        assert_eq!(
+            record_op_kind_for_method("insert"),
+            Some(RecordOpKind::Insert)
+        );
+        assert_eq!(
+            record_op_kind_for_method("modify"),
+            Some(RecordOpKind::Modify)
+        );
+        assert_eq!(
+            record_op_kind_for_method("delete"),
+            Some(RecordOpKind::Delete)
+        );
+        assert_eq!(
+            record_op_kind_for_method("rename"),
+            Some(RecordOpKind::Rename),
+            "the \"rename\" => Some(RecordOpKind::Rename) arm must fire — its absence \
+             previously caused every Rec.Rename() site's context to be silently \
+             dropped, false-positive-flagging genuinely sound OnRename trigger routes"
+        );
+        assert_eq!(
+            record_op_kind_for_method("validate"),
+            Some(RecordOpKind::Validate)
+        );
+        // Non-DML record ops are NOT implicit-trigger-firing — must stay `None`.
+        assert_eq!(record_op_kind_for_method("setrange"), None);
+        assert_eq!(record_op_kind_for_method("findset"), None);
+    }
+
+    #[test]
+    fn implicit_trigger_route_passes_for_rename_on_correct_table() {
+        // End-to-end proof (1B.3b Task 2 fix) that a recovered
+        // `RecordOpKind::Rename` context, paired with a route to the table's
+        // `OnRename` trigger, is judged APPLICABLE by `route_applicability` — the
+        // arm doesn't just populate a struct, it feeds a real, sound route.
+        let (apps, app) = make_app();
+        let table = make_obj(app, ObjectKind::Table, "Customer", vec![]);
+        let table_id = table.id.clone();
+        let onrename = make_routine_node(&table_id, "onrename", 0);
+        let (graph, index) = build_synth_graph(apps, vec![table], vec![onrename]);
+
+        let caller_rid = RoutineNodeId {
+            object: table_id.clone(),
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: table_id.clone(),
+            name_lc: "onrename".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let site = SiteId {
+            caller: caller_rid.clone(),
+            span: test_span(1),
+            callee_fingerprint: 1,
+        };
+        let edge = Edge {
+            from: caller_rid,
+            site: site.clone(),
+            kind: EdgeKind::ImplicitTrigger,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+        let mut ctx: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+        ctx.insert(
+            site,
+            FanOutSiteContext::Trigger(RecordOpCtx {
+                kind: RecordOpKind::Rename,
+                table: table_id,
+                field: None,
+                run_trigger: RunTrigger::Guarded,
+            }),
+        );
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &ctx, &[]);
+        assert_eq!(
+            report.implicit_trigger_violations, 0,
+            "a Rec.Rename() site with an OnRename trigger on the table must be \
+             APPLICABLE (no violation)"
         );
     }
 

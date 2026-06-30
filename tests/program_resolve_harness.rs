@@ -2684,8 +2684,13 @@ fn fan_out_applicability_zero_violations() {
     );
     eprintln!(
         "Test 20 (fixture) — fan-out applicability: interface=0 instance_builtin=0 \
-         implicit_trigger=0 event=0 (total_routes={})",
+         implicit_trigger=0 event=0 (total_routes={}) \
+         routes_checked[interface={} instance_builtin={} implicit_trigger={} event={}]",
         appl.total_routes,
+        appl.interface_routes_checked,
+        appl.instance_builtin_routes_checked,
+        appl.implicit_trigger_routes_checked,
+        appl.event_routes_checked,
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
@@ -2717,11 +2722,19 @@ fn fan_out_applicability_zero_violations() {
     eprintln!(
         "Test 20 (CDO) — fan-out applicability: total_routes={} \
          interface_violations={} instance_builtin_violations={} \
-         implicit_trigger_violations={} event_violations={} (all must be 0)",
+         implicit_trigger_violations={} event_violations={} (all must be 0)\n\
+         Test 20 (CDO) — non-vacuity routes_checked: interface={} instance_builtin={} \
+         implicit_trigger={} event={} (each must be NON-TRIVIAL — a collapse toward 0 \
+         with violations==0 would signal a vacuous pass, e.g. a \
+         build_fan_out_site_context regression silently dropping context)",
         appl_cdo.total_routes,
         appl_cdo.interface_applicability_violations,
         appl_cdo.instance_builtin_violations,
         appl_cdo.implicit_trigger_violations,
         appl_cdo.event_violations,
+        appl_cdo.interface_routes_checked,
+        appl_cdo.instance_builtin_routes_checked,
+        appl_cdo.implicit_trigger_routes_checked,
+        appl_cdo.event_routes_checked,
     );
 }
