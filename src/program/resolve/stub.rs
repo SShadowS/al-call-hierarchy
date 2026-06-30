@@ -14,11 +14,14 @@
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId, Witness,
     callee_fp,
 };
 use crate::program::resolve::extract_min::extract_raw_sites;
+use crate::program::resolve::index::ResolveIndex;
+use crate::program::resolve::resolver::emit_event_flow_edges;
 use crate::snapshot::ParsedUnit;
 
 /// Emit one `Unknown`-route `Edge` per extracted call site across all parsed
@@ -88,6 +91,13 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
             }
         }
     }
+
+    // Phase 4b Task 3: append publisher-anchored EventFlow Multicast edges.
+    // Build ResolveIndex + BodyMap from the same inputs; both are used only
+    // within this call so the BodyMap lifetime is contained here.
+    let index = ResolveIndex::build(graph);
+    let body_map = BodyMap::build(graph, parsed);
+    edges.extend(emit_event_flow_edges(graph, &index, &body_map));
 
     edges
 }

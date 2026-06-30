@@ -38,8 +38,8 @@ use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
-    BuiltinId, DispatchShape, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness,
-    Witness,
+    BuiltinId, CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, OpenWorldReason, Route,
+    RouteTarget, SetCompleteness, SiteId, SourcePos, Witness, callee_fp,
 };
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
@@ -838,6 +838,117 @@ pub fn resolve_member(
 }
 
 // ---------------------------------------------------------------------------
+// Publisher-anchored EventFlow edge emission (Phase 4b Task 3)
+// ---------------------------------------------------------------------------
+
+/// Emit one `EventFlow` `Multicast` edge per publisher event routine, with
+/// routes to all its resolved subscribers (from [`ResolveIndex::subscribers_of`]).
+///
+/// # Edge contract
+///
+/// - `from` = the publisher `RoutineNodeId`.
+/// - `site` = `SiteId` anchored at the publisher routine's name-origin span
+///   (from the `body_map`; synthetic zero-span when the publisher is not in the
+///   `body_map`, e.g. a SymbolOnly dep or an integration gap).
+/// - `kind` = `EdgeKind::EventFlow`.
+/// - `shape` = `DispatchShape::Multicast`.
+/// - `completeness` = `SetCompleteness::Partial { ReverseDependentSubscribers }`.
+/// - `routes` = one `Route` per subscriber entry, carrying its dispatch
+///   `conditions` and the subscriber's source span as `Witness::SourceSpan`.
+///   For SymbolOnly subscribers: `RouteTarget::AbiSymbol` + `Evidence::Opaque`
+///   (mirrors [`make_routine_route`]'s SymbolOnly path).
+///
+/// A publisher with **zero** subscribers emits an edge with **empty routes** —
+/// this is an honest "published, no subscribers in snapshot" state, classified
+/// as `ObligationOutcome::HonestEmpty` by `classify_obligation`.
+///
+/// # Determinism
+/// Publishers are iterated in `graph.routines` order (already sorted by
+/// `RoutineNodeId`); subscriber routes within each edge are already sorted by
+/// subscriber `RoutineNodeId` by [`ResolveIndex::build`].
+pub fn emit_event_flow_edges(
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> Vec<Edge> {
+    let mut edges = Vec::new();
+
+    for pub_routine in &graph.routines {
+        if pub_routine.publisher_kind.is_none() {
+            continue;
+        }
+
+        let subs = index.subscribers_of(&pub_routine.id);
+
+        // Build one Route per subscriber (sorted by subscriber RoutineNodeId — already
+        // guaranteed by ResolveIndex::build).
+        let routes: Vec<Route> = subs
+            .iter()
+            .map(|se| {
+                // Subscriber tier: look up from graph.routines (linear scan; subscriber
+                // lists are small in practice).
+                let sub_tier = graph
+                    .routines
+                    .iter()
+                    .find(|r| r.id == se.subscriber)
+                    .map(|r| r.tier)
+                    .unwrap_or(TrustTier::Workspace);
+
+                // Build base route using make_routine_route (handles Source/Opaque/Unknown
+                // tiers via body_map), then inject the subscriber's conditions.
+                let mut route = make_routine_route(&se.subscriber, sub_tier, body_map);
+                route.conditions = se.conditions.clone();
+                route
+            })
+            .collect();
+
+        // SiteId: anchored at the publisher routine's name-origin span.
+        let site = if let Some((decl, path)) = body_map.get_with_path(&pub_routine.id) {
+            SiteId {
+                caller: pub_routine.id.clone(),
+                span: CanonicalSpan {
+                    unit: path.to_string(),
+                    start: SourcePos {
+                        line: decl.name_origin.start.row,
+                        col: decl.name_origin.start.column,
+                    },
+                    end: SourcePos {
+                        line: decl.name_origin.end.row,
+                        col: decl.name_origin.end.column,
+                    },
+                },
+                callee_fingerprint: callee_fp(&pub_routine.id.name_lc),
+            }
+        } else {
+            // Publisher not in body_map (SymbolOnly dep or integration gap):
+            // use a synthetic zero-span site.
+            SiteId {
+                caller: pub_routine.id.clone(),
+                span: CanonicalSpan {
+                    unit: String::new(),
+                    start: SourcePos { line: 0, col: 0 },
+                    end: SourcePos { line: 0, col: 0 },
+                },
+                callee_fingerprint: callee_fp(&pub_routine.id.name_lc),
+            }
+        };
+
+        edges.push(Edge {
+            from: pub_routine.id.clone(),
+            site,
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes,
+        });
+    }
+
+    edges
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -850,7 +961,8 @@ mod tests {
     use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{
-        DispatchShape, Evidence, OpenWorldReason, RouteTarget, SetCompleteness, Witness,
+        Condition, DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, OpenWorldReason,
+        RouteTarget, SetCompleteness, Witness, classify_obligation,
     };
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
@@ -3143,5 +3255,263 @@ codeunit 50619 "EmptyPageCaller"
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
         assert_eq!(routes[0].evidence, Evidence::Unknown);
         assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4b Task 3 — emit_event_flow_edges tests
+    // -----------------------------------------------------------------------
+
+    /// Build a publisher + Manual subscriber graph from real AL source.
+    /// Returns `(graph, units)` with both objects in one `"TestApp"` app.
+    fn build_event_flow_fixture_manual() -> (ProgramGraph, Vec<ParsedUnit>) {
+        let pub_src: &'static str = r#"
+codeunit 50700 "EvtPub"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterX()
+    begin
+    end;
+}
+"#;
+        let sub_src: &'static str = r#"
+codeunit 50701 "EvtManualSub"
+{
+    EventSubscriberInstance = Manual;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvtPub", 'OnAfterX', '', false, false)]
+    local procedure OnAfterXHandler()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_pub = make_unit(app_id.clone(), "EvtPub.al", pub_src);
+        let unit_sub = make_unit(app_id, "EvtManualSub.al", sub_src);
+        let units = vec![unit_pub, unit_sub];
+        let graph = build_graph(&units, None);
+        (graph, units)
+    }
+
+    // (a) publisher OnAfterX + Manual subscriber → ONE EventFlow Edge with ManualBinding
+    #[test]
+    fn event_flow_manual_subscriber_emits_correct_edge() {
+        let (graph, units) = build_event_flow_fixture_manual();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+
+        // Must produce exactly ONE EventFlow edge (for OnAfterX publisher).
+        let event_edges: Vec<&Edge> = edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::EventFlow)
+            .collect();
+        assert_eq!(event_edges.len(), 1, "expected exactly one EventFlow edge");
+
+        let e = event_edges[0];
+
+        // Publisher is the `from`.
+        let pub_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "EvtPub")
+            .expect("EvtPub object");
+        let expected_pub_rid = graph
+            .routines
+            .iter()
+            .find(|r| r.id.object == pub_obj.id && r.id.name_lc == "onafterx")
+            .expect("OnAfterX publisher routine")
+            .id
+            .clone();
+        assert_eq!(e.from, expected_pub_rid, "edge must be from the publisher");
+
+        // Edge shape.
+        assert_eq!(e.kind, EdgeKind::EventFlow);
+        assert_eq!(e.shape, DispatchShape::Multicast);
+        assert_eq!(
+            e.completeness,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers
+            }
+        );
+
+        // Exactly one route — the Manual subscriber.
+        assert_eq!(e.routes.len(), 1, "one subscriber → one route");
+        let r = &e.routes[0];
+
+        // Route target is the subscriber Routine.
+        let sub_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "EvtManualSub")
+            .expect("EvtManualSub object");
+        let expected_sub_rid = graph
+            .routines
+            .iter()
+            .find(|r| r.id.object == sub_obj.id && r.id.name_lc == "onafterxhandler")
+            .expect("OnAfterXHandler subscriber routine")
+            .id
+            .clone();
+        assert_eq!(
+            r.target,
+            RouteTarget::Routine(expected_sub_rid),
+            "route target must be the subscriber"
+        );
+
+        // Route has ManualBinding condition.
+        assert!(
+            r.conditions.contains(&Condition::ManualBinding),
+            "Manual subscriber must carry ManualBinding condition; got {:?}",
+            r.conditions
+        );
+
+        // Subscriber is in the body_map → Source evidence + SourceSpan witness.
+        assert_eq!(r.evidence, Evidence::Source);
+        assert!(
+            matches!(r.witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan (subscriber in body_map); got {:?}",
+            r.witness
+        );
+    }
+
+    // (b) Manual route NOT in default_reachable_routes, IS in may_reachable_routes
+    #[test]
+    fn event_flow_manual_route_excluded_from_default_reachable() {
+        let (graph, units) = build_event_flow_fixture_manual();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let e = edges
+            .iter()
+            .find(|e| e.kind == EdgeKind::EventFlow)
+            .expect("EventFlow edge");
+
+        // (b) Manual route must NOT appear in default_reachable_routes (reachability contract).
+        let default_routes: Vec<_> = e.default_reachable_routes().collect();
+        assert!(
+            default_routes.is_empty(),
+            "ManualBinding route must NOT be in default_reachable_routes; got {:?}",
+            default_routes
+        );
+
+        // But it MUST appear in may_reachable_routes.
+        let may_routes: Vec<_> = e.may_reachable_routes().collect();
+        assert_eq!(
+            may_routes.len(),
+            1,
+            "ManualBinding route MUST be in may_reachable_routes"
+        );
+    }
+
+    // (c) publisher with ZERO subscribers → empty routes → HonestEmpty
+    #[test]
+    fn event_flow_zero_subscribers_honest_empty() {
+        let pub_src: &'static str = r#"
+codeunit 50702 "NoSubPub"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterY()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_pub = make_unit(app_id, "NoSubPub.al", pub_src);
+        let units = vec![unit_pub];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+
+        let event_edges: Vec<&Edge> = edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::EventFlow)
+            .collect();
+        assert_eq!(
+            event_edges.len(),
+            1,
+            "publisher must always produce an EventFlow edge"
+        );
+
+        let e = event_edges[0];
+        assert!(
+            e.routes.is_empty(),
+            "zero subscribers → empty routes; got {:?}",
+            e.routes
+        );
+        assert_eq!(
+            classify_obligation(e),
+            ObligationOutcome::HonestEmpty,
+            "empty Multicast + Partial → HonestEmpty"
+        );
+    }
+
+    // (d) non-Manual subscriber → route IS in default_reachable_routes
+    #[test]
+    fn event_flow_non_manual_subscriber_default_reachable() {
+        let pub_src: &'static str = r#"
+codeunit 50703 "DefaultPub"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterZ()
+    begin
+    end;
+}
+"#;
+        let sub_src: &'static str = r#"
+codeunit 50704 "DefaultSub"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"DefaultPub", 'OnAfterZ', '', false, false)]
+    local procedure OnAfterZHandler()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_pub = make_unit(app_id.clone(), "DefaultPub.al", pub_src);
+        let unit_sub = make_unit(app_id, "DefaultSub.al", sub_src);
+        let units = vec![unit_pub, unit_sub];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let e = edges
+            .iter()
+            .find(|e| e.kind == EdgeKind::EventFlow)
+            .expect("EventFlow edge");
+
+        // Non-Manual subscriber: route must be in default_reachable_routes.
+        let default_routes: Vec<_> = e.default_reachable_routes().collect();
+        assert_eq!(
+            default_routes.len(),
+            1,
+            "non-Manual route must be in default_reachable_routes"
+        );
+        assert!(
+            !default_routes[0]
+                .conditions
+                .contains(&Condition::ManualBinding),
+            "non-Manual route must not have ManualBinding"
+        );
+        assert_eq!(default_routes[0].evidence, Evidence::Source);
+    }
+
+    // (e) determinism: two calls with same inputs produce identical output
+    #[test]
+    fn event_flow_emission_is_deterministic() {
+        let (graph, units) = build_event_flow_fixture_manual();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let edges1 = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges2 = emit_event_flow_edges(&graph, &index, &body_map);
+
+        assert_eq!(
+            edges1, edges2,
+            "emit_event_flow_edges must be deterministic across calls"
+        );
     }
 }

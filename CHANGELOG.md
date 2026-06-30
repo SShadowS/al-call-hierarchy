@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-4b Task 3: Publisher-anchored `EventFlow` `Multicast` edge emission**
+  (`src/program/resolve/resolver.rs`, `src/program/resolve/stub.rs`) — adds
+  `emit_event_flow_edges(graph, index, body_map) -> Vec<Edge>`: sweeps all publisher
+  event routines in the program graph and emits one `EdgeKind::EventFlow` +
+  `DispatchShape::Multicast` edge per publisher, with routes built from
+  `ResolveIndex::subscribers_of` (Task 2).  Each route carries the subscriber's
+  dispatch conditions (`ManualBinding` / `SkipOnMissingLicense` / …) and a
+  `Witness::SourceSpan` (or `AbiSymbol` for SymbolOnly deps).  A publisher with
+  zero subscribers emits an empty-routes edge → `classify_obligation` →
+  `HonestEmpty`.  Wired into `resolve_program` (stub assembly point); exported from
+  `program::resolve`.  Five unit tests cover the manual-binding reachability contract,
+  HonestEmpty, non-manual default reachability, and determinism.
+
 - **Phase-4 Task 4: Consolidated Phase-4 fan-out gate + honest scope framing**
   (`tests/program_resolve_harness.rs`) — adds `phase4_fanout_matches_or_beats_l3`,
   a single CDO gate that runs both the member harness (Member + instance-builtin +

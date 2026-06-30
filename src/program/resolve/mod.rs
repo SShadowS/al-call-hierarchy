@@ -20,4 +20,5 @@ pub use edge::{
     DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, Route, RouteTarget,
     SetCompleteness, Witness, classify_obligation, real_unknown_rate,
 };
+pub use resolver::emit_event_flow_edges;
 pub use stub::resolve_program;
