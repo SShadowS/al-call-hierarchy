@@ -310,10 +310,23 @@ pub(crate) fn callee_fp(text: &str) -> u64 {
 }
 
 /// Stratified counts for `--program-call-graph-stats`.
+///
+/// `resolved` has been split into three sub-counts by evidence so that the
+/// contribution of ABI ingestion is visible without laundering external
+/// boundaries into the "resolved" bucket.  `real_unknown_rate` (= `unknown /
+/// total`) is unchanged.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Histogram {
     pub total: usize,
-    pub resolved: usize,
+    /// Edges resolved with in-source evidence (`Evidence::Source`).
+    pub resolved_source: usize,
+    /// Edges resolved via the builtin catalog (`Evidence::Catalog`).
+    pub resolved_catalog: usize,
+    /// Edges resolved to an ABI-boundary symbol (`Evidence::Abi` or
+    /// `Evidence::Opaque` — the callee is in a SymbolOnly dependency).
+    /// The real-unknown-rate DROP from ABI ingestion shows here, NOT in
+    /// `resolved_source` — no laundering of external boundaries.
+    pub resolved_abi_external: usize,
     /// Edges where all real routes require explicit `BindSubscription`.
     /// Counted as resolved-for-resolution (not unknown).
     pub conditional_resolved: usize,
@@ -328,7 +341,31 @@ impl Histogram {
         for e in edges {
             h.total += 1;
             match classify_obligation(e) {
-                ObligationOutcome::Resolved => h.resolved += 1,
+                ObligationOutcome::Resolved => {
+                    // Classify by the best evidence among all real default-firing
+                    // routes.  Priority: Source (0) > Catalog (1) > Abi/Opaque (2).
+                    let mut best: Option<u8> = None;
+                    for r in &e.routes {
+                        if r.evidence == Evidence::Unknown
+                            || r.target == RouteTarget::Unresolved
+                            || !r.fires_by_default()
+                        {
+                            continue;
+                        }
+                        let score: u8 = match r.evidence {
+                            Evidence::Source => 0,
+                            Evidence::Catalog => 1,
+                            Evidence::Abi | Evidence::Opaque => 2,
+                            Evidence::Unknown => continue,
+                        };
+                        best = Some(best.map_or(score, |b: u8| b.min(score)));
+                    }
+                    match best {
+                        Some(0) => h.resolved_source += 1,
+                        Some(1) => h.resolved_catalog += 1,
+                        _ => h.resolved_abi_external += 1,
+                    }
+                }
                 ObligationOutcome::ConditionalResolved => h.conditional_resolved += 1,
                 ObligationOutcome::HonestDynamic => h.honest_dynamic += 1,
                 ObligationOutcome::HonestEmpty => h.honest_empty += 1,
@@ -337,6 +374,7 @@ impl Histogram {
         }
         h
     }
+
     pub fn real_unknown_rate(&self) -> f64 {
         if self.total == 0 {
             0.0

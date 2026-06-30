@@ -145,7 +145,7 @@ impl AbiCache {
 // I/O helpers
 // ---------------------------------------------------------------------------
 
-fn read_symbol_reference_from_app(path: &Path) -> anyhow::Result<SymbolReferenceAbi> {
+pub(crate) fn read_symbol_reference_from_app(path: &Path) -> anyhow::Result<SymbolReferenceAbi> {
     let mut archive = open_app_zip(path)?;
     let mut sr_file = archive.by_name("SymbolReference.json")?;
     let mut content = Vec::new();
@@ -162,7 +162,7 @@ fn read_symbol_reference_from_app(path: &Path) -> anyhow::Result<SymbolReference
 // Mapping helpers
 // ---------------------------------------------------------------------------
 
-fn object_kind_from_abi_type(object_type: &str) -> ObjectKind {
+pub(crate) fn object_kind_from_abi_type(object_type: &str) -> ObjectKind {
     match object_type.to_ascii_lowercase().as_str() {
         "codeunit" => ObjectKind::Codeunit,
         "table" => ObjectKind::Table,

@@ -1100,6 +1100,448 @@ fn event_teeth_excess_params_fails() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Tests 12–16: ABI ingestion-integrity + Histogram taxonomy split
+// ---------------------------------------------------------------------------
+
+use al_call_hierarchy::engine::deps::symbol_reference::{
+    AbiEventKind as SrAbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi,
+};
+use al_call_hierarchy::program::node::AppRef;
+use al_call_hierarchy::program::resolve::abi_check::{
+    AbiIntegrityReport, RawAbiIndex, abi_ingestion_integrity, run_abi_integrity_check,
+};
+use al_call_hierarchy::program::resolve::edge::{
+    AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
+    EdgeKind, Evidence, Histogram, Route, RouteTarget, SetCompleteness, SiteId, SourcePos, Witness,
+};
+
+/// Build a minimal dep abi with Codeunit 50100 "Dep Pub":
+///   - DoDepWork(x: Integer) — procedure, 1 param
+///   - OnDepEvent(p1, p2)   — event-publisher (Integration), 2 params
+fn dep_pub_abi() -> SymbolReferenceAbi {
+    SymbolReferenceAbi {
+        objects: vec![AbiObject {
+            object_type: "Codeunit".into(),
+            object_number: 50100,
+            name: "Dep Pub".into(),
+            routines: vec![
+                AbiRoutine {
+                    name: "DoDepWork".into(),
+                    kind: "procedure".into(),
+                    event_kind: SrAbiEventKind::Unknown,
+                    parameters: vec![AbiParameter {
+                        name: "x".into(),
+                        type_text: "Integer".into(),
+                        is_var: false,
+                        is_temporary: false,
+                    }],
+                    return_type_text: None,
+                    is_local: false,
+                    is_internal: false,
+                    attributes: vec![],
+                    attributes_parsed: vec![],
+                },
+                AbiRoutine {
+                    name: "OnDepEvent".into(),
+                    kind: "event-publisher".into(),
+                    event_kind: SrAbiEventKind::Integration,
+                    parameters: vec![
+                        AbiParameter {
+                            name: "p1".into(),
+                            type_text: "Integer".into(),
+                            is_var: false,
+                            is_temporary: false,
+                        },
+                        AbiParameter {
+                            name: "p2".into(),
+                            type_text: "Text".into(),
+                            is_var: false,
+                            is_temporary: false,
+                        },
+                    ],
+                    return_type_text: None,
+                    is_local: false,
+                    is_internal: false,
+                    attributes: vec![],
+                    attributes_parsed: vec![],
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+/// Build a minimal `RoutineNodeId` for use in synthetic edges.
+fn test_rid(app: u32, obj_kind: ObjectKind, obj_num: i64, name: &str) -> RoutineNodeId {
+    RoutineNodeId {
+        object: ObjectNodeId {
+            app: AppRef(app),
+            kind: obj_kind,
+            key: ObjKey::Id(obj_num),
+        },
+        name_lc: name.to_string(),
+        enclosing_member_lc: None,
+        params_count: 0,
+        sig_fp: 0,
+    }
+}
+
+/// Build a minimal synthetic `Edge` with a single route.
+fn single_route_edge(from_rid: RoutineNodeId, route: Route) -> Edge {
+    Edge {
+        from: from_rid.clone(),
+        site: SiteId {
+            caller: from_rid,
+            span: CanonicalSpan {
+                unit: "Test.al".into(),
+                start: SourcePos { line: 1, col: 1 },
+                end: SourcePos { line: 1, col: 20 },
+            },
+            callee_fingerprint: 42,
+        },
+        kind: EdgeKind::Call,
+        shape: DispatchShape::Exact,
+        completeness: SetCompleteness::Complete,
+        routes: vec![route],
+    }
+}
+
+/// Build the `AbiRoutineKey` that `resolver.rs::make_routine_route` would emit
+/// for `DoDepWork` on Codeunit 50100 in app `AppRef(1)`.
+fn dodepwork_key() -> AbiRoutineKey {
+    AbiRoutineKey {
+        app: AppRef(1),
+        // object_type is format!("{:?}", ObjectKind::Codeunit).to_ascii_lowercase()
+        object_type: "codeunit".into(),
+        object_number: 50100,
+        object_name_lc: String::new(), // empty when object_number != 0
+        routine_name_lc: "dodepwork".into(),
+        params_count: 1,
+        param_type_fp: 0, // not checked by the index
+        routine_kind: AbiRoutineKind::Procedure,
+        event_kind: AbiEventKind::None,
+    }
+}
+
+/// Build the `AbiRoutineKey` for `OnDepEvent` (event-publisher/Integration).
+fn ondepevent_key() -> AbiRoutineKey {
+    AbiRoutineKey {
+        app: AppRef(1),
+        object_type: "codeunit".into(),
+        object_number: 50100,
+        object_name_lc: String::new(),
+        routine_name_lc: "ondepevent".into(),
+        params_count: 2,
+        param_type_fp: 0,
+        routine_kind: AbiRoutineKind::EventPublisher,
+        event_kind: AbiEventKind::Integration,
+    }
+}
+
+/// Test 12: a mapped `AbiSymbol` route → `abi_mapped=1, abi_unmapped=0`.
+#[test]
+fn abi_integrity_maps_known_routine() {
+    let abi = dep_pub_abi();
+    let index = RawAbiIndex::build([(AppRef(1), &abi)]);
+
+    let caller = test_rid(0, ObjectKind::Codeunit, 99, "caller");
+    let edge = single_route_edge(
+        caller,
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: dodepwork_key(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: dodepwork_key(),
+            },
+        },
+    );
+
+    let report = abi_ingestion_integrity(&[edge], &index);
+    assert_eq!(
+        report,
+        AbiIntegrityReport {
+            abi_routes_total: 1,
+            abi_mapped: 1,
+            abi_unmapped: 0,
+            abi_unmapped_sites: vec![],
+        },
+        "DoDepWork must map back to the raw ABI"
+    );
+}
+
+/// Test 13: a fabricated `AbiSymbol` key naming a NON-existent routine →
+/// `abi_unmapped=1`.
+#[test]
+fn abi_integrity_catches_unmapped_route() {
+    let abi = dep_pub_abi();
+    let index = RawAbiIndex::build([(AppRef(1), &abi)]);
+
+    let bogus_key = AbiRoutineKey {
+        app: AppRef(1),
+        object_type: "codeunit".into(),
+        object_number: 50100,
+        object_name_lc: String::new(),
+        routine_name_lc: "nonexistentproc".into(),
+        params_count: 0,
+        param_type_fp: 0,
+        routine_kind: AbiRoutineKind::Procedure,
+        event_kind: AbiEventKind::None,
+    };
+
+    let caller = test_rid(0, ObjectKind::Codeunit, 99, "caller");
+    let edge = single_route_edge(
+        caller,
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: bogus_key.clone(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: bogus_key.clone(),
+            },
+        },
+    );
+
+    let report = abi_ingestion_integrity(&[edge], &index);
+    assert_eq!(report.abi_routes_total, 1);
+    assert_eq!(
+        report.abi_unmapped, 1,
+        "a key naming a non-existent routine must be caught as unmapped"
+    );
+    assert_eq!(
+        report.abi_unmapped_sites[0].key.routine_name_lc,
+        "nonexistentproc"
+    );
+}
+
+/// Test 14: an event-publisher-target route whose key says `EventPublisher /
+/// Integration` → maps to the event-publisher ABI entry (Task-1 fix verified).
+/// A key with the WRONG `routine_kind` (Procedure) must be caught as unmapped.
+#[test]
+fn abi_integrity_event_publisher_kind_checked() {
+    let abi = dep_pub_abi();
+    let index = RawAbiIndex::build([(AppRef(1), &abi)]);
+
+    // Correct key (EventPublisher / Integration) → must map.
+    let caller = test_rid(0, ObjectKind::Codeunit, 99, "caller");
+    let correct_edge = single_route_edge(
+        caller.clone(),
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: ondepevent_key(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: ondepevent_key(),
+            },
+        },
+    );
+    let ok = abi_ingestion_integrity(&[correct_edge], &index);
+    assert_eq!(ok.abi_mapped, 1, "EventPublisher key must map");
+    assert_eq!(ok.abi_unmapped, 0);
+
+    // Wrong routine_kind (Procedure instead of EventPublisher) → must be caught.
+    let mut wrong_key = ondepevent_key();
+    wrong_key.routine_kind = AbiRoutineKind::Procedure;
+    let wrong_edge = single_route_edge(
+        caller,
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: wrong_key.clone(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol { key: wrong_key },
+        },
+    );
+    let bad = abi_ingestion_integrity(&[wrong_edge], &index);
+    assert_eq!(
+        bad.abi_unmapped, 1,
+        "mangled routine_kind (Procedure instead of EventPublisher) must be unmapped"
+    );
+}
+
+/// Test 15: Histogram taxonomy split.
+///
+/// • Source route  → `resolved_source` increments, NOT `resolved_catalog/abi_external`.
+/// • Catalog route → `resolved_catalog` increments.
+/// • AbiSymbol/Opaque route → `resolved_abi_external` increments.
+/// • Unknown/empty → `unknown`.
+/// • `real_unknown_rate` stays = unknown / total.
+#[test]
+fn histogram_taxonomy_split() {
+    let ws_rid = test_rid(0, ObjectKind::Codeunit, 1, "caller");
+
+    // Source-resolved edge.
+    let src_edge = single_route_edge(
+        ws_rid.clone(),
+        Route {
+            target: RouteTarget::Routine(test_rid(0, ObjectKind::Codeunit, 2, "target")),
+            evidence: Evidence::Source,
+            conditions: vec![],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 10),
+            },
+        },
+    );
+
+    // Catalog-resolved edge.
+    let catalog_edge = single_route_edge(
+        ws_rid.clone(),
+        Route {
+            target: RouteTarget::Builtin(BuiltinId("message".into())),
+            evidence: Evidence::Catalog,
+            conditions: vec![],
+            witness: Witness::CatalogEntry {
+                id: BuiltinId("message".into()),
+                catalog_version: "v1".into(),
+            },
+        },
+    );
+
+    // ABI-external edge.
+    let abi_edge = single_route_edge(
+        ws_rid.clone(),
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: dodepwork_key(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: dodepwork_key(),
+            },
+        },
+    );
+
+    // Unknown (unresolved) edge.
+    let unknown_edge = single_route_edge(
+        ws_rid,
+        Route {
+            target: RouteTarget::Unresolved,
+            evidence: Evidence::Unknown,
+            conditions: vec![],
+            witness: Witness::None,
+        },
+    );
+
+    let edges = [src_edge, catalog_edge, abi_edge, unknown_edge];
+    let h = Histogram::of_edges(&edges);
+
+    assert_eq!(h.total, 4);
+    assert_eq!(h.resolved_source, 1, "Source route → resolved_source");
+    assert_eq!(h.resolved_catalog, 1, "Catalog route → resolved_catalog");
+    assert_eq!(
+        h.resolved_abi_external, 1,
+        "AbiSymbol/Opaque route → resolved_abi_external"
+    );
+    assert_eq!(h.unknown, 1, "Unresolved/Unknown → unknown");
+    assert_eq!(h.conditional_resolved, 0);
+    assert_eq!(h.honest_dynamic, 0);
+    assert_eq!(h.honest_empty, 0);
+
+    // real_unknown_rate = 1/4 = 0.25
+    let rate = h.real_unknown_rate();
+    assert!(
+        (rate - 0.25).abs() < 1e-9,
+        "real_unknown_rate must be 0.25, got {rate}"
+    );
+}
+
+/// Test 16 (CDO, env-gated): `abi_ingestion_integrity` over the full edge set →
+/// `abi_unmapped == 0`.  Prints the taxonomy'd histogram + ABI coverage counts.
+/// A miss = an ingestion/key-derivation bug — investigate and fix, do NOT relax.
+#[test]
+fn abi_ingestion_integrity_cdo_gate() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_abi_integrity_check(&ws);
+
+    eprintln!(
+        "AbiIntegrityReport: abi_routes_total={} abi_mapped={} abi_unmapped={}",
+        report.abi_routes_total, report.abi_mapped, report.abi_unmapped,
+    );
+    if !report.abi_unmapped_sites.is_empty() {
+        eprintln!("UNMAPPED SITES (first 10):");
+        for site in report.abi_unmapped_sites.iter().take(10) {
+            eprintln!(
+                "  app={:?} obj_type={} obj_num={} obj_name_lc={} \
+                 routine={} params={} kind={:?} event={:?}",
+                site.key.app,
+                site.key.object_type,
+                site.key.object_number,
+                site.key.object_name_lc,
+                site.key.routine_name_lc,
+                site.key.params_count,
+                site.key.routine_kind,
+                site.key.event_kind,
+            );
+        }
+    }
+
+    // Also compute and print the histogram split.
+    {
+        use al_call_hierarchy::program::abi_ingest::AbiCache;
+        use al_call_hierarchy::program::build::build_program_graph;
+        use al_call_hierarchy::program::resolve::stub::resolve_program;
+        use al_call_hierarchy::snapshot::{SnapshotBuilder, parse_snapshot};
+
+        if let Ok(snap) = (SnapshotBuilder {
+            workspace_root: ws.clone(),
+            local_providers: vec![],
+        })
+        .build()
+        {
+            let cache = AbiCache::new();
+            let graph = build_program_graph(&snap, &cache);
+            let parsed = parse_snapshot(&snap);
+            let edges = resolve_program(&graph, &parsed);
+            let h = Histogram::of_edges(&edges);
+            eprintln!(
+                "Histogram: total={} resolved_source={} resolved_catalog={} \
+                 resolved_abi_external={} conditional_resolved={} \
+                 honest_dynamic={} honest_empty={} unknown={} \
+                 real_unknown_rate={:.4}",
+                h.total,
+                h.resolved_source,
+                h.resolved_catalog,
+                h.resolved_abi_external,
+                h.conditional_resolved,
+                h.honest_dynamic,
+                h.honest_empty,
+                h.unknown,
+                h.real_unknown_rate(),
+            );
+        }
+    }
+
+    assert_eq!(
+        report.abi_unmapped, 0,
+        "every AbiSymbol route must map back to the raw ABI — a miss is an \
+         ingestion/key-derivation bug; investigate and fix: {report:?}"
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(
+        report,
+        run_abi_integrity_check(&ws),
+        "run_abi_integrity_check must be deterministic"
+    );
+}
+
 /// Non-circularity demonstration.
 ///
 /// Proves that `verify_event_subscriber_route` reads from the raw `ParsedUnit` IR,

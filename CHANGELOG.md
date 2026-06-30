@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3a Task 2: ABI ingestion-integrity invariant + Histogram source/catalog/external split**
+  (`src/program/resolve/abi_check.rs` NEW, `src/program/resolve/mod.rs`,
+  `src/program/resolve/edge.rs`, `src/program/abi_ingest.rs`,
+  `tests/program_resolve_harness.rs`) —
+  adds `pub mod abi_check` with `RawAbiIndex` (FRESH re-parse of raw `SymbolReferenceAbi`
+  DTOs, independent of `ProgramGraph.routines`), `AbiIntegrityReport`,
+  `abi_ingestion_integrity` (per-edge ABI route → raw-index lookup),
+  `abi_ingestion_integrity_from_graph` (full-coverage form: checks every SymbolOnly
+  `RoutineNode` against the raw index by reconstructing the `AbiRoutineKey` exactly as
+  `resolver.rs::make_routine_route` would), and `run_abi_integrity_check` (CDO harness).
+  Splits `Histogram.resolved: usize` into `resolved_source` / `resolved_catalog` /
+  `resolved_abi_external` (keyed on best-evidence tier across default-firing routes:
+  `Evidence::Source` → `resolved_source`, `Evidence::Catalog` → `resolved_catalog`,
+  `Evidence::Abi | Evidence::Opaque` → `resolved_abi_external`); `real_unknown_rate`
+  unchanged. Makes `object_kind_from_abi_type` and `read_symbol_reference_from_app`
+  `pub(crate)`. Five tests: 4 fixture (no env required) + 1 env-gated CDO gate asserting
+  `abi_unmapped == 0` and determinism.
+
 - **Plan 1B.3a Task 1: Cached overload-safe ABI ingestion + structured `AbiRoutineKey`**
   (`src/program/abi_ingest.rs` NEW, `src/program/build.rs`, `src/program/node.rs`,
   `src/program/node_extract.rs`, `src/program/resolve/edge.rs`,
