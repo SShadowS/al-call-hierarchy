@@ -26,6 +26,8 @@ use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
+use crate::program::resolve::edge::Condition;
+use crate::program::resolve::event::ParsedSubscriberArgs;
 
 // ---------------------------------------------------------------------------
 // WorldMode
@@ -48,6 +50,32 @@ pub enum WorldMode {
 }
 
 // ---------------------------------------------------------------------------
+// SubscriberEntry / AmbiguousSub — public types produced by the event index
+// ---------------------------------------------------------------------------
+
+/// A resolved event-subscriber for one publisher routine.
+pub struct SubscriberEntry {
+    /// The subscriber routine that will fire when the publisher fires.
+    pub subscriber: RoutineNodeId,
+    /// Dispatch conditions on this subscription (empty = unconditional).
+    pub conditions: Vec<Condition>,
+    /// Element filter from the `[EventSubscriber]` attribute, if present.
+    pub element: Option<String>,
+}
+
+/// A subscription that could not be resolved to exactly one publisher overload.
+pub struct AmbiguousSub {
+    /// The subscriber routine carrying the unresolvable `[EventSubscriber]`.
+    pub subscriber: RoutineNodeId,
+    /// The publisher object that was found.
+    pub publisher_object: ObjectNodeId,
+    /// Lowercased event name from the attribute.
+    pub event_name_lc: String,
+    /// Number of candidate overloads that matched the arity filter.
+    pub candidate_count: usize,
+}
+
+// ---------------------------------------------------------------------------
 // ResolveIndex
 // ---------------------------------------------------------------------------
 
@@ -66,6 +94,10 @@ pub struct ResolveIndex {
     table_extensions: HashMap<String, Vec<ObjectNodeId>>,
     /// Lowercased interface name → all object ids that implement it.
     implementers: HashMap<String, Vec<ObjectNodeId>>,
+    /// Publisher `RoutineNodeId` → ordered list of resolved subscribers.
+    subscribers_map: HashMap<RoutineNodeId, Vec<SubscriberEntry>>,
+    /// Subscriptions that could not be resolved to a single overload.
+    ambiguous_subscriptions: Vec<AmbiguousSub>,
 }
 
 impl ResolveIndex {
@@ -76,11 +108,15 @@ impl ResolveIndex {
     pub fn build(graph: &ProgramGraph) -> Self {
         let mut routines_by_obj_name: HashMap<(ObjectNodeId, String), Vec<RoutineNodeId>> =
             HashMap::new();
-        for r in &graph.routines {
+        // routine_by_id maps each RoutineNodeId to its index in graph.routines so we can
+        // look up publisher_kind during subscriber resolution below.
+        let mut routine_by_id: HashMap<RoutineNodeId, usize> = HashMap::new();
+        for (i, r) in graph.routines.iter().enumerate() {
             routines_by_obj_name
                 .entry((r.id.object.clone(), r.id.name_lc.clone()))
                 .or_default()
                 .push(r.id.clone());
+            routine_by_id.insert(r.id.clone(), i);
         }
 
         let mut objs_by_number: HashMap<(AppRef, ObjectKind, i64), ObjectNodeId> = HashMap::new();
@@ -114,11 +150,92 @@ impl ResolveIndex {
             }
         }
 
+        // ── Event subscriber index ────────────────────────────────────────────
+        let mut subscribers_map: HashMap<RoutineNodeId, Vec<SubscriberEntry>> = HashMap::new();
+        let mut ambiguous_subscriptions: Vec<AmbiguousSub> = Vec::new();
+
+        for sub_routine in &graph.routines {
+            if sub_routine.event_subscribers.is_empty() {
+                continue;
+            }
+            let sub_app = sub_routine.id.object.app;
+            let sub_params = sub_routine.id.params_count;
+
+            for args in &sub_routine.event_subscribers {
+                // (a) Map publisher_object_type → ObjectKind; unknown type → drop.
+                let Some(kind) = kind_from_object_type_str(&args.publisher_object_type) else {
+                    continue;
+                };
+
+                // (b) Resolve publisher object; unresolvable → drop.
+                let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name)
+                else {
+                    continue;
+                };
+                let pub_obj_id = pub_obj.id.clone();
+                let event_name_lc = args.event_name.to_ascii_lowercase();
+
+                // (c) Candidates: routines in that object matching name +
+                //     publisher_kind.is_some() + params_count >= sub_params.
+                let candidates: Vec<RoutineNodeId> = routines_by_obj_name
+                    .get(&(pub_obj_id.clone(), event_name_lc.clone()))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter(|rid| {
+                        rid.params_count >= sub_params
+                            && routine_by_id
+                                .get(*rid)
+                                .is_some_and(|&i| graph.routines[i].publisher_kind.is_some())
+                    })
+                    .cloned()
+                    .collect();
+
+                // (d) Dispatch on candidate count.
+                match candidates.len() {
+                    0 => continue,
+                    1 => {
+                        subscribers_map
+                            .entry(candidates[0].clone())
+                            .or_default()
+                            .push(build_entry(sub_routine, args));
+                    }
+                    _ => {
+                        // MORE THAN ONE: check for exactly one strict arity match.
+                        let strict: Vec<&RoutineNodeId> = candidates
+                            .iter()
+                            .filter(|rid| rid.params_count == sub_params)
+                            .collect();
+                        if strict.len() == 1 {
+                            subscribers_map
+                                .entry(strict[0].clone())
+                                .or_default()
+                                .push(build_entry(sub_routine, args));
+                        } else {
+                            ambiguous_subscriptions.push(AmbiguousSub {
+                                subscriber: sub_routine.id.clone(),
+                                publisher_object: pub_obj_id,
+                                event_name_lc,
+                                candidate_count: candidates.len(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort each entry list by subscriber RoutineNodeId for determinism.
+        for entries in subscribers_map.values_mut() {
+            entries.sort_by(|a, b| a.subscriber.cmp(&b.subscriber));
+        }
+
         ResolveIndex {
             routines_by_obj_name,
             objs_by_number,
             table_extensions,
             implementers,
+            subscribers_map,
+            ambiguous_subscriptions,
         }
     }
 
@@ -197,13 +314,68 @@ impl ResolveIndex {
             .unwrap_or(&[])
     }
 
-    /// Event subscribers of `publisher` — **Phase-1 stub, always empty**.
+    /// All resolved event subscribers of `publisher` — [`WorldMode::AnalyzedSnapshot`].
     ///
-    /// Full event modelling (publisher → subscriber fan-out with attribute
-    /// matching) is deferred to Phase 4.  The signature is declared here so
-    /// Phase 4 can fill it in without changing call sites.
-    pub fn subscribers_of(&self, _publisher: &RoutineNodeId) -> Vec<RoutineNodeId> {
-        vec![]
+    /// Returns a deterministically sorted (by `subscriber` `RoutineNodeId`) slice.
+    /// Empty when `publisher` is not a publisher routine or has no subscribers.
+    pub fn subscribers_of(&self, publisher: &RoutineNodeId) -> &[SubscriberEntry] {
+        self.subscribers_map
+            .get(publisher)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Subscriptions that matched a publisher object but could not be resolved
+    /// to a single overload (multiple candidates, no unique strict arity match).
+    pub fn ambiguous_subscriptions(&self) -> &[AmbiguousSub] {
+        &self.ambiguous_subscriptions
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Build a [`SubscriberEntry`] from a resolved subscriber routine + parsed args.
+fn build_entry(
+    sub_routine: &crate::program::node_extract::RoutineNode,
+    args: &ParsedSubscriberArgs,
+) -> SubscriberEntry {
+    let mut conditions = Vec::new();
+    if sub_routine.subscriber_instance_manual {
+        conditions.push(Condition::ManualBinding);
+    }
+    if args.skip_on_missing_license {
+        conditions.push(Condition::SkipOnMissingLicense);
+    }
+    if args.skip_on_missing_permission {
+        conditions.push(Condition::SkipOnMissingPermission);
+    }
+    SubscriberEntry {
+        subscriber: sub_routine.id.clone(),
+        conditions,
+        element: args.element.clone(),
+    }
+}
+
+/// Map a lowercased publisher-object-type string (as written in an
+/// `[EventSubscriber]` attribute) to the corresponding [`ObjectKind`].
+/// Returns `None` for unrecognised strings.
+fn kind_from_object_type_str(s: &str) -> Option<ObjectKind> {
+    match s {
+        "codeunit" => Some(ObjectKind::Codeunit),
+        "table" => Some(ObjectKind::Table),
+        "tableextension" => Some(ObjectKind::TableExtension),
+        "page" => Some(ObjectKind::Page),
+        "pageextension" => Some(ObjectKind::PageExtension),
+        "report" => Some(ObjectKind::Report),
+        "reportextension" => Some(ObjectKind::ReportExtension),
+        "query" => Some(ObjectKind::Query),
+        "xmlport" => Some(ObjectKind::XmlPort),
+        "enum" => Some(ObjectKind::Enum),
+        "enumextension" => Some(ObjectKind::EnumExtension),
+        "interface" => Some(ObjectKind::Interface),
+        _ => None,
     }
 }
 
@@ -215,8 +387,10 @@ impl ResolveIndex {
 mod tests {
     use super::*;
     use crate::program::graph::{ObjectIndex, ProgramGraph};
-    use crate::program::node::{AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
+    use crate::program::node::{AppRef, AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
     use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
+    use crate::program::resolve::edge::Condition;
+    use crate::program::resolve::event::{ParsedSubscriberArgs, PublisherKind};
     use crate::program::topology::DependencyGraph;
     use crate::snapshot::{AppId, TrustTier};
     use al_syntax::ir::ObjectKind;
@@ -264,7 +438,111 @@ mod tests {
             is_trigger: false,
             access: Access::Public,
             tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
         }
+    }
+
+    fn make_publisher(
+        obj_id: ObjectNodeId,
+        name: &str,
+        params: usize,
+        kind: PublisherKind,
+    ) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id,
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
+                params_count: params,
+            },
+            name: name.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: Some(kind),
+        }
+    }
+
+    fn make_subscriber(
+        obj_id: ObjectNodeId,
+        name: &str,
+        params: usize,
+        subs: Vec<ParsedSubscriberArgs>,
+        manual: bool,
+    ) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id,
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
+                params_count: params,
+            },
+            name: name.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: subs,
+            subscriber_instance_manual: manual,
+            publisher_kind: None,
+        }
+    }
+
+    fn sub_args(pub_name: &str, event: &str) -> ParsedSubscriberArgs {
+        ParsedSubscriberArgs {
+            publisher_object_type: "codeunit".to_string(),
+            publisher_name: pub_name.to_string(),
+            event_name: event.to_string(),
+            element: None,
+            skip_on_missing_license: false,
+            skip_on_missing_permission: false,
+        }
+    }
+
+    /// Single-app fixture with Codeunit 1 "Pub" and Codeunit 2 "Sub".
+    fn build_event_fixture(
+        pub_routines: Vec<RoutineNode>,
+        sub_routines: Vec<RoutineNode>,
+    ) -> (ProgramGraph, ObjectNodeId, ObjectNodeId) {
+        let mut apps = AppRegistry::default();
+        let app = apps.intern(&make_app_id("App"));
+        let topology = DependencyGraph::default();
+
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+
+        let pub_obj = make_obj(app, ObjectKind::Codeunit, Some(1), "Pub", None, vec![]);
+        let sub_obj = make_obj(app, ObjectKind::Codeunit, Some(2), "Sub", None, vec![]);
+
+        let mut objects = vec![pub_obj, sub_obj];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let mut routines: Vec<RoutineNode> = [pub_routines, sub_routines].concat();
+        routines.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        (
+            ProgramGraph {
+                apps,
+                topology,
+                objects,
+                routines,
+                obj_index,
+            },
+            pub_id,
+            sub_id,
+        )
     }
 
     /// Builds a two-app fixture:
@@ -454,7 +732,7 @@ mod tests {
         assert!(idx.routines_in_object(&their_cu, "notexist").is_empty());
     }
 
-    // -- subscribers_of stub test ---------------------------------------------
+    // -- subscribers_of tests -------------------------------------------------
 
     #[test]
     fn subscribers_of_stub_returns_empty() {
@@ -473,8 +751,272 @@ mod tests {
         };
         assert!(
             idx.subscribers_of(&fake_pub).is_empty(),
-            "Phase-1 stub must return empty"
+            "unknown publisher must return empty"
         );
+    }
+
+    // (a) Basic manual subscriber --------------------------------------------
+
+    #[test]
+    fn subscribers_of_basic_manual() {
+        let app = AppRef(0); // deterministic: first intern in a fresh registry
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_onafterx_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id.clone(),
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                0,
+                vec![sub_args("pub", "onafterx")],
+                true,
+            )],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        let subs = idx.subscribers_of(&pub_onafterx_id);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].conditions, vec![Condition::ManualBinding]);
+        assert_eq!(subs[0].element, None);
+    }
+
+    // (b) One handler subscribing to two different events --------------------
+
+    #[test]
+    fn subscribers_of_handler_with_two_event_subscriber_attrs() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_onafterx_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        let pub_onbeforex_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onbeforex".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+
+        let (graph, _, _) = build_event_fixture(
+            vec![
+                make_publisher(pub_id.clone(), "OnAfterX", 0, PublisherKind::Integration),
+                make_publisher(pub_id.clone(), "OnBeforeX", 0, PublisherKind::Integration),
+            ],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                0,
+                vec![sub_args("pub", "onafterx"), sub_args("pub", "onbeforex")],
+                false,
+            )],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        assert_eq!(idx.subscribers_of(&pub_onafterx_id).len(), 1);
+        assert_eq!(idx.subscribers_of(&pub_onbeforex_id).len(), 1);
+    }
+
+    // (c) SkipOnMissingLicense condition -------------------------------------
+
+    #[test]
+    fn subscribers_of_skip_on_missing_license() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_onafterx_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+
+        let mut sa = sub_args("pub", "onafterx");
+        sa.skip_on_missing_license = true;
+
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id.clone(),
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+            )],
+            vec![make_subscriber(sub_id, "Handler", 0, vec![sa], false)],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        let subs = idx.subscribers_of(&pub_onafterx_id);
+        assert_eq!(subs.len(), 1);
+        assert!(
+            subs[0]
+                .conditions
+                .contains(&Condition::SkipOnMissingLicense)
+        );
+        assert!(!subs[0].conditions.contains(&Condition::ManualBinding));
+    }
+
+    // (d) Ambiguous overloads — no strict arity match → AmbiguousSub --------
+
+    #[test]
+    fn subscribers_of_ambiguous_overloads_no_strict_match() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_onafterx_1param_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 1,
+        };
+        let pub_onafterx_2param_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 2,
+        };
+
+        // Subscriber params=0: both overloads satisfy >=0 but neither equals 0.
+        let (graph, _, _) = build_event_fixture(
+            vec![
+                make_publisher(pub_id.clone(), "OnAfterX", 1, PublisherKind::Integration),
+                make_publisher(pub_id.clone(), "OnAfterX", 2, PublisherKind::Integration),
+            ],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                0,
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        assert!(idx.subscribers_of(&pub_onafterx_1param_id).is_empty());
+        assert!(idx.subscribers_of(&pub_onafterx_2param_id).is_empty());
+        assert_eq!(idx.ambiguous_subscriptions().len(), 1);
+        assert_eq!(idx.ambiguous_subscriptions()[0].candidate_count, 2);
+    }
+
+    // (e) Unresolvable publisher — no panic ----------------------------------
+
+    #[test]
+    fn subscribers_of_unresolvable_publisher_no_panic() {
+        let app = AppRef(0);
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+
+        let (graph, _, _) = build_event_fixture(
+            vec![], // no publishers at all
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                0,
+                vec![sub_args("nonexistent", "onevent")],
+                false,
+            )],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        // Publisher not found → silently dropped, no panic.
+        assert!(idx.ambiguous_subscriptions().is_empty());
+    }
+
+    // (f) Two overloads, exactly one strict arity match → resolved -----------
+
+    #[test]
+    fn subscribers_of_unique_strict_arity_match_resolves() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_onafterx_0param_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+        };
+        let pub_onafterx_1param_id = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 1,
+        };
+
+        // Subscriber params=0: both >=0, but exactly ONE has params==0.
+        let (graph, _, _) = build_event_fixture(
+            vec![
+                make_publisher(pub_id.clone(), "OnAfterX", 0, PublisherKind::Integration),
+                make_publisher(pub_id.clone(), "OnAfterX", 1, PublisherKind::Integration),
+            ],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                0,
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+
+        let idx = ResolveIndex::build(&graph);
+        assert_eq!(idx.subscribers_of(&pub_onafterx_0param_id).len(), 1);
+        assert!(idx.subscribers_of(&pub_onafterx_1param_id).is_empty());
+        assert!(idx.ambiguous_subscriptions().is_empty());
     }
 
     // -- WorldMode is a value type test ---------------------------------------

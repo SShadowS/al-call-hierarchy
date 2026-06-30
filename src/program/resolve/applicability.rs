@@ -331,6 +331,9 @@ mod tests {
                 ),
             access: Access::Public,
             tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
         }
     }
 

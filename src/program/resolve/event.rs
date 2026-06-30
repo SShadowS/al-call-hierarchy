@@ -15,7 +15,7 @@ use al_syntax::ir::{AttributeIr, ExprId, ExprKind, Ir, Literal, ObjectDecl, Rout
 /// Typed result of parsing an `[EventSubscriber(…)]` attribute's positional args.
 ///
 /// All string fields are lowercased and unquoted.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedSubscriberArgs {
     /// Publisher object type, lowercased (e.g. `"codeunit"`).
     pub publisher_object_type: String,
