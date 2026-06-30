@@ -7,6 +7,7 @@ pub mod body_map;
 pub mod builtins;
 pub mod differential;
 pub mod edge;
+pub mod event;
 pub mod extract;
 pub mod extract_min;
 pub mod index;
