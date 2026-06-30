@@ -191,6 +191,11 @@ pub struct CdoSemanticAuditReport {
     pub fresh_ahead_dispatch_count: usize,
     /// Sites adjudicated as genuinely wrong (disjoint target — a real bug).
     pub genuine_wrong_count: usize,
+    /// Genuine_wrong site keys exposed for the HARD GATE set-membership check.
+    /// The test asserts every site's `(unit, line, callee_fp)` is present in
+    /// the committed manifest
+    /// (`tests/goldens/semantic-edges/known-genuine-divergences.json`).
+    pub genuine_wrong_sites: Vec<GoldenSiteKey>,
     pub fresh_missing_count: usize,
     pub fresh_extra_count: usize,
     pub fresh_novel: usize,
@@ -276,6 +281,20 @@ fn canonical_targets_to_golden(targets: &BTreeSet<CanonicalTarget>) -> BTreeSet<
 /// relationship) — fresh and L3 confidently resolved the same site to unrelated
 /// targets. NOTE: this is symmetric — it does NOT assert which side is correct;
 /// adjudicating that is deferred to 1B.3b.
+///
+/// # Known partial-recall blind spot (named: 1B.3b-disambiguation)
+///
+/// Case 2 (`fresh ⊆ l3`) creates a partial-recall blind spot: when fresh finds
+/// only a strict subset of the correct targets in a multi-target bucket (e.g.,
+/// resolves 2 of 3 interface implementers), the site is classified
+/// `fresh_ahead_dispatch` here — NOT as `fresh_missing` or `genuine_wrong`.
+/// The dropped target is silently masked by this gate.
+///
+/// **Mitigation while L3 is the oracle**: the resolution/member harnesses assert
+/// `regression_unexplained == 0` independently — any unexplained resolution
+/// regression fires there and acts as defense-in-depth covering this blind spot.
+///
+/// Full per-target recall validation is a named 1B.3b-disambiguation follow-up.
 fn is_fresh_ahead_dispatch(
     fw: &FreshWrong,
     obj_lookup: &std::collections::HashMap<
@@ -695,6 +714,7 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
         fresh_wrong_count: diff.fresh_wrong.len(),
         fresh_ahead_dispatch_count: fresh_ahead_dispatch.len(),
         genuine_wrong_count: genuine_wrong.len(),
+        genuine_wrong_sites: genuine_wrong.iter().map(|fw| fw.site.clone()).collect(),
         fresh_missing_count: diff.fresh_missing.len(),
         fresh_extra_count: diff.fresh_extra.len(),
         fresh_novel: diff.fresh_novel,

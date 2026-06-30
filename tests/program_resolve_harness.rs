@@ -1917,8 +1917,8 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::program::resolve::semantic_golden::{
-    SemanticGolden, mint_l3_validated_golden, run_cdo_semantic_audit, run_route_applicability,
-    run_semantic_diff,
+    GoldenSiteKey, SemanticGolden, mint_l3_validated_golden, run_cdo_semantic_audit,
+    run_route_applicability, run_semantic_diff,
 };
 
 // ---------------------------------------------------------------------------
@@ -2066,9 +2066,13 @@ fn route_applicability_zero_violations() {
 ///
 /// - **`genuine_wrong`** (HARD GATE): fresh confidently resolved to a target
 ///   DISJOINT from L3's — a different object or procedure with no refinement
-///   relationship. This is a real resolver bug. The count is bounded by the
-///   committed manifest in `tests/goldens/semantic-edges/known-genuine-divergences.json`.
-///   Any NEW genuine_wrong not in the manifest fails this gate.
+///   relationship. This is a real resolver bug. Every `genuine_wrong` site's
+///   `(unit, line, callee_fp)` key MUST be present in the committed manifest
+///   `tests/goldens/semantic-edges/known-genuine-divergences.json`. A site NOT
+///   in the manifest = a NEW confidently-wrong edge → test FAILS immediately
+///   with the offending site(s) printed. A count-only gate is insufficient: a
+///   swap (fix one adjudicated site + introduce one new disjoint site) holds
+///   the count constant and passes silently, defeating the gate entirely.
 ///
 /// `fresh_missing` (L3 resolved but fresh didn't) is informational — tracked
 /// over time. The known deferred buckets total 163; anything beyond is a new gap.
@@ -2124,31 +2128,64 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
         audit.digest,
     );
 
-    // ── HARD GATE: genuine_wrong bounded by adjudicated manifest ─────────────
+    // ── HARD GATE: genuine_wrong SET MEMBERSHIP against adjudicated manifest ──
     // genuine_wrong sites are real resolver bugs (Cat-D different-object or
     // wrong overload pick). They are enumerated in the committed manifest:
     //   tests/goldens/semantic-edges/known-genuine-divergences.json
-    // Any COUNT INCREASE above the manifest fails this gate — no new genuine_wrong
-    // may appear. A decrease is a win (manifest gets updated).
+    // Every genuine_wrong site's (unit, line, callee_fp) key MUST be in the
+    // manifest set. A COUNT-only gate is insufficient: a swap (fix one adjudicated
+    // site while introducing one new disjoint site) keeps the count at 42 and
+    // passes silently — hiding the new bug. Set membership catches swaps.
     let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens/semantic-edges/known-genuine-divergences.json");
     let manifest_json = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|_| panic!("manifest missing: {}", manifest_path.display()));
     let manifest: serde_json::Value =
         serde_json::from_str(&manifest_json).expect("manifest must be valid JSON");
-    let manifest_count = manifest
+    let manifest_entries = manifest
         .get("entries")
         .and_then(|e| e.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
+        .expect("manifest must have 'entries' array");
+    let manifest_keys: std::collections::HashSet<(String, u32, u64)> = manifest_entries
+        .iter()
+        .map(|entry| {
+            let unit = entry["unit"]
+                .as_str()
+                .expect("manifest entry missing 'unit'")
+                .to_string();
+            let line = entry["line"]
+                .as_u64()
+                .expect("manifest entry missing 'line'") as u32;
+            let callee_fp = entry["callee_fp"]
+                .as_u64()
+                .expect("manifest entry missing 'callee_fp'");
+            (unit, line, callee_fp)
+        })
+        .collect();
 
+    // SET MEMBERSHIP: every genuine_wrong site must be in the manifest.
+    let new_genuine_wrong: Vec<&GoldenSiteKey> = audit
+        .genuine_wrong_sites
+        .iter()
+        .filter(|site| !manifest_keys.contains(&(site.unit.clone(), site.line, site.callee_fp)))
+        .collect();
     assert!(
-        audit.genuine_wrong_count <= manifest_count,
-        "genuine_wrong_count {} exceeds manifest size {} — a NEW genuinely-wrong site \
-         appeared that is not in the adjudicated manifest; investigate and either fix \
-         the resolver or update the manifest with a root-cause explanation",
+        new_genuine_wrong.is_empty(),
+        "genuine_wrong gate FAILED: {} site(s) NOT in the adjudicated manifest \
+         (tests/goldens/semantic-edges/known-genuine-divergences.json).\n\
+         A NEW confidently-wrong edge appeared — investigate and either fix the \
+         resolver or extend the manifest with a root-cause explanation.\n\
+         Offending sites:\n{:#?}",
+        new_genuine_wrong.len(),
+        new_genuine_wrong,
+    );
+    // Secondary sanity: count must not exceed the manifest (a decrease is a win).
+    assert!(
+        audit.genuine_wrong_count <= manifest_keys.len(),
+        "genuine_wrong_count {} exceeds manifest size {} — all sites passed \
+         membership but count exceeds manifest length (logic error?)",
         audit.genuine_wrong_count,
-        manifest_count,
+        manifest_keys.len(),
     );
 
     // fresh_ahead_dispatch is always ALLOWED (printed above for visibility).
