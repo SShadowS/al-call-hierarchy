@@ -43,7 +43,7 @@ use crate::program::resolve::edge::{
 };
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
-use crate::program::resolve::receiver::ReceiverType;
+use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
 use crate::snapshot::TrustTier;
 
 // ---------------------------------------------------------------------------
@@ -517,6 +517,41 @@ fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
     )
 }
 
+/// Map an object kind to its instance-builtin [`FrameworkKind`] catalog, if any.
+///
+/// Returns `None` for kinds that have no instance-builtin catalog — their member
+/// methods are source-declared procedures, not platform-intrinsic instance builtins.
+fn object_instance_framework_kind(kind: ObjectKind) -> Option<FrameworkKind> {
+    match kind {
+        ObjectKind::Page => Some(FrameworkKind::PageInstance),
+        ObjectKind::Report => Some(FrameworkKind::ReportInstance),
+        _ => None,
+    }
+}
+
+/// Returns `true` when `method_lc` is an object-metadata-sensitive method for the
+/// given object `kind`.
+///
+/// Metadata-sensitive methods are present in the instance-builtin catalog but their
+/// argument or return type depends on the specific object's source table (e.g.
+/// `Page.SetRecord` takes a `Record <SourceTable>` argument, not a generic record).
+/// These are EXCLUDED from the Catalog fast-path in Phase 4 Task 1 and remain
+/// `Unknown` until per-object source-table constraint modelling is in place.
+///
+/// Exclusion list:
+/// - Page: `setrecord`, `settableview`, `setselectionfilter`, `getrecord`, `saverecord`
+/// - Report: `settableview`
+fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> bool {
+    match kind {
+        ObjectKind::Page => matches!(
+            method_lc,
+            "setrecord" | "settableview" | "setselectionfilter" | "getrecord" | "saverecord"
+        ),
+        ObjectKind::Report => matches!(method_lc, "settableview"),
+        _ => false,
+    }
+}
+
 /// Resolve a member call (`receiver.method_lc(...)`) to its `(DispatchShape, Vec<Route>)`.
 ///
 /// # Implemented arms (Phase 3 Task 2 + Task 3)
@@ -529,7 +564,7 @@ fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
 /// - `SelfObject` → `resolve_in_object` on the calling object itself.
 ///
 /// # Deferred arms (TODO markers only)
-/// - `Interface` / `EnumType` → Unknown (TODO Phase 4).
+/// - `Interface` → Unknown (TODO Phase 4).
 /// - `Primitive` → Unknown; `Dynamic` → `DynamicOpen`; `Unknown` → Unknown.
 pub fn resolve_member(
     receiver: &ReceiverType,
@@ -660,7 +695,18 @@ pub fn resolve_member(
             {
                 (DispatchShape::Exact, vec![route])
             } else {
-                // Method name absent from target object.
+                // Method name absent from target object's declared procedures.
+                // Fall through to the instance-builtin catalog for kinds that have one
+                // (Page→PageInstance, Report→ReportInstance), EXCLUDING metadata-sensitive
+                // methods whose argument/return types depend on the object's source table
+                // (SetRecord / SetTableView-class).
+                if !is_metadata_sensitive_instance_method(*kind, method_lc)
+                    && let Some(fk) = object_instance_framework_kind(*kind)
+                    && let Some(bid) =
+                        member_builtin_id(MemberCatalogKind::Framework(&fk), method_lc)
+                {
+                    return member_catalog_route(bid);
+                }
                 member_unknown_route()
             }
         }
@@ -680,9 +726,20 @@ pub fn resolve_member(
                 member_unknown_route()
             }
         }
-        ReceiverType::Interface { .. } | ReceiverType::EnumType { .. } => {
-            // TODO(Phase 4): interface member fan-out / enum type statics.
+        ReceiverType::Interface { .. } => {
+            // TODO(Phase 4): interface member fan-out.
             member_unknown_route()
+        }
+        ReceiverType::EnumType { .. } => {
+            // Enum instance statics: AsInteger / FromInteger / Names / Ordinals.
+            if let Some(bid) = member_builtin_id(
+                MemberCatalogKind::Framework(&FrameworkKind::Enum),
+                method_lc,
+            ) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route()
+            }
         }
         ReceiverType::Primitive => {
             // Non-catalog type — honest Unknown (not a false resolution gap).
@@ -2253,6 +2310,373 @@ codeunit 51101 "NotFoundCaller"
         let (shape, routes) = resolve_member(
             &receiver,
             "nonexistentmethod",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4 Task 1 — instance-builtin resolution for Object/Enum receivers
+    // -----------------------------------------------------------------------
+
+    // Test 1: Page Object receiver + `runmodal` → Catalog route PageInstance::runmodal
+    #[test]
+    fn resolve_member_page_runmodal_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50610 "MyPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50611 "PageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "MyPage.al", src_page);
+        let unit_caller = make_unit(app_id, "PageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PageCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "mypage".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        assert!(
+            matches!(routes[0].witness, Witness::CatalogEntry { .. }),
+            "witness must be CatalogEntry; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::runmodal");
+    }
+
+    // Test 2: Report Object receiver + `saveaspdf` → Catalog route ReportInstance::saveaspdf
+    #[test]
+    fn resolve_member_report_saveaspdf_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 50612 "MyReport"
+{
+    dataset
+    {
+    }
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50613 "ReportCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_report = make_unit(app_id.clone(), "MyReport.al", src_report);
+        let unit_caller = make_unit(app_id, "ReportCaller.al", src_caller);
+        let units = [unit_report, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ReportCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "myreport".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "saveaspdf",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        assert!(
+            matches!(routes[0].witness, Witness::CatalogEntry { .. }),
+            "witness must be CatalogEntry; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "ReportInstance::saveaspdf");
+    }
+
+    // Test 3: EnumType receiver + `asinteger` → Catalog route Enum::asinteger
+    #[test]
+    fn resolve_member_enum_asinteger_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::EnumType {
+            name_lc: "myenum".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "asinteger",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        assert!(
+            matches!(routes[0].witness, Witness::CatalogEntry { .. }),
+            "witness must be CatalogEntry; got {:?}",
+            routes[0].witness
+        );
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "Enum::asinteger");
+    }
+
+    // Test 4: EnumType receiver + `frominteger` → Catalog route Enum::frominteger
+    #[test]
+    fn resolve_member_enum_frominteger_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::EnumType {
+            name_lc: "myenum".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "frominteger",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "Enum::frominteger");
+    }
+
+    // Test 5: EnumType receiver + unknown method → Unknown
+    #[test]
+    fn resolve_member_enum_unknown_method_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::EnumType {
+            name_lc: "myenum".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "nosuchmethod",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // Test 6: Page Object receiver + `setrecord` → Unknown (metadata-sensitive exclusion)
+    #[test]
+    fn resolve_member_page_setrecord_emits_unknown_metadata_sensitive() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50614 "AnotherPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50615 "AnotherPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "AnotherPage.al", src_page);
+        let unit_caller = make_unit(app_id, "AnotherPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "AnotherPageCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "anotherpage".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "setrecord",
+            1,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // Test 7: Page Object receiver + declared proc (shadows catalog) → Source route
+    #[test]
+    fn resolve_member_page_declared_proc_shadows_catalog() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // This page declares its own RunModal — should shadow the PageInstance catalog entry.
+        let src_page: &'static str = r#"
+page 50616 "PageWithRunModal"
+{
+    procedure RunModal()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50617 "ShadowCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "PageWithRunModal.al", src_page);
+        let unit_caller = make_unit(app_id, "ShadowCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ShadowCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pagewithrunmodal".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "declared proc must shadow catalog; target must be Routine, got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+    }
+
+    // Test 8: Page Object receiver + method not in catalog and not declared → Unknown
+    #[test]
+    fn resolve_member_page_method_not_in_catalog_emits_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50618 "EmptyPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50619 "EmptyPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "EmptyPage.al", src_page);
+        let unit_caller = make_unit(app_id, "EmptyPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "EmptyPageCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "emptypage".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "nosuchpagemethod",
             0,
             from_obj,
             &graph,

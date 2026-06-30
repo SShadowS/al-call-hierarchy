@@ -1880,11 +1880,13 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     use crate::program::build::build_program_graph;
     use crate::program::node::{ObjKey, ObjectNodeId};
     use crate::program::node_extract::ObjectNode;
+    use crate::program::resolve::applicability::instance_builtin_route_applicable;
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{Evidence, Route, RouteTarget, Witness};
     use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
     use crate::program::resolve::index::ResolveIndex;
-    use crate::program::resolve::receiver::{ReceiverType, infer_receiver_type};
+    use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
+    use crate::program::resolve::receiver::{FrameworkKind, ReceiverType, infer_receiver_type};
     use crate::program::resolve::resolver::resolve_member;
     use crate::snapshot::{SnapshotBuilder, parse_snapshot};
 
@@ -2099,13 +2101,12 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     let mut divergence = 0usize;
     let mut missing_site = 0usize;
     let mut extra_site = 0usize;
-    // These Phase-4 applicability counters are inert at Task 0 (no fan-out
-    // resolver emits routes yet).  Tasks 1-3 will add `mut` and wire the
-    // applicability predicates into the FreshOnly block.
+    // Phase-4 applicability counters: `fresh_ahead_interface` stays non-mut
+    // (Task 1 doesn't touch it); the others are wired below.
     let fresh_ahead_interface = 0usize;
-    let fresh_ahead_instance_builtin = 0usize;
-    let fresh_ahead_enum_static = 0usize;
-    let unverified_extra = 0usize;
+    let mut fresh_ahead_instance_builtin = 0usize;
+    let mut fresh_ahead_enum_static = 0usize;
+    let mut unverified_extra = 0usize;
     let mut unaligned = 0usize;
 
     // Diagnostics for unexplained regressions (first 30, to avoid noise).
@@ -2221,14 +2222,90 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                     }
                 }
             }
-            SiteMatch::FreshOnly(_) => {
-                // Phase 4 Tasks 1-3 will emit fan-out routes (interface /
-                // instance-builtin / enum-static) that need to be validated by
-                // the applicability predicates in `applicability.rs` before
-                // being counted as `fresh_ahead_*` vs `unverified_extra`.
-                // At Task 0 no fan-out resolver exists yet → all FreshOnly
-                // sites go to extra_site (applicability layer is inert).
-                extra_site += 1;
+            SiteMatch::FreshOnly(fi) => {
+                let f = &fresh_canonical[*fi];
+                if f.targets.is_empty() {
+                    // No concrete route — legitimate extra_site (unknown on fresh, no L3 peer).
+                    extra_site += 1;
+                } else {
+                    // Has concrete targets.  Discriminate by the route TARGET type, not by
+                    // receiver type alone.  Only routes that produced a Builtin target
+                    // (CanonicalTarget::kind == 255) with a fan-out prefix
+                    // ("PageInstance::" / "ReportInstance::" / "Enum::") are candidate
+                    // fan-out routes and require an applicability-predicate gate.
+                    //
+                    // All other routes (Routine/AbiSymbol from resolve_in_object, Record
+                    // catalog builtins with "Record::" prefix, etc.) are direct
+                    // single-dispatch — their witness IS their proof and they belong in
+                    // extra_site (a legitimate fresh win).  Do NOT push them to
+                    // unverified_extra merely because the receiver is Object or EnumType
+                    // but the target is a source-declared Routine.
+                    let callee_lc = fresh_diag_text[*fi].to_ascii_lowercase();
+                    let method_lc: &str = callee_lc.rsplit('.').next().unwrap_or(&callee_lc);
+
+                    // Identify fan-out routes by the canonical target prefix.
+                    let is_instance_builtin_target = f.targets.iter().any(|t| {
+                        t.kind == 255
+                            && (t.object_lc.starts_with("PageInstance::")
+                                || t.object_lc.starts_with("ReportInstance::"))
+                    });
+                    let is_enum_static_target = f
+                        .targets
+                        .iter()
+                        .any(|t| t.kind == 255 && t.object_lc.starts_with("Enum::"));
+
+                    if is_instance_builtin_target {
+                        // Instance-builtin fan-out route: independently re-check
+                        // applicability using kind+method derived from the BuiltinId
+                        // prefix ("PageInstance::" → Page, "ReportInstance::" →
+                        // Report).  Do NOT rely on the receiver type — both
+                        // `Object { kind: Page }` and `Framework(PageInstance)` are
+                        // valid callers that produce PageInstance:: targets; both
+                        // should validate via the same catalog gate.
+                        let kind_from_target = f.targets.iter().find_map(|t| {
+                            if t.kind == 255 {
+                                if t.object_lc.starts_with("PageInstance::") {
+                                    Some(ObjectKind::Page)
+                                } else if t.object_lc.starts_with("ReportInstance::") {
+                                    Some(ObjectKind::Report)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(kind) = kind_from_target {
+                            if instance_builtin_route_applicable(kind, method_lc) {
+                                fresh_ahead_instance_builtin += 1;
+                            } else {
+                                unverified_extra += 1;
+                            }
+                        } else {
+                            // PageInstance/ReportInstance prefix present but could not
+                            // map to an ObjectKind — treat as unverified.
+                            unverified_extra += 1;
+                        }
+                    } else if is_enum_static_target {
+                        // Enum-static fan-out route: re-check catalog membership.
+                        if member_builtin(
+                            MemberCatalogKind::Framework(&FrameworkKind::Enum),
+                            method_lc,
+                        ) {
+                            fresh_ahead_enum_static += 1;
+                        } else {
+                            unverified_extra += 1;
+                        }
+                    } else {
+                        // Direct single-dispatch route (Routine/AbiSymbol/Record-catalog).
+                        // The witness IS the proof — no applicability predicate needed.
+                        // These are legitimate fresh wins where fresh resolved a Member call
+                        // via direct dispatch but L3's in-scope filter excluded it
+                        // (e.g., L3 dispatched via Method/Interface/Dynamic which are
+                        // outside the member-oracle scope).
+                        extra_site += 1;
+                    }
+                }
             }
             SiteMatch::L3Only(_) => {
                 missing_site += 1;

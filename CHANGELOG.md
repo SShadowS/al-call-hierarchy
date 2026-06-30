@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Phase-4 Task 1: FreshOnly gate discriminator bug** (`src/program/resolve/differential.rs`) —
+  The `run_member_resolution_harness` FreshOnly bucketing incorrectly applied the
+  `instance_builtin_route_applicable` predicate to ALL FreshOnly sites with non-empty targets,
+  not just instance-builtin fan-out routes.  Direct single-dispatch routes (Routine/AbiSymbol
+  targets from `resolve_in_object`) were misclassified as `unverified_extra` instead of
+  `extra_site`, producing 1223 false `unverified_extra` entries on CDO.  Fix: discriminate
+  FreshOnly sites by their canonical target type — routes with `CanonicalTarget::kind=255`
+  (Builtin) and `"PageInstance::"` / `"ReportInstance::"` prefix are instance-builtin fan-out
+  routes (gate via `instance_builtin_route_applicable` with kind derived from the BuiltinId
+  prefix); `"Enum::"` prefix routes are enum-static fan-out (gate via `member_builtin`);
+  all other non-empty routes are direct single-dispatch and go to `extra_site`.  Additionally
+  handles `Framework(PageInstance/ReportInstance)` receivers (CurrPage/CurrReport singletons)
+  by deriving `ObjectKind` from the BuiltinId prefix rather than from the receiver type.
+  CDO gate result: `unverified_extra=0`, `fresh_ahead_instance_builtin=243` (3 typed-var
+  Object + 240 Framework/CurrPage singletons), `extra_site=1229`, `regression_unexplained=0`,
+  `evidence_overclaim=0`, `missing_site=0`, deterministic.
+
 ### Added
 - **Phase-3 Task 5: Member-resolution gate vs L3** (`src/program/resolve/differential.rs`,
   `tests/program_resolve_harness.rs`) — `run_member_resolution_harness(&Path) ->
