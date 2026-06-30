@@ -363,7 +363,15 @@ impl Histogram {
                     match best {
                         Some(0) => h.resolved_source += 1,
                         Some(1) => h.resolved_catalog += 1,
-                        _ => h.resolved_abi_external += 1,
+                        // Some(2): Abi/Opaque evidence (external dep ABI boundary).
+                        Some(_) => h.resolved_abi_external += 1,
+                        // None is unreachable for a Resolved edge: the obligation
+                        // gate ensures at least one default-firing route with
+                        // non-Unknown evidence.  If this fires, a new Evidence
+                        // variant or a logic change broke the invariant.
+                        None => unreachable!(
+                            "Resolved edge must have >=1 default-firing non-Unknown route"
+                        ),
                     }
                 }
                 ObligationOutcome::ConditionalResolved => h.conditional_resolved += 1,

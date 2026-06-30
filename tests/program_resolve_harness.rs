@@ -1474,6 +1474,23 @@ fn abi_ingestion_integrity_cdo_gate() {
         "AbiIntegrityReport: abi_routes_total={} abi_mapped={} abi_unmapped={}",
         report.abi_routes_total, report.abi_mapped, report.abi_unmapped,
     );
+    // When abi_routes_total == 0, abi_unmapped == 0 holds vacuously: the
+    // workspace's deps all ship EmbeddedSource/ShowMyCode, so they resolve to
+    // Source routes rather than AbiSymbol.  The 2 true SymbolOnly deps in CDO
+    // are trivial (permissionset/translation apps) with no public routines.
+    // ABI ingestion-path correctness is validated by the in-repo fixture tests
+    // (Tests 12-14), NOT by this CDO run.  This note exists so a maintainer
+    // reading a passing test output does not mistake "vacuous pass" for
+    // "ABI coverage exercised on CDO".  When a workspace with SymbolOnly
+    // public-routine deps is used, this gate WILL exercise the ABI path.
+    if report.abi_routes_total == 0 {
+        eprintln!(
+            "NOTE: this CDO workspace has no SymbolOnly-dep routines (its deps ship \
+             EmbeddedSource/ShowMyCode \u{2192} resolve to Source routes, not AbiSymbol). \
+             The ABI ingestion path is validated by the in-repo fixtures (Tests 12-14), \
+             NOT by this CDO run. abi_unmapped==0 holds trivially here."
+        );
+    }
     if !report.abi_unmapped_sites.is_empty() {
         eprintln!("UNMAPPED SITES (first 10):");
         for site in report.abi_unmapped_sites.iter().take(10) {
