@@ -1641,6 +1641,40 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
 
     // fresh_ahead_dispatch is always ALLOWED (printed above for visibility).
 
+    // ── COMPLETENESS FLOOR (1B.3b whole-branch fix): re-instate the deleted
+    // `regression_unexplained == 0` leg as a pinned CEILING on `fresh_missing`.
+    //
+    // `fresh_missing` (L3 resolved a target, fresh emitted nothing) was
+    // previously informational-only: a dropped trigger/event/member target at
+    // CDO scale could increment this counter silently and the test would
+    // still pass. 191 is the CURRENT, EXACT `fresh_missing_count` reproduced
+    // against the live CDO_WS fresh resolver on 2026-07-01 — it matches the
+    // documented characterization in CHANGELOG.md (1B.3a Task 4 entry):
+    // `page_rec=115 + codeunit_implicit_rec=24 + trigger=38 + other=14 = 191`,
+    // all KNOWN, ALREADY-DEFERRED buckets (Page/PageExt implicit-Rec,
+    // Codeunit TableNo/TestRunner implicit-Rec, ImplicitTrigger-shaped member
+    // calls, and a long tail), not a fresh regression. Pinning the exact
+    // current value (rather than a round-number ceiling) means a NEW drop —
+    // even a single one beyond these known buckets — pushes the count to 192
+    // and FAILS, restoring the floor the old dual-run gate's
+    // `regression_unexplained == 0` provided. A manifest mirroring
+    // `known-genuine-divergences.json` would be the ideal (set-membership,
+    // immune to swaps) but is out of scope for this fix — see this fix's
+    // CHANGELOG/report entry for why a ceiling was chosen over a manifest
+    // here. Raising this ceiling requires re-justifying the new value against
+    // a real characterization, not just bumping the number.
+    const FRESH_MISSING_CEILING: usize = 191;
+    assert!(
+        audit.fresh_missing_count <= FRESH_MISSING_CEILING,
+        "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
+         ceiling {} (known-deferred-bucket baseline pinned 2026-07-01: \
+         page_rec=115 codeunit_implicit_rec=24 trigger=38 other=14 = 191; see \
+         CHANGELOG.md 1B.3a Task 4). The fresh resolver lost an L3-resolved \
+         target it used to find — investigate before raising the ceiling.",
+        audit.fresh_missing_count,
+        FRESH_MISSING_CEILING,
+    );
+
     // ── Determinism: two consecutive runs produce the same digest ─────────────
     let audit2 = run_cdo_semantic_audit(&ws);
     assert_eq!(
@@ -1695,6 +1729,42 @@ fn cdo_trigger_audit_frozen_load() {
         audit.digest,
     );
 
+    // ── COMPLETENESS FLOOR (1B.3b whole-branch fix): re-instate the deleted
+    // `regression_unexplained == 0` leg for ImplicitTrigger.
+    //
+    // Zero tolerance for fresh confidently resolving a paired trigger site to
+    // the WRONG target set — this mirrors the old live gate's hard
+    // zero-tolerance and currently holds (`fresh_wrong_count == 0`).
+    assert_eq!(
+        audit.fresh_wrong_count, 0,
+        "COMPLETENESS REGRESSION: ImplicitTrigger fresh_wrong_count={} (must be 0) \
+         — fresh disagreeing with a frozen, L3-verified trigger target is a real \
+         resolver bug, investigate.",
+        audit.fresh_wrong_count,
+    );
+    // `fresh_missing` (L3 resolved a trigger target, fresh emitted nothing) is
+    // NOT presently zero: this golden carries a SMALL, STABLE, pre-existing
+    // gap of 3 sites that was already present at golden MINT time (1B.3b
+    // Task 1, `.superpowers/sdd/task-1-report.md`: "total_paired=188
+    // matches=185 fresh_wrong=0 fresh_missing=3") and has been UNCHANGED
+    // through every capstone verification since (1B.3b Task 4 capstone:
+    // identical `matches=185`; reproduced again on 2026-07-01 for this fix:
+    // identical `total_paired=188 matches=185 fresh_missing=3`). It predates
+    // the gate-completeness deletion this fix restores, so asserting literal
+    // `matches == total_paired` would fail on a KNOWN, already-accepted gap,
+    // not a new one. Pin it as a CEILING instead (same pattern as Test 16):
+    // any NEW drop (4+) is a real completeness regression and FAILS.
+    const FRESH_MISSING_CEILING: usize = 3;
+    assert!(
+        audit.fresh_missing <= FRESH_MISSING_CEILING,
+        "COMPLETENESS REGRESSION: ImplicitTrigger fresh_missing={} exceeds the \
+         recorded ceiling {} (stable since the golden's 1B.3b Task 1 mint-time \
+         verification — see task-1-report.md). A NEW dropped trigger target. \
+         Investigate before raising the ceiling.",
+        audit.fresh_missing,
+        FRESH_MISSING_CEILING,
+    );
+
     // Determinism.
     let audit2 = run_cdo_trigger_audit(&ws);
     assert_eq!(
@@ -1738,6 +1808,23 @@ fn cdo_event_audit_frozen_load() {
         audit.pair_l3_only,
         audit.pair_fresh_only,
         audit.digest,
+    );
+
+    // ── COMPLETENESS FLOOR (1B.3b whole-branch fix): re-instate the deleted
+    // `regression_unexplained == 0` leg for EventFlow. Zero tolerance: every
+    // frozen L3 publisher→subscriber pair must still be found by fresh.
+    assert_eq!(
+        audit.pair_l3_only, 0,
+        "COMPLETENESS REGRESSION: {} frozen L3 EventFlow pair(s) are missing from \
+         fresh (pair_l3_only must be 0) — fresh lost a publisher\u{2192}subscriber \
+         pair it used to resolve, investigate.",
+        audit.pair_l3_only,
+    );
+    assert_eq!(
+        audit.matched_pairs, audit.l3_total,
+        "COMPLETENESS REGRESSION: matched_pairs={} != l3_total={} — every frozen \
+         L3 EventFlow pair must be matched by fresh.",
+        audit.matched_pairs, audit.l3_total,
     );
 
     // Determinism.
@@ -1974,6 +2061,24 @@ fn fan_out_applicability_zero_violations() {
     assert_eq!(
         appl_cdo.event_violations, 0,
         "EventFlow soundness violated on CDO_WS — investigate."
+    );
+    // ── Fix 2 (1B.3b whole-branch fix): non-vacuity must be ASSERTED, not just
+    // printed. `violations == 0` is meaningless if `routes_checked == 0` — a
+    // `build_fan_out_site_context` regression silently dropping context would
+    // collapse every denominator to 0 and pass vacuously. Fail closed instead.
+    assert!(
+        appl_cdo.interface_routes_checked > 0
+            && appl_cdo.instance_builtin_routes_checked > 0
+            && appl_cdo.implicit_trigger_routes_checked > 0
+            && appl_cdo.event_routes_checked > 0,
+        "VACUOUS PASS: routes_checked[interface={} instance_builtin={} \
+         implicit_trigger={} event={}] must all be NON-TRIVIAL (>0) — a \
+         collapse toward 0 with violations==0 signals a build_fan_out_site_context \
+         regression silently dropping context, not a genuine clean run.",
+        appl_cdo.interface_routes_checked,
+        appl_cdo.instance_builtin_routes_checked,
+        appl_cdo.implicit_trigger_routes_checked,
+        appl_cdo.event_routes_checked,
     );
     eprintln!(
         "Test 20 (CDO) — fan-out applicability: total_routes={} \
