@@ -79,7 +79,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                             routes: vec![Route {
                                 target: RouteTarget::Unresolved,
                                 evidence: Evidence::Unknown,
-                                condition: None,
+                                conditions: vec![],
                                 witness: Witness::None,
                             }],
                         });
@@ -127,7 +127,7 @@ pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
         routes: vec![Route {
             target: RouteTarget::Unresolved,
             evidence: Evidence::Unknown,
-            condition: None,
+            conditions: vec![],
             witness: Witness::None,
         }],
     }]

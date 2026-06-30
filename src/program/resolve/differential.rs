@@ -239,8 +239,7 @@ pub fn project_fresh(edges: &[Edge], apps: &AppRegistry) -> Vec<CanonicalEdge> {
             let from = routine_to_key(&e.from, apps);
             let caller = routine_to_key(&e.site.caller, apps);
             let targets = e
-                .routes
-                .iter()
+                .all_routes()
                 .filter_map(|r| project_target(&r.target, apps))
                 .collect();
             CanonicalEdge {
@@ -1367,7 +1366,7 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
     let unknown_route = || Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,
-        condition: None,
+        conditions: vec![],
         witness: Witness::None,
     };
 
@@ -1931,7 +1930,7 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     let unknown_route = || Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,
-        condition: None,
+        conditions: vec![],
         witness: Witness::None,
     };
 

@@ -92,7 +92,7 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
         Route {
             target: RouteTarget::Routine(rid.clone()),
             evidence: tier_evidence(obj_tier),
-            condition: None,
+            conditions: vec![],
             witness: Witness::SourceSpan {
                 file: path.to_string(),
                 span: (decl.origin.byte.start as u32, decl.origin.byte.end as u32),
@@ -111,7 +111,7 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
                 symbol_key: symbol_key.clone(),
             },
             evidence: Evidence::Opaque,
-            condition: None,
+            conditions: vec![],
             witness: Witness::AbiSymbol {
                 app: rid.object.app,
                 symbol_key,
@@ -123,7 +123,7 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
         Route {
             target: RouteTarget::Unresolved,
             evidence: Evidence::Unknown,
-            condition: None,
+            conditions: vec![],
             witness: Witness::None,
         }
     }
@@ -184,7 +184,7 @@ fn resolve_in_object(
     Some(Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,
-        condition: None,
+        conditions: vec![],
         witness: Witness::None,
     })
 }
@@ -243,7 +243,7 @@ pub fn resolve_bare(
         return vec![Route {
             target: RouteTarget::Builtin(builtin_id.clone()),
             evidence: Evidence::Catalog,
-            condition: None,
+            conditions: vec![],
             witness: Witness::CatalogEntry {
                 id: builtin_id,
                 catalog_version: catalog_version().to_string(),
@@ -255,7 +255,7 @@ pub fn resolve_bare(
     vec![Route {
         target: RouteTarget::Unresolved,
         evidence: Evidence::Unknown,
-        condition: None,
+        conditions: vec![],
         witness: Witness::None,
     }]
 }
@@ -288,7 +288,7 @@ fn opaque_boundary_route(app: AppRef, symbol_key: String) -> Route {
             symbol_key: symbol_key.clone(),
         },
         evidence: Evidence::Opaque,
-        condition: None,
+        conditions: vec![],
         witness: Witness::AbiSymbol { app, symbol_key },
     }
 }
@@ -332,7 +332,7 @@ pub fn resolve_object_run(
             vec![Route {
                 target: RouteTarget::Unresolved,
                 evidence: Evidence::Unknown,
-                condition: None,
+                conditions: vec![],
                 witness: Witness::None,
             }],
         );
@@ -482,7 +482,7 @@ fn member_catalog_route(bid: BuiltinId) -> (DispatchShape, Vec<Route>) {
         vec![Route {
             target: RouteTarget::Builtin(bid.clone()),
             evidence: Evidence::Catalog,
-            condition: None,
+            conditions: vec![],
             witness: Witness::CatalogEntry {
                 id: bid,
                 catalog_version: catalog_version().to_string(),
@@ -498,7 +498,7 @@ fn member_unknown_route() -> (DispatchShape, Vec<Route>) {
         vec![Route {
             target: RouteTarget::Unresolved,
             evidence: Evidence::Unknown,
-            condition: None,
+            conditions: vec![],
             witness: Witness::None,
         }],
     )
@@ -511,7 +511,7 @@ fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
         vec![Route {
             target: RouteTarget::Unresolved,
             evidence: Evidence::Unknown,
-            condition: None,
+            conditions: vec![],
             witness: Witness::None,
         }],
     )
@@ -764,7 +764,7 @@ pub fn resolve_member(
                             .unwrap_or(Route {
                                 target: RouteTarget::Unresolved,
                                 evidence: Evidence::Unknown,
-                                condition: None,
+                                conditions: vec![],
                                 witness: Witness::None,
                             });
                     routes.push(route);
@@ -775,7 +775,7 @@ pub fn resolve_member(
                         routes.push(Route {
                             target: RouteTarget::Unresolved,
                             evidence: Evidence::Unknown,
-                            condition: None,
+                            conditions: vec![],
                             witness: Witness::None,
                         });
                     } else {
@@ -792,7 +792,7 @@ pub fn resolve_member(
                                 .unwrap_or(Route {
                                     target: RouteTarget::Unresolved,
                                     evidence: Evidence::Unknown,
-                                    condition: None,
+                                    conditions: vec![],
                                     witness: Witness::None,
                                 });
                                 routes.push(route);
@@ -803,7 +803,7 @@ pub fn resolve_member(
                                 routes.push(Route {
                                     target: RouteTarget::Unresolved,
                                     evidence: Evidence::Unknown,
-                                    condition: None,
+                                    conditions: vec![],
                                     witness: Witness::None,
                                 });
                             }
