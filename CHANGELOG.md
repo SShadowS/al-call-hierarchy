@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-4b Task 4: Structural dual-run event gate** (`src/program/resolve/differential.rs`,
+  `tests/program_resolve_harness.rs`, `tests/fixtures/events/`) — adds `run_event_flow_gate`
+  with a two-stage arity-FP-reconciled join: Stage 1 = arity-agnostic `EventPairKey`
+  set-diff (`pair_l3_only` / `pair_fresh_only`); Stage 2 = within matched keys, arity
+  comparison to detect `l3_false_positive_arity_mismatch` (L3 arity-blind last-wins
+  picks wrong overload) / `l3_arity_unknown` (accepted) / `l3_regression` (genuine
+  disagreement).  Every `pair_fresh_only` is machine-categorized: `l3_maybe_upgrade` /
+  `multiple_attr_l3_gap` / `internal_event_non_shipping`.  Five zero-tolerance CDO gate
+  assertions: `pair_l3_only=0`, `l3_regression=0`, `fresh_only_uncategorized=0`,
+  `fresh_unprojectable=0`, `l3_unprojectable=0` — all pass on CDO.  Fixture workspace
+  (`tests/fixtures/events/`) exercises all structural scenarios: overloaded publisher
+  (L3 last-wins arity-FP), SkipOnMissingLicense subscriber, multi-`[EventSubscriber]`
+  handler (L3 reads only first), InternalEvent subscriber (L3 classifies as "maybe").
+
 - **Phase-4b Task 3: Publisher-anchored `EventFlow` `Multicast` edge emission**
   (`src/program/resolve/resolver.rs`, `src/program/resolve/stub.rs`) — adds
   `emit_event_flow_edges(graph, index, body_map) -> Vec<Edge>`: sweeps all publisher

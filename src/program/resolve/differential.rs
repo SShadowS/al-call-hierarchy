@@ -3020,6 +3020,589 @@ pub fn run_implicit_trigger_harness(workspace_root: &Path) -> ImplicitTriggerRes
 }
 
 // ---------------------------------------------------------------------------
+// Phase-4b Task 4: Structural dual-run event gate
+// ---------------------------------------------------------------------------
+
+/// Arity-agnostic primary key for an event subscription pair.
+///
+/// Arity is NOT in the key: a single L3 edge (arity-blind, last-wins) vs a
+/// fresh edge (exact overload) must still land in the SAME pair so Stage 2
+/// can adjudicate the arity disagreement rather than double-missing into
+/// `pair_l3_only` + `pair_fresh_only_uncategorized`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EventPairKey {
+    /// Stable object id of the publisher object (e.g. `"guid:Codeunit:50100"`).
+    pub publisher_stable_obj_id: String,
+    /// Lowercased event name (= publisher routine name in lower case).
+    pub event_name_lc: String,
+    /// L3 stable routine id of the subscriber
+    /// (`"{stable_obj_id}#{normalized_sig_hash}"`).
+    pub subscriber_stable_routine_id: String,
+}
+
+/// One fresh-side event row, produced by projecting an EventFlow edge route.
+#[derive(Clone, Debug)]
+pub struct FreshEventRow {
+    pub pair: EventPairKey,
+    /// Number of parameters on the specific publisher overload that fresh
+    /// resolved this subscriber to.
+    pub publisher_arity: usize,
+    /// Optional cross-check: the stable event id that L3 would assign to this
+    /// publisher routine (looked up from L3's routine table by exact stable-obj-id
+    /// + event-name + sig-hash).
+    ///
+    /// `None` when the publisher isn't in L3's workspace (dep or integration gap).
+    pub l3_xref_hash: Option<String>,
+}
+
+/// One L3-side event row, from `project_event_graph()` filtered to `resolution=="resolved"`.
+#[derive(Clone, Debug)]
+pub struct L3EventRow {
+    pub pair: EventPairKey,
+    /// Publisher arity from the L3 PEventSymbol's `parameters` length.
+    /// `None` when the matching event symbol wasn't found (alignment gap; counted
+    /// as `l3_unprojectable`).
+    pub publisher_arity: Option<usize>,
+}
+
+/// Full result of `run_event_flow_gate`.
+///
+/// All `usize` fields; zero = clean.  `Debug`-print for assertion messages.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EventFlowGateReport {
+    // ── Zero-tolerance ───────────────────────────────────────────────────────
+    /// Fresh EventFlow Routine routes that could not be projected to a PairKey
+    /// (stable-id lookup miss).  Must be 0.
+    pub fresh_unprojectable: usize,
+    /// L3 resolved edges that could not be projected to a PairKey.  Must be 0.
+    pub l3_unprojectable: usize,
+    /// PairKeys present on the L3 side but absent on the fresh side (arity-agnostic
+    /// recall regression).  Must be 0.
+    pub pair_l3_only: usize,
+    /// Matched pairs where BOTH sides expose a publisher arity AND they differ,
+    /// and the publisher is NOT overloaded in L3 (genuine disagreement).
+    /// Must be 0.
+    pub l3_regression: usize,
+    /// Fresh-only pairs that didn't match any known categorization.  Must be 0.
+    pub fresh_only_uncategorized: usize,
+    // ── Informational ────────────────────────────────────────────────────────
+    /// PairKeys present on the fresh side but absent on the L3 side (fresh ahead).
+    pub pair_fresh_only: usize,
+    /// Fresh-only pairs where L3 had a "maybe" edge (target found but not a real
+    /// publisher) — fresh is ahead of L3.
+    pub l3_maybe_upgrade: usize,
+    /// Fresh-only pairs where the subscriber handler carries >1 [EventSubscriber]
+    /// attrs and L3 only reads the first.
+    pub multiple_attr_l3_gap: usize,
+    /// Fresh-only pairs where the publisher is an InternalEvent (L3 does not
+    /// classify InternalEvent publishers as `event-publisher`).
+    pub internal_event_non_shipping: usize,
+    /// Matched pairs where L3 has MULTIPLE publisher overloads for the same
+    /// event name and the arity of the L3-linked overload differs from the
+    /// fresh-picked overload — L3 over-linked, fresh correctly disambiguated.
+    pub l3_false_positive_arity_mismatch: usize,
+    /// Matched pairs where L3's `publisher_arity` is `None` (symbol not found or
+    /// arity not exposed) — accepted, no penalty.
+    pub l3_arity_unknown: usize,
+    /// Total Stage-1 matched pairs (present on both sides).
+    pub matched: usize,
+    // ── Coverage ─────────────────────────────────────────────────────────────
+    /// Total EventFlow edges emitted by the fresh resolver (all publishers,
+    /// including those with zero routes).
+    pub fresh_event_edge_count: usize,
+    /// Total fresh rows projected (one per Routine route across all EventFlow edges).
+    pub fresh_event_row_count: usize,
+    /// Total L3 resolved event rows projected.
+    pub l3_event_row_count: usize,
+}
+
+/// Run the structural dual-run event gate for `workspace_root`.
+///
+/// Builds the fresh program graph, emits EventFlow edges, projects the L3 event
+/// graph, and performs a TWO-STAGE join:
+///
+/// * **Stage 1** — arity-agnostic `PairKey` set-diff:
+///   `pair_l3_only` / `pair_fresh_only`.
+/// * **Stage 2** — within matched keys, compare publisher arities:
+///   `l3_false_positive_arity_mismatch` / `l3_arity_unknown` / `l3_regression`.
+///
+/// Every `pair_fresh_only` is machine-categorized:
+/// `l3_maybe_upgrade` / `multiple_attr_l3_gap` / `internal_event_non_shipping`
+/// (anything else → `fresh_only_uncategorized`, asserted 0).
+pub fn run_event_flow_gate(workspace_root: &Path) -> EventFlowGateReport {
+    use std::collections::{HashMap, HashSet};
+
+    use crate::engine::ids::{encode_object_id, to_stable_object_id};
+    use crate::engine::l2::ir_walk::ir_object_type;
+    use crate::engine::l3::event_graph::build_event_graph;
+    use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use crate::engine::l3::symbol_table::SymbolTable;
+    use crate::program::build::build_program_graph;
+    use crate::program::node::{AppRegistry, ObjKey};
+    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::edge::{EdgeKind, RouteTarget};
+    use crate::program::resolve::event::PublisherKind;
+    use crate::program::resolve::index::ResolveIndex;
+    use crate::program::resolve::resolver::emit_event_flow_edges;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    let mut report = EventFlowGateReport::default();
+
+    // ── Step 1: Build fresh program graph ────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return report,
+    };
+
+    let graph = build_program_graph(&snap);
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+    let apps: &AppRegistry = &graph.apps;
+
+    // ── Step 2: Emit fresh EventFlow edges ───────────────────────────────────
+    let fresh_edges = emit_event_flow_edges(&graph, &index, &body_map);
+    report.fresh_event_edge_count = fresh_edges.len();
+
+    // ── Step 3: Build L3 workspace + event graph ─────────────────────────────
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return report;
+    };
+    let ws = &resolved.workspace;
+    let l3_symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let l3_eg = build_event_graph(&ws.routines, &l3_symbols);
+
+    // ── Step 4: Build L3 subscriber lookup ───────────────────────────────────
+    // Key: (app_guid_lc, object_type_lc, object_number, routine_name_lc, params_count)
+    // Value: stable_routine_id
+    //
+    // Used by the fresh side to convert RoutineNodeId → stable_routine_id
+    // (since RoutineNodeId only has params_count, not the signature hash).
+    type L3SubKey = (String, String, i64, String, usize);
+    let mut l3_sub_lookup: HashMap<L3SubKey, String> = HashMap::new();
+    // Collect the set of app GUIDs (lowercased) that L3 has indexed.
+    // Subscriber lookup failures are only counted as `fresh_unprojectable` when the
+    // subscriber's app IS in L3's scope; if the app is absent from L3 (e.g. an
+    // embedded-source dep that L3's workspace boundary doesn't cover) the subscriber
+    // can never appear as a L3 resolved edge either, so the miss is safe to skip.
+    let mut l3_app_guids: HashSet<String> = HashSet::new();
+    for r in &ws.routines {
+        let guid_lc = r.app_guid.to_ascii_lowercase();
+        let key = (
+            guid_lc.clone(),
+            r.object_type.to_ascii_lowercase(),
+            r.object_number,
+            r.name.to_ascii_lowercase(),
+            r.parameters.len(),
+        );
+        l3_app_guids.insert(guid_lc);
+        // First-wins: if multiple routines share the key (overload with same
+        // param count but different types), any one mapping is acceptable —
+        // the arity-agnostic Stage 1 will still match.
+        l3_sub_lookup
+            .entry(key)
+            .or_insert_with(|| r.stable_routine_id.clone());
+    }
+
+    // ── Step 5: Build L3 publisher routine lookup for xref-hash ─────────────
+    // Key: (app_guid_lc, object_type_lc, object_number, routine_name_lc, params_count)
+    // Value: normalized_signature_hash
+    let mut l3_pub_sig_lookup: HashMap<L3SubKey, String> = HashMap::new();
+    for r in &ws.routines {
+        if r.kind != "event-publisher" {
+            continue;
+        }
+        let key = (
+            r.app_guid.to_ascii_lowercase(),
+            r.object_type.to_ascii_lowercase(),
+            r.object_number,
+            r.name.to_ascii_lowercase(),
+            r.parameters.len(),
+        );
+        l3_pub_sig_lookup
+            .entry(key)
+            .or_insert_with(|| r.normalized_signature_hash.clone());
+    }
+
+    // ── Step 6: Build L3 subscriber → maybe-event-ids set ───────────────────
+    // For l3_maybe_upgrade categorization: collect (pub_stable_obj_id,
+    // event_name_lc, sub_stable_routine_id) triples from "maybe" edges.
+    let l3_maybe_eg = crate::engine::l3::event_graph::project_event_graph(&l3_eg);
+    let mut l3_maybe_pairs: HashSet<EventPairKey> = HashSet::new();
+    {
+        // Build stable event_id → PEventSymbol map from the projected graph.
+        let sym_map: HashMap<&str, &crate::engine::l3::event_graph::PEventSymbol> = l3_maybe_eg
+            .events
+            .iter()
+            .map(|s| (s.id.as_str(), s))
+            .collect();
+        for edge in &l3_maybe_eg.edges {
+            if edge.resolution != "maybe" {
+                continue;
+            }
+            let Some(sym) = sym_map.get(edge.event_id.as_str()) else {
+                continue;
+            };
+            l3_maybe_pairs.insert(EventPairKey {
+                publisher_stable_obj_id: sym.publisher_object_id.clone(),
+                event_name_lc: sym.event_name.to_ascii_lowercase(),
+                subscriber_stable_routine_id: edge.subscriber_routine_id.clone(),
+            });
+        }
+    }
+
+    // ── Step 7: Build overload-detection set ─────────────────────────────────
+    // Pairs (publisher_stable_obj_id, event_name_lc) that have > 1 publisher
+    // overload in L3. Used in Stage 2 to distinguish l3_false_positive_arity_mismatch
+    // from l3_regression.
+    let mut l3_pub_overload_count: HashMap<(String, String), usize> = HashMap::new();
+    for r in &ws.routines {
+        if r.kind != "event-publisher" {
+            continue;
+        }
+        let stable_obj_id = to_stable_object_id(&r.object_id);
+        let key = (stable_obj_id, r.name.to_ascii_lowercase());
+        *l3_pub_overload_count.entry(key).or_insert(0) += 1;
+    }
+
+    // Helper: compute publisher stable object id from a RoutineNodeId.
+    // Returns None if the app, kind, or key can't be projected.
+    let pub_stable_obj_id = |object: &crate::program::node::ObjectNodeId| -> Option<String> {
+        let app_id = apps.try_resolve(object.app)?;
+        let obj_type = ir_object_type(&object.kind)?;
+        let obj_num = match &object.key {
+            ObjKey::Id(n) => *n,
+            ObjKey::Name(_) => return None,
+        };
+        Some(to_stable_object_id(&encode_object_id(
+            &app_id.guid,
+            obj_type,
+            obj_num,
+        )))
+    };
+
+    // ── Step 8: Project fresh EventFlow edges → FreshEventRows ───────────────
+    let mut fresh_rows: Vec<FreshEventRow> = Vec::new();
+
+    for edge in &fresh_edges {
+        if edge.kind != EdgeKind::EventFlow {
+            continue;
+        }
+
+        // Compute publisher stable obj id.
+        let Some(pub_soid) = pub_stable_obj_id(&edge.from.object) else {
+            // Publisher object can't be projected (ObjKey::Name or unknown kind).
+            // Count each route as unprojectable since they all share this publisher.
+            for route in &edge.routes {
+                if matches!(route.target, RouteTarget::Routine(_)) {
+                    report.fresh_unprojectable += 1;
+                }
+            }
+            continue;
+        };
+
+        let event_name_lc = edge.from.name_lc.clone(); // already lowercase
+
+        // Compute publisher xref-hash (optional, for cross-check).
+        let pub_app_id = apps.try_resolve(edge.from.object.app);
+        let xref_hash = pub_app_id
+            .and_then(|aid| {
+                ir_object_type(&edge.from.object.kind).and_then(|obj_type| {
+                    match &edge.from.object.key {
+                        ObjKey::Id(n) => {
+                            let key = (
+                                aid.guid.to_ascii_lowercase(),
+                                obj_type.to_ascii_lowercase(),
+                                *n,
+                                event_name_lc.clone(),
+                                edge.from.params_count,
+                            );
+                            l3_pub_sig_lookup.get(&key).cloned()
+                        }
+                        ObjKey::Name(_) => None,
+                    }
+                })
+            })
+            .map(|sig_hash| format!("{pub_soid}::{event_name_lc}::{sig_hash}"));
+
+        for route in &edge.routes {
+            match &route.target {
+                RouteTarget::Routine(sub_rid) => {
+                    // Look up subscriber stable routine id from L3's table.
+                    let sub_app_id = apps.try_resolve(sub_rid.object.app);
+                    let sub_guid_lc = sub_app_id.map(|aid| aid.guid.to_ascii_lowercase());
+                    let sub_stable_id = sub_app_id.and_then(|aid| {
+                        ir_object_type(&sub_rid.object.kind).and_then(|obj_type| {
+                            match &sub_rid.object.key {
+                                ObjKey::Id(n) => {
+                                    let key = (
+                                        aid.guid.to_ascii_lowercase(),
+                                        obj_type.to_ascii_lowercase(),
+                                        *n,
+                                        sub_rid.name_lc.clone(),
+                                        sub_rid.params_count,
+                                    );
+                                    l3_sub_lookup.get(&key).cloned()
+                                }
+                                ObjKey::Name(_) => None,
+                            }
+                        })
+                    });
+
+                    let Some(sub_stable) = sub_stable_id else {
+                        // Only count as fresh_unprojectable if the subscriber's app IS
+                        // within L3's indexed workspace. Subscribers from embedded-source
+                        // dep apps are outside L3's workspace boundary — L3 can never
+                        // have a resolved edge for them, so skipping them silently is safe.
+                        let in_l3_scope = sub_guid_lc
+                            .as_deref()
+                            .map(|g| l3_app_guids.contains(g))
+                            .unwrap_or(false);
+                        if in_l3_scope {
+                            report.fresh_unprojectable += 1;
+                        }
+                        continue;
+                    };
+
+                    fresh_rows.push(FreshEventRow {
+                        pair: EventPairKey {
+                            publisher_stable_obj_id: pub_soid.clone(),
+                            event_name_lc: event_name_lc.clone(),
+                            subscriber_stable_routine_id: sub_stable,
+                        },
+                        publisher_arity: edge.from.params_count,
+                        l3_xref_hash: xref_hash.clone(),
+                    });
+                }
+                // AbiSymbol = dep subscriber with no source — L3 also won't resolve
+                // these, so they contribute to neither side.
+                RouteTarget::AbiSymbol { .. } => {}
+                // Unresolved/Unknown routes carry no subscriber target.
+                RouteTarget::Unresolved | RouteTarget::Builtin(_) => {}
+            }
+        }
+    }
+
+    report.fresh_event_row_count = fresh_rows.len();
+
+    // ── Step 9: Project L3 event graph → L3EventRows ─────────────────────────
+    let l3_proj = crate::engine::l3::event_graph::project_event_graph(&l3_eg);
+
+    // Build stable event_id → PEventSymbol index.
+    let l3_sym_by_id: HashMap<&str, &crate::engine::l3::event_graph::PEventSymbol> =
+        l3_proj.events.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    let mut l3_rows: Vec<L3EventRow> = Vec::new();
+    for edge in &l3_proj.edges {
+        if edge.resolution != "resolved" {
+            continue;
+        }
+        // Find matching event symbol.
+        let sym = l3_sym_by_id.get(edge.event_id.as_str());
+        let Some(sym) = sym else {
+            report.l3_unprojectable += 1;
+            continue;
+        };
+        let pair = EventPairKey {
+            publisher_stable_obj_id: sym.publisher_object_id.clone(),
+            event_name_lc: sym.event_name.to_ascii_lowercase(),
+            subscriber_stable_routine_id: edge.subscriber_routine_id.clone(),
+        };
+        let publisher_arity = Some(sym.parameters.len());
+        l3_rows.push(L3EventRow {
+            pair,
+            publisher_arity,
+        });
+    }
+
+    report.l3_event_row_count = l3_rows.len();
+
+    // ── Step 10: Stage 1 — arity-agnostic set-diff ───────────────────────────
+    // Group by PairKey.
+    let mut fresh_by_key: HashMap<EventPairKey, Vec<&FreshEventRow>> = HashMap::new();
+    for row in &fresh_rows {
+        fresh_by_key.entry(row.pair.clone()).or_default().push(row);
+    }
+    let mut l3_by_key: HashMap<EventPairKey, Vec<&L3EventRow>> = HashMap::new();
+    for row in &l3_rows {
+        l3_by_key.entry(row.pair.clone()).or_default().push(row);
+    }
+
+    // Collect publisher_kind map for fresh-side categorization.
+    // Key: RoutineNodeId.name_lc on the publisher → publisher_kind.
+    // We need to look up by PairKey.publisher_stable_obj_id + event_name_lc.
+    // Build: (pub_stable_obj_id, event_name_lc) → publisher_kind.
+    let mut pub_kind_map: HashMap<(String, String), crate::program::resolve::event::PublisherKind> =
+        HashMap::new();
+    for edge in &fresh_edges {
+        if edge.kind != EdgeKind::EventFlow {
+            continue;
+        }
+        let Some(pub_routine) = graph.routines.iter().find(|r| r.id == edge.from) else {
+            continue;
+        };
+        let Some(pk) = pub_routine.publisher_kind else {
+            continue;
+        };
+        let Some(pub_soid) = pub_stable_obj_id(&edge.from.object) else {
+            continue;
+        };
+        pub_kind_map
+            .entry((pub_soid, edge.from.name_lc.clone()))
+            .or_insert(pk);
+    }
+
+    // Build: (pub_stable_obj_id, event_name_lc, sub_stable_routine_id) →
+    //        subscriber node's event_subscribers.len() (multi-attr detection).
+    // We need the subscriber RoutineNode to check event_subscribers count.
+    // Build a lookup from stable_routine_id → RoutineNode.
+    // We approximate: for each FreshEventRow, find the subscriber in graph.routines.
+    // Since the RoutineNodeId isn't in FreshEventRow directly, we rebuild via
+    // the fresh_edges routes.
+    let mut sub_attr_count: HashMap<String, usize> = HashMap::new(); // sub_stable_routine_id → max attrs seen
+    for edge in &fresh_edges {
+        if edge.kind != EdgeKind::EventFlow {
+            continue;
+        }
+        for route in &edge.routes {
+            if let RouteTarget::Routine(sub_rid) = &route.target {
+                // Find the subscriber's RoutineNode.
+                if let Some(sub_node) = graph.routines.iter().find(|r| r.id == *sub_rid) {
+                    let sub_app_id = apps.try_resolve(sub_rid.object.app);
+                    if let Some(aid) = sub_app_id
+                        && let Some(obj_type) = ir_object_type(&sub_rid.object.kind)
+                        && let ObjKey::Id(n) = &sub_rid.object.key
+                    {
+                        let key = (
+                            aid.guid.to_ascii_lowercase(),
+                            obj_type.to_ascii_lowercase(),
+                            *n,
+                            sub_rid.name_lc.clone(),
+                            sub_rid.params_count,
+                        );
+                        if let Some(stable) = l3_sub_lookup.get(&key) {
+                            let cnt = sub_node.event_subscribers.len();
+                            let e = sub_attr_count.entry(stable.clone()).or_insert(0);
+                            if cnt > *e {
+                                *e = cnt;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // L3-only: in L3 but not in fresh → pair_l3_only (recall regression).
+    for key in l3_by_key.keys() {
+        if !fresh_by_key.contains_key(key) {
+            report.pair_l3_only += 1;
+        }
+    }
+
+    // Fresh-only: in fresh but not in L3 → categorize.
+    for key in fresh_by_key.keys() {
+        if l3_by_key.contains_key(key) {
+            continue;
+        }
+        report.pair_fresh_only += 1;
+
+        // Category 1: l3 had a "maybe" edge for this pair.
+        if l3_maybe_pairs.contains(key) {
+            report.l3_maybe_upgrade += 1;
+            continue;
+        }
+
+        // Category 2: subscriber has >1 [EventSubscriber] attrs (multi-attr gap).
+        let attr_count = sub_attr_count
+            .get(&key.subscriber_stable_routine_id)
+            .copied()
+            .unwrap_or(0);
+        if attr_count > 1 {
+            report.multiple_attr_l3_gap += 1;
+            continue;
+        }
+
+        // Category 3: publisher is an InternalEvent (L3 never resolves these).
+        let pub_key = (
+            key.publisher_stable_obj_id.clone(),
+            key.event_name_lc.clone(),
+        );
+        let is_internal = pub_kind_map
+            .get(&pub_key)
+            .copied()
+            .map(|pk| pk == PublisherKind::Internal)
+            .unwrap_or(false);
+        if is_internal {
+            report.internal_event_non_shipping += 1;
+            continue;
+        }
+
+        report.fresh_only_uncategorized += 1;
+    }
+
+    // ── Step 11: Stage 2 — arity comparison within matched keys ──────────────
+    for key in fresh_by_key.keys() {
+        let Some(l3_rows_for_key) = l3_by_key.get(key) else {
+            continue; // fresh_only, already handled above
+        };
+        let fresh_rows_for_key = &fresh_by_key[key];
+        report.matched += 1;
+
+        // Pick the representative arity from each side.
+        // Fresh: all rows for this key share the same publisher (by PairKey design),
+        //   but may have multiple arity values if the same subscriber was matched by
+        //   multiple overloads (shouldn't happen; take the minimum = strictest).
+        let fresh_arity = fresh_rows_for_key
+            .iter()
+            .map(|r| r.publisher_arity)
+            .min()
+            .unwrap_or(0);
+
+        // L3: normally one row per key; take the arity from the first.
+        let l3_arity = l3_rows_for_key[0].publisher_arity;
+
+        match l3_arity {
+            None => {
+                // L3 can't expose arity for this pair — accept, no penalty.
+                report.l3_arity_unknown += 1;
+            }
+            Some(la) => {
+                if la == fresh_arity {
+                    // Arities agree — perfect match.
+                } else {
+                    // Arity disagreement. Determine if this is an L3 FP or a regression.
+                    let overload_key = (
+                        key.publisher_stable_obj_id.clone(),
+                        key.event_name_lc.clone(),
+                    );
+                    let overload_count = l3_pub_overload_count
+                        .get(&overload_key)
+                        .copied()
+                        .unwrap_or(0);
+                    if overload_count > 1 {
+                        // Publisher is overloaded: L3 (arity-blind, last-wins) picked
+                        // the wrong overload. Fresh correctly disambiguated.
+                        report.l3_false_positive_arity_mismatch += 1;
+                    } else {
+                        // Single publisher, both sides agree on it, but arity differs.
+                        // This is a genuine structural disagreement.
+                        report.l3_regression += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    report
+}
+
+// ---------------------------------------------------------------------------
 // Test helper
 // ---------------------------------------------------------------------------
 

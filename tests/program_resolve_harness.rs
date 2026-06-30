@@ -6,10 +6,10 @@
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    DiffReport, ImplicitTriggerResolutionReport, MemberResolutionReport, ResolutionReport,
-    SiteMatch, canonical_call_edge_for_test, match_sites, run_harness,
-    run_implicit_trigger_harness, run_member_resolution_harness, run_resolution_harness,
-    run_site_harness,
+    DiffReport, EventFlowGateReport, ImplicitTriggerResolutionReport, MemberResolutionReport,
+    ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_event_flow_gate,
+    run_harness, run_implicit_trigger_harness, run_member_resolution_harness,
+    run_resolution_harness, run_site_harness,
 };
 
 // ---------------------------------------------------------------------------
@@ -776,6 +776,175 @@ fn _assert_diff_report_importable(_: DiffReport) {}
 
 #[allow(dead_code)]
 fn _assert_resolution_report_importable(_: ResolutionReport) {}
+
+// ---------------------------------------------------------------------------
+// Test 10 (Phase 4b Task 4): Fixture — EventFlow two-stage join projections
+// ---------------------------------------------------------------------------
+
+/// Verifies the structural two-stage event gate against the embedded fixture in
+/// `tests/fixtures/events/`.
+///
+/// The fixture has ONE app with:
+///   • codeunit 50100 EventPublisher  — two overloads of OnAfterPost (0- and
+///     1-param), OnBeforePost (BusinessEvent), OnInternalEvent (InternalEvent).
+///   • codeunit 50200 ManualSub       — subscribes to OnAfterPost with 0 params,
+///     EventSubscriberInstance=Manual.
+///   • codeunit 50201 SkipLicenseSub  — subscribes to OnBeforePost,
+///     SkipOnMissingLicense=true.
+///   • codeunit 50202 MultiAttrSub    — two [EventSubscriber] attrs (OnAfterPost
+///     + OnBeforePost on the same procedure). L3 reads only the first.
+///   • codeunit 50203 InternalSub     — subscribes to OnInternalEvent; L3 does
+///     not classify InternalEvent publishers as resolved.
+///
+/// Expected counts:
+///   • ManualSub → OnAfterPost: Stage-1 MATCH; L3 links to 1-param overload
+///     (last-wins, arity-blind); fresh correctly picks 0-param →
+///     l3_false_positive_arity_mismatch += 1.
+///   • MultiAttrSub → OnAfterPost (first attr): Stage-1 MATCH; same arity-FP
+///     as ManualSub (L3 again links to the 1-param overload) →
+///     l3_false_positive_arity_mismatch += 1 (total = 2).
+///   • MultiAttrSub → OnBeforePost (second attr): pair_fresh_only; L3 reads
+///     only the first attr, so this subscription is invisible to L3 →
+///     multiple_attr_l3_gap = 1.
+///   • SkipLicenseSub → OnBeforePost: Stage-1 MATCH, arities agree.
+///   • InternalSub → OnInternalEvent: pair_fresh_only; the EventPublisher object
+///     IS found by L3 (same workspace) but OnInternalEvent has kind="procedure"
+///     not "event-publisher" → L3 emits a "maybe" edge → l3_maybe_upgrade = 1
+///     (caught before internal_event_non_shipping; internal_event_non_shipping=0).
+///   • pair_l3_only = 0, l3_regression = 0, fresh_only_uncategorized = 0,
+///     fresh_unprojectable = 0, l3_unprojectable = 0.
+#[test]
+fn event_fixture_two_stage_join() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/events");
+
+    let report = run_event_flow_gate(&fixture);
+
+    eprintln!("event fixture gate report: {report:?}");
+
+    // Zero-tolerance
+    assert_eq!(
+        report.fresh_unprojectable, 0,
+        "fresh_unprojectable: {report:?}"
+    );
+    assert_eq!(report.l3_unprojectable, 0, "l3_unprojectable: {report:?}");
+    assert_eq!(report.pair_l3_only, 0, "pair_l3_only: {report:?}");
+    assert_eq!(report.l3_regression, 0, "l3_regression: {report:?}");
+    assert_eq!(
+        report.fresh_only_uncategorized, 0,
+        "fresh_only_uncategorized: {report:?}"
+    );
+
+    // Structural assertions
+    // Both ManualSub and MultiAttrSub (first attr) subscribe to OnAfterPost with
+    // 0 params; L3 (last-wins, arity-blind) links both to the 1-param overload.
+    assert_eq!(
+        report.l3_false_positive_arity_mismatch, 2,
+        "L3 over-links both 0-param subscribers to the 1-param OnAfterPost overload: {report:?}"
+    );
+    assert_eq!(
+        report.multiple_attr_l3_gap, 1,
+        "MultiAttrSub→OnBeforePost: second [EventSubscriber] attr L3 misses: {report:?}"
+    );
+    // InternalSub is caught by l3_maybe_upgrade (L3 creates a "maybe" edge because
+    // the publisher object IS found but InternalEvent isn't classified as event-publisher).
+    assert_eq!(
+        report.l3_maybe_upgrade, 1,
+        "InternalSub→OnInternalEvent: L3 emits maybe edge (object found, not real pub): {report:?}"
+    );
+    assert_eq!(
+        report.internal_event_non_shipping, 0,
+        "internal_event_non_shipping should be 0 (InternalSub caught by l3_maybe_upgrade first): {report:?}"
+    );
+
+    // Determinism
+    assert_eq!(
+        report,
+        run_event_flow_gate(&fixture),
+        "must be deterministic"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 11 (Phase 4b Task 4): CDO — EventFlow gate vs L3 oracle
+// ---------------------------------------------------------------------------
+
+/// Phase-4b EventFlow gate: proves the fresh EventFlow projection matches or
+/// beats L3's event graph on a real Business Central workspace (CDO).
+///
+/// Five zero-tolerance assertions:
+///   • `pair_l3_only == 0`: every L3-resolved (pub,event,sub) triple is matched
+///     by a fresh EventFlow route — arity-agnostic recall guard.
+///   • `l3_regression == 0`: no matched pair has a GENUINE arity disagreement
+///     (where BOTH sides expose arity and they differ on a single-publisher event).
+///   • `fresh_only_uncategorized == 0`: every fresh-only pair is categorized as
+///     l3_maybe_upgrade / multiple_attr_l3_gap / internal_event_non_shipping.
+///   • `fresh_unprojectable == 0`: every fresh EventFlow Routine route can be
+///     projected to a full PairKey (no stable-id alignment failure).
+///   • `l3_unprojectable == 0`: every L3 resolved edge can be projected to a
+///     full PairKey.
+///
+/// Informational: prints the full machine-categorized breakdown.
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase4b_event_flow() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_event_flow_gate(&ws);
+
+    eprintln!(
+        "EventFlowGateReport:\n\
+         fresh_event_edge_count={} fresh_event_row_count={} l3_event_row_count={}\n\
+         matched={}\n\
+         pair_l3_only={} pair_fresh_only={}\n\
+         l3_maybe_upgrade={} multiple_attr_l3_gap={} internal_event_non_shipping={}\n\
+         fresh_only_uncategorized={}\n\
+         l3_false_positive_arity_mismatch={} l3_arity_unknown={} l3_regression={}\n\
+         fresh_unprojectable={} l3_unprojectable={}",
+        report.fresh_event_edge_count,
+        report.fresh_event_row_count,
+        report.l3_event_row_count,
+        report.matched,
+        report.pair_l3_only,
+        report.pair_fresh_only,
+        report.l3_maybe_upgrade,
+        report.multiple_attr_l3_gap,
+        report.internal_event_non_shipping,
+        report.fresh_only_uncategorized,
+        report.l3_false_positive_arity_mismatch,
+        report.l3_arity_unknown,
+        report.l3_regression,
+        report.fresh_unprojectable,
+        report.l3_unprojectable,
+    );
+
+    assert_eq!(
+        report.fresh_unprojectable, 0,
+        "fresh_unprojectable: {report:?}"
+    );
+    assert_eq!(report.l3_unprojectable, 0, "l3_unprojectable: {report:?}");
+    assert_eq!(report.pair_l3_only, 0, "pair_l3_only: {report:?}");
+    assert_eq!(report.l3_regression, 0, "l3_regression: {report:?}");
+    assert_eq!(
+        report.fresh_only_uncategorized, 0,
+        "fresh_only_uncategorized: {report:?}"
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(
+        report,
+        run_event_flow_gate(&ws),
+        "run_event_flow_gate must be deterministic"
+    );
+}
+
+#[allow(dead_code)]
+fn _assert_event_flow_gate_report_importable(_: EventFlowGateReport) {}
 
 #[allow(dead_code)]
 fn _assert_member_report_importable(_: MemberResolutionReport) {}
