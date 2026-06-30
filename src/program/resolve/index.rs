@@ -433,6 +433,7 @@ mod tests {
                 name_lc: name.to_ascii_lowercase(),
                 enclosing_member_lc: None,
                 params_count: 0,
+                sig_fp: 0,
             },
             name: name.to_string(),
             is_trigger: false,
@@ -441,6 +442,8 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
         }
     }
 
@@ -456,6 +459,7 @@ mod tests {
                 name_lc: name.to_ascii_lowercase(),
                 enclosing_member_lc: None,
                 params_count: params,
+                sig_fp: 0,
             },
             name: name.to_string(),
             is_trigger: false,
@@ -464,6 +468,8 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: Some(kind),
+            abi_routine_kind: None,
+            abi_event_kind: None,
         }
     }
 
@@ -480,6 +486,7 @@ mod tests {
                 name_lc: name.to_ascii_lowercase(),
                 enclosing_member_lc: None,
                 params_count: params,
+                sig_fp: 0,
             },
             name: name.to_string(),
             is_trigger: false,
@@ -488,6 +495,8 @@ mod tests {
             event_subscribers: subs,
             subscriber_instance_manual: manual,
             publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
         }
     }
 
@@ -748,6 +757,7 @@ mod tests {
             name_lc: "publisher".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             idx.subscribers_of(&fake_pub).is_empty(),
@@ -775,6 +785,7 @@ mod tests {
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
 
         let (graph, _, _) = build_event_fixture(
@@ -820,12 +831,14 @@ mod tests {
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         let pub_onbeforex_id = RoutineNodeId {
             object: pub_id.clone(),
             name_lc: "onbeforex".to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
 
         let (graph, _, _) = build_event_fixture(
@@ -867,6 +880,7 @@ mod tests {
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
 
         let mut sa = sub_args("pub", "onafterx");
@@ -913,12 +927,14 @@ mod tests {
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 1,
+            sig_fp: 0,
         };
         let pub_onafterx_2param_id = RoutineNodeId {
             object: pub_id.clone(),
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 2,
+            sig_fp: 0,
         };
 
         // Subscriber params=0: both overloads satisfy >=0 but neither equals 0.
@@ -990,12 +1006,14 @@ mod tests {
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         let pub_onafterx_1param_id = RoutineNodeId {
             object: pub_id.clone(),
             name_lc: "onafterx".to_string(),
             enclosing_member_lc: None,
             params_count: 1,
+            sig_fp: 0,
         };
 
         // Subscriber params=0: both >=0, but exactly ONE has params==0.

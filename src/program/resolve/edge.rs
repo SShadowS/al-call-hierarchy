@@ -22,6 +22,37 @@ use crate::program::node::{AppRef, RoutineNodeId};
 /// Caller / target identity is a 1B.1 app-qualified routine node.
 pub type NodeId = RoutineNodeId;
 
+/// The kind of an ABI-boundary routine for routing and auditability.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum AbiRoutineKind {
+    Procedure,
+    EventPublisher,
+    EventSubscriber,
+}
+
+/// The event classification for an ABI event publisher.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum AbiEventKind {
+    None,
+    Integration,
+    Business,
+    Internal,
+}
+
+/// Structured, stable identity of an ABI-boundary routine.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AbiRoutineKey {
+    pub app: AppRef,
+    pub object_type: String,
+    pub object_number: i64,
+    pub object_name_lc: String,
+    pub routine_name_lc: String,
+    pub params_count: usize,
+    pub param_type_fp: u64,
+    pub routine_kind: AbiRoutineKind,
+    pub event_kind: AbiEventKind,
+}
+
 /// A platform builtin's catalog identity (clean-room catalog id; Phase 2+).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BuiltinId(pub String);
@@ -110,10 +141,9 @@ pub enum Condition {
 pub enum RouteTarget {
     Routine(NodeId),
     Builtin(BuiltinId),
-    /// Known public boundary whose body is unavailable — retains symbol identity.
+    /// Known public boundary whose body is unavailable — retains structured identity.
     AbiSymbol {
-        app: AppRef,
-        symbol_key: String,
+        key: AbiRoutineKey,
     },
     /// Genuine failure only — pairs with `Evidence::Unknown`.
     Unresolved,
@@ -127,8 +157,7 @@ pub enum Witness {
         span: (u32, u32),
     },
     AbiSymbol {
-        app: AppRef,
-        symbol_key: String,
+        key: AbiRoutineKey,
     },
     CatalogEntry {
         id: BuiltinId,
@@ -332,6 +361,7 @@ mod tests {
             name_lc: name.to_string(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         }
     }
 

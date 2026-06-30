@@ -1,5 +1,6 @@
 //! Builds a `ProgramGraph` from an `AppSetSnapshot`.
 
+use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
 use crate::program::node::{AppRef, AppRegistry};
 use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
@@ -12,12 +13,13 @@ use crate::snapshot::{AppSetSnapshot, parse_snapshot};
 /// 1. Intern every app identity from the snapshot into an `AppRegistry`.
 /// 2. Deep-parse all source-bearing units (via `parse_snapshot`) and extract
 ///    object + routine nodes.
+/// 2b. Ingest SymbolOnly dep ABI nodes from `abi_cache`.
 /// 3. Wire the real dependency topology from each unit's `declared_deps`
 ///    (GUID-match preferred; name+version fallback; deps absent from the
 ///    snapshot are silently skipped — open-world assumption).
 /// 4. Sort `objects` and `routines` by node-id for determinism.
 /// 5. Build the `ObjectIndex` from the sorted `objects`.
-pub fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph {
+pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> ProgramGraph {
     // ── Step 1: intern all app identities ────────────────────────────────────
     let mut apps = AppRegistry::default();
     let app_refs: Vec<AppRef> = snap.apps.iter().map(|u| apps.intern(&u.id)).collect();
@@ -39,6 +41,18 @@ pub fn build_program_graph(snap: &AppSetSnapshot) -> ProgramGraph {
                 &mut routines,
             );
         }
+    }
+
+    // ── Step 2b: ingest SymbolOnly dep ABI nodes ─────────────────────────────
+    for unit in &snap.apps {
+        if unit.source.is_some() {
+            continue;
+        }
+        let app_ref = apps.intern(&unit.id);
+        let (new_objs, new_routs) =
+            crate::program::abi_ingest::ingest_abi(unit, app_ref, abi_cache);
+        objects.extend(new_objs);
+        routines.extend(new_routs);
     }
 
     // ── Step 3: wire real dependency topology ────────────────────────────────
@@ -116,7 +130,8 @@ mod tests {
         .build()
         .expect("snapshot");
 
-        let g = build_program_graph(&snap);
+        let cache = AbiCache::new();
+        let g = build_program_graph(&snap, &cache);
 
         assert!(!g.objects.is_empty(), "expected objects from CDO workspace");
 

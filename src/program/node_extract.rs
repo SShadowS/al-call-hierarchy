@@ -3,6 +3,7 @@
 use al_syntax::ir::{AlFile, RoutineKind};
 
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::{
     ParsedSubscriberArgs, PublisherKind, is_event_publisher, parse_event_subscriber_ir,
     read_event_subscriber_instance,
@@ -52,6 +53,10 @@ pub struct RoutineNode {
     /// The event-publisher kind when this routine carries an `[IntegrationEvent]`,
     /// `[BusinessEvent]`, or `[InternalEvent]` attribute; `None` otherwise.
     pub publisher_kind: Option<PublisherKind>,
+    /// ABI-only: the routine kind for ABI-boundary routing. `None` for source routines.
+    pub abi_routine_kind: Option<AbiRoutineKind>,
+    /// ABI-only: the event kind for ABI-boundary publisher annotation. `None` for source routines.
+    pub abi_event_kind: Option<AbiEventKind>,
 }
 
 pub fn extract_nodes(
@@ -102,6 +107,7 @@ pub fn extract_nodes(
                         .as_ref()
                         .map(|(n, _)| n.to_ascii_lowercase()),
                     params_count: r.params.len(),
+                    sig_fp: 0,
                 },
                 name: r.name.clone(),
                 is_trigger: matches!(r.kind, RoutineKind::Trigger),
@@ -110,6 +116,8 @@ pub fn extract_nodes(
                 event_subscribers,
                 subscriber_instance_manual,
                 publisher_kind,
+                abi_routine_kind: None,
+                abi_event_kind: None,
             });
         }
     }

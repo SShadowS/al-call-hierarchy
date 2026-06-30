@@ -80,6 +80,13 @@ pub struct ObjectNodeId {
     pub key: ObjKey,
 }
 
+impl ObjectNodeId {
+    /// True when this object was declared with numeric id `n`.
+    pub fn id_equals_number(&self, n: i64) -> bool {
+        matches!(&self.key, ObjKey::Id(k) if *k == n)
+    }
+}
+
 /// Canonical identity of a routine within one object. `name_lc` is lowercased
 /// (AL identifiers are case-insensitive). `enclosing_member_lc` is the
 /// lowercased name of the field/member that a member-trigger is nested in (e.g.
@@ -90,6 +97,11 @@ pub struct ObjectNodeId {
 /// AL overloads (same name, different arity) so each overload maps to a unique
 /// node. For SymbolOnly (dep boundary) routines where params are unavailable,
 /// `params_count` is 0 and arity checking is bypassed in resolution.
+/// `sig_fp` is a stable FNV-1a fingerprint of the parameter type-text sequence.
+/// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
+/// two routines share the same `name_lc` AND `params_count` but differ in param
+/// types. Together with `name_lc` and `params_count`, extends `RoutineNodeId` to
+/// a total discriminator for ABI overloads.
 /// `None < Some(…)` under `Ord`, so object-level triggers sort before field
 /// triggers — intentional.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -98,6 +110,11 @@ pub struct RoutineNodeId {
     pub name_lc: String,
     pub enclosing_member_lc: Option<String>,
     pub params_count: usize,
+    /// Stable fingerprint of the parameter type-text sequence (FNV-1a hash).
+    /// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
+    /// two routines share the same `name_lc` AND `params_count` but differ in
+    /// param types. Extends `RoutineNodeId` to a total discriminator.
+    pub sig_fp: u64,
 }
 
 #[cfg(test)]

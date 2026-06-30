@@ -33,13 +33,14 @@
 use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
-use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
+use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
-    BuiltinId, CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, OpenWorldReason, Route,
-    RouteTarget, SetCompleteness, SiteId, SourcePos, Witness, callee_fp,
+    AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
+    EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
+    Witness, callee_fp,
 };
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
@@ -104,18 +105,26 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
         // return Opaque rather than Unknown.  This preserves identity across the
         // boundary and classifies the route as `Resolved` (not `Unknown`) in the
         // obligation metric, matching L3's External treatment of dep symbols.
-        let symbol_key = format!("{:?}::{}", rid.object.kind, rid.name_lc);
+        let (obj_num, obj_name_lc) = match &rid.object.key {
+            ObjKey::Id(n) => (*n, String::new()),
+            ObjKey::Name(s) => (0i64, s.clone()),
+        };
+        let key = AbiRoutineKey {
+            app: rid.object.app,
+            object_type: format!("{:?}", rid.object.kind).to_ascii_lowercase(),
+            object_number: obj_num,
+            object_name_lc: obj_name_lc,
+            routine_name_lc: rid.name_lc.clone(),
+            params_count: rid.params_count,
+            param_type_fp: rid.sig_fp,
+            routine_kind: AbiRoutineKind::Procedure,
+            event_kind: AbiEventKind::None,
+        };
         Route {
-            target: RouteTarget::AbiSymbol {
-                app: rid.object.app,
-                symbol_key: symbol_key.clone(),
-            },
+            target: RouteTarget::AbiSymbol { key: key.clone() },
             evidence: Evidence::Opaque,
             conditions: vec![],
-            witness: Witness::AbiSymbol {
-                app: rid.object.app,
-                symbol_key,
-            },
+            witness: Witness::AbiSymbol { key },
         }
     } else {
         // Source-tier BodyMap miss: integration bug.  Surface it as Unknown so
@@ -281,15 +290,12 @@ fn entry_trigger_name(kind: ObjectKind) -> &'static str {
 }
 
 /// Build a single Opaque boundary route (target exists but is not in our source).
-fn opaque_boundary_route(app: AppRef, symbol_key: String) -> Route {
+fn opaque_boundary_route(key: AbiRoutineKey) -> Route {
     Route {
-        target: RouteTarget::AbiSymbol {
-            app,
-            symbol_key: symbol_key.clone(),
-        },
+        target: RouteTarget::AbiSymbol { key: key.clone() },
         evidence: Evidence::Opaque,
         conditions: vec![],
-        witness: Witness::AbiSymbol { app, symbol_key },
+        witness: Witness::AbiSymbol { key },
     }
 }
 
@@ -352,11 +358,26 @@ pub fn resolve_object_run(
 
     let Some(target_obj) = target_obj else {
         // Target is named/numbered but absent from the graph: not-in-source boundary.
-        let symbol_key = format!("{:?}::{}", object_kind, target_ref);
+        let (obj_num, obj_name_lc) = if target_is_name {
+            (0i64, target_ref.to_ascii_lowercase())
+        } else {
+            (target_ref.parse::<i64>().unwrap_or(0), String::new())
+        };
+        let key = AbiRoutineKey {
+            app: from,
+            object_type: format!("{:?}", object_kind).to_ascii_lowercase(),
+            object_number: obj_num,
+            object_name_lc: obj_name_lc,
+            routine_name_lc: entry_trigger_name(object_kind).to_string(),
+            params_count: 0,
+            param_type_fp: 0,
+            routine_kind: AbiRoutineKind::Procedure,
+            event_kind: AbiEventKind::None,
+        };
         return (
             DispatchShape::Exact,
             SetCompleteness::Complete,
-            vec![opaque_boundary_route(from, symbol_key)],
+            vec![opaque_boundary_route(key)],
         );
     };
 
@@ -372,11 +393,25 @@ pub fn resolve_object_run(
 
     let Some(entry_rid) = entry_rid else {
         // Trigger not found in index — Opaque (e.g. an object with no explicit trigger).
-        let symbol_key = target_obj.name.clone();
+        let (obj_num, obj_name_lc) = match &target_obj.id.key {
+            ObjKey::Id(n) => (*n, String::new()),
+            ObjKey::Name(s) => (0i64, s.clone()),
+        };
+        let key = AbiRoutineKey {
+            app: target_obj.id.app,
+            object_type: format!("{:?}", target_obj.id.kind).to_ascii_lowercase(),
+            object_number: obj_num,
+            object_name_lc: obj_name_lc,
+            routine_name_lc: trigger_name.to_string(),
+            params_count: 0,
+            param_type_fp: 0,
+            routine_kind: AbiRoutineKind::Procedure,
+            event_kind: AbiEventKind::None,
+        };
         return (
             DispatchShape::Exact,
             SetCompleteness::Complete,
-            vec![opaque_boundary_route(target_obj.id.app, symbol_key)],
+            vec![opaque_boundary_route(key)],
         );
     };
 
@@ -686,10 +721,22 @@ pub fn resolve_member(
                     )
                 } else {
                     // OnRun not indexed — Opaque boundary (object exists, trigger absent).
-                    (
-                        DispatchShape::Exact,
-                        vec![opaque_boundary_route(target_id.app, name_lc.clone())],
-                    )
+                    let (obj_num, obj_name_lc) = match &target_id.key {
+                        ObjKey::Id(n) => (*n, String::new()),
+                        ObjKey::Name(s) => (0i64, s.clone()),
+                    };
+                    let key = AbiRoutineKey {
+                        app: target_id.app,
+                        object_type: format!("{:?}", target_id.kind).to_ascii_lowercase(),
+                        object_number: obj_num,
+                        object_name_lc: obj_name_lc,
+                        routine_name_lc: "onrun".to_string(),
+                        params_count: 0,
+                        param_type_fp: 0,
+                        routine_kind: AbiRoutineKind::Procedure,
+                        event_kind: AbiEventKind::None,
+                    };
+                    (DispatchShape::Exact, vec![opaque_boundary_route(key)])
                 };
             }
 

@@ -1,6 +1,7 @@
 //! Whole-program semantic graph built from a parsed `AppSetSnapshot`
 //! (charter §3). Plan 1B.1 = nodes + app-qualified identity + topology index.
 
+pub mod abi_ingest;
 pub mod build;
 pub mod graph;
 pub mod node;

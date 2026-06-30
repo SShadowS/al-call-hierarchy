@@ -213,11 +213,15 @@ fn project_target(target: &RouteTarget, apps: &AppRegistry) -> Option<CanonicalT
             object_lc: bid.clone(),
             routine_lc: None,
         }),
-        RouteTarget::AbiSymbol { app, symbol_key } => Some(CanonicalTarget {
+        RouteTarget::AbiSymbol { key } => Some(CanonicalTarget {
             kind: 254,
-            app: Some(app_guid(apps, *app)),
-            object_lc: symbol_key.clone(),
-            routine_lc: None,
+            app: Some(app_guid(apps, key.app)),
+            object_lc: if key.object_number != 0 {
+                format!("{}", key.object_number)
+            } else {
+                key.object_name_lc.clone()
+            },
+            routine_lc: Some(key.routine_name_lc.clone()),
         }),
     }
 }
@@ -705,7 +709,7 @@ pub fn run_harness(workspace_root: &Path) -> DiffReport {
     };
 
     // ── Step 2: Build program graph (interns apps + extracts nodes) ──────────
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
 
     // ── Step 3: Parse snapshot for the stub resolver (second parse pass) ────
     // `build_program_graph` parses internally for node extraction; a second
@@ -847,7 +851,7 @@ pub fn run_site_harness(workspace_root: &Path) -> DiffReport {
         .unwrap_or_default();
 
     // ── Step 2: Build program graph ──────────────────────────────────────────
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
 
     // ── Step 3: Parse snapshot ───────────────────────────────────────────────
     let parsed = parse_snapshot(&snap);
@@ -1340,7 +1344,7 @@ pub fn run_resolution_harness(workspace_root: &Path) -> ResolutionReport {
         .unwrap_or_default();
 
     // ── Step 2: Build program graph + resolve index + body map ───────────────
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
     let body_map = BodyMap::build(&graph, &parsed);
@@ -1913,7 +1917,7 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
         .unwrap_or_default();
 
     // ── Step 2: Build graph + index + body map ───────────────────────────────
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
     let body_map = BodyMap::build(&graph, &parsed);
@@ -2706,7 +2710,7 @@ pub fn run_implicit_trigger_harness(workspace_root: &Path) -> ImplicitTriggerRes
         .unwrap_or_default();
 
     // ── Step 2: Build graph + index + body map ───────────────────────────────
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
     let body_map = BodyMap::build(&graph, &parsed);
@@ -3258,7 +3262,7 @@ pub fn run_event_flow_gate(workspace_root: &Path) -> EventFlowGateReport {
         Err(_) => return report,
     };
 
-    let graph = build_program_graph(&snap);
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
     let body_map = BodyMap::build(&graph, &parsed);

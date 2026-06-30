@@ -43,6 +43,8 @@ pub struct AppUnit {
     pub declared_deps: Vec<crate::dependencies::AppDependency>,
     /// Parsed `.app` symbol table (None for the workspace itself).
     pub abi: Option<ParsedAppPackage>,
+    /// Path to the `.app` file (None for the workspace unit).
+    pub app_path: Option<PathBuf>,
 }
 
 /// The full set of apps visible in a workspace, keyed by identity.
@@ -125,6 +127,7 @@ impl SnapshotBuilder {
             compilation: ws_compilation,
             declared_deps: ws_declared_deps,
             abi: None,
+            app_path: None,
         };
 
         // ------------------------------------------------------------------
@@ -212,6 +215,7 @@ impl SnapshotBuilder {
                 compilation: dep_compilation,
                 declared_deps: dep_declared,
                 abi: Some(rd.package),
+                app_path: Some(rd.app_path.clone()),
             });
         }
 

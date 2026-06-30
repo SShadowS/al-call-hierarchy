@@ -62,6 +62,7 @@ impl<'a> BodyMap<'a> {
                                 .as_ref()
                                 .map(|(n, _)| n.to_ascii_lowercase()),
                             params_count: routine.params.len(),
+                            sig_fp: 0,
                         };
                         // Last-write wins on true same-key collision (same
                         // object + name + enclosing_member); distinct
@@ -169,6 +170,7 @@ codeunit 50100 "My Codeunit"
             name_lc: "dosomething".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         let decl = body_map.get(&r1).expect("DoSomething must be found");
         assert_eq!(decl.name, "DoSomething");
@@ -178,6 +180,7 @@ codeunit 50100 "My Codeunit"
             name_lc: "doother".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         let decl2 = body_map.get(&r2).expect("DoOther must be found");
         assert_eq!(decl2.name, "DoOther");
@@ -188,6 +191,7 @@ codeunit 50100 "My Codeunit"
             name_lc: "notexist".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             body_map.get(&absent).is_none(),
@@ -222,6 +226,7 @@ tableextension 50100 "Customer Ext" extends Customer
             name_lc: "extrahelper".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         // Verify the routine is found and correctly indexed.
         assert!(
@@ -315,12 +320,14 @@ tableextension 50100 "Cust Ext" extends Customer
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("foo".into()),
             params_count: 0,
+            sig_fp: 0,
         };
         let baz_id = RoutineNodeId {
             object: obj_id.clone(),
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("baz".into()),
             params_count: 0,
+            sig_fp: 0,
         };
 
         // The two RoutineNodeIds must be distinct (the discriminator must differ).

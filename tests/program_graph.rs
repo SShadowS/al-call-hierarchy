@@ -14,7 +14,10 @@ fn cdo_program_graph_is_app_qualified_and_panic_free() {
     }
     .build()
     .expect("snapshot");
-    let g = al_call_hierarchy::program::build_program_graph(&snap);
+    let g = al_call_hierarchy::program::build_program_graph(
+        &snap,
+        &al_call_hierarchy::program::abi_ingest::AbiCache::new(),
+    );
     // Print diagnostic counts for the task report.
     let apps: std::collections::BTreeSet<_> = g.objects.iter().map(|o| o.id.app).collect();
     println!(

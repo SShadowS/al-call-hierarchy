@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3a Task 1: Cached overload-safe ABI ingestion + structured `AbiRoutineKey`**
+  (`src/program/abi_ingest.rs` NEW, `src/program/build.rs`, `src/program/node.rs`,
+  `src/program/node_extract.rs`, `src/program/resolve/edge.rs`,
+  `src/program/resolve/resolver.rs`, `src/snapshot/snapshot.rs`) —
+  adds `sig_fp: u64` (FNV-1a fingerprint of param-type sequence) to `RoutineNodeId`
+  so same-name overloads with different parameter types are distinct nodes;
+  replaces stringly-typed `AbiSymbol { app, symbol_key }` in `RouteTarget` and
+  `Witness` with structured `AbiRoutineKey { app, object_type, object_number,
+  object_name_lc, routine_name_lc, params_count, param_type_fp, routine_kind,
+  event_kind }`; introduces `AbiCache` (process-level `Mutex<HashMap>` keyed by
+  `(guid, name, publisher, version)`) and `ingest_abi` which parses SymbolOnly dep
+  `.app` SymbolReference.json into `ObjectNode` + `RoutineNode` entries during
+  `build_program_graph`; adds `app_path: Option<PathBuf>` to `AppUnit`;
+  adds `abi_routine_kind` + `abi_event_kind` fields to `RoutineNode` (always `None`
+  for source routines). Four unit tests cover: dep nodes in graph, workspace-only
+  graph unchanged, cache-hit across rebuild cycles, local/internal skip.
+
 - **Phase-4b Task 5: Independent event-route teeth + honest framing**
   (`src/program/resolve/differential.rs`, `tests/program_resolve_harness.rs`) —
   adds `verify_event_subscriber_route`: for each fresh EventFlow `Routine` route,

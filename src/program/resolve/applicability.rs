@@ -322,6 +322,7 @@ mod tests {
                 name_lc: name.to_ascii_lowercase(),
                 enclosing_member_lc: enclosing.map(|s| s.to_ascii_lowercase()),
                 params_count: params,
+                sig_fp: 0,
             },
             name: name.to_string(),
             is_trigger: enclosing.is_some()
@@ -334,6 +335,8 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
         }
     }
 
@@ -396,6 +399,7 @@ mod tests {
             name_lc: "bar".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
@@ -418,6 +422,7 @@ mod tests {
             name_lc: "baz".into(),
             enclosing_member_lc: None,
             params_count: 1,
+            sig_fp: 0,
         };
         assert!(
             !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
@@ -440,6 +445,7 @@ mod tests {
             name_lc: "bar".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
@@ -464,6 +470,7 @@ mod tests {
             name_lc: "bar".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !interface_route_applicable("ifoo", "bar", 0, &target, &graph, &index),
@@ -531,6 +538,7 @@ mod tests {
             name_lc: "oninsert".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(implicit_trigger_route_applicable(
             &ctx, &target, &graph, &index
@@ -551,6 +559,7 @@ mod tests {
             name_lc: "oninsert".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
@@ -572,6 +581,7 @@ mod tests {
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("no.".into()),
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(implicit_trigger_route_applicable(
             &ctx, &target, &graph, &index
@@ -597,6 +607,7 @@ mod tests {
             name_lc: "oninsert".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
@@ -619,6 +630,7 @@ mod tests {
             name_lc: "onmodify".into(), // <— wrong trigger
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
@@ -642,6 +654,7 @@ mod tests {
             name_lc: "onvalidate".into(),
             enclosing_member_lc: Some("name".into()), // <— different field
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),
@@ -671,6 +684,7 @@ mod tests {
             name_lc: "oninsert".into(),
             enclosing_member_lc: None,
             params_count: 0,
+            sig_fp: 0,
         };
         assert!(
             !implicit_trigger_route_applicable(&ctx, &target, &graph, &index),

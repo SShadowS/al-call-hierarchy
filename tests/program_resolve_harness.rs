@@ -1016,6 +1016,7 @@ fn make_sub_rid(
         name_lc: routine_name_lc.to_string(),
         enclosing_member_lc: None,
         params_count: params,
+        sig_fp: 0,
     };
     (apps, rid)
 }
