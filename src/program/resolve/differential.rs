@@ -2433,6 +2433,594 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
 }
 
 // ---------------------------------------------------------------------------
+// Phase-4 ImplicitTrigger resolution gate
+// ---------------------------------------------------------------------------
+
+/// Extract the lowercased table name from an AL `"Record <TableName>"` type string.
+///
+/// Returns `None` for non-specific Record types (`RecordRef`, numeric scalars, etc.).
+/// The name is returned already-lowercased so callers can pass it directly to
+/// case-insensitive lookups.
+fn record_type_table_name_lc(ty: &str) -> Option<String> {
+    let lc_trim = ty.trim().to_ascii_lowercase();
+    // Must have "record " (with trailing space) to exclude RecordRef, RecordObject, etc.
+    let rest = lc_trim.strip_prefix("record ")?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    // Strip surrounding double-quotes (AL name quoting: `Record "Sales Line"`).
+    if rest.starts_with('"') && rest.ends_with('"') && rest.len() > 2 {
+        Some(rest[1..rest.len() - 1].to_string())
+    } else {
+        Some(rest.to_string())
+    }
+}
+
+/// Returns `true` iff `target_object` is `table_id` itself OR a
+/// `TableExtension` of it (looked up via `index.table_extensions_of`).
+///
+/// Used to classify FreshOnly `Validate` routes: with `RecordOpCtx.field = None`
+/// the full `implicit_trigger_route_applicable` always returns `false`, so we
+/// fall back to this coarser table-identity check to distinguish
+/// `fresh_ahead_validate_fanout` (on correct table) from `unverified_extra`
+/// (on an unrelated table — a genuine false edge).
+fn target_is_on_table_or_extension(
+    target_object: &crate::program::node::ObjectNodeId,
+    table_id: &crate::program::node::ObjectNodeId,
+    graph: &crate::program::graph::ProgramGraph,
+    index: &crate::program::resolve::index::ResolveIndex,
+) -> bool {
+    if target_object == table_id {
+        return true;
+    }
+    let table_name_lc: String = match &table_id.key {
+        crate::program::node::ObjKey::Name(s) => s.clone(),
+        crate::program::node::ObjKey::Id(_) => graph
+            .objects
+            .iter()
+            .find(|o| &o.id == table_id)
+            .map(|n| n.name.to_ascii_lowercase())
+            .unwrap_or_default(),
+    };
+    if table_name_lc.is_empty() {
+        return false;
+    }
+    index
+        .table_extensions_of(&table_name_lc)
+        .contains(target_object)
+}
+
+/// Phase-4 resolution report for `ImplicitTrigger` call sites.
+///
+/// Three zero-tolerance gates:
+/// - `regression_unexplained`: paired site where L3 has trigger targets but fresh has none.
+/// - `evidence_overclaim`: route with `Source`/`Abi`/`Catalog` evidence but no valid witness.
+/// - `unverified_extra`: FreshOnly site whose routes FAIL the applicability predicate and
+///   are NOT explained by `fresh_ahead_validate_fanout`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ImplicitTriggerResolutionReport {
+    /// Paired sites where fresh and L3 target sets agree.
+    pub matched: usize,
+    /// Paired regressions: L3 has trigger targets, fresh has none (must be 0).
+    pub regression_unexplained: usize,
+    /// Routes with invalid `Source`/`Abi`/`Catalog` evidence (must be 0).
+    pub evidence_overclaim: usize,
+    /// FreshOnly sites with routes that fail `implicit_trigger_route_applicable`
+    /// and are not explained by `fresh_ahead_validate_fanout` (must be 0).
+    pub unverified_extra: usize,
+    /// FreshOnly `insert`/`modify`/`delete` sites where all routes pass
+    /// `implicit_trigger_route_applicable` — legitimate fresh wins.
+    pub fresh_ahead_trigger: usize,
+    /// FreshOnly `validate` sites where all routes target `onvalidate` on the
+    /// correct table/extension — known over-approximation (field context unknown).
+    pub fresh_ahead_validate_fanout: usize,
+    /// Paired sites where L3 has empty targets but fresh has non-empty (fresh better).
+    pub verified_win: usize,
+    /// Paired sites where both sides have non-empty but differing target sets.
+    pub divergence: usize,
+    /// L3-only sites: fresh had no matching `ImplicitTrigger` edge.
+    pub missing_site: usize,
+    /// FreshOnly sites where fresh has empty targets (table has no triggers in scope).
+    pub extra_site: usize,
+    /// Sum of excess indices from `Unaligned` buckets.
+    pub unaligned: usize,
+    /// Total fresh `ImplicitTrigger` sites extracted from the workspace.
+    pub fresh_total: usize,
+    /// Total L3 `ImplicitTrigger`-in-scope edges.
+    pub l3_total: usize,
+}
+
+/// Project the L3 resolver's `DispatchKind::ImplicitTrigger` edges for the workspace.
+///
+/// The L3 `build_implicit_trigger_edges` uses `op.id` (a `PRecordOperation` id)
+/// as `callsite_id`.  To recover the call site's source span and callee-text
+/// fingerprint this function builds a reverse map `op.id → PCallSite` via
+/// `PCallSite.operation_id`.
+#[must_use]
+fn project_l3_implicit_trigger_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
+    use std::collections::HashMap;
+
+    use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use crate::engine::l3::l3_workspace::{
+        L3RecordOperation, assemble_and_resolve_workspace_default,
+    };
+    use crate::engine::l3::symbol_table::SymbolTable;
+    use crate::engine::l3::taxonomy::DispatchKind;
+
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return Vec::new();
+    };
+    let ws = &resolved.workspace;
+
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let resolved_calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+    let routine_by_id: HashMap<&str, &crate::engine::l3::l3_workspace::L3Routine> =
+        ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
+
+    // L3 ImplicitTrigger edges use PRecordOperation.id as callsite_id.
+    // Build a direct op.id → &L3RecordOperation map (NOT via PCallSite.operation_id,
+    // which is a separate numbering namespace: "{routine}/op{op_count+i}").
+    let mut op_by_id: HashMap<&str, &L3RecordOperation> = HashMap::new();
+    for routine in &ws.routines {
+        for op in &routine.record_operations {
+            op_by_id.insert(op.id.as_str(), op);
+        }
+    }
+
+    let mut edges: Vec<CanonicalEdge> = resolved_calls
+        .edges
+        .iter()
+        .filter(|edge| matches!(edge.dispatch_kind, DispatchKind::ImplicitTrigger))
+        .filter_map(|edge| {
+            let from_r = routine_by_id.get(edge.from.as_str())?;
+            let from = make_canonical_key(
+                from_r.app_guid.clone(),
+                from_r.object_type.to_ascii_lowercase(),
+                format!("{}", from_r.object_number),
+                from_r.name.to_ascii_lowercase(),
+            );
+
+            // ImplicitTrigger edges use PRecordOperation.id as callsite_id;
+            // look up the record op directly for its source_anchor and callee text.
+            let op = op_by_id.get(edge.callsite_id.as_str())?;
+            let a = &op.source_anchor;
+            let unit_str = a
+                .source_unit_id
+                .strip_prefix("ws:")
+                .unwrap_or(&a.source_unit_id)
+                .to_string();
+            let span = CanonicalSpan {
+                unit: unit_str,
+                start: SourcePos {
+                    line: a.start_line,
+                    col: a.start_column,
+                },
+                end: SourcePos {
+                    line: a.end_line,
+                    col: a.end_column,
+                },
+            };
+            // callee_fp must match the fresh side: fresh uses the raw Member expression
+            // text (e.g. "Rec.Insert"); L3RecordOperation stores the receiver name and
+            // op in the same original case → produce the same lowercased fingerprint.
+            let callee_text = format!("{}.{}", op.record_variable_name, op.op);
+            let fp = callee_fp(&callee_text);
+            let site = CanonicalSiteKey {
+                caller: from.clone(),
+                span,
+                callee_fp: fp,
+            };
+
+            let targets: BTreeSet<CanonicalTarget> = if let Some(to_id) = &edge.to {
+                if let Some(to_r) = routine_by_id.get(to_id.as_str()) {
+                    let mut set = BTreeSet::new();
+                    set.insert(CanonicalTarget {
+                        kind: object_kind_str_to_tag(&to_r.object_type.to_ascii_lowercase()),
+                        app: Some(to_r.app_guid.clone()),
+                        object_lc: format!("{}", to_r.object_number),
+                        routine_lc: Some(to_r.name.to_ascii_lowercase()),
+                    });
+                    set
+                } else {
+                    BTreeSet::new()
+                }
+            } else {
+                BTreeSet::new()
+            };
+
+            Some(CanonicalEdge {
+                from,
+                site,
+                kind: EdgeKind::ImplicitTrigger,
+                targets,
+            })
+        })
+        .collect();
+
+    edges.sort();
+    edges
+}
+
+/// Phase-4 ImplicitTrigger resolution harness: resolves every workspace
+/// `RecordOp` call site (`insert`/`modify`/`delete`/`validate`) via
+/// `resolve_implicit_trigger` and compares against the L3 oracle filtered to
+/// `DispatchKind::ImplicitTrigger`.
+///
+/// Table resolution per site:
+/// - `rec`/`xrec` in a `Table` object → the object IS the table.
+/// - `rec`/`xrec` in a `TableExtension` object → base table via
+///   `ObjectNode.extends_target`.
+/// - Named variable → linear search params → locals → object globals for a
+///   `Record <TableName>` type declaration.
+/// - All other cases (rec/xrec in Page/Codeunit, untyped vars, `RecordRef`,
+///   etc.) → skipped; those sites appear as L3-only (`missing_site`).
+///
+/// FreshOnly classification:
+/// - `validate` sites (`RecordOpCtx.field = None`): every route ALWAYS fails
+///   `implicit_trigger_route_applicable` (field mismatch); routes on the
+///   correct table/extension → `fresh_ahead_validate_fanout`, routes on an
+///   unrelated table → `unverified_extra`.
+/// - `insert`/`modify`/`delete` sites: applicability gate via
+///   `implicit_trigger_route_applicable` → pass → `fresh_ahead_trigger`,
+///   fail → `unverified_extra`.
+///
+/// Fail-closed: any error during setup returns a zero report.
+#[must_use]
+pub fn run_implicit_trigger_harness(workspace_root: &Path) -> ImplicitTriggerResolutionReport {
+    use std::collections::{HashMap, HashSet};
+
+    use al_syntax::ir::ObjectKind;
+
+    use crate::program::build::build_program_graph;
+    use crate::program::node::{ObjKey, ObjectNodeId};
+    use crate::program::node_extract::ObjectNode;
+    use crate::program::resolve::applicability::{
+        RecordOpCtx, RecordOpKind, RunTrigger, implicit_trigger_route_applicable,
+    };
+    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::edge::Route;
+    use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
+    use crate::program::resolve::index::ResolveIndex;
+    use crate::program::resolve::resolver::resolve_implicit_trigger;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    // ── Step 1: Build snapshot ───────────────────────────────────────────────
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return ImplicitTriggerResolutionReport::default(),
+    };
+
+    let ws_file_set: HashSet<String> = snap
+        .apps
+        .first()
+        .and_then(|u| u.source.as_ref())
+        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+        .unwrap_or_default();
+
+    // ── Step 2: Build graph + index + body map ───────────────────────────────
+    let graph = build_program_graph(&snap);
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+
+    // ── Step 3: Locate workspace app ─────────────────────────────────────────
+    let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
+        return ImplicitTriggerResolutionReport::default();
+    };
+    let ws_guid = graph.apps.resolve(ws_ref).guid.clone();
+
+    let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+        graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+
+    // ── Step 4: Resolve fresh ImplicitTrigger sites ──────────────────────────
+    // Parallel vecs kept in sync:
+    //   .0 fresh_canonical — canonical edge (EdgeKind::ImplicitTrigger)
+    //   .1 ctx             — RecordOpCtx for applicability gate
+    //   .2 routes          — original routes from resolve_implicit_trigger
+    type FreshEntry = (CanonicalEdge, RecordOpCtx, Vec<Route>);
+    let mut fresh_combined: Vec<FreshEntry> = Vec::new();
+    let mut evidence_overclaim = 0usize;
+
+    for unit in &parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        if app_ref != ws_ref {
+            continue;
+        }
+
+        for pf in &unit.files {
+            if !ws_file_set.contains(&pf.virtual_path) {
+                continue;
+            }
+
+            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+                let obj_key = match obj.id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                };
+                let obj_kind_str = object_kind_str(obj.kind);
+                let obj_lc = obj_key_lc(&obj_key);
+
+                let obj_node_id = ObjectNodeId {
+                    app: ws_ref,
+                    kind: obj.kind,
+                    key: obj_key.clone(),
+                };
+                let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+
+                let object_globals_rec_set: HashSet<String> = obj
+                    .globals
+                    .iter()
+                    .filter(|v| {
+                        v.ty.as_deref()
+                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                            .unwrap_or(false)
+                    })
+                    .map(|v| v.name.to_ascii_lowercase())
+                    .collect();
+
+                for (routine_idx, routine) in obj.routines.iter().enumerate() {
+                    let caller_key = make_canonical_key(
+                        ws_guid.clone(),
+                        obj_kind_str.clone(),
+                        obj_lc.clone(),
+                        routine.name.to_ascii_lowercase(),
+                    );
+
+                    let sites = extract_sites_for_routine(
+                        &pf.file,
+                        &pf.text,
+                        &pf.virtual_path,
+                        &object_globals_rec_set,
+                        obj_idx,
+                        routine_idx,
+                    );
+
+                    for site in &sites {
+                        let (receiver_text, op_lc) = match &site.shape {
+                            CalleeShape::RecordOp { receiver_text, op } => {
+                                (receiver_text.as_str(), op.as_str())
+                            }
+                            _ => continue, // Skip non-RecordOp sites
+                        };
+
+                        // Only trigger-firing ops (mirrors L3 trigger_mapping).
+                        let op_kind = match op_lc {
+                            "insert" => RecordOpKind::Insert,
+                            "modify" => RecordOpKind::Modify,
+                            "delete" => RecordOpKind::Delete,
+                            "validate" => RecordOpKind::Validate,
+                            _ => continue, // Non-trigger ops (findset, setrange, …)
+                        };
+
+                        // Resolve the table ObjectNodeId from the receiver expression.
+                        let recv_lc = receiver_text.to_ascii_lowercase();
+                        let table_id_opt: Option<ObjectNodeId> = if recv_lc == "rec"
+                            || recv_lc == "xrec"
+                        {
+                            match obj.kind {
+                                ObjectKind::Table => {
+                                    // The enclosing object IS the table.
+                                    obj_node_opt.map(|o| o.id.clone())
+                                }
+                                ObjectKind::TableExtension => {
+                                    // "Rec" refers to the base table.
+                                    obj_node_opt
+                                        .and_then(|o| o.extends_target.as_deref())
+                                        .and_then(|base| {
+                                            graph.resolve_object(ws_ref, ObjectKind::Table, base)
+                                        })
+                                        .map(|o| o.id.clone())
+                                }
+                                _ => None, // Page/Codeunit/… — implicit Rec can't be resolved here
+                            }
+                        } else {
+                            // Named receiver: params → locals → object globals.
+                            let resolve_record_ty = |ty_opt: Option<&str>| -> Option<ObjectNodeId> {
+                                let ty = ty_opt?;
+                                let table_name_lc = record_type_table_name_lc(ty)?;
+                                graph
+                                    .resolve_object(ws_ref, ObjectKind::Table, &table_name_lc)
+                                    .map(|o| o.id.clone())
+                            };
+                            routine
+                                .params
+                                .iter()
+                                .find(|p| p.name.to_ascii_lowercase() == recv_lc)
+                                .and_then(|p| resolve_record_ty(p.ty.as_deref()))
+                                .or_else(|| {
+                                    routine
+                                        .locals
+                                        .iter()
+                                        .find(|v| v.name.to_ascii_lowercase() == recv_lc)
+                                        .and_then(|v| resolve_record_ty(v.ty.as_deref()))
+                                })
+                                .or_else(|| {
+                                    obj.globals
+                                        .iter()
+                                        .find(|v| v.name.to_ascii_lowercase() == recv_lc)
+                                        .and_then(|v| resolve_record_ty(v.ty.as_deref()))
+                                })
+                        };
+
+                        let Some(table_id) = table_id_opt else {
+                            continue; // Table not resolved — skip (appears as L3-only)
+                        };
+
+                        let Some(table_node) = graph.objects.iter().find(|o| o.id == table_id)
+                        else {
+                            continue; // ObjectNode absent from graph — shouldn't happen
+                        };
+
+                        // Resolve triggers.
+                        let (_shape, _completeness, routes) =
+                            resolve_implicit_trigger(op_lc, table_node, &graph, &index, &body_map);
+
+                        // Evidence/witness contract check.
+                        for r in &routes {
+                            if !witness_contract_holds(r) {
+                                evidence_overclaim += 1;
+                            }
+                        }
+
+                        // Build RecordOpCtx for the FreshOnly applicability gate.
+                        // field = None: Validate field is unknown at this layer (option b —
+                        // categorise as fresh_ahead_validate_fanout).
+                        // run_trigger = Guarded: conservative (can't determine from shape).
+                        let ctx = RecordOpCtx {
+                            kind: op_kind,
+                            table: table_id.clone(),
+                            field: None,
+                            run_trigger: RunTrigger::Guarded,
+                        };
+
+                        let targets: BTreeSet<CanonicalTarget> = routes
+                            .iter()
+                            .filter_map(|r| project_target(&r.target, &graph.apps))
+                            .collect();
+
+                        let fp = callee_fp(&site.callee_text);
+                        let edge = CanonicalEdge {
+                            from: caller_key.clone(),
+                            site: CanonicalSiteKey {
+                                caller: caller_key.clone(),
+                                span: site.span.clone(),
+                                callee_fp: fp,
+                            },
+                            kind: EdgeKind::ImplicitTrigger,
+                            targets,
+                        };
+                        fresh_combined.push((edge, ctx, routes));
+                    }
+                }
+            }
+        }
+    }
+
+    fresh_combined.sort_by(|a, b| a.0.cmp(&b.0));
+    let fresh_ctxs: Vec<RecordOpCtx> = fresh_combined.iter().map(|(_, c, _)| c.clone()).collect();
+    let fresh_routes: Vec<Vec<Route>> = fresh_combined.iter().map(|(_, _, r)| r.clone()).collect();
+    let fresh_canonical: Vec<CanonicalEdge> =
+        fresh_combined.into_iter().map(|(e, _, _)| e).collect();
+
+    let fresh_total = fresh_canonical.len();
+
+    // ── Step 5: Project L3 ImplicitTrigger oracle ─────────────────────────
+    let l3_canonical = project_l3_implicit_trigger_in_scope(workspace_root);
+    let l3_total = l3_canonical.len();
+
+    // ── Step 6: Match sites ────────────────────────────────────────────────
+    let site_matches = match_sites(&fresh_canonical, &l3_canonical);
+
+    // ── Step 7: Bucket ─────────────────────────────────────────────────────
+    let mut matched = 0usize;
+    let mut regression_unexplained = 0usize;
+    let mut verified_win = 0usize;
+    let mut divergence = 0usize;
+    let mut missing_site = 0usize;
+    let mut extra_site = 0usize;
+    let mut fresh_ahead_trigger = 0usize;
+    let mut fresh_ahead_validate_fanout = 0usize;
+    let mut unverified_extra = 0usize;
+    let mut unaligned = 0usize;
+
+    for m in &site_matches {
+        match m {
+            SiteMatch::Paired(fi, li) => {
+                matched += 1;
+                let f = &fresh_canonical[*fi];
+                let l = &l3_canonical[*li];
+                match (f.targets.is_empty(), l.targets.is_empty()) {
+                    (true, true) => {}
+                    (false, true) => verified_win += 1,
+                    (true, false) => regression_unexplained += 1,
+                    (false, false) => {
+                        if f.targets != l.targets {
+                            divergence += 1;
+                        }
+                    }
+                }
+            }
+            SiteMatch::FreshOnly(fi) => {
+                let f = &fresh_canonical[*fi];
+                if f.targets.is_empty() {
+                    extra_site += 1;
+                } else {
+                    let ctx = &fresh_ctxs[*fi];
+                    let routes = &fresh_routes[*fi];
+
+                    if matches!(ctx.kind, RecordOpKind::Validate) {
+                        // With field=None, implicit_trigger_route_applicable always returns
+                        // false for Validate.  Classify by table identity instead.
+                        let all_on_correct_table = routes.iter().all(|r| match &r.target {
+                            RouteTarget::Routine(rid) => target_is_on_table_or_extension(
+                                &rid.object,
+                                &ctx.table,
+                                &graph,
+                                &index,
+                            ),
+                            RouteTarget::Unresolved => true,
+                            _ => false,
+                        });
+                        if all_on_correct_table {
+                            fresh_ahead_validate_fanout += 1;
+                        } else {
+                            unverified_extra += 1;
+                        }
+                    } else {
+                        // Insert / Modify / Delete: full applicability gate.
+                        let all_pass = routes.iter().all(|r| match &r.target {
+                            RouteTarget::Routine(rid) => {
+                                implicit_trigger_route_applicable(ctx, rid, &graph, &index)
+                            }
+                            RouteTarget::Unresolved => true,
+                            _ => false,
+                        });
+                        if all_pass {
+                            fresh_ahead_trigger += 1;
+                        } else {
+                            unverified_extra += 1;
+                        }
+                    }
+                }
+            }
+            SiteMatch::L3Only(_) => {
+                missing_site += 1;
+            }
+            SiteMatch::Unaligned(fs, ls) => {
+                unaligned += fs.len() + ls.len();
+            }
+        }
+    }
+
+    ImplicitTriggerResolutionReport {
+        matched,
+        regression_unexplained,
+        evidence_overclaim,
+        unverified_extra,
+        fresh_ahead_trigger,
+        fresh_ahead_validate_fanout,
+        verified_win,
+        divergence,
+        missing_site,
+        extra_site,
+        unaligned,
+        fresh_total,
+        l3_total,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test helper
 // ---------------------------------------------------------------------------
 

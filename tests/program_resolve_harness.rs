@@ -6,8 +6,9 @@
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
 use al_call_hierarchy::program::resolve::differential::{
-    DiffReport, MemberResolutionReport, ResolutionReport, SiteMatch, canonical_call_edge_for_test,
-    match_sites, run_harness, run_member_resolution_harness, run_resolution_harness,
+    DiffReport, ImplicitTriggerResolutionReport, MemberResolutionReport, ResolutionReport,
+    SiteMatch, canonical_call_edge_for_test, match_sites, run_harness,
+    run_implicit_trigger_harness, run_member_resolution_harness, run_resolution_harness,
     run_site_harness,
 };
 
@@ -516,6 +517,79 @@ fn phase3_member_resolution_matches_or_beats_l3() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Test 8 (Phase 4 Task 3): ImplicitTrigger Multicast gate vs L3 oracle
+// ---------------------------------------------------------------------------
+
+/// Phase-4 ImplicitTrigger gate: proves that `resolve_implicit_trigger` + the
+/// applicability predicate correctly accounts for every workspace RecordOp
+/// trigger site against the L3 oracle.
+///
+/// Three zero-tolerance assertions:
+/// - `regression_unexplained == 0`: fresh must not lose an ImplicitTrigger
+///   target that L3 resolved.
+/// - `evidence_overclaim == 0`: no route may claim Source/Abi/Catalog evidence
+///   without the corresponding valid witness.
+/// - `unverified_extra == 0`: every FreshOnly trigger route must pass
+///   `implicit_trigger_route_applicable` OR be classified as
+///   `fresh_ahead_validate_fanout` (known Validate over-approximation).
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase4_implicit_trigger() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = run_implicit_trigger_harness(&ws);
+
+    eprintln!(
+        "ImplicitTriggerResolutionReport:\n\
+         matched={} verified_win={} divergence={}\n\
+         regression_unexplained={} evidence_overclaim={} unverified_extra={}\n\
+         fresh_ahead_trigger={} fresh_ahead_validate_fanout={}\n\
+         missing_site={} extra_site={}\n\
+         unaligned={}\n\
+         fresh_total={} l3_total={}",
+        report.matched,
+        report.verified_win,
+        report.divergence,
+        report.regression_unexplained,
+        report.evidence_overclaim,
+        report.unverified_extra,
+        report.fresh_ahead_trigger,
+        report.fresh_ahead_validate_fanout,
+        report.missing_site,
+        report.extra_site,
+        report.unaligned,
+        report.fresh_total,
+        report.l3_total,
+    );
+
+    assert_eq!(
+        report.regression_unexplained, 0,
+        "fresh must not lose an ImplicitTrigger target L3 resolved: {report:?}"
+    );
+    assert_eq!(
+        report.evidence_overclaim, 0,
+        "no Source/Abi/Catalog claim without a valid witness: {report:?}"
+    );
+    assert_eq!(
+        report.unverified_extra, 0,
+        "no fresh-only trigger route may fail the applicability predicate: {report:?}"
+    );
+
+    // Determinism: two consecutive runs must produce identical output.
+    assert_eq!(
+        report,
+        run_implicit_trigger_harness(&ws),
+        "run_implicit_trigger_harness must be deterministic"
+    );
+}
+
 // Suppress unused-import warning when CDO_WS is not set (no CDO test runs).
 #[allow(dead_code)]
 fn _assert_diff_report_importable(_: DiffReport) {}
@@ -525,3 +599,6 @@ fn _assert_resolution_report_importable(_: ResolutionReport) {}
 
 #[allow(dead_code)]
 fn _assert_member_report_importable(_: MemberResolutionReport) {}
+
+#[allow(dead_code)]
+fn _assert_implicit_trigger_report_importable(_: ImplicitTriggerResolutionReport) {}

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-4 Task 3: ImplicitTrigger Multicast gating** (`src/program/resolve/differential.rs`,
+  `tests/program_resolve_harness.rs`) — adds `run_implicit_trigger_harness` comparing fresh
+  `resolve_implicit_trigger` (RecordOp sites: insert/modify/delete/validate) against the L3
+  oracle filtered to `DispatchKind::ImplicitTrigger`.  Key fixes: L3 callsite_id is the
+  `PRecordOperation.id`, not `PCallSite.operation_id` (separate numbering namespace) — built
+  direct `op_by_id` map from `L3Routine.record_operations`; callee_fp constructed as
+  `"{record_variable_name}.{op}"` to match fresh's raw Member expression text.  Fresh-only
+  gating: Validate routes (field=None always fails applicability) classified by table-identity
+  check → `fresh_ahead_validate_fanout`; Insert/Modify/Delete routes gate via
+  `implicit_trigger_route_applicable` → `fresh_ahead_trigger`; empty-target sites (no triggers
+  on table) → `extra_site` (benign).  CDO result on DocumentOutput/Cloud workspace:
+  `matched=167`, `regression_unexplained=0`, `evidence_overclaim=0`, `unverified_extra=0`.
 - **Phase-4 Task 2: Interface Polymorphic fan-out** (`src/program/resolve/resolver.rs`,
   `src/program/resolve/differential.rs`) — `resolve_member` now implements the
   `ReceiverType::Interface { name_lc }` arm: fans out to all known implementers via
