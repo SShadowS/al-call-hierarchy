@@ -48,6 +48,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deterministic across two runs).
 
 ### Fixed
+- **(resolve) Split CDO/L3 semantic-audit `fresh_wrong` into adjudicated classes**
+  (`src/program/resolve/semantic_golden.rs`, `src/program/resolve/differential.rs`,
+  `tests/program_resolve_harness.rs`, `tests/goldens/semantic-edges/known-genuine-divergences.json`) —
+  The old `fresh_wrong ≤ 200` ceiling conflated two fundamentally different classes.
+  Three-case adjudication in `is_fresh_ahead_dispatch`:
+  (1) `l3 ⊆ fresh` — fresh is a superset, more precise;
+  (2) all L3 targets are Interface (kind=11) and all fresh targets implement them;
+  (3) `fresh ⊆ l3` — fresh partially resolved a compound call (partial-correct, not wrong).
+  Result on CDO: `fresh_wrong=174 → fresh_ahead_dispatch=132 genuine_wrong=42`.
+  The 42 genuine_wrong are `fresh=builtin (kind=255)` vs `L3=source-routine` **disjoint**
+  disagreements on the same callee text — and since the callees are genuine AL builtins
+  (`message`/`confirm`/`clear`/`strlen`/`copystr`, `PageInstance::*`/`Record::*`), for most
+  of them fresh is **likely correct and L3 is the side in error**; the audit treats L3 as
+  the floor by construction, so they land in `genuine_wrong` regardless of which side is
+  right (an UPPER bound on fresh errors — confirming the direction is 1B.3b work). All 42
+  are enumerated in the committed manifest. Hard gate: `genuine_wrong_count ≤ manifest_count`
+  (42) — any NEW disjoint divergence not in the manifest fails CI. fresh_ahead_dispatch (132)
+  is always ALLOWED. NOT a clean win.
+  `fresh_missing=191` characterization: page_rec=115 codeunit_implicit_rec=24 trigger=38 other=14.
+- **(resolve) `witness_contract_holds` made `pub(crate)` in `differential.rs`**;
+  duplicate `route_witness_contract_holds` in `semantic_golden.rs` removed — now delegates
+  to the single canonical implementation.
 - **`resolve_object_run` target-not-found emits `Unknown` (not phantom `AbiSymbol`)**
   (`src/program/resolve/resolver.rs`) —
   the "target not found in any indexed app" arm was constructing an

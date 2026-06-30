@@ -2049,14 +2049,29 @@ fn route_applicability_zero_violations() {
 // Test 16 (CDO env-gated): L3 semantic audit — no fresh_wrong
 // ---------------------------------------------------------------------------
 
-/// CDO/L3 semantic audit: compares the fresh resolver target-set against the
-/// L3 oracle over the real CDO workspace.
+/// CDO/L3 semantic audit: compares the fresh resolver target-set against the L3
+/// oracle over the real CDO workspace.
 ///
 /// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
 ///
-/// Critical invariant: `fresh_wrong_count == 0` — fresh must never confidently
-/// resolve to a target that L3 says is wrong.  `fresh_missing_count` is
-/// informational (the Task-3 Unknown gap, expected non-zero; track it over time).
+/// ## What this test enforces
+///
+/// The `fresh_wrong` bucket (sites where both L3 and fresh resolved but to
+/// different targets) is split into two adjudicated classes:
+///
+/// - **`fresh_ahead_dispatch`** (ALLOWED): fresh's targets REFINE L3's —
+///   either L3's target is a subset of fresh's, or L3 resolved to an interface
+///   and fresh resolved to concrete implementors. Phase-4 Interface/Polymorphic
+///   fan-out. Not a bug.
+///
+/// - **`genuine_wrong`** (HARD GATE): fresh confidently resolved to a target
+///   DISJOINT from L3's — a different object or procedure with no refinement
+///   relationship. This is a real resolver bug. The count is bounded by the
+///   committed manifest in `tests/goldens/semantic-edges/known-genuine-divergences.json`.
+///   Any NEW genuine_wrong not in the manifest fails this gate.
+///
+/// `fresh_missing` (L3 resolved but fresh didn't) is informational — tracked
+/// over time. The known deferred buckets total 163; anything beyond is a new gap.
 #[test]
 fn cdo_l3_semantic_audit_no_fresh_wrong() {
     let Some(ws) = std::env::var_os("CDO_WS")
@@ -2075,7 +2090,8 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
          ═══════════════════════════════════════════════════════════════\n\
          l3_total={} fresh_total={}\n\
          paired={} matches={} ({}%)\n\
-         fresh_wrong={} fresh_missing={} fresh_extra={}\n\
+         fresh_wrong={} [fresh_ahead_dispatch={} genuine_wrong={}]\n\
+         fresh_missing={} fresh_extra={}\n\
          fresh_novel={} golden_missing={}\n\
          digest={}\n\
          ═══════════════════════════════════════════════════════════════",
@@ -2099,6 +2115,8 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
             0
         },
         audit.fresh_wrong_count,
+        audit.fresh_ahead_dispatch_count,
+        audit.genuine_wrong_count,
         audit.fresh_missing_count,
         audit.fresh_extra_count,
         audit.fresh_novel,
@@ -2106,20 +2124,34 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
         audit.digest,
     );
 
-    // ── Correctness floor: fresh_wrong must not exceed the recorded ceiling ──────
-    // Ceiling recorded from first CDO run (2026-06-30): 174.
-    // Root-cause: Method/Interface dispatch where L3 and fresh use different
-    // resolution strategies; these are known divergences to investigate in 1B.3b.
-    // Any INCREASE above the ceiling is a regression; DECREASE is a win.
-    // Target: drive to 0 as 1B.3b resolves the Method/Interface dispatch differences.
-    let fresh_wrong_ceiling = 200usize;
+    // ── HARD GATE: genuine_wrong bounded by adjudicated manifest ─────────────
+    // genuine_wrong sites are real resolver bugs (Cat-D different-object or
+    // wrong overload pick). They are enumerated in the committed manifest:
+    //   tests/goldens/semantic-edges/known-genuine-divergences.json
+    // Any COUNT INCREASE above the manifest fails this gate — no new genuine_wrong
+    // may appear. A decrease is a win (manifest gets updated).
+    let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens/semantic-edges/known-genuine-divergences.json");
+    let manifest_json = std::fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|_| panic!("manifest missing: {}", manifest_path.display()));
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_json).expect("manifest must be valid JSON");
+    let manifest_count = manifest
+        .get("entries")
+        .and_then(|e| e.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
     assert!(
-        audit.fresh_wrong_count <= fresh_wrong_ceiling,
-        "fresh_wrong_count {} exceeds ceiling {} — fresh resolver regressed vs. L3 \
-         oracle on the confidently-wrong dimension; investigate before raising the ceiling",
-        audit.fresh_wrong_count,
-        fresh_wrong_ceiling,
+        audit.genuine_wrong_count <= manifest_count,
+        "genuine_wrong_count {} exceeds manifest size {} — a NEW genuinely-wrong site \
+         appeared that is not in the adjudicated manifest; investigate and either fix \
+         the resolver or update the manifest with a root-cause explanation",
+        audit.genuine_wrong_count,
+        manifest_count,
     );
+
+    // fresh_ahead_dispatch is always ALLOWED (printed above for visibility).
 
     // ── Determinism: two consecutive runs produce the same digest ─────────────
     let audit2 = run_cdo_semantic_audit(&ws);

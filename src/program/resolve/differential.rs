@@ -1117,7 +1117,7 @@ pub struct ResolutionReport {
 /// - `Catalog` → `CatalogEntry`
 /// - `Opaque`  → `AbiSymbol`
 /// - `Unknown` → `None`
-fn witness_contract_holds(route: &crate::program::resolve::edge::Route) -> bool {
+pub(crate) fn witness_contract_holds(route: &crate::program::resolve::edge::Route) -> bool {
     use crate::program::resolve::edge::{Evidence, RouteTarget, Witness};
     // For Unresolved targets the evidence must be Unknown (per resolver invariants).
     // Check both the evidence type and the witness shape.
