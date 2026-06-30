@@ -2540,8 +2540,14 @@ pub struct ImplicitTriggerResolutionReport {
 /// as `callsite_id`.  To recover the call site's source span and callee-text
 /// fingerprint this function builds a reverse map `op.id → PCallSite` via
 /// `PCallSite.operation_id`.
+///
+/// `pub` (1B.3b Task 1): this is one of the SANCTIONED LAST L3 uses — the
+/// dev-mint tool (`src/bin/mint-goldens.rs`, outside `src/program/resolve`)
+/// calls this to freeze the ImplicitTrigger committed golden
+/// (`cdo-trigger-anon.json`). `run_implicit_trigger_harness` below also keeps
+/// calling it directly (unchanged dual-run gate; removed only in Task 3).
 #[must_use]
-fn project_l3_implicit_trigger_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
+pub fn project_l3_implicit_trigger_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
     use std::collections::HashMap;
 
     use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
@@ -3125,6 +3131,164 @@ pub struct EventFlowGateReport {
     pub fresh_event_row_count: usize,
     /// Total L3 resolved event rows projected.
     pub l3_event_row_count: usize,
+}
+
+// ---------------------------------------------------------------------------
+// 1B.3b Task 1: CanonicalKey-keyed EventFlow projection (frozen-golden support)
+// ---------------------------------------------------------------------------
+//
+// `run_event_flow_gate` above keys subscribers by L3's PROPRIETARY
+// `stable_routine_id` (a normalized-signature hash fresh cannot independently
+// reproduce) — fine for a LIVE dual-run gate where both sides are computed in
+// the same process, but unusable as the identity scheme for a COMMITTED
+// frozen golden the fresh side must re-derive from scratch at audit time.
+//
+// [`CanonicalEventRow`] instead keys publisher/subscriber by the SAME
+// `CanonicalKey` (app_guid + object_kind + object_lc + routine_lc) already
+// shared between `project_fresh`/`project_l3`/`project_l3_implicit_trigger_in_scope`.
+// `L3Routine` exposes `app_guid`/`object_type`/`object_number`/`name` directly,
+// so the L3 side builds the identical `CanonicalKey` shape WITHOUT going
+// through L3's stable-id hash at all. `publisher_arity` carries the resolved
+// overload's parameter count (event PairKeys are intentionally arity-agnostic
+// — the same event name can have multiple `[IntegrationEvent]` overloads).
+
+/// One resolved publisher→subscriber EventFlow row, keyed by the SAME
+/// `CanonicalKey` shape used everywhere else in this differential — see the
+/// section docs above for why this replaces [`EventPairKey`]'s L3-stable-id
+/// scheme for the frozen-golden use case.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CanonicalEventRow {
+    pub publisher: CanonicalKey,
+    pub event_name_lc: String,
+    pub subscriber: CanonicalKey,
+    pub publisher_arity: Option<usize>,
+}
+
+/// L3-INDEPENDENT: project the fresh resolver's resolved EventFlow
+/// publisher→subscriber pairs for `workspace_root`, keyed by `CanonicalKey`.
+///
+/// Mirrors [`emit_event_flow_edges`][crate::program::resolve::resolver::emit_event_flow_edges]'s
+/// own resolution (the SAME production function the live dual-run gate and
+/// `resolve_full_program` use) — only `RouteTarget::Routine` routes
+/// contribute a row; `AbiSymbol`/`Builtin`/`Unresolved` routes carry no
+/// subscriber identity and are skipped (same convention as
+/// [`project_target`]).
+///
+/// Used by the always-run synthetic EventFlow fixture test (1B.3b Task 1
+/// Step 4) and by [`crate::program::resolve::semantic_golden::run_cdo_event_audit`]'s
+/// fresh side — neither touches `engine::l3`.
+#[must_use]
+pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
+    use crate::program::build::build_program_graph;
+    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::index::ResolveIndex;
+    use crate::program::resolve::resolver::emit_event_flow_edges;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+
+    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+    let apps = &graph.apps;
+
+    let fresh_edges = emit_event_flow_edges(&graph, &index, &body_map);
+
+    let mut rows: Vec<CanonicalEventRow> = Vec::new();
+    for edge in &fresh_edges {
+        if edge.kind != EdgeKind::EventFlow {
+            continue;
+        }
+        let publisher = routine_to_key(&edge.from, apps);
+        let event_name_lc = edge.from.name_lc.clone();
+        let publisher_arity = Some(edge.from.params_count);
+        for route in &edge.routes {
+            if let RouteTarget::Routine(sub_rid) = &route.target {
+                rows.push(CanonicalEventRow {
+                    publisher: publisher.clone(),
+                    event_name_lc: event_name_lc.clone(),
+                    subscriber: routine_to_key(sub_rid, apps),
+                    publisher_arity,
+                });
+            }
+        }
+    }
+    rows.sort();
+    rows
+}
+
+/// **SANCTIONED L3 USE (1B.3b)**: project L3's RESOLVED EventFlow
+/// publisher→subscriber pairs for `workspace_root`, keyed by the SAME
+/// `CanonicalKey` shape as [`project_fresh_event_rows`] — see the section
+/// docs above. Only `engine::l3::event_graph::project_event_graph` edges with
+/// `resolution == "resolved"` contribute a row; a row is skipped (fail-closed)
+/// when the publisher's routine id is unknown or either endpoint's
+/// `stable_routine_id` does not resolve to an `L3Routine` in this workspace.
+///
+/// Used ONLY by the dev-mint tool to freeze `cdo-event-anon.json`;
+/// `run_event_flow_gate` above keeps its own independent L3 build (unchanged
+/// dual-run gate; removed only in Task 3).
+#[must_use]
+pub fn project_l3_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
+    use std::collections::HashMap;
+
+    use crate::engine::l3::event_graph::{build_event_graph, project_event_graph};
+    use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use crate::engine::l3::symbol_table::SymbolTable;
+
+    let Some(resolved) = assemble_and_resolve_workspace_default(workspace_root) else {
+        return Vec::new();
+    };
+    let ws = &resolved.workspace;
+    let l3_symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let l3_eg = build_event_graph(&ws.routines, &l3_symbols);
+    let l3_proj = project_event_graph(&l3_eg);
+
+    let routine_by_stable_id: HashMap<&str, &crate::engine::l3::l3_workspace::L3Routine> = ws
+        .routines
+        .iter()
+        .map(|r| (r.stable_routine_id.as_str(), r))
+        .collect();
+    let sym_by_id: HashMap<&str, &crate::engine::l3::event_graph::PEventSymbol> =
+        l3_proj.events.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    let key_of = |r: &crate::engine::l3::l3_workspace::L3Routine| -> CanonicalKey {
+        make_canonical_key(
+            r.app_guid.clone(),
+            r.object_type.to_ascii_lowercase(),
+            format!("{}", r.object_number),
+            r.name.to_ascii_lowercase(),
+        )
+    };
+
+    let mut rows: Vec<CanonicalEventRow> = l3_proj
+        .edges
+        .iter()
+        .filter(|edge| edge.resolution == "resolved")
+        .filter_map(|edge| {
+            let sym = sym_by_id.get(edge.event_id.as_str())?;
+            let pub_stable = sym.publisher_routine_id.as_deref()?;
+            let pub_r = routine_by_stable_id.get(pub_stable)?;
+            let sub_r = routine_by_stable_id.get(edge.subscriber_routine_id.as_str())?;
+            Some(CanonicalEventRow {
+                publisher: key_of(pub_r),
+                event_name_lc: sym.event_name.to_ascii_lowercase(),
+                subscriber: key_of(sub_r),
+                publisher_arity: Some(sym.parameters.len()),
+            })
+        })
+        .collect();
+    rows.sort();
+    rows
 }
 
 /// Independently verify that the subscriber routine `sub_rid` genuinely subscribes

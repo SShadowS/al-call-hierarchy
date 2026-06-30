@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "site": {
+        "from_app_guid": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "from_object_kind": "codeunit",
+        "from_object_lc": "50502",
+        "from_routine_lc": "dostuff",
+        "edge_kind": 2,
+        "unit": "ITFTable.al",
+        "line": 47,
+        "callee_fp": 735961313321294833
+      },
+      "targets": [
+        {
+          "kind": 1,
+          "app": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          "object_lc": "50500",
+          "routine_lc": "oninsert"
+        },
+        {
+          "kind": 2,
+          "app": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          "object_lc": "50501",
+          "routine_lc": "oninsert"
+        }
+      ]
+    },
+    {
+      "site": {
+        "from_app_guid": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "from_object_kind": "codeunit",
+        "from_object_lc": "50502",
+        "from_routine_lc": "dostuff",
+        "edge_kind": 2,
+        "unit": "ITFTable.al",
+        "line": 48,
+        "callee_fp": 3251288147716933750
+      },
+      "targets": [
+        {
+          "kind": 1,
+          "app": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          "object_lc": "50500",
+          "routine_lc": "onmodify"
+        }
+      ]
+    },
+    {
+      "site": {
+        "from_app_guid": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "from_object_kind": "codeunit",
+        "from_object_lc": "50502",
+        "from_routine_lc": "dostuff",
+        "edge_kind": 2,
+        "unit": "ITFTable.al",
+        "line": 49,
+        "callee_fp": 14479562283280843904
+      },
+      "targets": [
+        {
+          "kind": 1,
+          "app": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          "object_lc": "50500",
+          "routine_lc": "ondelete"
+        }
+      ]
+    }
+  ]
+}

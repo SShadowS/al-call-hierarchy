@@ -10,9 +10,10 @@ use al_call_hierarchy::program::node::{
 };
 use al_call_hierarchy::program::resolve::differential::{
     DiffReport, EventFlowGateReport, ImplicitTriggerResolutionReport, MemberResolutionReport,
-    ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_event_flow_gate,
-    run_harness, run_implicit_trigger_harness, run_member_resolution_harness,
-    run_resolution_harness, run_site_harness, verify_event_subscriber_route,
+    ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites,
+    project_fresh_event_rows, run_event_flow_gate, run_harness, run_implicit_trigger_harness,
+    run_member_resolution_harness, run_resolution_harness, run_site_harness,
+    verify_event_subscriber_route,
 };
 use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
 
@@ -782,11 +783,20 @@ fn _assert_diff_report_importable(_: DiffReport) {}
 fn _assert_resolution_report_importable(_: ResolutionReport) {}
 
 // ---------------------------------------------------------------------------
-// Test 10 (Phase 4b Task 4): Fixture — EventFlow two-stage join projections
+// Test 10 (Phase 4b Task 4; converted 1B.3b Task 1 Step 4): Fixture —
+// L3-INDEPENDENT EventFlow target-set baseline
 // ---------------------------------------------------------------------------
 
-/// Verifies the structural two-stage event gate against the embedded fixture in
-/// `tests/fixtures/events/`.
+/// Verifies the fresh resolver's OWN EventFlow resolution against a frozen,
+/// hand-reviewed baseline over the embedded fixture in `tests/fixtures/events/`.
+///
+/// 1B.3b Task 1: this test used to call [`run_event_flow_gate`] (a LIVE L3
+/// comparison, even on this small synthetic fixture). It now calls
+/// [`project_fresh_event_rows`] — L3-INDEPENDENT, no `engine::l3` build at
+/// all — and asserts the EXACT resolved publisher→subscriber pair set
+/// against a baseline frozen below. [`run_event_flow_gate`] itself is
+/// unchanged and still runs as the live CDO-gated EventFlow gate (Test 11);
+/// only THIS always-run, non-proprietary fixture test moved off L3.
 ///
 /// The fixture has ONE app with:
 ///   • codeunit 50100 EventPublisher  — two overloads of OnAfterPost (0- and
@@ -796,79 +806,104 @@ fn _assert_resolution_report_importable(_: ResolutionReport) {}
 ///   • codeunit 50201 SkipLicenseSub  — subscribes to OnBeforePost,
 ///     SkipOnMissingLicense=true.
 ///   • codeunit 50202 MultiAttrSub    — two [EventSubscriber] attrs (OnAfterPost
-///     + OnBeforePost on the same procedure). L3 reads only the first.
-///   • codeunit 50203 InternalSub     — subscribes to OnInternalEvent; L3 does
-///     not classify InternalEvent publishers as resolved.
+///     + OnBeforePost on the same procedure) — fresh reads BOTH (no
+///     first-attr-only limitation; that was an L3 quirk, not a fresh one).
+///   • codeunit 50203 InternalSub     — subscribes to OnInternalEvent.
 ///
-/// Expected counts:
-///   • ManualSub → OnAfterPost: Stage-1 MATCH; L3 links to 1-param overload
-///     (last-wins, arity-blind); fresh correctly picks 0-param →
-///     l3_false_positive_arity_mismatch += 1.
-///   • MultiAttrSub → OnAfterPost (first attr): Stage-1 MATCH; same arity-FP
-///     as ManualSub (L3 again links to the 1-param overload) →
-///     l3_false_positive_arity_mismatch += 1 (total = 2).
-///   • MultiAttrSub → OnBeforePost (second attr): pair_fresh_only; L3 reads
-///     only the first attr, so this subscription is invisible to L3 →
-///     multiple_attr_l3_gap = 1.
-///   • SkipLicenseSub → OnBeforePost: Stage-1 MATCH, arities agree.
-///   • InternalSub → OnInternalEvent: pair_fresh_only; the EventPublisher object
-///     IS found by L3 (same workspace) but OnInternalEvent has kind="procedure"
-///     not "event-publisher" → L3 emits a "maybe" edge → l3_maybe_upgrade = 1
-///     (caught before internal_event_non_shipping; internal_event_non_shipping=0).
-///   • pair_l3_only = 0, l3_regression = 0, fresh_only_uncategorized = 0,
-///     fresh_unprojectable = 0, l3_unprojectable = 0.
+/// Fresh resolves exactly 5 publisher→subscriber rows (verified by inspecting
+/// this exact baseline before committing it):
+///   1. OnAfterPost (0-param overload)  <- ManualSub.HandleOnAfterPost
+///   2. OnAfterPost (0-param overload)  <- MultiAttrSub.HandleBoth (first attr)
+///   3. OnBeforePost                    <- SkipLicenseSub.HandleOnBeforePost
+///   4. OnBeforePost                    <- MultiAttrSub.HandleBoth (second attr)
+///   5. OnInternalEvent                 <- InternalSub.HandleOnInternalEvent
+///
+/// Fresh correctly disambiguates the 0-param OnAfterPost overload (no
+/// subscriber lands on the 1-param overload) — that disambiguation was
+/// previously visible only as `l3_false_positive_arity_mismatch` on the L3
+/// comparison; here it is a direct, positive assertion about fresh's own
+/// arity-aware overload pick.
 #[test]
 fn event_fixture_two_stage_join() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/events");
 
-    let report = run_event_flow_gate(&fixture);
+    let rows = project_fresh_event_rows(&fixture);
+    let actual: Vec<(String, String, usize, String, String)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.publisher.object_lc.clone(),
+                r.event_name_lc.clone(),
+                r.publisher_arity.unwrap_or(usize::MAX),
+                r.subscriber.object_lc.clone(),
+                r.subscriber.routine_lc.clone(),
+            )
+        })
+        .collect();
+    eprintln!("event fixture fresh rows: {actual:#?}");
 
-    eprintln!("event fixture gate report: {report:?}");
+    let mut expected: Vec<(String, String, usize, String, String)> = vec![
+        (
+            "50100".into(),
+            "onafterpost".into(),
+            0,
+            "50200".into(),
+            "handleonafterpost".into(),
+        ),
+        (
+            "50100".into(),
+            "onafterpost".into(),
+            0,
+            "50202".into(),
+            "handleboth".into(),
+        ),
+        (
+            "50100".into(),
+            "onbeforepost".into(),
+            0,
+            "50201".into(),
+            "handleonbeforepost".into(),
+        ),
+        (
+            "50100".into(),
+            "onbeforepost".into(),
+            0,
+            "50202".into(),
+            "handleboth".into(),
+        ),
+        (
+            "50100".into(),
+            "oninternalevent".into(),
+            0,
+            "50203".into(),
+            "handleoninternalevent".into(),
+        ),
+    ];
+    expected.sort();
+    let mut actual_sorted = actual.clone();
+    actual_sorted.sort();
 
-    // Zero-tolerance
     assert_eq!(
-        report.fresh_unprojectable, 0,
-        "fresh_unprojectable: {report:?}"
-    );
-    assert_eq!(report.l3_unprojectable, 0, "l3_unprojectable: {report:?}");
-    assert_eq!(report.pair_l3_only, 0, "pair_l3_only: {report:?}");
-    assert_eq!(report.l3_regression, 0, "l3_regression: {report:?}");
-    assert_eq!(
-        report.fresh_only_uncategorized, 0,
-        "fresh_only_uncategorized: {report:?}"
-    );
-    assert_eq!(
-        report.unverified_extra, 0,
-        "no subscriber route may fail the independent raw-IR teeth: {report:?}"
+        actual_sorted, expected,
+        "fresh EventFlow resolution over tests/fixtures/events diverged from the \
+         frozen baseline.\nActual:\n{actual:#?}"
     );
 
-    // Structural assertions
-    // Both ManualSub and MultiAttrSub (first attr) subscribe to OnAfterPost with
-    // 0 params; L3 (last-wins, arity-blind) links both to the 1-param overload.
-    assert_eq!(
-        report.l3_false_positive_arity_mismatch, 2,
-        "L3 over-links both 0-param subscribers to the 1-param OnAfterPost overload: {report:?}"
-    );
-    assert_eq!(
-        report.multiple_attr_l3_gap, 1,
-        "MultiAttrSub→OnBeforePost: second [EventSubscriber] attr L3 misses: {report:?}"
-    );
-    // InternalSub is caught by l3_maybe_upgrade (L3 creates a "maybe" edge because
-    // the publisher object IS found but InternalEvent isn't classified as event-publisher).
-    assert_eq!(
-        report.l3_maybe_upgrade, 1,
-        "InternalSub→OnInternalEvent: L3 emits maybe edge (object found, not real pub): {report:?}"
-    );
-    assert_eq!(
-        report.internal_event_non_shipping, 0,
-        "internal_event_non_shipping should be 0 (InternalSub caught by l3_maybe_upgrade first): {report:?}"
+    // No subscriber lands on the 1-param OnAfterPost overload — fresh's
+    // arity-aware overload pick (was the L3 comparison's
+    // `l3_false_positive_arity_mismatch` signal; now a direct assertion).
+    assert!(
+        rows.iter()
+            .filter(|r| r.event_name_lc == "onafterpost")
+            .all(|r| r.publisher_arity == Some(0)),
+        "no subscriber may resolve to the 1-param OnAfterPost overload: {rows:#?}"
     );
 
     // Determinism
+    let rows2 = project_fresh_event_rows(&fixture);
     assert_eq!(
-        report,
-        run_event_flow_gate(&fixture),
-        "must be deterministic"
+        rows, rows2,
+        "project_fresh_event_rows must be deterministic"
     );
 }
 
@@ -1917,9 +1952,51 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::program::resolve::semantic_golden::{
-    GoldenSiteKey, SemanticGolden, mint_l3_validated_golden, run_cdo_semantic_audit,
-    run_route_applicability, run_semantic_diff,
+    ANON_GOLDEN_SCHEMA_VERSION, GoldenSiteKey, SemanticGolden, cdo_anon_golden_path,
+    cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_anon_event_golden,
+    load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden, run_cdo_event_audit,
+    run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability, run_semantic_diff,
 };
+
+/// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 1 — the `CDO_WS` presence check).
+///
+/// Returns the workspace path when `CDO_WS` is set and exists. When `CDO_WS`
+/// is absent: returns `None` (caller should skip) UNLESS `ENFORCE_CDO_WS=1`,
+/// in which case this PANICS — a gated/internal run that loses its `CDO_WS`
+/// must fail loudly, not skip silently (no fail-open). Scoped to the three
+/// frozen-golden audits this task adds/modifies (Tests 16–18) — the OTHER
+/// pre-existing CDO-gated dual-run tests are unaffected (out of Task 1's
+/// scope; they stay live L3 comparisons until 1B.3b Task 3).
+fn cdo_ws_or_enforce() -> Option<std::path::PathBuf> {
+    let ws = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists());
+    if ws.is_none() {
+        assert!(
+            std::env::var("ENFORCE_CDO_WS").as_deref() != Ok("1"),
+            "ENFORCE_CDO_WS=1 but CDO_WS is unset or does not point at an existing path"
+        );
+    }
+    ws
+}
+
+/// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 2 — the audit-ran-and-checked-something
+/// check). When `ENFORCE_CDO_WS=1`, PANICS if the committed golden failed to
+/// load or the audit paired zero sites — the floor evaporating silently
+/// (e.g. a renamed golden file, a CDO_WS pointed at the wrong tree) is
+/// exactly the failure mode this guards against.
+fn enforce_audit_ran(golden_loaded: bool, checked_sites: usize) {
+    if std::env::var("ENFORCE_CDO_WS").as_deref() == Ok("1") {
+        assert!(
+            golden_loaded,
+            "ENFORCE_CDO_WS=1: committed golden missing/invalid"
+        );
+        assert!(
+            checked_sites > 0,
+            "ENFORCE_CDO_WS=1: checked_sites==0 (audit ran but paired nothing — floor evaporated)"
+        );
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Test 14 (fixture): fresh edges match the L3-minted semantic golden
@@ -1995,6 +2072,95 @@ fn fixture_semantic_golden_matches_l3() {
 }
 
 // ---------------------------------------------------------------------------
+// Test 14b (1B.3b Task 1 Step 4): fixture — ImplicitTrigger target-set
+// ---------------------------------------------------------------------------
+
+/// Synthetic, L3-INDEPENDENT ImplicitTrigger target-set fixture: asserts the
+/// fresh resolver resolves the EXACT trigger set for `tests/fixtures/implicit-trigger`
+/// (Table 50500 "ITFTable" + TableExtension 50501 "ITFTableExt" + Codeunit
+/// 50502 "ITFCaller" — see the fixture's doc comment for the full layout).
+///
+/// The golden (`tests/goldens/semantic-edges/implicit-trigger-fixture.json`)
+/// is minted from FRESH's own resolution (NOT L3 — see
+/// [`mint_fresh_golden_for_kind`]) and committed; this is the
+/// "frozen/hand-authored expected output" replacement for the
+/// `ImplicitTrigger` dispatch-kind coverage that previously depended on a
+/// live L3 comparison. Regenerate with `REGEN_TEMP_GOLDENS=1 cargo test
+/// implicit_trigger_fixture_resolves_exact_target_set` — ALWAYS manually
+/// inspect the diff before committing a regenerated golden (the point of a
+/// frozen baseline is catching an UNINTENDED change, not rubber-stamping
+/// whatever fresh currently does).
+#[test]
+fn implicit_trigger_fixture_resolves_exact_target_set() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/implicit-trigger");
+    let golden_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens/semantic-edges/implicit-trigger-fixture.json");
+
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let golden = mint_fresh_golden_for_kind(&fixture, EdgeKind::ImplicitTrigger);
+        let json = serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
+        std::fs::create_dir_all(golden_path.parent().unwrap())
+            .expect("create goldens/semantic-edges dir");
+        std::fs::write(&golden_path, &json).expect("write implicit-trigger fixture golden");
+        eprintln!(
+            "REGEN: wrote {} site(s) to {}",
+            golden.entries.len(),
+            golden_path.display()
+        );
+        return;
+    }
+
+    let json = std::fs::read_to_string(&golden_path).unwrap_or_else(|_| {
+        panic!(
+            "golden file missing: {}\n\
+             Run `REGEN_TEMP_GOLDENS=1 cargo test implicit_trigger_fixture_resolves_exact_target_set` \
+             to mint it from fresh — then INSPECT the diff before committing.",
+            golden_path.display()
+        )
+    });
+    let golden: SemanticGolden = serde_json::from_str(&json).expect("golden JSON must deserialize");
+
+    assert!(
+        !golden.entries.is_empty(),
+        "the frozen ImplicitTrigger fixture golden must be non-empty — an empty \
+         golden would make this test vacuously pass"
+    );
+
+    let diff = run_semantic_diff(&fixture, &golden);
+
+    assert!(
+        diff.fresh_wrong.is_empty(),
+        "fresh_wrong MUST be empty — fresh's ImplicitTrigger resolution changed \
+         vs the frozen baseline.\n{} violation(s):\n{:#?}",
+        diff.fresh_wrong.len(),
+        diff.fresh_wrong,
+    );
+    assert!(
+        diff.fresh_missing.is_empty(),
+        "fresh_missing MUST be empty — fresh failed to resolve a site the frozen \
+         baseline expects.\n{} gap(s):\n{:#?}",
+        diff.fresh_missing.len(),
+        diff.fresh_missing,
+    );
+    assert_eq!(
+        diff.total_paired,
+        golden.entries.len(),
+        "every frozen-baseline site must pair with a fresh site (golden_missing must be 0): {diff:?}"
+    );
+
+    eprintln!(
+        "Test 14b — ImplicitTrigger fixture: paired={} matches={} fresh_extra={} \
+         fresh_novel={} golden_missing={}",
+        diff.total_paired,
+        diff.matches,
+        diff.fresh_extra.len(),
+        diff.fresh_novel,
+        diff.golden_missing,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Test 15 (fixture + CDO env-gated): route-applicability contract
 // ---------------------------------------------------------------------------
 
@@ -2046,13 +2212,25 @@ fn route_applicability_zero_violations() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 16 (CDO env-gated): L3 semantic audit — no fresh_wrong
+// Test 16 (CDO env-gated; load-frozen since 1B.3b Task 1): L3 semantic
+// audit — no fresh_wrong
 // ---------------------------------------------------------------------------
 
-/// CDO/L3 semantic audit: compares the fresh resolver target-set against the L3
-/// oracle over the real CDO workspace.
+/// CDO semantic audit: compares the fresh resolver target-set against the
+/// COMMITTED, ANONYMIZED, FROZEN L3 verdict (`cdo-anon.json`) over the real
+/// CDO workspace.
+///
+/// 1B.3b Task 1: this no longer mints L3 live — `run_cdo_semantic_audit`
+/// LOADS the committed golden. `audit.genuine_wrong_sites` stays PLAINTEXT
+/// `GoldenSiteKey` (fresh's OWN identity, recovered from the anonymized
+/// fresh-side comparison via the reverse index — see `anon.rs`'s
+/// "re-hash-don't-decrypt" principle), so the manifest set-membership check
+/// below is UNCHANGED from 1B.3a.
 ///
 /// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+/// `ENFORCE_CDO_WS=1` (the gated/internal runner) hard-fails if `CDO_WS` is
+/// missing, the committed golden failed to load, or the audit paired zero
+/// sites (`cdo_ws_or_enforce`/`enforce_audit_ran`).
 ///
 /// ## What this test enforces
 ///
@@ -2078,14 +2256,18 @@ fn route_applicability_zero_violations() {
 /// over time. The known deferred buckets total 163; anything beyond is a new gap.
 #[test]
 fn cdo_l3_semantic_audit_no_fresh_wrong() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
     let audit = run_cdo_semantic_audit(&ws);
+    enforce_audit_ran(audit.golden_loaded, audit.paired);
+    assert!(
+        audit.golden_loaded,
+        "cdo-anon.json missing/invalid at {}; run the dev-mint tool \
+         (`cargo run --bin mint-goldens`) with CDO_WS set",
+        cdo_anon_golden_path().display(),
+    );
 
     eprintln!(
         "\n\
@@ -2195,5 +2377,198 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     assert_eq!(
         audit.digest, audit2.digest,
         "CDO semantic audit must be deterministic (digest differs between runs)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 17 (CDO env-gated, 1B.3b Task 1): ImplicitTrigger frozen-golden audit
+// ---------------------------------------------------------------------------
+
+/// CDO ImplicitTrigger audit: compares fresh's `ImplicitTrigger` resolution
+/// against the committed, anonymized, frozen L3 verdict
+/// (`cdo-trigger-anon.json`). See [`AnonTriggerAuditReport`]'s doc comment
+/// (in `semantic_golden.rs`) for this audit's scope — it proves the
+/// frozen-load mechanism works for the ImplicitTrigger dispatch kind and
+/// backs `ENFORCE_CDO_WS`'s `checked_sites>0` requirement. The zero-tolerance
+/// ImplicitTrigger gate remains the live, CDO-gated
+/// `run_implicit_trigger_harness` (unchanged this task).
+#[test]
+fn cdo_trigger_audit_frozen_load() {
+    let Some(ws) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    let audit = run_cdo_trigger_audit(&ws);
+    enforce_audit_ran(audit.golden_loaded, audit.total_paired);
+    assert!(
+        audit.golden_loaded,
+        "cdo-trigger-anon.json missing/invalid at {}; run the dev-mint tool \
+         (`cargo run --bin mint-goldens`) with CDO_WS set",
+        cdo_trigger_anon_golden_path().display(),
+    );
+
+    eprintln!(
+        "Test 17 — CDO ImplicitTrigger frozen audit: l3_total={} fresh_total={} \
+         total_paired={} matches={} fresh_wrong={} fresh_missing={} fresh_extra={} \
+         fresh_novel={} golden_missing={} digest={}",
+        audit.l3_total,
+        audit.fresh_total,
+        audit.total_paired,
+        audit.matches,
+        audit.fresh_wrong_count,
+        audit.fresh_missing,
+        audit.fresh_extra,
+        audit.fresh_novel,
+        audit.golden_missing,
+        audit.digest,
+    );
+
+    // Determinism.
+    let audit2 = run_cdo_trigger_audit(&ws);
+    assert_eq!(
+        audit.digest, audit2.digest,
+        "CDO trigger audit must be deterministic (digest differs between runs)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 18 (CDO env-gated, 1B.3b Task 1): EventFlow frozen-golden audit
+// ---------------------------------------------------------------------------
+
+/// CDO EventFlow audit: compares fresh's resolved EventFlow
+/// publisher→subscriber pairs against the committed, anonymized, frozen L3
+/// verdict (`cdo-event-anon.json`). Arity-agnostic pair-set comparison only —
+/// see [`AnonEventAuditReport`]'s doc comment. The zero-tolerance EventFlow
+/// gate remains the live, CDO-gated `run_event_flow_gate` (Test 11,
+/// unchanged this task).
+#[test]
+fn cdo_event_audit_frozen_load() {
+    let Some(ws) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    let audit = run_cdo_event_audit(&ws);
+    enforce_audit_ran(audit.golden_loaded, audit.matched_pairs);
+    assert!(
+        audit.golden_loaded,
+        "cdo-event-anon.json missing/invalid at {}; run the dev-mint tool \
+         (`cargo run --bin mint-goldens`) with CDO_WS set",
+        cdo_event_anon_golden_path().display(),
+    );
+
+    eprintln!(
+        "Test 18 — CDO EventFlow frozen audit: l3_total={} fresh_total={} \
+         matched_pairs={} pair_l3_only={} pair_fresh_only={} digest={}",
+        audit.l3_total,
+        audit.fresh_total,
+        audit.matched_pairs,
+        audit.pair_l3_only,
+        audit.pair_fresh_only,
+        audit.digest,
+    );
+
+    // Determinism.
+    let audit2 = run_cdo_event_audit(&ws);
+    assert_eq!(
+        audit.digest, audit2.digest,
+        "CDO event audit must be deterministic (digest differs between runs)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 19 (UNCONDITIONAL — no CDO_WS needed, public CI): committed golden
+// metadata validation
+// ---------------------------------------------------------------------------
+
+/// Public-CI metadata validation (1B.3b Task 1): asserts the THREE committed
+/// anonymized goldens exist, parse, carry the current schema version, and
+/// have non-trivial per-dispatch-kind coverage — WITHOUT needing `CDO_WS` (no
+/// CDO source is required to validate a committed artifact's shape). This is
+/// the floor public CI (which never has CDO access) can verify; the per-site
+/// diff itself only runs on the gated/internal runner (Tests 16–18).
+///
+/// Also validates the pre-existing `known-genuine-divergences.json` manifest
+/// carries exactly 42 entries (1B.3a's adjudicated genuine_wrong baseline —
+/// unrelated to `cdo-anon.json`'s anonymization, but co-located metadata this
+/// test is the natural unconditional home for).
+#[test]
+fn committed_goldens_metadata_is_valid() {
+    let golden = load_anon_golden(&cdo_anon_golden_path()).unwrap_or_else(|| {
+        panic!(
+            "cdo-anon.json missing/invalid at {} — committed goldens must always \
+             parse, even without CDO_WS",
+            cdo_anon_golden_path().display(),
+        )
+    });
+    assert_eq!(golden.schema_version, ANON_GOLDEN_SCHEMA_VERSION);
+    assert!(
+        !golden.entries.is_empty(),
+        "cdo-anon.json must be non-empty"
+    );
+    let mut by_edge_kind: std::collections::HashMap<u8, usize> = std::collections::HashMap::new();
+    for e in &golden.entries {
+        *by_edge_kind.entry(e.site.edge_kind).or_insert(0) += 1;
+    }
+    eprintln!(
+        "cdo-anon.json: {} entries, by edge_kind: {by_edge_kind:?}",
+        golden.entries.len()
+    );
+    // edge_kind 0=Call, 1=Run are the dispatch kinds this golden covers
+    // (Member/Interface — see semantic_golden.rs's module docs); at least one
+    // of each must be present for the golden to be meaningfully non-trivial.
+    assert!(
+        by_edge_kind.get(&0).copied().unwrap_or(0) > 0,
+        "cdo-anon.json must contain at least one Call-kind (edge_kind=0) entry"
+    );
+
+    let trigger_golden = load_anon_golden(&cdo_trigger_anon_golden_path()).unwrap_or_else(|| {
+        panic!(
+            "cdo-trigger-anon.json missing/invalid at {}",
+            cdo_trigger_anon_golden_path().display(),
+        )
+    });
+    assert_eq!(trigger_golden.schema_version, ANON_GOLDEN_SCHEMA_VERSION);
+    assert!(
+        !trigger_golden.entries.is_empty(),
+        "cdo-trigger-anon.json must be non-empty"
+    );
+
+    let event_golden = load_anon_event_golden(&cdo_event_anon_golden_path()).unwrap_or_else(|| {
+        panic!(
+            "cdo-event-anon.json missing/invalid at {}",
+            cdo_event_anon_golden_path().display(),
+        )
+    });
+    assert_eq!(event_golden.schema_version, ANON_GOLDEN_SCHEMA_VERSION);
+    assert!(
+        !event_golden.entries.is_empty(),
+        "cdo-event-anon.json must be non-empty"
+    );
+
+    eprintln!(
+        "Test 19 — committed golden metadata: cdo-anon entries={} trigger entries={} \
+         event entries={}",
+        golden.entries.len(),
+        trigger_golden.entries.len(),
+        event_golden.entries.len(),
+    );
+
+    // The pre-existing genuine_wrong manifest — co-located metadata, also
+    // unconditionally checkable.
+    let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens/semantic-edges/known-genuine-divergences.json");
+    let manifest_json = std::fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|_| panic!("manifest missing: {}", manifest_path.display()));
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_json).expect("manifest must be valid JSON");
+    let manifest_entries = manifest
+        .get("entries")
+        .and_then(|e| e.as_array())
+        .expect("manifest must have 'entries' array");
+    assert_eq!(
+        manifest_entries.len(),
+        42,
+        "known-genuine-divergences.json must carry exactly 42 adjudicated entries \
+         (1B.3a baseline) — this assertion is UNCONDITIONAL (no CDO_WS needed)"
     );
 }

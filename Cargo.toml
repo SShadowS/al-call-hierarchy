@@ -55,6 +55,9 @@ regex = "1"
 # Hashing (R0 identity encoders and snapshot content identity)
 sha2 = "0.10"
 blake3 = { version = "1" }
+# Keyed hashing (1B.3b Task 1: domain-separated anonymization of CDO goldens —
+# HMAC over sha2, NOT a fixed salt; see src/program/resolve/anon.rs).
+hmac = "0.12"
 
 # File system
 walkdir = "2"
@@ -152,6 +155,15 @@ path = "src/bin/aldump.rs"
 [[bin]]
 name = "alsem"
 path = "src/bin/alsem.rs"
+
+# 1B.3b Task 1: DEV-ONLY tool — the LAST sanctioned L3 oracle use. Mints +
+# anonymizes the three committed CDO-derived goldens under
+# `tests/goldens/semantic-edges/` (`cdo-anon.json` / `cdo-trigger-anon.json` /
+# `cdo-event-anon.json`) plus the gitignored local de-anon map. Run with
+# `CDO_WS` set; never part of the LSP surface or any release artifact.
+[[bin]]
+name = "mint-goldens"
+path = "src/bin/mint-goldens.rs"
 
 [[bench]]
 name = "telemetry_hot_path"

@@ -1,21 +1,43 @@
-//! 1B.3a Task 4: L3-validated semantic edge golden + route-applicability
-//! contract.
+//! 1B.3a Task 4 (L3-validated semantic edge golden + route-applicability
+//! contract) + 1B.3b Task 1 (committed ANONYMIZED frozen goldens + the
+//! load-frozen audits + the `ENFORCE_CDO_WS` guard).
 //!
 //! # Golden floor
 //!
-//! [`mint_l3_validated_golden`] captures the L3-oracle target set per call site
-//! into a [`SemanticGolden`] (a `BTreeMap` keyed by column-ignoring
-//! [`GoldenSiteKey`]).  [`assert_against_semantic_golden`] compares a fresh
-//! canonical edge batch against this golden and classifies every site into:
-//! `match`, `fresh_wrong`, `fresh_missing`, `fresh_extra`, `fresh_novel`, or
-//! `golden_missing`.
+//! [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`] capture the
+//! L3-oracle target set per call site into a [`SemanticGolden`] (a sorted
+//! list keyed by column-ignoring [`GoldenSiteKey`]).
+//! [`assert_against_semantic_golden`] compares a fresh canonical edge batch
+//! against a (plaintext, in-repo-fixture-scale) golden and classifies every
+//! site into: `match`, `fresh_wrong`, `fresh_missing`, `fresh_extra`,
+//! `fresh_novel`, or `golden_missing`.
 //!
 //! # The critical invariant
 //!
-//! **`SemanticDiff::fresh_wrong.is_empty()`** — fresh must never confidently
-//! emit a target that L3 says is wrong.  A per-site Histogram cannot catch
-//! this: it can count "resolved" or "unknown" but cannot tell you WHICH target
-//! was chosen.  This golden does.
+//! **`fresh_wrong.is_empty()`** — fresh must never confidently emit a target
+//! that L3 says is wrong.  A per-site Histogram cannot catch this: it can
+//! count "resolved" or "unknown" but cannot tell you WHICH target was chosen.
+//! This golden does.
+//!
+//! # 1B.3b: committed, anonymized, frozen — no live L3 in the gate path
+//!
+//! The CDO-scale golden is too large and too proprietary to mint live on
+//! every run (and CDO is being retired as a live dependency of the gate
+//! module — see the 1B.3b plan). Instead: [`mint_l3_validated_golden`] /
+//! [`mint_l3_trigger_golden`] / `differential::project_l3_event_rows` run
+//! ONCE, on a dev machine with CDO access, via the dev-mint tool
+//! (`src/bin/mint-goldens.rs`, OUTSIDE `src/program/resolve`). The tool
+//! ANONYMIZES every identifying string (via [`anon::anon`] — see that
+//! module's docs for the full domain-separation + HMAC-governance writeup)
+//! and writes the result to three COMMITTED files under
+//! `tests/goldens/semantic-edges/`: `cdo-anon.json` (Member/Interface),
+//! `cdo-trigger-anon.json` (ImplicitTrigger), `cdo-event-anon.json`
+//! (EventFlow). [`run_cdo_semantic_audit`]/[`run_cdo_trigger_audit`]/
+//! [`run_cdo_event_audit`] LOAD these committed goldens and anonymize the
+//! FRESH side with the SAME function at audit time — `engine::l3` is NOT
+//! imported by any of the three `run_cdo_*_audit` functions; the gate module
+//! still depends on it only through the sanctioned mint functions above
+//! (removed entirely in 1B.3b Task 3).
 //!
 //! # Route-applicability contract
 //!
@@ -23,23 +45,31 @@
 //! on every route and delegates the ABI ingestion check to
 //! [`abi_ingestion_integrity`].
 //!
-//! # CDO/L3 audit
+//! # CDO audits
 //!
-//! [`run_cdo_semantic_audit`] runs the full comparison over a real workspace
-//! (env-gated; the caller checks `CDO_WS`).
+//! [`run_cdo_semantic_audit`]/[`run_cdo_trigger_audit`]/[`run_cdo_event_audit`]
+//! run the load-frozen comparison over a real workspace (env-gated; the
+//! caller checks `CDO_WS` and applies the `ENFORCE_CDO_WS` hard-fail guard —
+//! see `tests/program_resolve_harness.rs`).
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::program::node::ObjKey;
+use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::abi_check::{
     abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
 };
+use crate::program::resolve::anon::{self, AnonId};
 use crate::program::resolve::differential::{
-    CanonicalEdge, CanonicalTarget, project_fresh, project_l3, witness_contract_holds,
+    CanonicalEdge, CanonicalEventRow, CanonicalKey, CanonicalTarget, project_fresh,
+    project_fresh_event_rows, project_l3, project_l3_implicit_trigger_in_scope,
+    witness_contract_holds,
 };
 use crate::program::resolve::edge::{Edge, EdgeKind};
 
@@ -120,6 +150,307 @@ impl SemanticGolden {
 }
 
 // ---------------------------------------------------------------------------
+// 1B.3b Task 1: anonymized frozen-golden types (committed, no plaintext)
+//
+// See `anon.rs`'s module docs for the full governance writeup (HMAC vs salt,
+// domain separation, the re-hash-don't-decrypt principle). In short:
+// [`AnonSiteKey`]/[`AnonTarget`] are the SAME shape as [`GoldenSiteKey`]/
+// [`GoldenTarget`] with every identifying string field replaced by an
+// [`AnonId`]; non-sensitive labels (`from_object_kind`, `edge_kind`, `line`,
+// `kind`) stay in CLEARTEXT so an anonymized diff still has semantic anchors.
+// These are what gets WRITTEN to the committed `cdo-anon.json` /
+// `cdo-trigger-anon.json` (same shape, different `site_domain` — see
+// [`anon::SITE_DOMAIN_V1`] vs [`anon::TRIGGER_OP_DOMAIN_V1`]).
+// ---------------------------------------------------------------------------
+
+/// Schema version stamped into every anonymized committed golden
+/// (`cdo-anon.json` / `cdo-trigger-anon.json` / `cdo-event-anon.json`). Bump
+/// when the anonymization scheme or a golden's field shape changes; the
+/// public-CI metadata-validation test asserts every committed golden carries
+/// this value.
+pub const ANON_GOLDEN_SCHEMA_VERSION: u32 = 1;
+
+/// Anonymized, serde-able mirror of [`GoldenSiteKey`]. The four identifying
+/// string fields (`from_app_guid`, `from_object_lc`, `from_routine_lc`,
+/// `unit`) and the `callee_fp` fingerprint are EACH individually hashed via
+/// [`anon::anon`] under `site_domain`. `from_object_kind` (an object-type
+/// category, e.g. `"codeunit"`), `edge_kind` (the `EdgeKind` discriminant),
+/// and `line` (a bare source line number, meaningless without the now-hashed
+/// `unit`) are non-sensitive and stay CLEARTEXT.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AnonSiteKey {
+    pub from_app_id: AnonId,
+    pub from_object_kind: String,
+    pub from_object_id: AnonId,
+    pub from_routine_id: AnonId,
+    pub edge_kind: u8,
+    pub unit_id: AnonId,
+    pub line: u32,
+    pub callee_id: AnonId,
+}
+
+/// Anonymized, serde-able mirror of [`GoldenTarget`]. `kind` (the object-kind
+/// tag, or the 254/255 AbiSymbol/Builtin sentinels) is a non-sensitive label
+/// kept CLEARTEXT; `app`+`object_lc` are combined into one [`AnonId`]
+/// (app-scoped object identity) and `routine_lc` is hashed separately — both
+/// under [`anon::TARGET_DOMAIN_V1`], shared by every golden (a "target" means
+/// the same thing regardless of which golden it appears in).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AnonTarget {
+    pub kind: u8,
+    pub object_id: AnonId,
+    pub routine_id: Option<AnonId>,
+}
+
+/// One entry in an anonymized golden: an [`AnonSiteKey`] paired with its
+/// anonymized target set.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnonGoldenEntry {
+    pub site: AnonSiteKey,
+    pub targets: BTreeSet<AnonTarget>,
+}
+
+/// The committed anonymized golden shape shared by `cdo-anon.json`
+/// (`site_domain = `[`anon::SITE_DOMAIN_V1`]) and `cdo-trigger-anon.json`
+/// (`site_domain = `[`anon::TRIGGER_OP_DOMAIN_V1`]). Always sorted by `site`
+/// (determinism + binary-search lookups), same convention as
+/// [`SemanticGolden`].
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AnonSemanticGolden {
+    pub schema_version: u32,
+    pub entries: Vec<AnonGoldenEntry>,
+}
+
+impl AnonSemanticGolden {
+    fn get(&self, key: &AnonSiteKey) -> Option<&BTreeSet<AnonTarget>> {
+        self.entries
+            .binary_search_by(|e| e.site.cmp(key))
+            .ok()
+            .map(|i| &self.entries[i].targets)
+    }
+}
+
+/// Anonymized, serde-able EventFlow pair key — see
+/// `differential.rs::CanonicalEventRow`'s docs for why this is keyed by
+/// `CanonicalKey` rather than L3's proprietary `stable_routine_id` scheme.
+/// Both `publisher_id` and `subscriber_id` hash the FULL `CanonicalKey`
+/// (app_guid + object_kind + object_lc + routine_lc) under
+/// [`anon::EVENT_PAIR_DOMAIN_V1`]; `event_name_id` hashes the bare event name
+/// under the same domain.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AnonEventPairKey {
+    pub publisher_id: AnonId,
+    pub event_name_id: AnonId,
+    pub subscriber_id: AnonId,
+}
+
+/// One entry in the committed `cdo-event-anon.json`: an anonymized pub→sub
+/// pair plus the CLEARTEXT resolved publisher arity (a bare parameter count —
+/// non-identifying).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnonEventEntry {
+    pub pair: AnonEventPairKey,
+    pub publisher_arity: Option<usize>,
+}
+
+/// The committed `cdo-event-anon.json` shape.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AnonEventGolden {
+    pub schema_version: u32,
+    pub entries: Vec<AnonEventEntry>,
+}
+
+/// Hash `(app, object_lc)` into one [`AnonId`] under [`anon::TARGET_DOMAIN_V1`]
+/// — app-scoped object identity (combined, not two separate ids, so a small
+/// numeric `object_lc` from two different apps cannot collide).
+fn anon_target_object_id(app: &Option<String>, object_lc: &str) -> AnonId {
+    let canon = format!("{}\u{1}{object_lc}", app.as_deref().unwrap_or(""));
+    anon::anon(anon::TARGET_DOMAIN_V1, &canon)
+}
+
+fn anon_target_routine_id(routine_lc: &str) -> AnonId {
+    anon::anon(anon::TARGET_DOMAIN_V1, routine_lc)
+}
+
+/// Anonymize one [`GoldenTarget`] under [`anon::TARGET_DOMAIN_V1`].
+#[must_use]
+pub fn anonymize_target(t: &GoldenTarget) -> AnonTarget {
+    AnonTarget {
+        kind: t.kind,
+        object_id: anon_target_object_id(&t.app, &t.object_lc),
+        routine_id: t.routine_lc.as_deref().map(anon_target_routine_id),
+    }
+}
+
+/// Anonymize one [`GoldenSiteKey`] under `site_domain` (either
+/// [`anon::SITE_DOMAIN_V1`] or [`anon::TRIGGER_OP_DOMAIN_V1`]).
+#[must_use]
+pub fn anonymize_site_key(key: &GoldenSiteKey, site_domain: &str) -> AnonSiteKey {
+    AnonSiteKey {
+        from_app_id: anon::anon(site_domain, &key.from_app_guid),
+        from_object_kind: key.from_object_kind.clone(),
+        from_object_id: anon::anon(site_domain, &key.from_object_lc),
+        from_routine_id: anon::anon(site_domain, &key.from_routine_lc),
+        edge_kind: key.edge_kind,
+        unit_id: anon::anon(site_domain, &key.unit),
+        line: key.line,
+        callee_id: anon::anon(site_domain, &format!("{}", key.callee_fp)),
+    }
+}
+
+/// Record every hashed field of `(plain, anon_key)` into `deanon`
+/// (`AnonId.0 -> human-readable plaintext`) — the local, GITIGNORED
+/// `cdo-deanon-map.json` accumulator. See `anon.rs`'s module docs ("the
+/// re-hash-don't-decrypt principle"): this is the ONLY place plaintext is
+/// ever written back out, and only to a local, never-committed file.
+fn record_site_deanon(
+    plain: &GoldenSiteKey,
+    anon_key: &AnonSiteKey,
+    deanon: &mut BTreeMap<String, String>,
+) {
+    deanon
+        .entry(anon_key.from_app_id.0.clone())
+        .or_insert_with(|| format!("app_guid={}", plain.from_app_guid));
+    deanon
+        .entry(anon_key.from_object_id.0.clone())
+        .or_insert_with(|| {
+            format!(
+                "object_lc={} (kind={})",
+                plain.from_object_lc, plain.from_object_kind
+            )
+        });
+    deanon
+        .entry(anon_key.from_routine_id.0.clone())
+        .or_insert_with(|| format!("routine_lc={}", plain.from_routine_lc));
+    deanon
+        .entry(anon_key.unit_id.0.clone())
+        .or_insert_with(|| format!("unit={}", plain.unit));
+    deanon
+        .entry(anon_key.callee_id.0.clone())
+        .or_insert_with(|| format!("callee_fp={}", plain.callee_fp));
+}
+
+fn record_target_deanon(
+    plain: &GoldenTarget,
+    anon_t: &AnonTarget,
+    deanon: &mut BTreeMap<String, String>,
+) {
+    deanon.entry(anon_t.object_id.0.clone()).or_insert_with(|| {
+        format!(
+            "app={:?} object_lc={} (kind={})",
+            plain.app, plain.object_lc, plain.kind
+        )
+    });
+    if let (Some(rid), Some(rlc)) = (&anon_t.routine_id, &plain.routine_lc) {
+        deanon
+            .entry(rid.0.clone())
+            .or_insert_with(|| format!("routine_lc={rlc}"));
+    }
+}
+
+/// Anonymize `golden` under `site_domain`, ALSO recording every hashed
+/// field's plaintext into `deanon`. The dev-mint tool's primary entry point —
+/// mint + anonymize + populate the local de-anon map in one pass.
+#[must_use]
+pub fn anonymize_golden_with_deanon(
+    golden: &SemanticGolden,
+    site_domain: &str,
+    deanon: &mut BTreeMap<String, String>,
+) -> AnonSemanticGolden {
+    let mut entries: Vec<AnonGoldenEntry> = golden
+        .entries
+        .iter()
+        .map(|e| {
+            let asite = anonymize_site_key(&e.site, site_domain);
+            record_site_deanon(&e.site, &asite, deanon);
+            let atargets: BTreeSet<AnonTarget> = e
+                .targets
+                .iter()
+                .map(|t| {
+                    let at = anonymize_target(t);
+                    record_target_deanon(t, &at, deanon);
+                    at
+                })
+                .collect();
+            AnonGoldenEntry {
+                site: asite,
+                targets: atargets,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| a.site.cmp(&b.site));
+    AnonSemanticGolden {
+        schema_version: ANON_GOLDEN_SCHEMA_VERSION,
+        entries,
+    }
+}
+
+/// Anonymize `golden` under `site_domain` without recording a de-anon map
+/// (callers that don't have/want a local map — e.g. a one-off comparison).
+#[must_use]
+pub fn anonymize_golden(golden: &SemanticGolden, site_domain: &str) -> AnonSemanticGolden {
+    let mut scratch = BTreeMap::new();
+    anonymize_golden_with_deanon(golden, site_domain, &mut scratch)
+}
+
+/// Hash a [`CanonicalKey`] (all four fields, joined) into one [`AnonId`]
+/// under [`anon::EVENT_PAIR_DOMAIN_V1`].
+fn anon_canonical_key(k: &CanonicalKey, domain: &str) -> AnonId {
+    let s = format!(
+        "{}\u{1}{}\u{1}{}\u{1}{}",
+        k.app_guid, k.object_kind, k.object_lc, k.routine_lc
+    );
+    anon::anon(domain, &s)
+}
+
+/// Anonymize a batch of [`CanonicalEventRow`]s into the committed
+/// `cdo-event-anon.json` shape, recording plaintext into `deanon`.
+#[must_use]
+pub fn anonymize_event_rows_with_deanon(
+    rows: &[CanonicalEventRow],
+    deanon: &mut BTreeMap<String, String>,
+) -> AnonEventGolden {
+    let mut entries: Vec<AnonEventEntry> = rows
+        .iter()
+        .map(|r| {
+            let pair = AnonEventPairKey {
+                publisher_id: anon_canonical_key(&r.publisher, anon::EVENT_PAIR_DOMAIN_V1),
+                event_name_id: anon::anon(anon::EVENT_PAIR_DOMAIN_V1, &r.event_name_lc),
+                subscriber_id: anon_canonical_key(&r.subscriber, anon::EVENT_PAIR_DOMAIN_V1),
+            };
+            deanon
+                .entry(pair.publisher_id.0.clone())
+                .or_insert_with(|| {
+                    format!(
+                        "publisher={}:{}:{}",
+                        r.publisher.object_kind, r.publisher.object_lc, r.publisher.routine_lc
+                    )
+                });
+            deanon
+                .entry(pair.event_name_id.0.clone())
+                .or_insert_with(|| format!("event_name_lc={}", r.event_name_lc));
+            deanon
+                .entry(pair.subscriber_id.0.clone())
+                .or_insert_with(|| {
+                    format!(
+                        "subscriber={}:{}:{}",
+                        r.subscriber.object_kind, r.subscriber.object_lc, r.subscriber.routine_lc
+                    )
+                });
+            AnonEventEntry {
+                pair,
+                publisher_arity: r.publisher_arity,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| a.pair.cmp(&b.pair));
+    AnonEventGolden {
+        schema_version: ANON_GOLDEN_SCHEMA_VERSION,
+        entries,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Diff types
 // ---------------------------------------------------------------------------
 
@@ -181,6 +512,10 @@ pub struct SemanticDiff {
 /// Result of the CDO/L3 semantic audit over a real workspace.
 #[derive(Clone, Debug, Default)]
 pub struct CdoSemanticAuditReport {
+    /// 1B.3b Task 1: `true` when the committed `cdo-anon.json` golden loaded
+    /// and parsed successfully. The `ENFORCE_CDO_WS=1` guard hard-fails on
+    /// `false` — see `tests/program_resolve_harness.rs`'s `cdo_ws_or_enforce`.
+    pub golden_loaded: bool,
     pub l3_total: usize,
     pub fresh_total: usize,
     pub paired: usize,
@@ -203,6 +538,224 @@ pub struct CdoSemanticAuditReport {
     /// SHA-256 hex digest over the sorted site→(l3_targets, fresh_targets) pairs.
     /// Deterministic across runs; used as a pinnable CDO audit fingerprint.
     pub digest: String,
+}
+
+/// Result of the L3/fresh ImplicitTrigger frozen-golden audit
+/// (`cdo-trigger-anon.json`, `site_domain = `[`anon::TRIGGER_OP_DOMAIN_V1`]).
+///
+/// 1B.3b scope note: unlike [`CdoSemanticAuditReport`], this report does NOT
+/// adjudicate `fresh_wrong` into fresh-ahead-dispatch vs genuine-wrong — that
+/// classification (and the `known-genuine-divergences.json` manifest) is
+/// scoped to the Member/Interface golden only. The live, CDO-gated
+/// `run_implicit_trigger_harness` (`differential.rs`) remains the
+/// zero-tolerance gate for ImplicitTrigger correctness (unchanged this task —
+/// removed only in 1B.3b Task 3). This audit exists to PROVE the
+/// frozen-load-and-anonymize mechanism works for the ImplicitTrigger dispatch
+/// kind and to back the `ENFORCE_CDO_WS` guard's `checked_sites>0` requirement.
+#[derive(Clone, Debug, Default)]
+pub struct AnonTriggerAuditReport {
+    pub golden_loaded: bool,
+    pub l3_total: usize,
+    pub fresh_total: usize,
+    pub total_paired: usize,
+    pub matches: usize,
+    pub fresh_wrong_count: usize,
+    pub fresh_missing: usize,
+    pub fresh_extra: usize,
+    pub fresh_novel: usize,
+    pub golden_missing: usize,
+    pub digest: String,
+}
+
+/// Result of the L3/fresh EventFlow frozen-golden audit
+/// (`cdo-event-anon.json`). Arity-agnostic pair-set comparison only (mirrors
+/// `run_event_flow_gate`'s Stage-1 join, not its Stage-2 arity adjudication) —
+/// see [`AnonTriggerAuditReport`]'s scope note; the same reasoning applies
+/// here. The live, CDO-gated `run_event_flow_gate` remains the zero-tolerance
+/// EventFlow gate (unchanged this task).
+#[derive(Clone, Debug, Default)]
+pub struct AnonEventAuditReport {
+    pub golden_loaded: bool,
+    pub l3_total: usize,
+    pub fresh_total: usize,
+    pub matched_pairs: usize,
+    pub pair_l3_only: usize,
+    pub pair_fresh_only: usize,
+    pub digest: String,
+}
+
+// ---------------------------------------------------------------------------
+// 1B.3b Task 1: load-frozen audit infrastructure (anonymized diff)
+// ---------------------------------------------------------------------------
+
+/// An anonymized [`FreshWrong`] — same meaning, [`AnonTarget`] instead of
+/// [`GoldenTarget`].
+#[derive(Clone, Debug)]
+pub struct AnonFreshWrong {
+    pub site: AnonSiteKey,
+    pub fresh_targets: BTreeSet<AnonTarget>,
+    pub l3_targets: BTreeSet<AnonTarget>,
+}
+
+/// Anonymized counterpart of [`SemanticDiff`]. `fresh_missing`/`fresh_extra`
+/// are plain counts (not `Vec`s) — the load-frozen audits don't need the
+/// per-site detail beyond `fresh_wrong` (which DOES carry detail, because
+/// that's the bucket the genuine-wrong adjudication and the deanon map need).
+#[derive(Clone, Debug, Default)]
+pub struct AnonSemanticDiff {
+    pub total_paired: usize,
+    pub matches: usize,
+    pub fresh_wrong: Vec<AnonFreshWrong>,
+    pub fresh_missing: usize,
+    pub fresh_extra: usize,
+    pub fresh_novel: usize,
+    pub golden_missing: usize,
+}
+
+fn semantic_edges_golden_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/semantic-edges")
+}
+
+/// Path to the committed Member/Interface anonymized golden.
+#[must_use]
+pub fn cdo_anon_golden_path() -> PathBuf {
+    semantic_edges_golden_dir().join("cdo-anon.json")
+}
+
+/// Path to the committed ImplicitTrigger anonymized golden.
+#[must_use]
+pub fn cdo_trigger_anon_golden_path() -> PathBuf {
+    semantic_edges_golden_dir().join("cdo-trigger-anon.json")
+}
+
+/// Path to the committed EventFlow anonymized golden.
+#[must_use]
+pub fn cdo_event_anon_golden_path() -> PathBuf {
+    semantic_edges_golden_dir().join("cdo-event-anon.json")
+}
+
+/// Path to the GITIGNORED local de-anonymization map
+/// (`AnonId.0 -> human-readable plaintext`). NEVER committed — see `anon.rs`'s
+/// module docs.
+#[must_use]
+pub fn cdo_deanon_map_path() -> PathBuf {
+    semantic_edges_golden_dir().join("cdo-deanon-map.json")
+}
+
+/// Load + validate a committed [`AnonSemanticGolden`] (`cdo-anon.json` /
+/// `cdo-trigger-anon.json`). Returns `None` when the file is missing,
+/// unparseable, or carries a `schema_version` other than
+/// [`ANON_GOLDEN_SCHEMA_VERSION`] — fail-closed, never panics; the
+/// `ENFORCE_CDO_WS` guard is the caller's responsibility (see
+/// `tests/program_resolve_harness.rs`).
+#[must_use]
+pub fn load_anon_golden(path: &Path) -> Option<AnonSemanticGolden> {
+    let json = std::fs::read_to_string(path).ok()?;
+    let golden: AnonSemanticGolden = serde_json::from_str(&json).ok()?;
+    if golden.schema_version != ANON_GOLDEN_SCHEMA_VERSION {
+        return None;
+    }
+    Some(golden)
+}
+
+/// Load + validate a committed [`AnonEventGolden`] (`cdo-event-anon.json`).
+/// Same fail-closed contract as [`load_anon_golden`].
+#[must_use]
+pub fn load_anon_event_golden(path: &Path) -> Option<AnonEventGolden> {
+    let json = std::fs::read_to_string(path).ok()?;
+    let golden: AnonEventGolden = serde_json::from_str(&json).ok()?;
+    if golden.schema_version != ANON_GOLDEN_SCHEMA_VERSION {
+        return None;
+    }
+    Some(golden)
+}
+
+/// Merge `new_entries` into the GITIGNORED local de-anonymization map at
+/// `path`, creating it if absent. Existing entries win on key collision
+/// (first writer's plaintext is kept — there should never be a genuine
+/// disagreement since the SAME plaintext always re-hashes to the SAME id).
+/// Best-effort: I/O failures are swallowed — the map is a LOCAL debugging
+/// aid, never required for correctness (see `anon.rs`'s module docs).
+pub fn merge_deanon_map(path: &Path, new_entries: &BTreeMap<String, String>) {
+    if new_entries.is_empty() {
+        return;
+    }
+    let mut map: BTreeMap<String, String> = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    for (k, v) in new_entries {
+        map.entry(k.clone()).or_insert_with(|| v.clone());
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&map) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// Build the anonymized fresh-side site→targets map AND a reverse
+/// `AnonSiteKey -> GoldenSiteKey` index. The reverse index is what lets
+/// `run_cdo_semantic_audit` recover PLAINTEXT fresh identity for a failing
+/// `fresh_wrong`/`genuine_wrong` site (for the deanon map and for
+/// `CdoSemanticAuditReport::genuine_wrong_sites`, which stays plaintext
+/// `GoldenSiteKey` because it only ever needs FRESH's own identity — see the
+/// module-level "re-hash-don't-decrypt" principle in `anon.rs`).
+fn anonymize_fresh_map(
+    fresh_plain: &BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>>,
+    site_domain: &str,
+) -> (
+    BTreeMap<AnonSiteKey, BTreeSet<AnonTarget>>,
+    HashMap<AnonSiteKey, GoldenSiteKey>,
+) {
+    let mut anon_map: BTreeMap<AnonSiteKey, BTreeSet<AnonTarget>> = BTreeMap::new();
+    let mut reverse: HashMap<AnonSiteKey, GoldenSiteKey> = HashMap::new();
+    for (site, targets) in fresh_plain {
+        let asite = anonymize_site_key(site, site_domain);
+        let atargets: BTreeSet<AnonTarget> = targets.iter().map(anonymize_target).collect();
+        reverse.insert(asite.clone(), site.clone());
+        anon_map.entry(asite).or_default().extend(atargets);
+    }
+    (anon_map, reverse)
+}
+
+/// Diff an anonymized fresh site→targets map against a loaded committed
+/// golden. Same classification rule as [`assert_against_semantic_golden`],
+/// operating on [`AnonSiteKey`]/[`AnonTarget`] instead of the plaintext types.
+#[must_use]
+fn diff_against_anon_golden(
+    fresh_anon: &BTreeMap<AnonSiteKey, BTreeSet<AnonTarget>>,
+    golden: &AnonSemanticGolden,
+) -> AnonSemanticDiff {
+    let mut diff = AnonSemanticDiff::default();
+    for entry in &golden.entries {
+        let l3_targets = &entry.targets;
+        if let Some(fresh_targets) = fresh_anon.get(&entry.site) {
+            diff.total_paired += 1;
+            if fresh_targets == l3_targets {
+                diff.matches += 1;
+            } else if !l3_targets.is_empty() && !fresh_targets.is_empty() {
+                diff.fresh_wrong.push(AnonFreshWrong {
+                    site: entry.site.clone(),
+                    fresh_targets: fresh_targets.clone(),
+                    l3_targets: l3_targets.clone(),
+                });
+            } else if !l3_targets.is_empty() {
+                diff.fresh_missing += 1;
+            } else {
+                diff.fresh_extra += 1;
+            }
+        } else {
+            diff.golden_missing += 1;
+        }
+    }
+    for key in fresh_anon.keys() {
+        if golden.get(key).is_none() {
+            diff.fresh_novel += 1;
+        }
+    }
+    diff
 }
 
 // ---------------------------------------------------------------------------
@@ -295,16 +848,22 @@ fn canonical_targets_to_golden(targets: &BTreeSet<CanonicalTarget>) -> BTreeSet<
 /// regression fires there and acts as defense-in-depth covering this blind spot.
 ///
 /// Full per-target recall validation is a named 1B.3b-disambiguation follow-up.
-fn is_fresh_ahead_dispatch(
-    fw: &FreshWrong,
-    obj_lookup: &std::collections::HashMap<
-        (String, String),
-        &crate::program::node_extract::ObjectNode,
-    >,
+///
+/// # 1B.3b: ported to the anonymized identity space
+///
+/// `run_cdo_semantic_audit` no longer holds L3's plaintext target set (it
+/// LOADS the committed anonymized golden) — only [`AnonTarget`]s. The THREE
+/// CASES above are preserved EXACTLY; only the identity type changed, per
+/// `anon.rs`'s "re-hash-don't-decrypt" principle: `obj_lookup_anon` is built
+/// ONCE from the LIVE graph (real `ObjectNode`s, each keyed by its OWN
+/// re-hashed identity), so both `l3` (anonymized, loaded from the frozen
+/// golden) and `fresh` (anonymized, computed live) can look themselves up by
+/// anonymized identity without ever inverting a committed id.
+fn is_fresh_ahead_dispatch_anon(
+    fresh: &BTreeSet<AnonTarget>,
+    l3: &BTreeSet<AnonTarget>,
+    obj_lookup_anon: &HashMap<AnonId, &ObjectNode>,
 ) -> bool {
-    let fresh = &fw.fresh_targets;
-    let l3 = &fw.l3_targets;
-
     if fresh.is_empty() || l3.is_empty() {
         return false;
     }
@@ -329,26 +888,18 @@ fn is_fresh_ahead_dispatch(
     }
 
     for l3_target in l3 {
-        let l3_key = (
-            l3_target.app.clone().unwrap_or_default(),
-            l3_target.object_lc.clone(),
-        );
-        let Some(l3_obj) = obj_lookup.get(&l3_key) else {
-            // Cannot find the interface object → cannot verify → treat as genuine_wrong.
+        let Some(l3_obj) = obj_lookup_anon.get(&l3_target.object_id) else {
+            // Cannot find the interface object in the live graph → cannot verify → genuine_wrong.
             return false;
         };
         let iface_name_lc = l3_obj.name.to_ascii_lowercase();
 
         for fresh_target in fresh {
             // Routine names should agree for a valid interface dispatch.
-            if fresh_target.routine_lc != l3_target.routine_lc {
+            if fresh_target.routine_id != l3_target.routine_id {
                 return false;
             }
-            let fresh_key = (
-                fresh_target.app.clone().unwrap_or_default(),
-                fresh_target.object_lc.clone(),
-            );
-            let Some(fresh_obj) = obj_lookup.get(&fresh_key) else {
+            let Some(fresh_obj) = obj_lookup_anon.get(&fresh_target.object_id) else {
                 return false;
             };
             // The concrete object must declare it implements the interface.
@@ -364,11 +915,52 @@ fn is_fresh_ahead_dispatch(
     true
 }
 
+/// Build `AnonId -> &ObjectNode` over every object in `graph`, keyed the SAME
+/// way [`anon_target_object_id`] keys an [`AnonTarget`] — i.e. re-hashing
+/// `(app_guid, object_lc)` for every LIVE object so an anonymized target's
+/// `object_id` (whether from the loaded golden or freshly computed) can find
+/// its `ObjectNode` without ever inverting a committed id.
+fn build_obj_lookup_anon(
+    graph: &crate::program::graph::ProgramGraph,
+) -> HashMap<AnonId, &ObjectNode> {
+    let mut lookup: HashMap<AnonId, &ObjectNode> = HashMap::new();
+    for obj in &graph.objects {
+        let guid = graph
+            .apps
+            .try_resolve(obj.id.app)
+            .map(|a| a.guid.clone())
+            .unwrap_or_default();
+        let lc = match &obj.id.key {
+            ObjKey::Id(n) => format!("{n}"),
+            ObjKey::Name(s) => s.clone(),
+        };
+        lookup.insert(anon_target_object_id(&Some(guid), &lc), obj);
+    }
+    lookup
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/// **LAST SANCTIONED L3 ORACLE USE**: mint the semantic golden from the L3 oracle.
+/// Build a [`SemanticGolden`] from a batch of canonical edges. Oracle-
+/// agnostic — the caller decides whether `edges` came from L3 or from the
+/// fresh resolver. Shared by [`mint_l3_validated_golden`],
+/// [`mint_l3_trigger_golden`], and [`mint_fresh_golden_for_kind`].
+fn build_golden_from_canonical(edges: &[CanonicalEdge]) -> SemanticGolden {
+    let mut map: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
+    for edge in edges {
+        let key = canonical_to_golden_key(edge);
+        let targets = canonical_targets_to_golden(&edge.targets);
+        map.entry(key).or_default().extend(targets);
+    }
+    SemanticGolden::from_map(map)
+}
+
+/// **SANCTIONED L3 ORACLE USE (1B.3b: the dev-mint tool is the only caller
+/// post-freeze; the in-repo fixture's `REGEN_TEMP_GOLDENS` path also still
+/// calls this directly — see `tests/program_resolve_harness.rs` Test 14)**:
+/// mint the Member/Interface semantic golden from the L3 oracle.
 ///
 /// Calls [`project_l3`] over `workspace_root`, collects per-site target sets into
 /// a [`SemanticGolden`] keyed by column-ignoring [`GoldenSiteKey`].
@@ -377,14 +969,52 @@ fn is_fresh_ahead_dispatch(
 /// that L3 extracted but could not resolve, so the golden covers them.
 #[must_use]
 pub fn mint_l3_validated_golden(workspace_root: &Path) -> SemanticGolden {
-    let l3_edges = project_l3(workspace_root);
-    let mut map: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
-    for edge in &l3_edges {
-        let key = canonical_to_golden_key(edge);
-        let targets = canonical_targets_to_golden(&edge.targets);
-        map.entry(key).or_default().extend(targets);
-    }
-    SemanticGolden::from_map(map)
+    build_golden_from_canonical(&project_l3(workspace_root))
+}
+
+/// **SANCTIONED L3 ORACLE USE (1B.3b dev-mint tool only)**: mint the
+/// ImplicitTrigger semantic golden from L3's native `PRecordOperation`-keyed
+/// edges ([`project_l3_implicit_trigger_in_scope`]). Backs `cdo-trigger-anon.json`.
+#[must_use]
+pub fn mint_l3_trigger_golden(workspace_root: &Path) -> SemanticGolden {
+    build_golden_from_canonical(&project_l3_implicit_trigger_in_scope(workspace_root))
+}
+
+/// L3-INDEPENDENT: mint a [`SemanticGolden`] from the FRESH resolver's OWN
+/// output, filtered to one [`EdgeKind`]. Used to freeze fresh's own
+/// resolution as a committed regression baseline for dispatch kinds a small
+/// synthetic fixture exercises end-to-end without L3 at all (the
+/// ImplicitTrigger target-set fixture — 1B.3b Task 1 Step 4). NOT used for
+/// the CDO-derived goldens (those freeze the L3 VERDICT, not fresh's own
+/// output — see [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`]).
+#[must_use]
+pub fn mint_fresh_golden_for_kind(workspace_root: &Path, kind: EdgeKind) -> SemanticGolden {
+    use crate::program::abi_ingest::AbiCache;
+    use crate::program::build::build_program_graph;
+    use crate::program::resolve::full::resolve_full_program;
+    use crate::snapshot::SnapshotBuilder;
+
+    let snap = match (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    {
+        Ok(s) => s,
+        Err(_) => return SemanticGolden::default(),
+    };
+    let graph = build_program_graph(&snap, &AbiCache::new());
+    let Some(report) = resolve_full_program(workspace_root) else {
+        return SemanticGolden::default();
+    };
+    let edges: Vec<Edge> = report
+        .edges
+        .into_iter()
+        .map(|ce| ce.edge)
+        .filter(|e| e.kind == kind)
+        .collect();
+    let canonical = project_fresh(&edges, &graph.apps);
+    build_golden_from_canonical(&canonical)
 }
 
 /// Compare a fresh canonical edge batch against the L3-minted golden.
@@ -549,22 +1179,36 @@ pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
     route_applicability(&all_edges, &raw_abi)
 }
 
-/// CDO/L3 semantic audit: compare fresh resolver against L3 oracle over a real
-/// workspace.
+/// CDO semantic audit: compare the fresh resolver against the COMMITTED,
+/// ANONYMIZED, FROZEN L3 verdict (`cdo-anon.json`) over a real workspace.
 ///
-/// Callers should gate this on `CDO_WS` env var before calling — this function
-/// runs an expensive double-build (L3 oracle + fresh resolution).
+/// 1B.3b Task 1: this NO LONGER calls [`project_l3`] (or builds an L3
+/// workspace at all) — it LOADS the committed golden and anonymizes the
+/// fresh side with the SAME [`anon::anon`] so the two align. The gate module
+/// (`src/program/resolve`) has exactly ONE remaining `engine::l3` import
+/// chain after this swap: [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`]
+/// (the dev-mint tool's sanctioned callers; also Test 14's `REGEN_TEMP_GOLDENS`
+/// path) — `run_cdo_semantic_audit` itself touches neither.
 ///
-/// Returns a [`CdoSemanticAuditReport`] with site-level bucket counts and a
-/// deterministic SHA-256 digest over the sorted site→target mapping.
+/// Callers should gate this on `CDO_WS` env var before calling — this
+/// function still does a real fresh-resolution build, which is expensive on
+/// CDO-scale workspaces.
+///
+/// Returns a [`CdoSemanticAuditReport`]. `golden_loaded == false` means
+/// `cdo-anon.json` is missing/invalid (the `ENFORCE_CDO_WS` guard in
+/// `tests/program_resolve_harness.rs` hard-fails on this).
 #[must_use]
 pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     use crate::program::abi_ingest::AbiCache;
     use crate::program::build::build_program_graph;
-    use crate::program::node::ObjKey;
     use crate::program::resolve::full::resolve_full_program;
     use crate::snapshot::SnapshotBuilder;
-    use std::collections::HashMap;
+
+    // ── Load the committed, anonymized golden (NO project_l3 call here) ──────
+    let golden = load_anon_golden(&cdo_anon_golden_path());
+    let golden_loaded = golden.is_some();
+    let golden = golden.unwrap_or_default();
+    let l3_total = golden.entries.len();
 
     // ── Build graph for AppRegistry (needed for project_fresh) ───────────────
     let snap = match (SnapshotBuilder {
@@ -574,29 +1218,30 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     .build()
     {
         Ok(s) => s,
-        Err(_) => return CdoSemanticAuditReport::default(),
+        Err(_) => {
+            return CdoSemanticAuditReport {
+                golden_loaded,
+                l3_total,
+                ..Default::default()
+            };
+        }
     };
     let graph = build_program_graph(&snap, &AbiCache::new());
     let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
-        return CdoSemanticAuditReport::default();
+        return CdoSemanticAuditReport {
+            golden_loaded,
+            l3_total,
+            ..Default::default()
+        };
     };
-
-    // ── L3 oracle ─────────────────────────────────────────────────────────────
-    let l3_edges = project_l3(workspace_root);
-    let l3_total = l3_edges.len();
-
-    // Build L3 golden.
-    let mut l3_map: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
-    for e in &l3_edges {
-        let key = canonical_to_golden_key(e);
-        let targets = canonical_targets_to_golden(&e.targets);
-        l3_map.entry(key).or_default().extend(targets);
-    }
-    let golden = SemanticGolden::from_map(l3_map);
 
     // ── Fresh resolver ────────────────────────────────────────────────────────
     let Some(report) = resolve_full_program(workspace_root) else {
-        return CdoSemanticAuditReport::default();
+        return CdoSemanticAuditReport {
+            golden_loaded,
+            l3_total,
+            ..Default::default()
+        };
     };
     // Filter to workspace app (L3 is workspace-scoped).
     let ws_edges: Vec<Edge> = report
@@ -607,98 +1252,63 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
         .collect();
     let fresh_total = ws_edges.len();
 
-    // ── Project fresh → canonical ─────────────────────────────────────────────
+    // ── Project fresh → canonical → plaintext map → anonymized map ───────────
     let fresh_canonical = project_fresh(&ws_edges, &graph.apps);
-
-    // Build fresh map (for digest).
-    let mut fresh_map: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
+    let mut fresh_plain: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
     for e in &fresh_canonical {
         let key = canonical_to_golden_key(e);
         let targets = canonical_targets_to_golden(&e.targets);
-        fresh_map.entry(key).or_default().extend(targets);
+        fresh_plain.entry(key).or_default().extend(targets);
     }
+    let (fresh_anon, reverse_site) = anonymize_fresh_map(&fresh_plain, anon::SITE_DOMAIN_V1);
 
-    // ── Diff ──────────────────────────────────────────────────────────────────
-    let diff = assert_against_semantic_golden(&fresh_canonical, &golden);
+    // ── Diff (anonymized) ─────────────────────────────────────────────────────
+    let diff = diff_against_anon_golden(&fresh_anon, &golden);
 
-    // ── Adjudicate fresh_wrong into fresh_ahead_dispatch vs genuine_wrong ────────
-    // Build object lookup: (app_guid, object_lc) → &ObjectNode for implements checks.
-    let mut obj_lookup: HashMap<(String, String), &crate::program::node_extract::ObjectNode> =
-        HashMap::new();
-    for obj in &graph.objects {
-        let guid = graph
-            .apps
-            .try_resolve(obj.id.app)
-            .map(|a| a.guid.clone())
-            .unwrap_or_default();
-        let lc = match &obj.id.key {
-            ObjKey::Id(n) => format!("{n}"),
-            ObjKey::Name(s) => s.clone(),
-        };
-        obj_lookup.insert((guid, lc), obj);
-    }
+    // ── Adjudicate fresh_wrong into fresh_ahead_dispatch vs genuine_wrong ────
+    let obj_lookup_anon = build_obj_lookup_anon(&graph);
 
-    // Adjudicate each fresh_wrong site.
-    let mut fresh_ahead_dispatch: Vec<FreshAheadDispatch> = Vec::new();
-    let mut genuine_wrong: Vec<FreshWrong> = Vec::new();
-
-    for fw in &diff.fresh_wrong {
-        if is_fresh_ahead_dispatch(fw, &obj_lookup) {
-            fresh_ahead_dispatch.push(fw.clone());
-        } else {
-            genuine_wrong.push(fw.clone());
+    let mut fresh_ahead_dispatch_count = 0usize;
+    let mut genuine_wrong_sites: Vec<GoldenSiteKey> = Vec::new();
+    let mut deanon: BTreeMap<String, String> = BTreeMap::new();
+    // Record plaintext for every fresh site/target this run touched, not just
+    // the failures — cheap (already in memory) and keeps the local deanon map
+    // maximally useful for root-causing ANY future failure, not just today's.
+    for (site, targets) in &fresh_plain {
+        let asite = anonymize_site_key(site, anon::SITE_DOMAIN_V1);
+        record_site_deanon(site, &asite, &mut deanon);
+        for t in targets {
+            let at = anonymize_target(t);
+            record_target_deanon(t, &at, &mut deanon);
         }
     }
+
+    for fw in &diff.fresh_wrong {
+        if is_fresh_ahead_dispatch_anon(&fw.fresh_targets, &fw.l3_targets, &obj_lookup_anon) {
+            fresh_ahead_dispatch_count += 1;
+        } else if let Some(plain_site) = reverse_site.get(&fw.site) {
+            genuine_wrong_sites.push(plain_site.clone());
+        }
+        // A fw.site with no `reverse_site` entry cannot happen: `fw` is built
+        // from `fresh_anon`'s keys, and `reverse_site` is populated 1:1 with
+        // `fresh_anon` by `anonymize_fresh_map`.
+    }
+    merge_deanon_map(&cdo_deanon_map_path(), &deanon);
 
     eprintln!(
         "\nAdjudication: fresh_wrong={} → fresh_ahead_dispatch={} genuine_wrong={}",
         diff.fresh_wrong.len(),
-        fresh_ahead_dispatch.len(),
-        genuine_wrong.len(),
+        fresh_ahead_dispatch_count,
+        genuine_wrong_sites.len(),
     );
-    for gw in &genuine_wrong {
-        eprintln!(
-            "  GENUINE_WRONG site={:?} fresh={:?} l3={:?}",
-            gw.site, gw.fresh_targets, gw.l3_targets,
-        );
+    for site in &genuine_wrong_sites {
+        eprintln!("  GENUINE_WRONG site={site:?}");
     }
 
-    // ── Characterize fresh_missing ────────────────────────────────────────────
-    // Known deferred buckets (from prior analysis): compound~47, codeunit_implicit_rec~24,
-    // page_rec~14, trigger.missing~78 = 163 total. Anything beyond is a new gap.
-    let mut missing_page_rec = 0usize;
-    let mut missing_codeunit_implicit_rec = 0usize;
-    let mut missing_trigger = 0usize;
-    let mut missing_other = 0usize;
-    for fm in &diff.fresh_missing {
-        let from_kind = fm.site.from_object_kind.as_str();
-        let l3_targets_table = fm.l3_targets.iter().any(|t| t.kind == 1 || t.kind == 2);
-        let is_trigger_routine = fm.site.from_routine_lc.starts_with("on")
-            || matches!(
-                fm.site.from_routine_lc.as_str(),
-                "trigger" | "preparedocument" | "finishdocument"
-            );
-
-        if matches!(from_kind, "page" | "pageextension") && l3_targets_table {
-            missing_page_rec += 1;
-        } else if matches!(from_kind, "codeunit") && l3_targets_table {
-            missing_codeunit_implicit_rec += 1;
-        } else if is_trigger_routine {
-            missing_trigger += 1;
-        } else {
-            missing_other += 1;
-        }
-    }
-    eprintln!(
-        "fresh_missing characterization: page_rec={} codeunit_implicit_rec={} trigger={} other={}",
-        missing_page_rec, missing_codeunit_implicit_rec, missing_trigger, missing_other,
-    );
-
-    // ── Deterministic digest ──────────────────────────────────────────────────
-    // Feed sorted (key, l3_targets, fresh_targets) into SHA-256.
+    // ── Deterministic digest (over the ANONYMIZED comparison) ────────────────
     let mut hasher = Sha256::new();
     for entry in &golden.entries {
-        let fresh_targets = fresh_map.get(&entry.site).cloned().unwrap_or_default();
+        let fresh_targets = fresh_anon.get(&entry.site).cloned().unwrap_or_default();
         let k_json = serde_json::to_string(&entry.site).unwrap_or_default();
         let l_json = serde_json::to_string(&entry.targets).unwrap_or_default();
         let f_json = serde_json::to_string(&fresh_targets).unwrap_or_default();
@@ -708,17 +1318,136 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     let digest: String = digest_bytes.iter().map(|b| format!("{b:02x}")).collect();
 
     CdoSemanticAuditReport {
+        golden_loaded,
         l3_total,
         fresh_total,
         paired: diff.total_paired,
         fresh_wrong_count: diff.fresh_wrong.len(),
-        fresh_ahead_dispatch_count: fresh_ahead_dispatch.len(),
-        genuine_wrong_count: genuine_wrong.len(),
-        genuine_wrong_sites: genuine_wrong.iter().map(|fw| fw.site.clone()).collect(),
-        fresh_missing_count: diff.fresh_missing.len(),
-        fresh_extra_count: diff.fresh_extra.len(),
+        fresh_ahead_dispatch_count,
+        genuine_wrong_count: genuine_wrong_sites.len(),
+        genuine_wrong_sites,
+        fresh_missing_count: diff.fresh_missing,
+        fresh_extra_count: diff.fresh_extra,
         fresh_novel: diff.fresh_novel,
         golden_missing: diff.golden_missing,
+        digest,
+    }
+}
+
+/// CDO ImplicitTrigger frozen-golden audit: compare the fresh resolver's
+/// `ImplicitTrigger` edges against the committed, anonymized L3 verdict
+/// (`cdo-trigger-anon.json`). See [`AnonTriggerAuditReport`]'s doc comment for
+/// this audit's scope (mechanism proof + `ENFORCE_CDO_WS` backing — NOT a
+/// genuine-wrong adjudication gate; that stays in the live
+/// `run_implicit_trigger_harness` until Task 3).
+#[must_use]
+pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
+    let golden = load_anon_golden(&cdo_trigger_anon_golden_path());
+    let golden_loaded = golden.is_some();
+    let golden = golden.unwrap_or_default();
+    let l3_total = golden.entries.len();
+
+    let fresh_golden = mint_fresh_golden_for_kind(workspace_root, EdgeKind::ImplicitTrigger);
+    let fresh_total = fresh_golden.entries.len();
+
+    let mut fresh_plain: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
+    for e in &fresh_golden.entries {
+        fresh_plain.insert(e.site.clone(), e.targets.clone());
+    }
+    let (fresh_anon, _reverse_site) = anonymize_fresh_map(&fresh_plain, anon::TRIGGER_OP_DOMAIN_V1);
+
+    let diff = diff_against_anon_golden(&fresh_anon, &golden);
+
+    let mut deanon: BTreeMap<String, String> = BTreeMap::new();
+    for (site, targets) in &fresh_plain {
+        let asite = anonymize_site_key(site, anon::TRIGGER_OP_DOMAIN_V1);
+        record_site_deanon(site, &asite, &mut deanon);
+        for t in targets {
+            let at = anonymize_target(t);
+            record_target_deanon(t, &at, &mut deanon);
+        }
+    }
+    merge_deanon_map(&cdo_deanon_map_path(), &deanon);
+
+    let mut hasher = Sha256::new();
+    for entry in &golden.entries {
+        let fresh_targets = fresh_anon.get(&entry.site).cloned().unwrap_or_default();
+        let k_json = serde_json::to_string(&entry.site).unwrap_or_default();
+        let l_json = serde_json::to_string(&entry.targets).unwrap_or_default();
+        let f_json = serde_json::to_string(&fresh_targets).unwrap_or_default();
+        hasher.update(format!("{k_json}|{l_json}|{f_json}\n").as_bytes());
+    }
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+
+    AnonTriggerAuditReport {
+        golden_loaded,
+        l3_total,
+        fresh_total,
+        total_paired: diff.total_paired,
+        matches: diff.matches,
+        fresh_wrong_count: diff.fresh_wrong.len(),
+        fresh_missing: diff.fresh_missing,
+        fresh_extra: diff.fresh_extra,
+        fresh_novel: diff.fresh_novel,
+        golden_missing: diff.golden_missing,
+        digest,
+    }
+}
+
+/// CDO EventFlow frozen-golden audit: compare the fresh resolver's resolved
+/// EventFlow publisher→subscriber pairs against the committed, anonymized L3
+/// verdict (`cdo-event-anon.json`). Arity-agnostic pair-set comparison only —
+/// see [`AnonEventAuditReport`]'s doc comment for scope.
+#[must_use]
+pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
+    let golden = load_anon_event_golden(&cdo_event_anon_golden_path());
+    let golden_loaded = golden.is_some();
+    let golden = golden.unwrap_or_default();
+    let l3_total = golden.entries.len();
+
+    let fresh_rows = project_fresh_event_rows(workspace_root);
+    let fresh_total = fresh_rows.len();
+
+    let mut deanon: BTreeMap<String, String> = BTreeMap::new();
+    let fresh_golden = anonymize_event_rows_with_deanon(&fresh_rows, &mut deanon);
+    merge_deanon_map(&cdo_deanon_map_path(), &deanon);
+
+    let l3_pairs: BTreeSet<AnonEventPairKey> =
+        golden.entries.iter().map(|e| e.pair.clone()).collect();
+    let fresh_pairs: BTreeSet<AnonEventPairKey> = fresh_golden
+        .entries
+        .iter()
+        .map(|e| e.pair.clone())
+        .collect();
+
+    let matched_pairs = l3_pairs.intersection(&fresh_pairs).count();
+    let pair_l3_only = l3_pairs.difference(&fresh_pairs).count();
+    let pair_fresh_only = fresh_pairs.difference(&l3_pairs).count();
+
+    let mut hasher = Sha256::new();
+    for pair in l3_pairs.union(&fresh_pairs) {
+        let in_l3 = l3_pairs.contains(pair);
+        let in_fresh = fresh_pairs.contains(pair);
+        let p_json = serde_json::to_string(pair).unwrap_or_default();
+        hasher.update(format!("{p_json}|{in_l3}|{in_fresh}\n").as_bytes());
+    }
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+
+    AnonEventAuditReport {
+        golden_loaded,
+        l3_total,
+        fresh_total,
+        matched_pairs,
+        pair_l3_only,
+        pair_fresh_only,
         digest,
     }
 }

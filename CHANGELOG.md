@@ -8,6 +8,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3b Task 1: committed anonymized frozen goldens (all dispatch kinds) + dev-mint tool + `ENFORCE_CDO_WS` guard**
+  (`src/program/resolve/anon.rs` NEW, `src/bin/mint-goldens.rs` NEW,
+  `src/program/resolve/semantic_golden.rs`, `src/program/resolve/differential.rs`,
+  `src/program/resolve/mod.rs`, `tests/program_resolve_harness.rs`,
+  `tests/fixtures/implicit-trigger/` NEW, `tests/goldens/semantic-edges/cdo-anon.json`,
+  `cdo-trigger-anon.json`, `cdo-event-anon.json`, `implicit-trigger-fixture.json`,
+  `.gitignore`, `Cargo.toml`) — the C1 FREEZE that precedes 1B.3b's L3-oracle
+  removal (Task 3): every L3-derived correctness baseline the gate module
+  depends on is now a COMMITTED, ANONYMIZED, frozen artifact instead of a
+  live L3 mint on every run. `anon::anon(domain, s)` is a domain-separated,
+  versioned, HMAC-SHA256 keyed hash (`site:v1`/`target:v1`/`trigger-op:v1`/
+  `event-pair:v1`); the key comes from the non-committed `CDO_ANON_KEY` env
+  var (a committed fallback test key keeps `cargo test --workspace` and the
+  synthetic fixtures deterministic without ever anonymizing real CDO data —
+  see `anon.rs`'s module docs for the full governance writeup). The dev-mint
+  tool (`cargo run --release --bin mint-goldens`, `CDO_WS`+`CDO_ANON_KEY` set)
+  is the LAST sanctioned L3 use: it mints + anonymizes the three committed
+  goldens (`cdo-anon.json` Member/Interface via `mint_l3_validated_golden`,
+  `cdo-trigger-anon.json` ImplicitTrigger via the newly-`pub`
+  `project_l3_implicit_trigger_in_scope`, `cdo-event-anon.json` EventFlow via
+  the new `CanonicalKey`-keyed `project_l3_event_rows` — sidesteps L3's
+  proprietary `stable_routine_id` scheme so the fresh side can independently
+  re-derive the same identity) and the gitignored local de-anon map
+  (`cdo-deanon-map.json`, `AnonId -> plaintext`, for root-causing a failing
+  anonymized diff). `run_cdo_semantic_audit` now LOADS the committed golden
+  and anonymizes the fresh side at audit time instead of calling `project_l3`
+  live — zero `engine::l3` imports in any `run_cdo_*_audit` function. Two new
+  audits (`run_cdo_trigger_audit`/`run_cdo_event_audit`) prove the same
+  mechanism for ImplicitTrigger/EventFlow (mechanism-proof scope only — the
+  zero-tolerance gates for those dispatch kinds remain the live, CDO-gated
+  `run_implicit_trigger_harness`/`run_event_flow_gate`, unchanged, until
+  Task 3). The `ENFORCE_CDO_WS=1` hard-fail guard (`cdo_ws_or_enforce`/
+  `enforce_audit_ran` in the test harness) makes a missing `CDO_WS`, a
+  missing/invalid frozen golden, or a zero-site audit PANIC on the
+  gated/internal runner instead of silently skipping — no fail-open. A new
+  unconditional, no-`CDO_WS`-needed test validates the three committed
+  goldens' metadata (schema version, non-empty, `genuine_wrong==42` via the
+  pre-existing `known-genuine-divergences.json` manifest) for public CI. The
+  always-run `event_fixture_two_stage_join` fixture test and a new
+  `implicit_trigger_fixture_resolves_exact_target_set` fixture test both
+  moved off live L3 entirely (`project_fresh_event_rows`/
+  `mint_fresh_golden_for_kind` are pure fresh-side, no `engine::l3` build) —
+  the always-run, L3-INDEPENDENT semantic coverage these two dispatch kinds
+  keep after L3 retirement. Verified frozen==live against the real CDO
+  workspace: `genuine_wrong=42` (exact manifest match), EventFlow
+  `matched_pairs=2`/`pair_l3_only=0` (matches the documented thin-oracle
+  baseline), both audits deterministic across reruns.
+
 - **Plan 1B.3a Task 4 (CAPSTONE): L3-validated semantic edge golden + CDO audit + route-applicability contract**
   (`src/program/resolve/semantic_golden.rs` NEW, `src/program/resolve/mod.rs`,
   `tests/program_resolve_harness.rs`, `tests/fixtures/semantic-golden/`,

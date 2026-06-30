@@ -20,3 +20,8 @@ Thumbs.db
 # Scratch artifacts (root-level analysis output)
 /out*.sarif
 /perf_stderr.txt
+
+# 1B.3b Task 1: local-only de-anonymization map (AnonId -> plaintext) for the
+# committed anonymized CDO goldens under tests/goldens/semantic-edges/. NEVER
+# committed — see src/program/resolve/anon.rs's module docs.
+tests/goldens/semantic-edges/cdo-deanon-map.json
