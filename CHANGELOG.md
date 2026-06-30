@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3b Task 2: port fan-out applicability teeth (soundness) into `route_applicability`**
+  (`src/program/resolve/semantic_golden.rs`, `tests/program_resolve_harness.rs`,
+  `tests/fixtures/fanout-applicability/` NEW; commits `dfec53e` + `1ee0e8e`) —
+  ports the four fan-out applicability predicates that previously lived ONLY
+  inside the (Task-3-deleted) dual-run gates' FreshOnly branches into
+  `route_applicability`, now running over EVERY fan-out route in
+  `resolve_full_program`'s full edge set instead of only the FreshOnly-vs-L3
+  subset: Interface (`DispatchShape::Polymorphic`) via
+  `interface_route_applicable`; instance-builtin/enum-static Catalog `Builtin`
+  routes (`PageInstance::`/`ReportInstance::` via
+  `instance_builtin_route_applicable`, `Enum::` via the `Enum` member-builtin
+  catalog directly); ImplicitTrigger (`DispatchShape::Multicast`) via
+  `implicit_trigger_route_applicable` (`Validate` sites fall back to the
+  documented table/extension-identity check); EventFlow via the already-`pub`,
+  L3-free `differential::verify_event_subscriber_route`. New private
+  `build_fan_out_site_context` re-walks the same parsed call sites
+  `resolve_full_program` resolves to recover the Interface/`RecordOp`
+  call-site context (`FanOutSiteContext`) `Edge`/`Route` cannot carry —
+  keyed by `SiteId` so it lines up 1:1 with the edges (incl. all five DML ops
+  — Insert/Modify/Delete/Rename/Validate — via `record_op_kind_for_method`);
+  fails CLOSED (counts a violation) when no context is recovered for a
+  Polymorphic/Multicast edge. `ApplicabilityReport` gains four SOUNDNESS
+  counters (`interface_applicability_violations`/`instance_builtin_violations`/
+  `implicit_trigger_violations`/`event_violations`, summed by
+  `fan_out_violations()`) plus four `*_routes_checked` non-vacuity denominators
+  — documented as SOUNDNESS (every emitted route is individually
+  well-formed/applicable), distinct from the frozen L3-validated goldens'
+  COMPLETENESS. `is_clean()` now requires all six violation counters to be
+  zero. 12 new unit tests prove each predicate's positive AND
+  fabricated-negative case bites (hand-built `Edge`/`Route`/`FanOutSiteContext`
+  fixtures) plus the fail-closed-on-missing-context cases. New on-disk fixture
+  `tests/fixtures/fanout-applicability/` exercises all four dispatch kinds
+  end-to-end through `resolve_full_program` (Test 20,
+  `fan_out_applicability_zero_violations`): `violations==0` on the fixture AND
+  (env-gated) on the real CDO workspace — `total_routes=17241`, `violations=0`,
+  `routes_checked interface=28/instance_builtin=449/implicit_trigger=958/event=2284`
+  (non-vacuous), deterministic. `differential.rs`/`applicability.rs` untouched
+  (every predicate needed was already `pub`); `project_l3*` and the dual-run
+  gates stay intact for Task 3.
+
 - **Plan 1B.3b Task 1: committed anonymized frozen goldens (all dispatch kinds) + dev-mint tool + `ENFORCE_CDO_WS` guard**
   (`src/program/resolve/anon.rs` NEW, `src/bin/mint-goldens.rs` NEW,
   `src/program/resolve/semantic_golden.rs`, `src/program/resolve/differential.rs`,
