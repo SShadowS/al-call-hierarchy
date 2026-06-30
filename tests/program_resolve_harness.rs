@@ -590,6 +590,172 @@ fn phase4_implicit_trigger() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Test 9 (Phase 4 Task 4): Consolidated Phase-4 fan-out gate + honest scope
+// ---------------------------------------------------------------------------
+
+/// Phase-4 consolidated gate: runs BOTH the member harness (Member +
+/// instance-builtin + Interface, Phase-4 in-scope) and the implicit-trigger
+/// harness (ImplicitTrigger Multicast, Phase-4 in-scope) over CDO, asserting
+/// all six zero-tolerance conditions and printing a unified breakdown that makes
+/// the scope of Phase 4 explicit.
+///
+/// **Phase 4 closes (in-scope):**
+/// - Interface Polymorphic fan-out (all implementers, applicability-gated per
+///   route via `interface_route_applicable`)
+/// - ImplicitTrigger Multicast (insert/modify/delete/validate RecordOp triggers,
+///   applicability-gated via `implicit_trigger_route_applicable`)
+/// - Object/Enum instance-builtins (CurrPage, CurrReport singletons,
+///   Enum-static dispatch — gated via `instance_builtin_route_applicable`)
+///
+/// **Phase 4 does NOT close (explicitly excluded):**
+/// - EventFlow (Phase 4b) — oracle qualification, manual-binding property,
+///   canonical event key, and reachability honesty work outstanding; not yet
+///   gated or shipped to the graph.
+/// - Page/PageExt implicit-Rec source-table gap (`regression_page_rec`)
+/// - Compound receiver type propagation (`regression_compound_receiver`)
+/// - Codeunit TableNo/TestRunner implicit-Rec (`regression_codeunit_implicit_rec`)
+/// - Trigger `missing_site` (L3 ImplicitTrigger edges with no fresh site peer)
+/// - Same-arity-type overload disambiguation (17 Cat-D divergences, 1B.3)
+///
+/// Six zero-tolerance assertions (must all be 0):
+/// - `member.regression_unexplained`, `member.evidence_overclaim`,
+///   `member.unverified_extra`
+/// - `trigger.regression_unexplained`, `trigger.evidence_overclaim`,
+///   `trigger.unverified_extra`
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+#[test]
+fn phase4_fanout_matches_or_beats_l3() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let member = run_member_resolution_harness(&ws);
+    let trigger = run_implicit_trigger_harness(&ws);
+
+    eprintln!(
+        "\n\
+         ═══════════════════════════════════════════════════════════════\n\
+         Phase-4 Consolidated Fan-out Gate — Scoped sub-phase (Task 4)\n\
+         ═══════════════════════════════════════════════════════════════\n\
+         \n\
+         ── MEMBER + Instance-builtin + Interface (Phase-4 in-scope) ──\n\
+           matched={matched} verified_win={verified_win} divergence={divergence} (cap=56)\n\
+           fresh_ahead_interface={fresh_ahead_interface}\n\
+           fresh_ahead_instance_builtin={fresh_ahead_instance_builtin}\n\
+           fresh_ahead_enum_static={fresh_ahead_enum_static}\n\
+           extra_site={m_extra_site} unaligned={m_unaligned}\n\
+           [GATE] regression_unexplained={m_reg_unexplained} (must=0)\n\
+           [GATE] evidence_overclaim={m_ev_overclaim} (must=0)\n\
+           [GATE] unverified_extra={m_unverified} (must=0)\n\
+         \n\
+         ── ImplicitTrigger Multicast (Phase-4 in-scope) ──\n\
+           matched={t_matched} verified_win={t_verified_win} divergence={t_divergence}\n\
+           fresh_ahead_trigger={fresh_ahead_trigger}\n\
+           fresh_ahead_validate_fanout={fresh_ahead_validate_fanout}\n\
+           extra_site={t_extra_site} unaligned={t_unaligned}\n\
+           [GATE] regression_unexplained={t_reg_unexplained} (must=0)\n\
+           [GATE] evidence_overclaim={t_ev_overclaim} (must=0)\n\
+           [GATE] unverified_extra={t_unverified} (must=0)\n\
+         \n\
+         ── EXCLUDED / DEFERRED — scope is NOT full Phase 4 ──\n\
+           EXCLUDED: events (Phase 4b) — oracle qualification + manual-binding property +\n\
+                     canonical event key + reachability honesty work outstanding\n\
+           DEFERRED (1B.3): member.missing_site={m_missing_site}\n\
+                            (L3 Member sites with no fresh peer)\n\
+           DEFERRED (1B.3): trigger.missing_site={t_missing_site}\n\
+                            (L3 ImplicitTrigger sites with no fresh ImplicitTrigger edge)\n\
+           DEFERRED (1B.3): regression_compound_receiver={regression_compound_receiver}\n\
+                            (chained receiver type propagation)\n\
+           DEFERRED (1B.3): regression_codeunit_implicit_rec={regression_codeunit_implicit_rec}\n\
+                            (Codeunit TableNo/TestRunner implicit-Rec parameter)\n\
+           DEFERRED (1B.3): regression_page_rec={regression_page_rec}\n\
+                            (Page/PageExt implicit-Rec source-table gap)\n\
+           DEFERRED (1B.3): 17 Cat-D divergences (same-object, different-procedure overload)\n\
+         ═══════════════════════════════════════════════════════════════",
+        matched = member.matched,
+        verified_win = member.verified_win,
+        divergence = member.divergence,
+        fresh_ahead_interface = member.fresh_ahead_interface,
+        fresh_ahead_instance_builtin = member.fresh_ahead_instance_builtin,
+        fresh_ahead_enum_static = member.fresh_ahead_enum_static,
+        m_extra_site = member.extra_site,
+        m_unaligned = member.unaligned,
+        m_reg_unexplained = member.regression_unexplained,
+        m_ev_overclaim = member.evidence_overclaim,
+        m_unverified = member.unverified_extra,
+        t_matched = trigger.matched,
+        t_verified_win = trigger.verified_win,
+        t_divergence = trigger.divergence,
+        fresh_ahead_trigger = trigger.fresh_ahead_trigger,
+        fresh_ahead_validate_fanout = trigger.fresh_ahead_validate_fanout,
+        t_extra_site = trigger.extra_site,
+        t_unaligned = trigger.unaligned,
+        t_reg_unexplained = trigger.regression_unexplained,
+        t_ev_overclaim = trigger.evidence_overclaim,
+        t_unverified = trigger.unverified_extra,
+        m_missing_site = member.missing_site,
+        t_missing_site = trigger.missing_site,
+        regression_compound_receiver = member.regression_compound_receiver,
+        regression_codeunit_implicit_rec = member.regression_codeunit_implicit_rec,
+        regression_page_rec = member.regression_page_rec,
+    );
+
+    // ── Zero-tolerance gate: Member + Interface + instance-builtin ──────────
+    assert_eq!(
+        member.regression_unexplained, 0,
+        "Member: fresh must not lose a Member target L3 resolved \
+         (excl. named deferrals: interface/enum/page-rec/scalar/\
+         compound-receiver/codeunit-implicit-rec): {member:?}"
+    );
+    assert_eq!(
+        member.evidence_overclaim, 0,
+        "Member: no Source/Abi/Catalog claim without a valid witness: {member:?}"
+    );
+    assert_eq!(
+        member.unverified_extra, 0,
+        "Member: no fresh-only fan-out route may fail the applicability predicate: {member:?}"
+    );
+
+    // ── Divergence cap (Member): all 56 CDO divergences adjudicated ─────────
+    // 45 pre-Task-2 + 11 new interface fan-out divergences where fresh emits N
+    // Routine routes and L3 emits 1 — fresh is more precise.
+    assert!(
+        member.divergence <= 56,
+        "Member divergence grew beyond the adjudicated 56; inspect before merging: {member:?}"
+    );
+
+    // ── Zero-tolerance gate: ImplicitTrigger Multicast ──────────────────────
+    assert_eq!(
+        trigger.regression_unexplained, 0,
+        "Trigger: fresh must not lose an ImplicitTrigger target L3 resolved: {trigger:?}"
+    );
+    assert_eq!(
+        trigger.evidence_overclaim, 0,
+        "Trigger: no Source/Abi/Catalog claim without a valid witness: {trigger:?}"
+    );
+    assert_eq!(
+        trigger.unverified_extra, 0,
+        "Trigger: no fresh-only trigger route may fail the applicability predicate: {trigger:?}"
+    );
+
+    // ── Determinism: both harnesses must produce identical output on re-run ──
+    assert_eq!(
+        member,
+        run_member_resolution_harness(&ws),
+        "run_member_resolution_harness must be deterministic"
+    );
+    assert_eq!(
+        trigger,
+        run_implicit_trigger_harness(&ws),
+        "run_implicit_trigger_harness must be deterministic"
+    );
+}
+
 // Suppress unused-import warning when CDO_WS is not set (no CDO test runs).
 #[allow(dead_code)]
 fn _assert_diff_report_importable(_: DiffReport) {}

@@ -8,6 +8,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-4 Task 4: Consolidated Phase-4 fan-out gate + honest scope framing**
+  (`tests/program_resolve_harness.rs`) — adds `phase4_fanout_matches_or_beats_l3`,
+  a single CDO gate that runs both the member harness (Member + instance-builtin +
+  Interface) and the implicit-trigger harness (ImplicitTrigger Multicast) and asserts
+  all six zero-tolerance conditions simultaneously: `regression_unexplained=0`,
+  `evidence_overclaim=0`, `unverified_extra=0` on each harness, plus the adjudicated
+  member divergence cap (≤56).  Prints a unified breakdown separating what Phase 4
+  closed from what is explicitly deferred.
+
+  **Phase 4 closes (scoped sub-phase, NOT full spec-§7 whole-program completion):**
+  - *Interface Polymorphic fan-out* — `resolve_member` fans out to all known
+    implementers; every Routine route is applicability-gated via
+    `interface_route_applicable` (method/trigger/kind-level, IR-anchored);
+    wrong-overload routes fail → `unverified_extra`; ambiguous overloads →
+    `Route{Unresolved, Unknown}` (no guessed route).  `regression_interface=0`
+    (drained), `fresh_ahead_interface` routes gate-proven.
+  - *ImplicitTrigger Multicast* — `resolve_implicit_trigger` gated vs L3
+    `DispatchKind::ImplicitTrigger` oracle; `matched=167`,
+    `fresh_ahead_trigger` + `fresh_ahead_validate_fanout` routes applicability-proven;
+    empty-target sites → `extra_site` (no triggers on table, benign).
+  - *Object/Enum instance-builtins* — CurrPage/CurrReport framework singletons and
+    typed-variable Page/Report receivers gated via `instance_builtin_route_applicable`;
+    Enum-static dispatch gated via `member_builtin`; `fresh_ahead_instance_builtin=243`,
+    `fresh_ahead_enum_static` routes gate-proven; `unverified_extra=0`.
+
+  **Explicitly excluded (honest scope — not claimed as closed):**
+  - *EventFlow (Phase 4b)* — deferred: oracle qualification, `ManualBinding`
+    property, canonical event key, and reachability honesty for `Manual` subscribers
+    (conditional may-edges, not unconditional Multicast) are outstanding; no event
+    edges ship to the graph until the qualified oracle gate exists.
+  - *Deferred to 1B.3*: `regression_page_rec` (Page/PageExt implicit-Rec
+    source-table gap), `regression_compound_receiver` (chained receiver type
+    propagation), `regression_codeunit_implicit_rec` (Codeunit TableNo/TestRunner
+    implicit-Rec), `trigger.missing_site=78` (L3 ImplicitTrigger sites with no fresh
+    peer), and 17 Cat-D divergences (same-object different-procedure overload
+    disambiguation).
+
+  Paired-subset results on CDO DocumentOutput/Cloud workspace:
+  Member — `matched=7178`, `regression_unexplained=0`, `unverified_extra=0`,
+  `verified_win=2790`, `fresh_ahead_instance_builtin=243`, `divergence=56` (cap);
+  Trigger — `matched=167`, `regression_unexplained=0`, `unverified_extra=0`.
+
 - **Phase-4 Task 3: ImplicitTrigger Multicast gating** (`src/program/resolve/differential.rs`,
   `tests/program_resolve_harness.rs`) — adds `run_implicit_trigger_harness` comparing fresh
   `resolve_implicit_trigger` (RecordOp sites: insert/modify/delete/validate) against the L3
