@@ -22,22 +22,34 @@
 //! # 1B.3b: committed, anonymized, frozen — no live L3 in the gate path
 //!
 //! The CDO-scale golden is too large and too proprietary to mint live on
-//! every run (and CDO is being retired as a live dependency of the gate
-//! module — see the 1B.3b plan). Instead: [`mint_l3_validated_golden`] /
-//! [`mint_l3_trigger_golden`] / `differential::project_l3_event_rows` run
-//! ONCE, on a dev machine with CDO access, via the dev-mint tool
-//! (`src/bin/mint-goldens.rs`, OUTSIDE `src/program/resolve`). The tool
-//! ANONYMIZES every identifying string (via [`anon::anon`] — see that
-//! module's docs for the full domain-separation + HMAC-governance writeup)
-//! and writes the result to three COMMITTED files under
-//! `tests/goldens/semantic-edges/`: `cdo-anon.json` (Member/Interface),
-//! `cdo-trigger-anon.json` (ImplicitTrigger), `cdo-event-anon.json`
-//! (EventFlow). [`run_cdo_semantic_audit`]/[`run_cdo_trigger_audit`]/
-//! [`run_cdo_event_audit`] LOAD these committed goldens and anonymize the
-//! FRESH side with the SAME function at audit time — `engine::l3` is NOT
-//! imported by any of the three `run_cdo_*_audit` functions; the gate module
-//! still depends on it only through the sanctioned mint functions above
-//! (removed entirely in 1B.3b Task 3).
+//! every run. Instead: [`mint_l3_validated_golden`] / [`mint_l3_trigger_golden`]
+//! / `crate::program::l3_mint::project_l3_event_rows` run ONCE, on a dev
+//! machine with CDO access, via the dev-mint tool (`src/bin/mint-goldens.rs`,
+//! OUTSIDE `src/program/resolve`). The tool ANONYMIZES every identifying
+//! string (via [`anon::anon`] — see that module's docs for the full
+//! domain-separation + HMAC-governance writeup) and writes the result to
+//! three COMMITTED files under `tests/goldens/semantic-edges/`:
+//! `cdo-anon.json` (Member/Interface), `cdo-trigger-anon.json`
+//! (ImplicitTrigger), `cdo-event-anon.json` (EventFlow).
+//! [`run_cdo_semantic_audit`]/[`run_cdo_trigger_audit`]/[`run_cdo_event_audit`]
+//! LOAD these committed goldens and anonymize the FRESH side with the SAME
+//! function at audit time.
+//!
+//! **1B.3b Task 3: the gate path is now fully L3-INDEPENDENT.** Neither this
+//! module nor `differential.rs` imports `engine::l3`/`engine::l2` at all —
+//! not even the three `run_cdo_*_audit` functions, nor [`route_applicability`].
+//! The ONLY surviving L3-oracle access point in the library is
+//! [`crate::program::l3_mint`] (OUTSIDE `src/program/resolve`), which
+//! [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`] below delegate to —
+//! and which only the dev-mint tool and the opt-in `REGEN_TEMP_GOLDENS`
+//! fixture-regen test path ever call. The four live dual-run "fresh vs L3"
+//! comparison gates that used to validate the fresh resolver on every
+//! CDO-gated test run (`run_harness`/`run_site_harness`/
+//! `run_resolution_harness`/`run_member_resolution_harness`/
+//! `run_implicit_trigger_harness`/`run_event_flow_gate`, all in
+//! `differential.rs`) were deleted in 1B.3b Task 3 — their coverage is now
+//! the frozen goldens above plus [`route_applicability`]'s ported fan-out
+//! applicability teeth.
 //!
 //! # Route-applicability contract
 //!
@@ -62,6 +74,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::program::graph::ProgramGraph;
+use crate::program::l3_mint::{project_l3, project_l3_implicit_trigger_in_scope};
 use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::abi_check::{
@@ -74,8 +87,7 @@ use crate::program::resolve::applicability::{
 };
 use crate::program::resolve::differential::{
     CanonicalEdge, CanonicalEventRow, CanonicalKey, CanonicalTarget, project_fresh,
-    project_fresh_event_rows, project_l3, project_l3_implicit_trigger_in_scope,
-    verify_event_subscriber_route, witness_contract_holds,
+    project_fresh_event_rows, verify_event_subscriber_route, witness_contract_holds,
 };
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, RouteTarget, SiteId, callee_fp,
@@ -661,12 +673,14 @@ pub struct CdoSemanticAuditReport {
 /// 1B.3b scope note: unlike [`CdoSemanticAuditReport`], this report does NOT
 /// adjudicate `fresh_wrong` into fresh-ahead-dispatch vs genuine-wrong — that
 /// classification (and the `known-genuine-divergences.json` manifest) is
-/// scoped to the Member/Interface golden only. The live, CDO-gated
-/// `run_implicit_trigger_harness` (`differential.rs`) remains the
-/// zero-tolerance gate for ImplicitTrigger correctness (unchanged this task —
-/// removed only in 1B.3b Task 3). This audit exists to PROVE the
-/// frozen-load-and-anonymize mechanism works for the ImplicitTrigger dispatch
-/// kind and to back the `ENFORCE_CDO_WS` guard's `checked_sites>0` requirement.
+/// scoped to the Member/Interface golden only. ImplicitTrigger correctness is
+/// covered by this frozen audit plus the `tests/fixtures/implicit-trigger`
+/// fixture (`implicit_trigger_fixture_resolves_exact_target_set`) and the
+/// ported applicability teeth (`route_applicability`) — the old live,
+/// CDO-gated `run_implicit_trigger_harness` dual-run gate was deleted in
+/// 1B.3b Task 3. This audit exists to PROVE the frozen-load-and-anonymize
+/// mechanism works for the ImplicitTrigger dispatch kind and to back the
+/// `ENFORCE_CDO_WS` guard's `checked_sites>0` requirement.
 #[derive(Clone, Debug, Default)]
 pub struct AnonTriggerAuditReport {
     pub golden_loaded: bool,
@@ -684,10 +698,13 @@ pub struct AnonTriggerAuditReport {
 
 /// Result of the L3/fresh EventFlow frozen-golden audit
 /// (`cdo-event-anon.json`). Arity-agnostic pair-set comparison only (mirrors
-/// `run_event_flow_gate`'s Stage-1 join, not its Stage-2 arity adjudication) —
-/// see [`AnonTriggerAuditReport`]'s scope note; the same reasoning applies
-/// here. The live, CDO-gated `run_event_flow_gate` remains the zero-tolerance
-/// EventFlow gate (unchanged this task).
+/// the old `run_event_flow_gate`'s Stage-1 join, not its Stage-2 arity
+/// adjudication) — see [`AnonTriggerAuditReport`]'s scope note; the same
+/// reasoning applies here. EventFlow correctness is covered by this frozen
+/// audit plus the `tests/fixtures/events` fixture
+/// (`event_fixture_two_stage_join`) and the ported event-route teeth — the
+/// old live, CDO-gated `run_event_flow_gate` dual-run gate was deleted in
+/// 1B.3b Task 3.
 #[derive(Clone, Debug, Default)]
 pub struct AnonEventAuditReport {
     pub golden_loaded: bool,
@@ -1178,8 +1195,10 @@ fn build_golden_from_canonical(edges: &[CanonicalEdge]) -> SemanticGolden {
 /// calls this directly — see `tests/program_resolve_harness.rs` Test 14)**:
 /// mint the Member/Interface semantic golden from the L3 oracle.
 ///
-/// Calls [`project_l3`] over `workspace_root`, collects per-site target sets into
-/// a [`SemanticGolden`] keyed by column-ignoring [`GoldenSiteKey`].
+/// Calls [`project_l3`] (`crate::program::l3_mint`, 1B.3b Task 3 — the sole
+/// remaining L3-oracle access point in the library) over `workspace_root`,
+/// collects per-site target sets into a [`SemanticGolden`] keyed by
+/// column-ignoring [`GoldenSiteKey`].
 ///
 /// Empty target sets (L3 Unknown/Unresolved) are retained — they record sites
 /// that L3 extracted but could not resolve, so the golden covers them.
@@ -1190,7 +1209,8 @@ pub fn mint_l3_validated_golden(workspace_root: &Path) -> SemanticGolden {
 
 /// **SANCTIONED L3 ORACLE USE (1B.3b dev-mint tool only)**: mint the
 /// ImplicitTrigger semantic golden from L3's native `PRecordOperation`-keyed
-/// edges ([`project_l3_implicit_trigger_in_scope`]). Backs `cdo-trigger-anon.json`.
+/// edges ([`project_l3_implicit_trigger_in_scope`], `crate::program::l3_mint`).
+/// Backs `cdo-trigger-anon.json`.
 #[must_use]
 pub fn mint_l3_trigger_golden(workspace_root: &Path) -> SemanticGolden {
     build_golden_from_canonical(&project_l3_implicit_trigger_in_scope(workspace_root))
@@ -1712,7 +1732,7 @@ pub fn route_applicability(
             // ── EventFlow ────────────────────────────────────────────────────
             EdgeKind::EventFlow => {
                 // If the publisher object doesn't resolve in the graph, SKIP —
-                // matching the live `differential::run_event_flow_gate`'s
+                // matching the old `differential::run_event_flow_gate`'s
                 // `continue` + `fresh_unprojectable` counting (1B.3b Task 2
                 // fix). Running the teeth against a `pub_name_lc` that silently
                 // fell back to "" via `unwrap_or_default()` would be a
@@ -1882,10 +1902,12 @@ pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
 ///
 /// 1B.3b Task 1: this NO LONGER calls [`project_l3`] (or builds an L3
 /// workspace at all) — it LOADS the committed golden and anonymizes the
-/// fresh side with the SAME [`anon::anon`] so the two align. The gate module
-/// (`src/program/resolve`) has exactly ONE remaining `engine::l3` import
-/// chain after this swap: [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`]
-/// (the dev-mint tool's sanctioned callers; also Test 14's `REGEN_TEMP_GOLDENS`
+/// fresh side with the SAME [`anon::anon`] so the two align. 1B.3b Task 3
+/// went further: `src/program/resolve` (this module + `differential.rs`) now
+/// has ZERO `engine::l3`/`engine::l2` imports — [`project_l3`] itself moved
+/// to [`crate::program::l3_mint`] (OUTSIDE `src/program/resolve`), called
+/// only by [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`] (the
+/// dev-mint tool's sanctioned callers; also Test 14's `REGEN_TEMP_GOLDENS`
 /// path) — `run_cdo_semantic_audit` itself touches neither.
 ///
 /// Callers should gate this on `CDO_WS` env var before calling — this
@@ -2041,8 +2063,9 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
 /// `ImplicitTrigger` edges against the committed, anonymized L3 verdict
 /// (`cdo-trigger-anon.json`). See [`AnonTriggerAuditReport`]'s doc comment for
 /// this audit's scope (mechanism proof + `ENFORCE_CDO_WS` backing — NOT a
-/// genuine-wrong adjudication gate; that stays in the live
-/// `run_implicit_trigger_harness` until Task 3).
+/// genuine-wrong adjudication gate; that's covered by the frozen trigger
+/// baseline + fixture + the ported applicability teeth, see
+/// [`AnonTriggerAuditReport`]).
 #[must_use]
 pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
     let golden = load_anon_golden(&cdo_trigger_anon_golden_path());

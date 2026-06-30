@@ -1,5 +1,19 @@
 //! Clean-room global-builtin catalog for the fresh resolver (Plan 1B.2 Phase 2 Task 3).
 //!
+//! # 1B.3b Task 3: the lone sanctioned `engine::l3` dependency in this directory
+//!
+//! After 1B.3b Task 3 removed the L3 oracle from the fresh resolver's
+//! validation gates, this module's `use crate::engine::l3::global_builtins`
+//! (below) is the ONLY `engine::l3`/`engine::l2` import left anywhere under
+//! `src/program/resolve`. It is sanctioned because it is a DATA dependency,
+//! not an oracle/validation one — see "Clean-room boundary" below for why
+//! sourcing the membership *set* from the generated catalog is DRY-correct
+//! and carries no L3 disposition/resolution logic. The (separate) L3-oracle
+//! *projection* functions used to mint the frozen semantic goldens
+//! (`project_l3`/`project_l3_implicit_trigger_in_scope`/
+//! `project_l3_event_rows`) live in [`crate::program::l3_mint`], OUTSIDE
+//! `src/program/resolve` entirely.
+//!
 //! # Clean-room boundary
 //!
 //! The **membership data** (785 names) comes from the authoritative generated set in

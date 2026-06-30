@@ -135,6 +135,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (env-gated CDO gate: coverage holds, `abi_unmapped==0`, primary rate ≤ 7%,
   deterministic across two runs).
 
+### Removed
+- **Plan 1B.3b Task 3: remove the L3 oracle (`project_l3*`) from the fresh
+  resolver's gates — the engine is now self-validated**
+  (`src/program/resolve/differential.rs`, `src/program/resolve/semantic_golden.rs`,
+  `src/program/mod.rs`, `src/program/l3_mint.rs` NEW, `src/bin/mint-goldens.rs`,
+  `tests/program_resolve_harness.rs`) — deletes the six L3-oracle projection
+  functions (`project_l3`, `project_l3_sites`, `project_l3_in_scope`,
+  `project_l3_member_in_scope`, `project_l3_implicit_trigger_in_scope`,
+  `project_l3_event_rows`) and the four live dual-run "fresh vs L3"
+  comparison gates (`run_harness`/`run_site_harness`/`run_resolution_harness`/
+  `run_member_resolution_harness`/`run_implicit_trigger_harness`/
+  `run_event_flow_gate`, plus their `DiffReport`/`ResolutionReport`/
+  `MemberResolutionReport`/`ImplicitTriggerResolutionReport`/
+  `EventFlowGateReport` report types) from `differential.rs`. Their coverage
+  is now provided entirely by the 1B.3b Tasks 1-2 replacements: the frozen,
+  committed, anonymized semantic/trigger/event goldens
+  (`run_cdo_semantic_audit`/`run_cdo_trigger_audit`/`run_cdo_event_audit`) +
+  `coverage_holds` (Bare/Member), the L3-INDEPENDENT fixture tests
+  (`event_fixture_two_stage_join`, `implicit_trigger_fixture_resolves_exact_target_set`),
+  and the ported fan-out applicability teeth (`route_applicability`,
+  `fan_out_applicability_zero_violations`). The three projections still
+  needed to MINT those frozen goldens (`project_l3`,
+  `project_l3_implicit_trigger_in_scope`, `project_l3_event_rows`) moved to
+  a new module, `src/program/l3_mint.rs` (OUTSIDE `src/program/resolve`) —
+  the lone surviving L3-oracle access point in the library, called only by
+  the dev-mint tool (`src/bin/mint-goldens.rs`) and the opt-in
+  `REGEN_TEMP_GOLDENS=1` fixture-regen test path. `differential.rs` and
+  `semantic_golden.rs` now carry ZERO `engine::l3`/`engine::l2` imports; the
+  sole remaining `engine::l3` import anywhere under `src/program/resolve` is
+  `builtins.rs`'s clean-room `global_builtins` membership-DATA dependency
+  (documented as the sanctioned exception). `match_sites`/`SiteMatch`/
+  `witness_contract_holds` survive (generic, L3-INDEPENDENT) for their own
+  unit tests and `route_applicability`'s witness-contract check respectively.
+  `cargo test --workspace` (no `CDO_WS`) fully green on the surviving
+  contracts; the frozen CDO audits + `route_applicability` verified green
+  and deterministic (run singly with `CDO_WS`+`ENFORCE_CDO_WS=1` — the full
+  CDO suite still can't run in parallel, unrelated to this task).
+
 ### Fixed
 - **(resolve) Split CDO/L3 semantic-audit `fresh_wrong` into adjudicated classes**
   (`src/program/resolve/semantic_golden.rs`, `src/program/resolve/differential.rs`,

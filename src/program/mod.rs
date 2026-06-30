@@ -4,6 +4,7 @@
 pub mod abi_ingest;
 pub mod build;
 pub mod graph;
+pub mod l3_mint;
 pub mod node;
 pub mod node_extract;
 pub mod resolve;
