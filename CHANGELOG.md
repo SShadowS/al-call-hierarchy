@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase-4b Task 5: Independent event-route teeth + honest framing**
+  (`src/program/resolve/differential.rs`, `tests/program_resolve_harness.rs`) —
+  adds `verify_event_subscriber_route`: for each fresh EventFlow `Routine` route,
+  independently re-reads the subscriber's raw `[EventSubscriber]` `AttributeIr`
+  from the `ParsedUnit` IR at gate time (NOT `RoutineNode.event_subscribers`, the
+  index's cached parse that built the edge — that would be circular). Checks:
+  (1) at least one `[EventSubscriber]` attribute freshly parses to the expected
+  `(publisher_object_type, publisher_name, event_name)` triple; (2) subscriber
+  `params_count ≤ publisher params_count` (parameter prefix check). FAIL →
+  `unverified_extra` (zero-tolerance, asserted 0 in the CDO gate).
+  `unverified_extra` is the sixth zero-tolerance gate assertion. Unit tests prove
+  non-circularity: passing a `ParsedUnit` with the attribute absent (simulating
+  corrupt raw IR) returns FAIL even though the index's cached `event_subscribers`
+  would still say PASS — the function demonstrably reads from raw IR.
+
+  **Honest framing (CDO DocumentOutput/Cloud workspace):** on CDO,
+  `l3_event_row_count=2` in-scope resolved event rows (CDO is an extension app —
+  L3 resolves an event pair only when BOTH publisher and subscriber are
+  workspace-indexed source routines; base-app publishers arrive via
+  SymbolReference as `AbiSymbol` routes and are not L3-"resolved"). Fresh matched
+  both (100% recall of a thin in-scope oracle). The STRUCTURAL coverage —
+  arity-FP reconciliation, multiple `[EventSubscriber]` attrs, dispatch conditions
+  (Manual/SkipLicense), InternalEvent non-shipping — is carried by the in-repo
+  `tests/fixtures/events/` fixture workspace, not the CDO dual-run. `Manual`
+  subscribers are conditional `may-edges`; default reachability does NOT traverse
+  them. NOT full event-modeling completion: table/page/database trigger-events,
+  `BindSubscription` activation, cross-app resolved pairs remain for 1B.3.
+  Fixes misleading `l3_sub_lookup` comment: "Stage 1 will still match" is WRONG
+  for subscriber-key collisions — reworded to state the real exposure and why it
+  is not a problem in practice.
+
 - **Phase-4b Task 4: Structural dual-run event gate** (`src/program/resolve/differential.rs`,
   `tests/program_resolve_harness.rs`, `tests/fixtures/events/`) — adds `run_event_flow_gate`
   with a two-stage arity-FP-reconciled join: Stage 1 = arity-agnostic `EventPairKey`

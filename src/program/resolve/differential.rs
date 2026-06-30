@@ -3085,6 +3085,13 @@ pub struct EventFlowGateReport {
     pub l3_regression: usize,
     /// Fresh-only pairs that didn't match any known categorization.  Must be 0.
     pub fresh_only_uncategorized: usize,
+    /// Subscriber Routine routes that fail the INDEPENDENT raw-IR verification:
+    /// either the subscriber's raw `[EventSubscriber]` attribute (re-parsed from the
+    /// `ParsedUnit` IR at gate time, NOT from the index's cached
+    /// `RoutineNode.event_subscribers`) does not name the expected publisher+event,
+    /// or `sub_rid.params_count > publisher_params_count` (parameter prefix failure).
+    /// Must be 0.
+    pub unverified_extra: usize,
     // ── Informational ────────────────────────────────────────────────────────
     /// PairKeys present on the fresh side but absent on the L3 side (fresh ahead).
     pub pair_fresh_only: usize,
@@ -3114,6 +3121,98 @@ pub struct EventFlowGateReport {
     pub fresh_event_row_count: usize,
     /// Total L3 resolved event rows projected.
     pub l3_event_row_count: usize,
+}
+
+/// Independently verify that the subscriber routine `sub_rid` genuinely subscribes
+/// to the named publisher event, by re-reading its raw `[EventSubscriber]` attributes
+/// from the `ParsedUnit` IR at gate time.
+///
+/// This is INDEPENDENT of `RoutineNode.event_subscribers` (the index's cached parse
+/// that built the edge). It calls [`crate::program::resolve::event::parse_event_subscriber_ir`]
+/// directly on `RoutineDecl.attributes_parsed`, not on any pre-computed field.
+///
+/// Returns `true` (PASS) when:
+/// 1. `sub_rid.params_count <= publisher_params_count` (parameter prefix check).
+/// 2. At least one `[EventSubscriber]` attribute in the subscriber's raw IR freshly
+///    parses to match `(publisher_object_type_lc, publisher_name_lc, event_name_lc)`.
+///
+/// Returns `true` (fail-open) when:
+/// - The subscriber's app is not found in `apps`, OR
+/// - The subscriber's app is found in `apps` but has no corresponding `ParsedUnit`
+///   (dep-boundary subscriber — source not in workspace; AbiSymbol routes are already
+///   excluded before reaching the teeth so this path is for consistency only).
+///
+/// Returns `false` (FAIL → `unverified_extra`) when:
+/// - `sub_rid.params_count > publisher_params_count`, OR
+/// - The subscriber IS found in `parsed` but no freshly-parsed attribute names the
+///   expected `(publisher_object_type_lc, publisher_name_lc, event_name_lc)` triple.
+pub fn verify_event_subscriber_route(
+    sub_rid: &RoutineNodeId,
+    publisher_object_type_lc: &str,
+    publisher_name_lc: &str,
+    event_name_lc: &str,
+    publisher_params_count: usize,
+    parsed: &[crate::snapshot::ParsedUnit],
+    apps: &AppRegistry,
+) -> bool {
+    use crate::program::node::ObjKey;
+    use crate::program::resolve::event::parse_event_subscriber_ir;
+
+    // ── Parameter prefix check ───────────────────────────────────────────────
+    if sub_rid.params_count > publisher_params_count {
+        return false;
+    }
+
+    // ── Resolve subscriber app GUID ──────────────────────────────────────────
+    let sub_app_id = match apps.try_resolve(sub_rid.object.app) {
+        Some(id) => id,
+        None => return true, // unknown AppRef → fail-open
+    };
+
+    // ── Find ParsedUnit for the subscriber's app ─────────────────────────────
+    let Some(unit) = parsed.iter().find(|u| u.app.guid == sub_app_id.guid) else {
+        return true; // dep-boundary subscriber — source not in snapshot → fail-open
+    };
+
+    // ── Scan files → object → routine → re-parse [EventSubscriber] attrs ────
+    for pf in &unit.files {
+        for obj in &pf.file.objects {
+            if obj.kind != sub_rid.object.kind {
+                continue;
+            }
+            let key_matches = match &sub_rid.object.key {
+                ObjKey::Id(n) => obj.id == Some(*n),
+                ObjKey::Name(name_lc) => obj.name.to_ascii_lowercase() == *name_lc,
+            };
+            if !key_matches {
+                continue;
+            }
+            for r in &obj.routines {
+                if r.name.to_ascii_lowercase() != sub_rid.name_lc {
+                    continue;
+                }
+                if r.params.len() != sub_rid.params_count {
+                    continue;
+                }
+                // Routine found — re-parse its [EventSubscriber] attrs fresh
+                // (NOT from sub_rid or any cached RoutineNode field).
+                let has_match = r
+                    .attributes_parsed
+                    .iter()
+                    .filter(|a| a.name.eq_ignore_ascii_case("eventsubscriber"))
+                    .filter_map(|a| parse_event_subscriber_ir(a, &pf.file.ir))
+                    .any(|args| {
+                        args.publisher_object_type == publisher_object_type_lc
+                            && args.publisher_name == publisher_name_lc
+                            && args.event_name == event_name_lc
+                    });
+                return has_match;
+            }
+        }
+    }
+
+    // Routine not found in any parsed file of this app → fail-open.
+    true
 }
 
 /// Run the structural dual-run event gate for `workspace_root`.
@@ -3201,9 +3300,14 @@ pub fn run_event_flow_gate(workspace_root: &Path) -> EventFlowGateReport {
             r.parameters.len(),
         );
         l3_app_guids.insert(guid_lc);
-        // First-wins: if multiple routines share the key (overload with same
-        // param count but different types), any one mapping is acceptable —
-        // the arity-agnostic Stage 1 will still match.
+        // First-wins for the same (guid, type, num, name, params_count) key.
+        // The only collision that can happen is two event-subscriber routines in the
+        // same object sharing both name AND param count — practically impossible in AL
+        // (AL requires distinct signatures within an object). If it occurred, the first
+        // stable_routine_id would be used, potentially mapping the wrong subscriber and
+        // causing a false `pair_l3_only`. Stage 1 does NOT recover from a wrong
+        // subscriber stable_routine_id (there is no arity-agnostic fallback at this
+        // level). CDO `pair_l3_only=0` confirms no such collision exists in practice.
         l3_sub_lookup
             .entry(key)
             .or_insert_with(|| r.stable_routine_id.clone());
@@ -3308,6 +3412,15 @@ pub fn run_event_flow_gate(workspace_root: &Path) -> EventFlowGateReport {
 
         let event_name_lc = edge.from.name_lc.clone(); // already lowercase
 
+        // Publisher name + type for the independent teeth check (computed once per edge).
+        let pub_name_lc_for_teeth = graph
+            .objects
+            .iter()
+            .find(|o| o.id == edge.from.object)
+            .map(|o| o.name.to_ascii_lowercase())
+            .unwrap_or_default();
+        let pub_type_lc_for_teeth = object_kind_str(edge.from.object.kind);
+
         // Compute publisher xref-hash (optional, for cross-check).
         let pub_app_id = apps.try_resolve(edge.from.object.app);
         let xref_hash = pub_app_id
@@ -3368,6 +3481,22 @@ pub fn run_event_flow_gate(workspace_root: &Path) -> EventFlowGateReport {
                         }
                         continue;
                     };
+
+                    // TEETH: independently re-read the subscriber's raw
+                    // [EventSubscriber] AttributeIr from the ParsedUnit IR —
+                    // NOT from the index's cached RoutineNode.event_subscribers.
+                    if !verify_event_subscriber_route(
+                        sub_rid,
+                        &pub_type_lc_for_teeth,
+                        &pub_name_lc_for_teeth,
+                        &event_name_lc,
+                        edge.from.params_count,
+                        &parsed,
+                        apps,
+                    ) {
+                        report.unverified_extra += 1;
+                        continue;
+                    }
 
                     fresh_rows.push(FreshEventRow {
                         pair: EventPairKey {

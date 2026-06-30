@@ -5,12 +5,16 @@
 //! differential harness.  All tests construct synthetic edges via
 //! [`canonical_call_edge_for_test`] so no real workspace is required.
 
+use al_call_hierarchy::program::node::{
+    AppRegistry, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId,
+};
 use al_call_hierarchy::program::resolve::differential::{
     DiffReport, EventFlowGateReport, ImplicitTriggerResolutionReport, MemberResolutionReport,
     ResolutionReport, SiteMatch, canonical_call_edge_for_test, match_sites, run_event_flow_gate,
     run_harness, run_implicit_trigger_harness, run_member_resolution_harness,
-    run_resolution_harness, run_site_harness,
+    run_resolution_harness, run_site_harness, verify_event_subscriber_route,
 };
+use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
 
 // ---------------------------------------------------------------------------
 // Test 1 (from brief): one missing L3 site must NOT cascade
@@ -833,6 +837,10 @@ fn event_fixture_two_stage_join() {
         report.fresh_only_uncategorized, 0,
         "fresh_only_uncategorized: {report:?}"
     );
+    assert_eq!(
+        report.unverified_extra, 0,
+        "no subscriber route may fail the independent raw-IR teeth: {report:?}"
+    );
 
     // Structural assertions
     // Both ManualSub and MultiAttrSub (first attr) subscribe to OnAfterPost with
@@ -871,7 +879,7 @@ fn event_fixture_two_stage_join() {
 /// Phase-4b EventFlow gate: proves the fresh EventFlow projection matches or
 /// beats L3's event graph on a real Business Central workspace (CDO).
 ///
-/// Five zero-tolerance assertions:
+/// Six zero-tolerance assertions:
 ///   • `pair_l3_only == 0`: every L3-resolved (pub,event,sub) triple is matched
 ///     by a fresh EventFlow route — arity-agnostic recall guard.
 ///   • `l3_regression == 0`: no matched pair has a GENUINE arity disagreement
@@ -882,6 +890,9 @@ fn event_fixture_two_stage_join() {
 ///     projected to a full PairKey (no stable-id alignment failure).
 ///   • `l3_unprojectable == 0`: every L3 resolved edge can be projected to a
 ///     full PairKey.
+///   • `unverified_extra == 0`: no subscriber Routine route fails the independent
+///     raw-IR attribute check (subscriber's raw `[EventSubscriber]` re-parsed from
+///     the `ParsedUnit` IR must name the publisher+event; params_count prefix check).
 ///
 /// Informational: prints the full machine-categorized breakdown.
 ///
@@ -905,7 +916,8 @@ fn phase4b_event_flow() {
          l3_maybe_upgrade={} multiple_attr_l3_gap={} internal_event_non_shipping={}\n\
          fresh_only_uncategorized={}\n\
          l3_false_positive_arity_mismatch={} l3_arity_unknown={} l3_regression={}\n\
-         fresh_unprojectable={} l3_unprojectable={}",
+         fresh_unprojectable={} l3_unprojectable={}\n\
+         unverified_extra={}",
         report.fresh_event_edge_count,
         report.fresh_event_row_count,
         report.l3_event_row_count,
@@ -921,6 +933,7 @@ fn phase4b_event_flow() {
         report.l3_regression,
         report.fresh_unprojectable,
         report.l3_unprojectable,
+        report.unverified_extra,
     );
 
     assert_eq!(
@@ -933,6 +946,10 @@ fn phase4b_event_flow() {
     assert_eq!(
         report.fresh_only_uncategorized, 0,
         "fresh_only_uncategorized: {report:?}"
+    );
+    assert_eq!(
+        report.unverified_extra, 0,
+        "no subscriber route may fail the independent raw-IR teeth: {report:?}"
     );
 
     // Determinism: two consecutive runs must produce identical output.
@@ -951,3 +968,200 @@ fn _assert_member_report_importable(_: MemberResolutionReport) {}
 
 #[allow(dead_code)]
 fn _assert_implicit_trigger_report_importable(_: ImplicitTriggerResolutionReport) {}
+
+// ---------------------------------------------------------------------------
+// Task 5: Independent event-route teeth (unit tests — no CDO env required)
+// ---------------------------------------------------------------------------
+
+/// Build a minimal `ParsedUnit` from AL source for a given app GUID.
+fn make_teeth_unit(guid: &str, name: &str, src: &str) -> (AppId, ParsedUnit) {
+    let app_id = AppId {
+        guid: guid.to_string(),
+        name: name.to_string(),
+        publisher: "Test".to_string(),
+        version: "1.0.0.0".to_string(),
+    };
+    let provenance = Provenance {
+        app: app_id.clone(),
+        tier: TrustTier::Workspace,
+        content_hash: String::new(),
+    };
+    let unit = ParsedUnit {
+        app: app_id.clone(),
+        files: vec![ParsedFile {
+            virtual_path: "Sub.al".to_string(),
+            file: al_syntax::parse(src),
+            provenance,
+            text: src.to_string(),
+        }],
+    };
+    (app_id, unit)
+}
+
+/// Build a `(AppRegistry, RoutineNodeId)` for a codeunit-scoped procedure.
+fn make_sub_rid(
+    app_id: &AppId,
+    obj_num: i64,
+    routine_name_lc: &str,
+    params: usize,
+) -> (AppRegistry, RoutineNodeId) {
+    let mut apps = AppRegistry::default();
+    let app_ref = apps.intern(app_id);
+    let rid = RoutineNodeId {
+        object: ObjectNodeId {
+            app: app_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(obj_num),
+        },
+        name_lc: routine_name_lc.to_string(),
+        enclosing_member_lc: None,
+        params_count: params,
+    };
+    (apps, rid)
+}
+
+/// (c) Correct subscriber with a matching raw `[EventSubscriber]` attribute → PASSES.
+#[test]
+fn event_teeth_correct_subscriber_passes() {
+    let src = r#"codeunit 50100 "EvtSub"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvtPub", 'OnAfterX', '', false, false)]
+    local procedure OnAfterXHandler()
+    begin
+    end;
+}"#;
+    let (app_id, unit) = make_teeth_unit("guid-teeth-c", "TeethApp", src);
+    let (apps, sub_rid) = make_sub_rid(&app_id, 50100, "onafterxhandler", 0);
+    assert!(
+        verify_event_subscriber_route(
+            &sub_rid,
+            "codeunit",
+            "evtpub",
+            "onafterx",
+            0,
+            &[unit],
+            &apps,
+        ),
+        "correct subscriber must PASS the teeth check"
+    );
+}
+
+/// (a) Subscriber raw attribute names a DIFFERENT publisher → FAILS.
+#[test]
+fn event_teeth_wrong_publisher_fails() {
+    let src = r#"codeunit 50101 "EvtSubWrongPub"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvtPub", 'OnAfterX', '', false, false)]
+    local procedure OnAfterXHandler()
+    begin
+    end;
+}"#;
+    let (app_id, unit) = make_teeth_unit("guid-teeth-a", "TeethApp", src);
+    let (apps, sub_rid) = make_sub_rid(&app_id, 50101, "onafterxhandler", 0);
+    assert!(
+        !verify_event_subscriber_route(
+            &sub_rid,
+            "codeunit",
+            "evtpub_other", // WRONG publisher name
+            "onafterx",
+            0,
+            &[unit],
+            &apps,
+        ),
+        "wrong publisher name must FAIL the teeth check"
+    );
+}
+
+/// (b) Subscriber `params_count` exceeds publisher params → FAILS (parameter prefix check).
+#[test]
+fn event_teeth_excess_params_fails() {
+    // Subscriber procedure has 2 params; publisher event has 0.
+    let src = r#"codeunit 50102 "EvtSubManyParams"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvtPub", 'OnAfterX', '', false, false)]
+    local procedure OnAfterXHandler(Sender: Codeunit "EvtPub"; var IsHandled: Boolean)
+    begin
+    end;
+}"#;
+    let (app_id, unit) = make_teeth_unit("guid-teeth-b", "TeethApp", src);
+    let (apps, sub_rid) = make_sub_rid(&app_id, 50102, "onafterxhandler", 2);
+    assert!(
+        !verify_event_subscriber_route(
+            &sub_rid,
+            "codeunit",
+            "evtpub",
+            "onafterx",
+            0, // publisher has 0 params; subscriber has 2
+            &[unit],
+            &apps,
+        ),
+        "subscriber with more params than publisher must FAIL the teeth check"
+    );
+}
+
+/// Non-circularity demonstration.
+///
+/// Proves that `verify_event_subscriber_route` reads from the raw `ParsedUnit` IR,
+/// NOT from any cached `RoutineNode.event_subscribers` field:
+///
+/// 1. With a correct `ParsedUnit` (raw `[EventSubscriber]` attribute present) → PASSES.
+/// 2. With a modified `ParsedUnit` where the attribute is absent (simulating what
+///    would happen if the function read corrupt raw IR instead of the cached value)
+///    → FAILS.
+///
+/// If the function used the cached `RoutineNode.event_subscribers` (which still says
+/// "subscribes to EvtPub"), both cases would return PASS.  The FAIL in case 2 is the
+/// proof: the function observably reads from the raw `ParsedUnit` IR.
+#[test]
+fn event_teeth_non_circularity_reads_raw_ir() {
+    // ── Case 1: correct ParsedUnit (attribute present) → PASSES ────────────
+    let src_with_attr = r#"codeunit 50103 "EvtSubNC"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvtPub", 'OnAfterX', '', false, false)]
+    local procedure OnAfterXHandler()
+    begin
+    end;
+}"#;
+    let (app_id, unit_with_attr) = make_teeth_unit("guid-teeth-nc", "TeethNC", src_with_attr);
+    let (apps, sub_rid) = make_sub_rid(&app_id, 50103, "onafterxhandler", 0);
+
+    assert!(
+        verify_event_subscriber_route(
+            &sub_rid,
+            "codeunit",
+            "evtpub",
+            "onafterx",
+            0,
+            &[unit_with_attr],
+            &apps,
+        ),
+        "correct raw IR must PASS"
+    );
+
+    // ── Case 2: ParsedUnit with attribute absent → FAILS ───────────────────
+    // The `sub_rid` (RoutineNodeId) is unchanged — it represents the same routine
+    // in the index's view.  If the function used a cached `RoutineNode.event_subscribers`
+    // (built from the ORIGINAL correct source), it would still return PASS here.
+    // The FAIL proves it actually re-parses the raw `ParsedUnit` IR.
+    let src_no_attr = r#"codeunit 50103 "EvtSubNC"
+{
+    local procedure OnAfterXHandler()
+    begin
+    end;
+}"#;
+    let (_, unit_no_attr) = make_teeth_unit("guid-teeth-nc", "TeethNC", src_no_attr);
+
+    assert!(
+        !verify_event_subscriber_route(
+            &sub_rid,
+            "codeunit",
+            "evtpub",
+            "onafterx",
+            0,
+            &[unit_no_attr],
+            &apps,
+        ),
+        "absent attribute in raw IR must FAIL — proves the check reads raw ParsedUnit IR, \
+         not the index's cached event_subscribers"
+    );
+}
