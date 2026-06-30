@@ -382,27 +382,21 @@ pub fn resolve_object_run(
     };
 
     let Some(target_obj) = target_obj else {
-        // Target is named/numbered but absent from the graph: not-in-source boundary.
-        let (obj_num, obj_name_lc) = if target_is_name {
-            (0i64, target_ref.to_ascii_lowercase())
-        } else {
-            (target_ref.parse::<i64>().unwrap_or(0), String::new())
-        };
-        let key = AbiRoutineKey {
-            app: from,
-            object_type: format!("{:?}", object_kind).to_ascii_lowercase(),
-            object_number: obj_num,
-            object_name_lc: obj_name_lc,
-            routine_name_lc: entry_trigger_name(object_kind).to_string(),
-            params_count: 0,
-            param_type_fp: 0,
-            routine_kind: AbiRoutineKind::Procedure,
-            event_kind: AbiEventKind::None,
-        };
+        // Target is named/numbered but absent from the entire graph (not in
+        // workspace source, not in any dep's SymbolReference). We do NOT know
+        // which app owns it, so creating an AbiSymbol with `app = from`
+        // (caller's app) would be semantically wrong and would fail the
+        // ABI ingestion integrity check. Emit Unknown/Unresolved: honest
+        // failure — we cannot name the callee.
         return (
             DispatchShape::Exact,
             SetCompleteness::Complete,
-            vec![opaque_boundary_route(key)],
+            vec![Route {
+                target: RouteTarget::Unresolved,
+                evidence: Evidence::Unknown,
+                conditions: vec![],
+                witness: Witness::None,
+            }],
         );
     };
 
@@ -1615,11 +1609,13 @@ codeunit 50201 "CallerCU"
     }
 
     // -----------------------------------------------------------------------
-    // Task-5 (d): Target named but not in graph → Opaque evidence
+    // Task-5 (d): Target named but not in graph → Unknown (honest failure)
+    // Updated by Task-3: opaque-boundary arm replaced with Unresolved/Unknown
+    // to avoid creating AbiSymbol keys with the wrong (caller) app ref.
     // -----------------------------------------------------------------------
 
     #[test]
-    fn object_run_target_not_in_graph_emits_opaque() {
+    fn object_run_target_not_in_graph_emits_unknown() {
         let src: &'static str = r#"
 codeunit 50202 "AnotherCaller"
 {
@@ -1658,21 +1654,18 @@ codeunit 50202 "AnotherCaller"
         );
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
-        assert!(
-            matches!(r.target, RouteTarget::AbiSymbol { .. }),
-            "target must be AbiSymbol (not Unresolved); got {:?}",
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "target not in any indexed app must yield Unresolved (not AbiSymbol); got {:?}",
             r.target
         );
         assert_eq!(
             r.evidence,
-            Evidence::Opaque,
-            "not-in-source boundary must use Opaque evidence"
+            Evidence::Unknown,
+            "not-found target must use Unknown evidence (honest failure)"
         );
-        assert!(
-            matches!(r.witness, Witness::AbiSymbol { .. }),
-            "AbiSymbol target must pair with AbiSymbol witness; got {:?}",
-            r.witness
-        );
+        assert_eq!(r.witness, Witness::None);
     }
 
     // -----------------------------------------------------------------------

@@ -11,6 +11,7 @@ pub mod edge;
 pub mod event;
 pub mod extract;
 pub mod extract_min;
+pub mod full;
 pub mod index;
 pub mod member_catalog;
 pub mod receiver;

@@ -90,9 +90,16 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         }
     }
 
-    // ── Step 4: sort for determinism ─────────────────────────────────────────
+    // ── Step 4: sort for determinism, then dedup ─────────────────────────────
+    // Same app can appear as both a workspace source and an embedded dep (e.g.
+    // sibling apps in a multi-app workspace whose compiled .app lands in
+    // .alpackages).  extract_nodes would process the source twice, producing
+    // duplicate RoutineNode entries with identical ids.  Dedup after sort keeps
+    // the first occurrence (arbitrary but stable).
     objects.sort_by(|a, b| a.id.cmp(&b.id));
+    objects.dedup_by(|a, b| a.id == b.id);
     routines.sort_by(|a, b| a.id.cmp(&b.id));
+    routines.dedup_by(|a, b| a.id == b.id);
 
     // ── Step 5: build index from sorted objects ───────────────────────────────
     let obj_index = ObjectIndex::build(&objects);

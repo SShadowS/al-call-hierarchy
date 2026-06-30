@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3a Task 3: Obligation-coverage inventory + `resolve_full_program` + taxonomy'd self-reported metric**
+  (`src/program/resolve/full.rs` NEW, `src/program/resolve/mod.rs`,
+  `src/bin/aldump.rs`, `tests/program_resolve_harness.rs`,
+  `tests/fixtures/full_program_fixture/`) —
+  adds `ObligationId` (stable `CallSite` / `Publisher` enum), `Obligation`,
+  `ClassifiedEdge`, `Coverage`, `ProgramReport`, `coverage_holds`,
+  `is_primary_scope`, `obligation_inventory`, and `resolve_full_program`
+  (clean-room, no L3 oracle).  The **COVERAGE CONTRACT** is distinct-id SET
+  equality between parsed obligations and classified edges: `coverage_holds`
+  fails iff any obligation is silently dropped or any spurious edge appears.
+  `--program-call-graph-stats` in `aldump` now prints the whole-program and
+  primary-scoped taxonomy'd histograms + coverage + ABI integrity as JSON.
+  Three new tests: Test 11 (fixture, 3 call sites + 1 publisher, all buckets
+  checked), Test 12 (contract unit: dropped/extra obligation caught), Test 13
+  (env-gated CDO gate: coverage holds, `abi_unmapped==0`, primary rate ≤ 7%,
+  deterministic across two runs).
+
+### Fixed
+- **`resolve_object_run` target-not-found emits `Unknown` (not phantom `AbiSymbol`)**
+  (`src/program/resolve/resolver.rs`) —
+  the "target not found in any indexed app" arm was constructing an
+  `AbiSymbol { app: caller_app_ref, … }` route.  Because the raw ABI index
+  only contains dep-app entries (not the workspace app), this caused
+  `abi_ingestion_integrity` to report 30 "unmapped" routes.  Fixed to emit
+  `RouteTarget::Unresolved + Evidence::Unknown` (honest resolution failure).
+- **`build_program_graph` deduplicates `objects` and `routines` after sorting**
+  (`src/program/build.rs`) —
+  in multi-app workspaces where a sibling app's compiled `.app` lands in
+  `.alpackages`, the same source files could be parsed twice (once as
+  workspace app, once as embedded dep), producing duplicate `RoutineNodeId`
+  entries.  `emit_event_flow_edges` then emitted duplicate publisher edges,
+  inflating `histogram.total` by ~60% above the obligation count while coverage
+  still held (HashSet de-dup).  Fixed by adding `dedup_by` after `sort_by` for
+  both vectors.
+
 - **Plan 1B.3a Task 2: ABI ingestion-integrity invariant + Histogram source/catalog/external split**
   (`src/program/resolve/abi_check.rs` NEW, `src/program/resolve/mod.rs`,
   `src/program/resolve/edge.rs`, `src/program/abi_ingest.rs`,

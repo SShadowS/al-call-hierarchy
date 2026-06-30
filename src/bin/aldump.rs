@@ -1212,40 +1212,70 @@ fn main() -> ExitCode {
     }
 
     if program_call_graph_stats {
-        // Dual-run differential harness (Phase 0 Task 7 / Phase 1 Task 4):
-        // run the fresh whole-program stub resolver + the L3 oracle over the
-        // workspace, project both to canonical edges, span-match them, and
-        // report the Phase-0 gap (regression count = what Phases 1–4 will
-        // close).  Also runs the Phase-1 structured site-parity harness and
-        // reports the categorised breakdown.  Mirrors `--l3-call-graph-stats`.
-        // Fail-closed.
-        use al_call_hierarchy::program::resolve::differential::{run_harness, run_site_harness};
-        let report = run_harness(&workspace);
-        let site = run_site_harness(&workspace);
-        // Fresh Phase-0 is all-stub (all-Unknown) → real_unknown_rate = 1.0.
+        // 1B.3a Task 3: self-reported north-star metric.
+        //
+        // Runs `resolve_full_program` (clean-room, no L3 oracle) over the
+        // workspace and prints:
+        //   - Taxonomy'd Histogram for the whole program + primary-scoped variant
+        //   - Coverage result (obligation SET equality)
+        //   - ABI ingestion integrity summary
+        //
+        // Both `--l3-call-graph-stats` and `--l3-call-graph-stats-cross-app`
+        // are KEPT unchanged; this flag is now fully independent of L3.
+        use al_call_hierarchy::program::resolve::full::{coverage_holds, resolve_full_program};
+
+        let Some(r) = resolve_full_program(&workspace) else {
+            eprintln!("aldump: error: resolve_full_program failed (snapshot build error)");
+            return ExitCode::FAILURE;
+        };
+
+        let h = &r.histogram;
+        let ph = &r.primary_histogram;
+        let cov = &r.coverage;
+        let abi = &r.abi_integrity;
+
         let value = serde_json::json!({
-            "freshTotalAllApps": report.fresh_total_all_apps,
-            "freshTotalWorkspace": report.fresh_total_workspace,
-            "l3Edges": report.l3_edges,
-            "matched": report.matched,
-            "regression": report.regression,
-            "missingSite": report.missing_site,
-            "extraSite": report.extra_site,
-            "unaligned": report.unaligned,
-            "freshRealUnknownRate": 1.0,
-            "phase1SiteBreakdown": {
-                "freshCallCategoryTotal": site.fresh_total_workspace,
-                "l3PCallSiteTotal": site.l3_edges,
-                "matched": site.matched,
-                "missingSite": site.missing_site,
-                "extraRecordOp": site.extra_recordop,
-                "extraCommit": site.extra_commit,
-                "extraImplicitRec": site.extra_implicit_rec,
-                "extraError": site.extra_error,
-                "extraUnexplained": site.extra_unexplained,
-                "unaligned": site.unaligned,
+            // ── Whole-program histogram ──────────────────────────────────────
+            "wholeProgram": {
+                "total": h.total,
+                "resolvedSource": h.resolved_source,
+                "resolvedCatalog": h.resolved_catalog,
+                "resolvedAbiExternal": h.resolved_abi_external,
+                "conditionalResolved": h.conditional_resolved,
+                "honestDynamic": h.honest_dynamic,
+                "honestEmpty": h.honest_empty,
+                "unknown": h.unknown,
+                "realUnknownRate": h.real_unknown_rate(),
+            },
+            // ── Primary-scoped histogram (workspace edges only) ──────────────
+            // Mirrors --l3-call-graph-stats-cross-app scoping.
+            "primaryScoped": {
+                "total": ph.total,
+                "resolvedSource": ph.resolved_source,
+                "resolvedCatalog": ph.resolved_catalog,
+                "resolvedAbiExternal": ph.resolved_abi_external,
+                "conditionalResolved": ph.conditional_resolved,
+                "honestDynamic": ph.honest_dynamic,
+                "honestEmpty": ph.honest_empty,
+                "unknown": ph.unknown,
+                "realUnknownRate": ph.real_unknown_rate(),
+            },
+            // ── Coverage contract ────────────────────────────────────────────
+            "coverage": {
+                "parsedObligations": cov.parsed_obligations,
+                "classifiedEdges": cov.classified_edges,
+                "holds": coverage_holds(cov),
+                "missingCount": cov.missing.len(),
+                "extraCount": cov.extra.len(),
+            },
+            // ── ABI ingestion integrity ──────────────────────────────────────
+            "abiIntegrity": {
+                "abiRoutesTotal": abi.abi_routes_total,
+                "abiMapped": abi.abi_mapped,
+                "abiUnmapped": abi.abi_unmapped,
             },
         });
+
         return match serde_json::to_string_pretty(&value) {
             Ok(json) => {
                 println!("{json}");

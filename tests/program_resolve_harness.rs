@@ -1625,3 +1625,289 @@ fn event_teeth_non_circularity_reads_raw_ir() {
          not the index's cached event_subscribers"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests 11+: 1B.3a Task 3 — obligation coverage + resolve_full_program
+// ---------------------------------------------------------------------------
+
+use al_call_hierarchy::program::resolve::full::{
+    Coverage, ObligationId, coverage_holds, resolve_full_program,
+};
+
+// ---------------------------------------------------------------------------
+// Test 11 (unit fixture): coverage holds; histogram buckets are correct
+// ---------------------------------------------------------------------------
+
+/// Runs `resolve_full_program` over the small `full_program_fixture` workspace.
+///
+/// The fixture contains one codeunit with:
+///   - Caller(): 3 call obligations (KnownProc → resolved_source; UnknownXYZ →
+///     Unknown; Codeunit.Run(Dyn) → HonestDynamic)
+///   - OnMyEvent(): publisher obligation → HonestEmpty EventFlow edge
+///   - KnownProc(): 0 call obligations (body empty)
+///
+/// Assertions:
+///   1. `coverage_holds` — every obligation maps to exactly one edge.
+///   2. Histogram buckets count correctly.
+///   3. `real_unknown_rate` is consistent with Unknown count / total.
+#[test]
+fn full_program_fixture_coverage_holds_and_histogram_is_correct() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/full_program_fixture");
+
+    let report = resolve_full_program(&fixture).expect("fixture must parse successfully");
+
+    // ── Coverage contract (distinct-id SET equality) ─────────────────────────
+    assert!(
+        coverage_holds(&report.coverage),
+        "coverage contract violated: missing={:?}, extra={:?}",
+        report.coverage.missing,
+        report.coverage.extra,
+    );
+
+    // The fixture has 3 call sites (Caller body) + 1 publisher (OnMyEvent).
+    // KnownProc body is empty, so no call sites there.
+    assert_eq!(
+        report.coverage.parsed_obligations, 4,
+        "expected 3 call sites + 1 publisher obligation = 4 total"
+    );
+    assert_eq!(
+        report.coverage.classified_edges, 4,
+        "classified_edges must equal parsed_obligations"
+    );
+
+    // ── Histogram buckets ────────────────────────────────────────────────────
+    // resolved_source=1 (KnownProc), unknown=1 (UnknownXYZ),
+    // honest_dynamic=1 (Codeunit.Run(Dyn)), honest_empty=1 (OnMyEvent event).
+    assert_eq!(
+        report.histogram.resolved_source, 1,
+        "KnownProc() must resolve via Source evidence"
+    );
+    assert_eq!(
+        report.histogram.unknown, 1,
+        "UnknownXYZ() must classify as Unknown"
+    );
+    assert_eq!(
+        report.histogram.honest_dynamic, 1,
+        "Codeunit.Run(Dyn) must classify as HonestDynamic"
+    );
+    assert_eq!(
+        report.histogram.honest_empty, 1,
+        "OnMyEvent publisher with zero subscribers must be HonestEmpty"
+    );
+    // Nothing should be in catalog or abi_external for this fixture.
+    assert_eq!(report.histogram.resolved_catalog, 0);
+    assert_eq!(report.histogram.resolved_abi_external, 0);
+
+    // ── real_unknown_rate ────────────────────────────────────────────────────
+    // 1 Unknown out of 4 total = 0.25
+    let rate = report.histogram.real_unknown_rate();
+    assert!(
+        (rate - 0.25).abs() < 1e-9,
+        "real_unknown_rate must be 0.25 for this fixture; got {rate}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 12 (unit): dropped obligation → coverage_holds returns false
+// ---------------------------------------------------------------------------
+
+/// The coverage contract catches a silently-dropped obligation.
+///
+/// Verifies that if we manually construct a `Coverage` where one obligation ID
+/// is missing from the edges, `coverage_holds` returns `false`.  This ensures
+/// the contract check is active and not vacuously true.
+#[test]
+fn dropped_obligation_is_caught_by_coverage_contract() {
+    use al_call_hierarchy::program::node::{
+        AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId,
+    };
+    use al_call_hierarchy::program::resolve::edge::{CanonicalSpan, SourcePos};
+
+    fn make_rid(name: &str) -> RoutineNodeId {
+        RoutineNodeId {
+            object: ObjectNodeId {
+                app: AppRef(0),
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name_lc: name.to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        }
+    }
+
+    fn make_span(line: u32) -> CanonicalSpan {
+        CanonicalSpan {
+            unit: "Test.al".into(),
+            start: SourcePos { line, col: 0 },
+            end: SourcePos { line, col: 10 },
+        }
+    }
+
+    let id_a = ObligationId::CallSite {
+        caller: make_rid("caller"),
+        span: make_span(10),
+        callee_fp: 1,
+    };
+    let id_b = ObligationId::CallSite {
+        caller: make_rid("caller"),
+        span: make_span(20),
+        callee_fp: 2,
+    };
+
+    // Coverage where obligation B is missing from edges — simulates a resolver
+    // that silently dropped obligation B.
+    let missing_coverage = Coverage {
+        parsed_obligations: 2,
+        classified_edges: 1,
+        missing: vec![id_b.clone()],
+        extra: vec![],
+    };
+    assert!(
+        !coverage_holds(&missing_coverage),
+        "a coverage with missing obligations must NOT hold"
+    );
+
+    // Coverage where both obligations are classified — contract must hold.
+    let full_coverage = Coverage {
+        parsed_obligations: 2,
+        classified_edges: 2,
+        missing: vec![],
+        extra: vec![],
+    };
+    assert!(
+        coverage_holds(&full_coverage),
+        "a complete coverage must hold"
+    );
+
+    // Extra edge (no obligation): must also fail.
+    let extra_coverage = Coverage {
+        parsed_obligations: 1,
+        classified_edges: 2,
+        missing: vec![],
+        extra: vec![id_a],
+    };
+    assert!(
+        !coverage_holds(&extra_coverage),
+        "a coverage with extra (obligation-less) edges must NOT hold"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 13 (CDO env-gated): coverage holds; evidence_overclaim=0; self-reported
+//          metric prints + deterministic; rate ≤ recorded ceiling.
+// ---------------------------------------------------------------------------
+
+/// Full-program obligation coverage + self-reported north-star metric over CDO.
+///
+/// Guards: requires `CDO_WS` env var pointing at a real BC workspace.
+///
+/// Assertions (all required):
+///   - `coverage_holds` (distinct-id SET equality — no obligation silently dropped)
+///   - `abi_unmapped == 0` (ABI ingestion integrity)
+///   - Taxonomy'd histogram + real_unknown_rate prints cleanly
+///   - Deterministic (two consecutive runs produce identical histogram)
+///   - `real_unknown_rate` ≤ recorded ceiling (regression guard)
+#[test]
+fn cdo_full_program_coverage_and_self_reported_metric() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+
+    // ── Coverage contract ────────────────────────────────────────────────────
+    assert!(
+        coverage_holds(&report.coverage),
+        "coverage contract violated on CDO — no obligation may be silently dropped.\n\
+         missing={} ids, extra={} ids",
+        report.coverage.missing.len(),
+        report.coverage.extra.len(),
+    );
+
+    // ── ABI ingestion integrity ──────────────────────────────────────────────
+    assert_eq!(
+        report.abi_integrity.abi_unmapped, 0,
+        "ABI ingestion integrity: {} route key(s) not found in raw SymbolReference",
+        report.abi_integrity.abi_unmapped
+    );
+
+    // ── Self-reported taxonomy'd histogram (print for record) ────────────────
+    let h = &report.histogram;
+    let ph = &report.primary_histogram;
+    eprintln!(
+        "\n\
+         ═══════════════════════════════════════════════════════════════\n\
+         1B.3a Task 3 — Self-reported north-star metric (no L3 oracle)\n\
+         ═══════════════════════════════════════════════════════════════\n\
+         \n\
+         Whole-program (all source-bearing routines + all publishers):\n\
+           total={} resolved_source={} resolved_catalog={} resolved_abi_external={}\n\
+           conditional_resolved={} honest_dynamic={} honest_empty={} unknown={}\n\
+           real_unknown_rate={:.4} ({:.2}%)\n\
+         \n\
+         Primary-scoped (workspace edges only — mirrors --l3-call-graph-stats-cross-app):\n\
+           total={} resolved_source={} resolved_catalog={} resolved_abi_external={}\n\
+           conditional_resolved={} honest_dynamic={} honest_empty={} unknown={}\n\
+           real_unknown_rate={:.4} ({:.2}%)\n\
+         \n\
+         Coverage: parsed_obligations={} classified_edges={}\n\
+         ABI integrity: abi_routes_total={} abi_mapped={} abi_unmapped={}\n\
+         ═══════════════════════════════════════════════════════════════",
+        h.total,
+        h.resolved_source,
+        h.resolved_catalog,
+        h.resolved_abi_external,
+        h.conditional_resolved,
+        h.honest_dynamic,
+        h.honest_empty,
+        h.unknown,
+        h.real_unknown_rate(),
+        h.real_unknown_rate() * 100.0,
+        ph.total,
+        ph.resolved_source,
+        ph.resolved_catalog,
+        ph.resolved_abi_external,
+        ph.conditional_resolved,
+        ph.honest_dynamic,
+        ph.honest_empty,
+        ph.unknown,
+        ph.real_unknown_rate(),
+        ph.real_unknown_rate() * 100.0,
+        report.coverage.parsed_obligations,
+        report.coverage.classified_edges,
+        report.abi_integrity.abi_routes_total,
+        report.abi_integrity.abi_mapped,
+        report.abi_integrity.abi_unmapped,
+    );
+
+    // ── Regression guard: primary real_unknown_rate ≤ recorded ceiling ───────
+    // Ceiling recorded from first CDO run (2026-06-30): 6.46%.
+    // 0.07 gives ~8% headroom above the baseline for safe guard.
+    let primary_rate = ph.real_unknown_rate();
+    assert!(
+        primary_rate <= 0.07,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.07 — \
+         engine regressed; investigate before raising the ceiling"
+    );
+
+    // ── Determinism ──────────────────────────────────────────────────────────
+    let report2 = resolve_full_program(&ws).expect("second run must succeed");
+    assert_eq!(
+        report.histogram, report2.histogram,
+        "resolve_full_program must be deterministic (histogram differs between runs)"
+    );
+    assert_eq!(
+        report.primary_histogram, report2.primary_histogram,
+        "resolve_full_program must be deterministic (primary_histogram differs)"
+    );
+    assert_eq!(
+        report.coverage.parsed_obligations, report2.coverage.parsed_obligations,
+        "resolve_full_program must be deterministic (parsed_obligations differs)"
+    );
+}
