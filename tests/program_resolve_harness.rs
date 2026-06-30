@@ -2589,3 +2589,139 @@ fn committed_goldens_metadata_is_valid() {
          (1B.3a baseline) — this assertion is UNCONDITIONAL (no CDO_WS needed)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 20 (fixture + CDO env-gated): 1B.3b Task 2 — fan-out applicability
+// SOUNDNESS teeth (ported into route_applicability)
+// ---------------------------------------------------------------------------
+
+/// Asserts the four 1B.3b Task 2 fan-out SOUNDNESS counters
+/// (`interface_applicability_violations` / `instance_builtin_violations` /
+/// `implicit_trigger_violations` / `event_violations`) are all 0 over the
+/// `fanout-applicability` fixture, which genuinely exercises all four
+/// dispatch kinds end-to-end through `resolve_full_program` (not
+/// hand-constructed edges — see `semantic_golden.rs`'s own unit tests for the
+/// hand-built positive/negative predicate-level proof that the teeth bite).
+/// Also asserts `resolve_full_program`'s fixture output actually contains a
+/// Polymorphic Call edge, a Multicast ImplicitTrigger edge, an EventFlow edge
+/// with >=1 Routine route, and a `PageInstance::` Builtin route — so this
+/// assertion is not vacuous.
+///
+/// SOUNDNESS, not completeness: these check that every fan-out route the
+/// resolver DID emit is individually well-formed/applicable — NOT that the
+/// resolver emitted every route it should have (that's the frozen,
+/// L3-validated goldens' job — 1B.3a/1B.3b Task 1). Distinct from
+/// `route_applicability_zero_violations` (Test 15)'s structural
+/// witness-contract/ABI checks; `ApplicabilityReport::is_clean()` now folds
+/// both families together, so Test 15 already covers this on the same
+/// fixture/CDO inputs — this test adds the targeted per-kind assertions and
+/// the fixture-exercises-every-kind sanity check.
+#[test]
+fn fan_out_applicability_zero_violations() {
+    // ── Fixture (no env needed) ───────────────────────────────────────────────
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/fanout-applicability");
+
+    let program_report =
+        resolve_full_program(&fixture).expect("resolve_full_program must succeed on fixture");
+    let has_polymorphic_call = program_report
+        .edges
+        .iter()
+        .any(|ce| ce.edge.kind == EdgeKind::Call && ce.edge.shape == DispatchShape::Polymorphic);
+    let has_multicast_trigger = program_report.edges.iter().any(|ce| {
+        ce.edge.kind == EdgeKind::ImplicitTrigger && ce.edge.shape == DispatchShape::Multicast
+    });
+    let has_event_flow_route = program_report.edges.iter().any(|ce| {
+        ce.edge.kind == EdgeKind::EventFlow
+            && ce
+                .edge
+                .routes
+                .iter()
+                .any(|r| matches!(r.target, RouteTarget::Routine(_)))
+    });
+    let has_page_instance_builtin = program_report.edges.iter().any(|ce| {
+        ce.edge.routes.iter().any(
+            |r| matches!(&r.target, RouteTarget::Builtin(b) if b.0.starts_with("PageInstance::")),
+        )
+    });
+    assert!(
+        has_polymorphic_call,
+        "fixture must exercise an Interface (Polymorphic) Call edge"
+    );
+    assert!(
+        has_multicast_trigger,
+        "fixture must exercise a Multicast ImplicitTrigger edge"
+    );
+    assert!(
+        has_event_flow_route,
+        "fixture must exercise an EventFlow edge with a Routine route"
+    );
+    assert!(
+        has_page_instance_builtin,
+        "fixture must exercise a PageInstance:: instance-builtin route"
+    );
+
+    let appl = run_route_applicability(&fixture);
+    assert_eq!(
+        appl.interface_applicability_violations, 0,
+        "Interface fan-out soundness violated on fixture"
+    );
+    assert_eq!(
+        appl.instance_builtin_violations, 0,
+        "instance-builtin/enum-static soundness violated on fixture"
+    );
+    assert_eq!(
+        appl.implicit_trigger_violations, 0,
+        "ImplicitTrigger fan-out soundness violated on fixture"
+    );
+    assert_eq!(
+        appl.event_violations, 0,
+        "EventFlow soundness violated on fixture"
+    );
+    assert!(
+        appl.is_clean(),
+        "route-applicability contract violated on fixture: {appl:?}"
+    );
+    eprintln!(
+        "Test 20 (fixture) — fan-out applicability: interface=0 instance_builtin=0 \
+         implicit_trigger=0 event=0 (total_routes={})",
+        appl.total_routes,
+    );
+
+    // ── CDO (env-gated) ───────────────────────────────────────────────────────
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let appl_cdo = run_route_applicability(&ws);
+    assert_eq!(
+        appl_cdo.interface_applicability_violations, 0,
+        "Interface fan-out soundness violated on CDO_WS — a real bug, investigate \
+         and fix (do not relax)."
+    );
+    assert_eq!(
+        appl_cdo.instance_builtin_violations, 0,
+        "instance-builtin/enum-static soundness violated on CDO_WS — investigate."
+    );
+    assert_eq!(
+        appl_cdo.implicit_trigger_violations, 0,
+        "ImplicitTrigger fan-out soundness violated on CDO_WS — investigate."
+    );
+    assert_eq!(
+        appl_cdo.event_violations, 0,
+        "EventFlow soundness violated on CDO_WS — investigate."
+    );
+    eprintln!(
+        "Test 20 (CDO) — fan-out applicability: total_routes={} \
+         interface_violations={} instance_builtin_violations={} \
+         implicit_trigger_violations={} event_violations={} (all must be 0)",
+        appl_cdo.total_routes,
+        appl_cdo.interface_applicability_violations,
+        appl_cdo.instance_builtin_violations,
+        appl_cdo.implicit_trigger_violations,
+        appl_cdo.event_violations,
+    );
+}

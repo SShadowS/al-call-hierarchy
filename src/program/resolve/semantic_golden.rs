@@ -55,23 +55,36 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::program::node::ObjKey;
+use crate::program::graph::ProgramGraph;
+use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::abi_check::{
-    abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
+    RawAbiIndex, abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
 };
 use crate::program::resolve::anon::{self, AnonId};
+use crate::program::resolve::applicability::{
+    RecordOpCtx, RecordOpKind, RunTrigger, implicit_trigger_route_applicable,
+    instance_builtin_route_applicable, interface_route_applicable,
+};
 use crate::program::resolve::differential::{
     CanonicalEdge, CanonicalEventRow, CanonicalKey, CanonicalTarget, project_fresh,
     project_fresh_event_rows, project_l3, project_l3_implicit_trigger_in_scope,
-    witness_contract_holds,
+    verify_event_subscriber_route, witness_contract_holds,
 };
-use crate::program::resolve::edge::{Edge, EdgeKind};
+use crate::program::resolve::edge::{
+    DispatchShape, Edge, EdgeKind, RouteTarget, SiteId, callee_fp,
+};
+use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
+use crate::program::resolve::index::ResolveIndex;
+use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
+use crate::program::resolve::receiver::{FrameworkKind, ReceiverType, infer_receiver_type};
+use crate::snapshot::ParsedUnit;
 
 // ---------------------------------------------------------------------------
 // Column-ignoring site key (serde-able)
@@ -865,6 +878,35 @@ fn diff_against_anon_golden(
 // ---------------------------------------------------------------------------
 
 /// Result of the structural route-applicability contract check.
+///
+/// # Soundness vs. completeness (1B.3b Task 2)
+///
+/// [`witness_contract_violations`][Self::witness_contract_violations] and
+/// [`abi_unmapped`][Self::abi_unmapped] are STRUCTURAL checks (every route's
+/// evidence/witness pair is internally consistent; every `AbiSymbol` key maps
+/// back to a real dep entry).
+///
+/// The four `*_violations` fields added by 1B.3b Task 2 are PER-ROUTE
+/// SOUNDNESS checks: given that the resolver emitted a fan-out route, IS that
+/// route well-formed/applicable for the call site that produced it (the
+/// right method+arity on an object that genuinely implements the dispatched
+/// interface; a trigger that genuinely fires for the record-op that produced
+/// it; a catalog method that's genuinely in that object-kind's instance
+/// catalog; a subscriber whose raw `[EventSubscriber]` attribute genuinely
+/// names the publisher+event it claims to handle). This is explicitly NOT a
+/// COMPLETENESS check — it does not ask "did the resolver emit every route it
+/// should have" (that question is answered by the frozen, L3-validated
+/// goldens from 1B.3a/1B.3b Task 1, which carry target-set
+/// completeness/exactness for the dispatch kinds they cover). A clean
+/// [`ApplicabilityReport`] only certifies that every route the resolver DID
+/// emit is individually justified.
+///
+/// These four checks are the teeth that previously lived ONLY inside the
+/// dual-run gates' FreshOnly branches (`differential::run_member_resolution_harness`
+/// / `run_implicit_trigger_harness` / `run_event_flow_gate`) — ported here so
+/// they survive the gate deletion in Task 3, now running over EVERY fan-out
+/// route in [`crate::program::resolve::full::resolve_full_program`]'s full
+/// edge set rather than only the FreshOnly-vs-L3 subset.
 #[derive(Clone, Debug, Default)]
 pub struct ApplicabilityReport {
     pub total_routes: usize,
@@ -872,11 +914,55 @@ pub struct ApplicabilityReport {
     pub witness_contract_violations: usize,
     /// `AbiSymbol` routes whose key is absent from the raw-ABI index.
     pub abi_unmapped: usize,
+    /// SOUNDNESS: `DispatchShape::Polymorphic` (Interface fan-out) `Routine`
+    /// routes that fail [`interface_route_applicable`] against the call
+    /// site's dispatched `(iface, called_member, arity)` — or, when no
+    /// call-site context could be recovered for the edge at all, ANY
+    /// non-`Unresolved` route on it (fail-closed: an unverifiable route is
+    /// not a proven-sound one).
+    pub interface_applicability_violations: usize,
+    /// SOUNDNESS: Catalog `Builtin` routes whose `BuiltinId` carries the
+    /// `PageInstance::` / `ReportInstance::` / `Enum::` fan-out prefix and
+    /// fail an independent re-check of the instance-builtin/enum-static
+    /// catalog ([`instance_builtin_route_applicable`] for Page/Report; the
+    /// `Enum` member-builtin catalog for `Enum::`).
+    pub instance_builtin_violations: usize,
+    /// SOUNDNESS: `DispatchShape::Multicast` (`EdgeKind::ImplicitTrigger`)
+    /// `Routine` routes that fail [`implicit_trigger_route_applicable`]
+    /// against the record-op call site's `RecordOpCtx` — `Validate` sites
+    /// fall back to the coarser table/extension-identity check (the
+    /// validated field name is not recoverable from `CalleeShape::RecordOp`,
+    /// the same documented limitation as the live
+    /// `differential::run_implicit_trigger_harness` FreshOnly gate) — or, when
+    /// no call-site context was recovered, ANY non-`Unresolved` route
+    /// (fail-closed, same rationale as the Interface case).
+    pub implicit_trigger_violations: usize,
+    /// SOUNDNESS: `EdgeKind::EventFlow` `Routine` (subscriber) routes whose
+    /// raw `[EventSubscriber]` attribute (re-parsed at check time via
+    /// [`verify_event_subscriber_route`], NOT from any cached index field)
+    /// does not name the publisher object+event the edge claims, or whose
+    /// arity exceeds the publisher's.
+    pub event_violations: usize,
 }
 
 impl ApplicabilityReport {
     pub fn is_clean(&self) -> bool {
-        self.witness_contract_violations == 0 && self.abi_unmapped == 0
+        self.witness_contract_violations == 0
+            && self.abi_unmapped == 0
+            && self.interface_applicability_violations == 0
+            && self.instance_builtin_violations == 0
+            && self.implicit_trigger_violations == 0
+            && self.event_violations == 0
+    }
+
+    /// Sum of the four 1B.3b Task 2 fan-out SOUNDNESS violation counters
+    /// (excludes the pre-existing structural `witness_contract_violations`/
+    /// `abi_unmapped` checks).
+    pub fn fan_out_violations(&self) -> usize {
+        self.interface_applicability_violations
+            + self.instance_builtin_violations
+            + self.implicit_trigger_violations
+            + self.event_violations
     }
 }
 
@@ -1186,18 +1272,292 @@ pub fn assert_against_semantic_golden(
     diff
 }
 
-/// Route-applicability structural contract.
+// ---------------------------------------------------------------------------
+// 1B.3b Task 2: fan-out call-site context (L3-INDEPENDENT)
+// ---------------------------------------------------------------------------
+
+/// Per-call-site context the fan-out applicability predicates need but
+/// cannot recover from a [`Edge`]/[`Route`] alone:
 ///
-/// Checks the witness↔evidence contract on every route in `edges` and
-/// delegates the ABI ingestion integrity check to [`abi_ingestion_integrity`].
-/// Both must be zero for [`ApplicabilityReport::is_clean`] to return `true`.
+/// - An `Interface` member call's `target.name_lc`/`target.params_count` are
+///   tautologically equal to the call site's method/arity BY CONSTRUCTION
+///   (`resolver::resolve_member`'s `Interface` arm only ever builds a
+///   `Routine` route via `resolve_in_object(impl_id, …, method_lc, arity, …)`)
+///   — but the DISPATCHED INTERFACE NAME is not recoverable from the route or
+///   edge at all, since `Edge`/`Route` carry no receiver-type field. This
+///   variant carries it.
+/// - A `RecordOp` call site's record-operation kind + resolved table are
+///   likewise absent from the `ImplicitTrigger` edge/route shape.
+///
+/// Built by [`build_fan_out_site_context`], which re-walks the SAME parsed
+/// call sites `resolve_full_program` resolves (mirroring the (Task-3-deleted)
+/// dual-run gates' FreshOnly receiver-type/`RecordOp` re-inference —
+/// `differential::run_member_resolution_harness` /
+/// `run_implicit_trigger_harness`), keyed by [`SiteId`] so it lines up 1:1
+/// with `resolve_full_program`'s edges.
+#[derive(Clone, Debug)]
+pub enum FanOutSiteContext {
+    /// `ReceiverType::Interface { name_lc }` — the call site dispatched via
+    /// this interface, calling `called_member_lc` with `arity` arguments.
+    Interface {
+        iface_lc: String,
+        called_member_lc: String,
+        arity: usize,
+    },
+    /// A `RecordOp` call site's record-operation context.
+    Trigger(RecordOpCtx),
+}
+
+/// Re-walk every workspace `Member`/`RecordOp` call site to recover the
+/// [`FanOutSiteContext`] the fan-out applicability predicates need.
+///
+/// Mirrors `full::resolve_full_program_from_parts`'s own Phase-1 walk
+/// (same snapshot/parsed/`ws_file_set`/`primary_app_ref` scoping) — this is
+/// INTENTIONALLY a second pass over the same call sites rather than a
+/// plumbed-through field on [`Edge`]: `resolve_full_program`'s `Edge` shape
+/// is shared by every consumer in the crate (CLI stats, snapshots,
+/// fingerprints, …) and is deliberately receiver-type-free; adding a
+/// receiver-type field there to serve only this soundness check would leak
+/// Phase-3/4 resolver internals into the canonical edge shape. The re-walk
+/// costs nothing the gates didn't already pay (they did the identical
+/// re-walk) and keeps `Edge` clean.
+///
+/// L3-INDEPENDENT: only reads `graph`/`parsed`/`index` — never touches
+/// `engine::l3`.
+fn build_fan_out_site_context(
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    parsed: &[ParsedUnit],
+    primary_app_ref: AppRef,
+    ws_file_set: &HashSet<String>,
+) -> HashMap<SiteId, FanOutSiteContext> {
+    let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+        graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+
+    let mut ctx_map: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+
+    for unit in parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        if app_ref != primary_app_ref {
+            continue;
+        }
+
+        for pf in &unit.files {
+            if !ws_file_set.contains(&pf.virtual_path) {
+                continue;
+            }
+
+            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+                let obj_key = match obj.id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                };
+                let obj_node_id = ObjectNodeId {
+                    app: primary_app_ref,
+                    kind: obj.kind,
+                    key: obj_key,
+                };
+                let Some(obj_node) = obj_node_map.get(&obj_node_id).copied() else {
+                    continue;
+                };
+
+                let globals_rec: HashSet<String> = obj
+                    .globals
+                    .iter()
+                    .filter(|v| {
+                        v.ty.as_deref()
+                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                            .unwrap_or(false)
+                    })
+                    .map(|v| v.name.to_ascii_lowercase())
+                    .collect();
+
+                for (routine_idx, routine) in obj.routines.iter().enumerate() {
+                    let caller = RoutineNodeId {
+                        object: obj_node_id.clone(),
+                        name_lc: routine.name.to_ascii_lowercase(),
+                        enclosing_member_lc: routine
+                            .enclosing_member
+                            .as_ref()
+                            .map(|(n, _)| n.to_ascii_lowercase()),
+                        params_count: routine.params.len(),
+                        sig_fp: 0,
+                    };
+
+                    let sites = extract_sites_for_routine(
+                        &pf.file,
+                        &pf.text,
+                        &pf.virtual_path,
+                        &globals_rec,
+                        obj_idx,
+                        routine_idx,
+                    );
+
+                    for site in &sites {
+                        let fp = callee_fp(&site.callee_text);
+                        let site_id = SiteId {
+                            caller: caller.clone(),
+                            span: site.span.clone(),
+                            callee_fingerprint: fp,
+                        };
+
+                        match &site.shape {
+                            CalleeShape::Member {
+                                receiver_text,
+                                method,
+                            } => {
+                                let receiver_lc = receiver_text.to_ascii_lowercase();
+                                let recv = infer_receiver_type(
+                                    &receiver_lc,
+                                    routine,
+                                    &obj.globals,
+                                    obj_node,
+                                    graph,
+                                    index,
+                                );
+                                if let ReceiverType::Interface { name_lc } = recv {
+                                    ctx_map.insert(
+                                        site_id,
+                                        FanOutSiteContext::Interface {
+                                            iface_lc: name_lc,
+                                            called_member_lc: method.to_ascii_lowercase(),
+                                            arity: site.arity,
+                                        },
+                                    );
+                                }
+                            }
+                            CalleeShape::RecordOp { receiver_text, op } => {
+                                let receiver_lc = receiver_text.to_ascii_lowercase();
+                                let op_lc = op.to_ascii_lowercase();
+                                let Some(op_kind) = (match op_lc.as_str() {
+                                    "insert" => Some(RecordOpKind::Insert),
+                                    "modify" => Some(RecordOpKind::Modify),
+                                    "delete" => Some(RecordOpKind::Delete),
+                                    "validate" => Some(RecordOpKind::Validate),
+                                    _ => None,
+                                }) else {
+                                    continue;
+                                };
+                                let recv = infer_receiver_type(
+                                    &receiver_lc,
+                                    routine,
+                                    &obj.globals,
+                                    obj_node,
+                                    graph,
+                                    index,
+                                );
+                                if let ReceiverType::Record {
+                                    table: Some(table_id),
+                                } = recv
+                                {
+                                    ctx_map.insert(
+                                        site_id,
+                                        FanOutSiteContext::Trigger(RecordOpCtx {
+                                            kind: op_kind,
+                                            table: table_id,
+                                            // The validated field name is not
+                                            // recoverable from `CalleeShape::RecordOp`
+                                            // (it carries no argument text) — same
+                                            // documented limitation as the live
+                                            // `run_implicit_trigger_harness` FreshOnly
+                                            // gate; `route_applicability` falls back to
+                                            // the coarser table/extension-identity
+                                            // check for `Validate` sites (see its
+                                            // doc comment).
+                                            field: None,
+                                            // The run-trigger boolean argument is not
+                                            // statically recoverable at this layer
+                                            // either (same conservative default the live
+                                            // gate uses) — `Guarded` never short-circuits
+                                            // the predicate to `false`, so it never masks
+                                            // a real violation; it only means we cannot
+                                            // independently confirm an `Insert(false)`
+                                            // site suppressed its trigger edges (a gap
+                                            // pre-existing in the ported logic, not
+                                            // introduced here).
+                                            run_trigger: RunTrigger::Guarded,
+                                        }),
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ctx_map
+}
+
+/// `target_object == table_id` OR a `TableExtension` of it.
+///
+/// Used for `Validate` `ImplicitTrigger` routes, where
+/// [`FanOutSiteContext::Trigger`]'s `field` is always `None` (see
+/// [`build_fan_out_site_context`]'s doc comment) — with `field: None`, the
+/// full [`implicit_trigger_route_applicable`] ALWAYS returns `false` for a
+/// `Validate` target (it requires `(Some(ctx_field), Some(target_field))` to
+/// match), so this coarser table-identity check is the fallback, mirroring
+/// `differential::run_implicit_trigger_harness`'s identical, documented
+/// `target_is_on_table_or_extension` helper (duplicated here rather than
+/// imported to keep this module's `differential.rs`/`applicability.rs`
+/// footprint at zero non-`pub` touches).
+fn target_is_on_table_or_extension(
+    target_object: &ObjectNodeId,
+    table_id: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    if target_object == table_id {
+        return true;
+    }
+    let table_name_lc: String = match &table_id.key {
+        ObjKey::Name(s) => s.clone(),
+        ObjKey::Id(_) => graph
+            .objects
+            .iter()
+            .find(|o| &o.id == table_id)
+            .map(|n| n.name.to_ascii_lowercase())
+            .unwrap_or_default(),
+    };
+    if table_name_lc.is_empty() {
+        return false;
+    }
+    index
+        .table_extensions_of(&table_name_lc)
+        .contains(target_object)
+}
+
+/// Route-applicability contract: structural (witness↔evidence, ABI ingestion)
+/// AND, since 1B.3b Task 2, per-route fan-out SOUNDNESS (Interface,
+/// instance-builtin/enum-static, ImplicitTrigger, EventFlow) — see
+/// [`ApplicabilityReport`]'s doc comment for the soundness-vs-completeness
+/// framing. All six counters must be zero for
+/// [`ApplicabilityReport::is_clean`] to return `true`.
+///
+/// `fan_out_ctx` (built by [`build_fan_out_site_context`]) supplies the
+/// Interface/`RecordOp` call-site context `edges` alone cannot carry;
+/// `graph`/`index` back the predicates' object/routine lookups; `parsed`
+/// backs [`verify_event_subscriber_route`]'s independent raw-IR re-read.
 #[must_use]
 pub fn route_applicability(
     edges: &[Edge],
-    raw_abi: &crate::program::resolve::abi_check::RawAbiIndex,
+    raw_abi: &RawAbiIndex,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    fan_out_ctx: &HashMap<SiteId, FanOutSiteContext>,
+    parsed: &[ParsedUnit],
 ) -> ApplicabilityReport {
     let mut total_routes = 0usize;
     let mut witness_contract_violations = 0usize;
+    let mut interface_applicability_violations = 0usize;
+    let mut instance_builtin_violations = 0usize;
+    let mut implicit_trigger_violations = 0usize;
+    let mut event_violations = 0usize;
+
     for edge in edges {
         for route in edge.all_routes() {
             total_routes += 1;
@@ -1205,12 +1565,165 @@ pub fn route_applicability(
                 witness_contract_violations += 1;
             }
         }
+
+        match edge.kind {
+            // ── Interface (Polymorphic) fan-out ─────────────────────────────
+            EdgeKind::Call if edge.shape == DispatchShape::Polymorphic => {
+                match fan_out_ctx.get(&edge.site) {
+                    Some(FanOutSiteContext::Interface {
+                        iface_lc,
+                        called_member_lc,
+                        arity,
+                    }) => {
+                        for route in edge.all_routes() {
+                            let ok = match &route.target {
+                                RouteTarget::Routine(rid) => interface_route_applicable(
+                                    iface_lc,
+                                    called_member_lc,
+                                    *arity,
+                                    rid,
+                                    graph,
+                                    index,
+                                ),
+                                // A SymbolOnly (cross-app dep) implementer: object-level
+                                // applicability holds by construction (a known interface
+                                // implementer read from SymbolReference); the member is
+                                // opaque (no source) — same PASS rule as the live FreshOnly
+                                // gate (differential.rs).
+                                RouteTarget::AbiSymbol { .. } => true,
+                                // Unresolved (Rule-1/2 failure) claims nothing → vacuously sound.
+                                RouteTarget::Unresolved => true,
+                                // A Builtin target on an interface fan-out site is anomalous.
+                                RouteTarget::Builtin(_) => false,
+                            };
+                            if !ok {
+                                interface_applicability_violations += 1;
+                            }
+                        }
+                    }
+                    // No recovered call-site context for this Polymorphic edge (or a
+                    // context of the WRONG kind — shouldn't happen, but treated the
+                    // same way) — cannot independently verify any concrete route it
+                    // claims. Fail-closed: an unverifiable route is not a proven-sound
+                    // one.
+                    None | Some(FanOutSiteContext::Trigger(_)) => {
+                        for route in edge.all_routes() {
+                            if route.target != RouteTarget::Unresolved {
+                                interface_applicability_violations += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── ImplicitTrigger (Multicast) fan-out ─────────────────────────
+            EdgeKind::ImplicitTrigger if edge.shape == DispatchShape::Multicast => {
+                match fan_out_ctx.get(&edge.site) {
+                    Some(FanOutSiteContext::Trigger(ctx)) => {
+                        for route in edge.all_routes() {
+                            let ok = match &route.target {
+                                RouteTarget::Routine(rid) => {
+                                    if matches!(ctx.kind, RecordOpKind::Validate) {
+                                        target_is_on_table_or_extension(
+                                            &rid.object,
+                                            &ctx.table,
+                                            graph,
+                                            index,
+                                        )
+                                    } else {
+                                        implicit_trigger_route_applicable(ctx, rid, graph, index)
+                                    }
+                                }
+                                RouteTarget::Unresolved => true,
+                                _ => false,
+                            };
+                            if !ok {
+                                implicit_trigger_violations += 1;
+                            }
+                        }
+                    }
+                    // Same fail-closed rationale as the Interface case above.
+                    None | Some(FanOutSiteContext::Interface { .. }) => {
+                        for route in edge.all_routes() {
+                            if route.target != RouteTarget::Unresolved {
+                                implicit_trigger_violations += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── EventFlow ────────────────────────────────────────────────────
+            EdgeKind::EventFlow => {
+                let pub_name_lc = graph
+                    .objects
+                    .iter()
+                    .find(|o| o.id == edge.from.object)
+                    .map(|o| o.name.to_ascii_lowercase())
+                    .unwrap_or_default();
+                let pub_type_lc = format!("{:?}", edge.from.object.kind).to_ascii_lowercase();
+                for route in edge.all_routes() {
+                    if let RouteTarget::Routine(sub_rid) = &route.target {
+                        let ok = verify_event_subscriber_route(
+                            sub_rid,
+                            &pub_type_lc,
+                            &pub_name_lc,
+                            &edge.from.name_lc,
+                            edge.from.params_count,
+                            parsed,
+                            &graph.apps,
+                        );
+                        if !ok {
+                            event_violations += 1;
+                        }
+                    }
+                }
+            }
+
+            _ => {}
+        }
+
+        // ── Instance-builtin / enum-static catalog fan-out ────────────────────
+        // Route-level, independent of edge kind/shape: these are
+        // `DispatchShape::Exact` `Evidence::Catalog` `Builtin` routes (the
+        // `member_catalog_route` path in `resolver::resolve_member`),
+        // identified by the `BuiltinId` prefix, not by shape.
+        for route in edge.all_routes() {
+            if let RouteTarget::Builtin(bid) = &route.target {
+                // Not a fan-out catalog route (RecordRef::/Text::/JsonObject::/…) →
+                // `None` — direct single-dispatch catalog routes need no applicability
+                // check (the witness IS the proof; see the route-level loop's doc
+                // comment above).
+                let ok =
+                    match bid.0.split_once("::") {
+                        Some(("PageInstance", method_lc)) => Some(
+                            instance_builtin_route_applicable(ObjectKind::Page, method_lc),
+                        ),
+                        Some(("ReportInstance", method_lc)) => Some(
+                            instance_builtin_route_applicable(ObjectKind::Report, method_lc),
+                        ),
+                        Some(("Enum", method_lc)) => Some(member_builtin(
+                            MemberCatalogKind::Framework(&FrameworkKind::Enum),
+                            method_lc,
+                        )),
+                        _ => None,
+                    };
+                if ok == Some(false) {
+                    instance_builtin_violations += 1;
+                }
+            }
+        }
     }
+
     let abi_report = abi_ingestion_integrity(edges, raw_abi);
     ApplicabilityReport {
         total_routes,
         witness_contract_violations,
         abi_unmapped: abi_report.abi_unmapped,
+        interface_applicability_violations,
+        instance_builtin_violations,
+        implicit_trigger_violations,
+        event_violations,
     }
 }
 
@@ -1255,13 +1768,15 @@ pub fn run_semantic_diff(workspace_root: &Path, golden: &SemanticGolden) -> Sema
 
 /// Run the route-applicability check over `workspace_root`.
 ///
-/// Builds the snapshot and raw-ABI index internally.
+/// Builds the snapshot, raw-ABI index, [`ResolveIndex`], parsed units, and
+/// (1B.3b Task 2) the [`FanOutSiteContext`] map internally, then delegates to
+/// [`route_applicability`].
 #[must_use]
 pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
     use crate::program::abi_ingest::AbiCache;
     use crate::program::build::build_program_graph;
     use crate::program::resolve::full::resolve_full_program;
-    use crate::snapshot::SnapshotBuilder;
+    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
 
     let snap = match (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),
@@ -1274,11 +1789,25 @@ pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
     };
     let graph = build_program_graph(&snap, &AbiCache::new());
     let raw_abi = build_raw_abi_index_from_snapshot(&snap, &graph.apps);
+    let Some(primary_app_ref) = graph.apps.find(&snap.workspace_app) else {
+        return ApplicabilityReport::default();
+    };
+    let ws_file_set: HashSet<String> = snap
+        .apps
+        .first()
+        .and_then(|u| u.source.as_ref())
+        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+        .unwrap_or_default();
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let fan_out_ctx =
+        build_fan_out_site_context(&graph, &index, &parsed, primary_app_ref, &ws_file_set);
+
     let Some(report) = resolve_full_program(workspace_root) else {
         return ApplicabilityReport::default();
     };
     let all_edges: Vec<Edge> = report.edges.into_iter().map(|ce| ce.edge).collect();
-    route_applicability(&all_edges, &raw_abi)
+    route_applicability(&all_edges, &raw_abi, &graph, &index, &fan_out_ctx, &parsed)
 }
 
 /// CDO semantic audit: compare the fresh resolver against the COMMITTED,
@@ -1562,5 +2091,683 @@ pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
         pair_l3_only,
         pair_fresh_only,
         digest,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests (1B.3b Task 2): the ported fan-out applicability teeth actually bite
+// ---------------------------------------------------------------------------
+//
+// These exercise `route_applicability`'s four SOUNDNESS checks directly,
+// against hand-built `Edge`/`Route`/`FanOutSiteContext` fixtures — mirroring
+// `applicability.rs`'s own predicate-level test style (`make_app`/`make_obj`/
+// `build_graph`, duplicated rather than shared cross-module — the
+// established convention in this crate's resolve test suites). Each kind
+// gets a POSITIVE case (an applicable route → the matching violation counter
+// stays 0) and a FABRICATED NEGATIVE case (a deliberately non-applicable
+// route → the matching counter increments), proving the ported teeth are
+// live, not vacuous. The end-to-end on-disk fixture + CDO_WS run lives in
+// `tests/program_resolve_harness.rs` (Test 20).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::engine::deps::symbol_reference::SymbolReferenceAbi;
+    use crate::program::graph::ObjectIndex;
+    use crate::program::node::AppRegistry;
+    use crate::program::node_extract::{Access, RoutineNode, extract_nodes};
+    use crate::program::resolve::edge::{
+        BuiltinId, CanonicalSpan, Evidence, OpenWorldReason, Route, SetCompleteness, SourcePos,
+        Witness,
+    };
+    use crate::program::topology::DependencyGraph;
+    use crate::snapshot::{AppId, ParsedFile, Provenance, TrustTier};
+
+    // -----------------------------------------------------------------------
+    // Shared fixture helpers
+    // -----------------------------------------------------------------------
+
+    fn empty_raw_abi() -> RawAbiIndex {
+        let empty: Vec<(AppRef, &SymbolReferenceAbi)> = Vec::new();
+        RawAbiIndex::build(empty)
+    }
+
+    fn make_app() -> (AppRegistry, AppRef) {
+        let mut apps = AppRegistry::default();
+        let r = apps.intern(&AppId {
+            guid: String::new(),
+            name: "TestApp".into(),
+            publisher: "T".into(),
+            version: "1.0.0.0".into(),
+        });
+        (apps, r)
+    }
+
+    fn make_obj(app: AppRef, kind: ObjectKind, name: &str, implements: Vec<&str>) -> ObjectNode {
+        ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind,
+                key: ObjKey::Name(name.to_ascii_lowercase()),
+            },
+            name: name.to_string(),
+            declared_id: None,
+            extends_target: None,
+            implements: implements.into_iter().map(str::to_string).collect(),
+            tier: TrustTier::Workspace,
+        }
+    }
+
+    fn make_routine_node(obj_id: &ObjectNodeId, name: &str, params: usize) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id.clone(),
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
+                params_count: params,
+                sig_fp: 0,
+            },
+            name: name.to_string(),
+            is_trigger: matches!(
+                name.to_ascii_lowercase().as_str(),
+                "oninsert" | "onmodify" | "ondelete" | "onrename" | "onvalidate"
+            ),
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
+        }
+    }
+
+    fn build_synth_graph(
+        apps: AppRegistry,
+        objects: Vec<ObjectNode>,
+        routines: Vec<RoutineNode>,
+    ) -> (ProgramGraph, ResolveIndex) {
+        let mut sorted_objects = objects;
+        sorted_objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&sorted_objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects: sorted_objects,
+            routines,
+            obj_index,
+        };
+        let index = ResolveIndex::build(&graph);
+        (graph, index)
+    }
+
+    fn test_span(line: u32) -> CanonicalSpan {
+        CanonicalSpan {
+            unit: "u.al".into(),
+            start: SourcePos { line, col: 1 },
+            end: SourcePos { line, col: 5 },
+        }
+    }
+
+    fn source_route(target: RoutineNodeId) -> Route {
+        Route {
+            target: RouteTarget::Routine(target),
+            evidence: Evidence::Source,
+            conditions: vec![],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 1),
+            },
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Interface (Polymorphic) fan-out
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn interface_route_applicable_when_object_implements_iface() {
+        let (apps, app) = make_app();
+        let impl_obj = make_obj(app, ObjectKind::Codeunit, "FooImpl", vec!["ifoo"]);
+        let impl_id = impl_obj.id.clone();
+        let bar = make_routine_node(&impl_id, "bar", 0);
+        let caller_obj = make_obj(app, ObjectKind::Codeunit, "Caller", vec![]);
+        let caller_id = caller_obj.id.clone();
+        let (graph, index) = build_synth_graph(apps, vec![impl_obj, caller_obj], vec![bar]);
+
+        let caller_rid = RoutineNodeId {
+            object: caller_id,
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: impl_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let site = SiteId {
+            caller: caller_rid.clone(),
+            span: test_span(1),
+            callee_fingerprint: 1,
+        };
+        let edge = Edge {
+            from: caller_rid,
+            site: site.clone(),
+            kind: EdgeKind::Call,
+            shape: DispatchShape::Polymorphic,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentImplementers,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+        let mut ctx: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+        ctx.insert(
+            site,
+            FanOutSiteContext::Interface {
+                iface_lc: "ifoo".into(),
+                called_member_lc: "bar".into(),
+                arity: 0,
+            },
+        );
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &ctx, &[]);
+        assert_eq!(
+            report.interface_applicability_violations, 0,
+            "FooImpl implements ifoo with a unique Bar() → applicable"
+        );
+    }
+
+    #[test]
+    fn interface_route_violation_when_object_does_not_implement_iface() {
+        let (apps, app) = make_app();
+        // NotImpl does NOT implement "ifoo" — a fabricated non-applicable route.
+        let not_impl = make_obj(app, ObjectKind::Codeunit, "NotImpl", vec![]);
+        let not_impl_id = not_impl.id.clone();
+        let bar = make_routine_node(&not_impl_id, "bar", 0);
+        let caller_obj = make_obj(app, ObjectKind::Codeunit, "Caller", vec![]);
+        let caller_id = caller_obj.id.clone();
+        let (graph, index) = build_synth_graph(apps, vec![not_impl, caller_obj], vec![bar]);
+
+        let caller_rid = RoutineNodeId {
+            object: caller_id,
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: not_impl_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let site = SiteId {
+            caller: caller_rid.clone(),
+            span: test_span(1),
+            callee_fingerprint: 1,
+        };
+        let edge = Edge {
+            from: caller_rid,
+            site: site.clone(),
+            kind: EdgeKind::Call,
+            shape: DispatchShape::Polymorphic,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentImplementers,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+        let mut ctx: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+        ctx.insert(
+            site,
+            FanOutSiteContext::Interface {
+                iface_lc: "ifoo".into(),
+                called_member_lc: "bar".into(),
+                arity: 0,
+            },
+        );
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &ctx, &[]);
+        assert_eq!(
+            report.interface_applicability_violations, 1,
+            "NotImpl does not implement ifoo → the ported teeth must catch it"
+        );
+    }
+
+    #[test]
+    fn interface_polymorphic_edge_with_no_recovered_context_fails_closed() {
+        let (apps, app) = make_app();
+        let impl_obj = make_obj(app, ObjectKind::Codeunit, "FooImpl", vec!["ifoo"]);
+        let impl_id = impl_obj.id.clone();
+        let bar = make_routine_node(&impl_id, "bar", 0);
+        let (graph, index) = build_synth_graph(apps, vec![impl_obj], vec![bar]);
+
+        let caller_rid = RoutineNodeId {
+            object: impl_id.clone(),
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: impl_id,
+            name_lc: "bar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: caller_rid.clone(),
+            site: SiteId {
+                caller: caller_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape: DispatchShape::Polymorphic,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentImplementers,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+
+        // No fan_out_ctx entry for this edge's SiteId — fail-closed.
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &[]);
+        assert_eq!(
+            report.interface_applicability_violations, 1,
+            "a Polymorphic edge with no recovered call-site context must fail closed, \
+             not silently pass"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Instance-builtin / enum-static catalog fan-out
+    // -----------------------------------------------------------------------
+
+    fn builtin_route(id: &str) -> Route {
+        Route {
+            target: RouteTarget::Builtin(BuiltinId(id.into())),
+            evidence: Evidence::Catalog,
+            conditions: vec![],
+            witness: Witness::CatalogEntry {
+                id: BuiltinId(id.into()),
+                catalog_version: "test".into(),
+            },
+        }
+    }
+
+    fn builtin_edge(app: AppRef, route: Route) -> Edge {
+        let rid = RoutineNodeId {
+            object: ObjectNodeId {
+                app,
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Name("caller".into()),
+            },
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        Edge {
+            from: rid.clone(),
+            site: SiteId {
+                caller: rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape: DispatchShape::Exact,
+            completeness: SetCompleteness::Complete,
+            routes: vec![route],
+        }
+    }
+
+    #[test]
+    fn instance_builtin_route_passes_for_known_method() {
+        let (apps, app) = make_app();
+        let (graph, index) = build_synth_graph(apps, vec![], vec![]);
+        let edge = builtin_edge(app, builtin_route("PageInstance::runmodal"));
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &[]);
+        assert_eq!(report.instance_builtin_violations, 0);
+    }
+
+    #[test]
+    fn instance_builtin_route_violation_for_unknown_method() {
+        let (apps, app) = make_app();
+        let (graph, index) = build_synth_graph(apps, vec![], vec![]);
+        // Fabricated: "notamethod" is not in the PAGE_INSTANCE catalog.
+        let edge = builtin_edge(app, builtin_route("PageInstance::notamethod"));
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &[]);
+        assert_eq!(
+            report.instance_builtin_violations, 1,
+            "PageInstance::notamethod must be caught by the independent catalog re-check"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ImplicitTrigger (Multicast) fan-out
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn implicit_trigger_route_passes_for_correct_table() {
+        let (apps, app) = make_app();
+        let table = make_obj(app, ObjectKind::Table, "Customer", vec![]);
+        let table_id = table.id.clone();
+        let oninsert = make_routine_node(&table_id, "oninsert", 0);
+        let (graph, index) = build_synth_graph(apps, vec![table], vec![oninsert]);
+
+        let caller_rid = RoutineNodeId {
+            object: table_id.clone(),
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: table_id.clone(),
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let site = SiteId {
+            caller: caller_rid.clone(),
+            span: test_span(1),
+            callee_fingerprint: 1,
+        };
+        let edge = Edge {
+            from: caller_rid,
+            site: site.clone(),
+            kind: EdgeKind::ImplicitTrigger,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+        let mut ctx: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+        ctx.insert(
+            site,
+            FanOutSiteContext::Trigger(RecordOpCtx {
+                kind: RecordOpKind::Insert,
+                table: table_id,
+                field: None,
+                run_trigger: RunTrigger::Guarded,
+            }),
+        );
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &ctx, &[]);
+        assert_eq!(report.implicit_trigger_violations, 0);
+    }
+
+    #[test]
+    fn implicit_trigger_route_violation_for_unrelated_table() {
+        let (apps, app) = make_app();
+        let customer = make_obj(app, ObjectKind::Table, "Customer", vec![]);
+        let customer_id = customer.id.clone();
+        // Fabricated: Vendor's OnInsert is unrelated to Customer.
+        let vendor = make_obj(app, ObjectKind::Table, "Vendor", vec![]);
+        let vendor_id = vendor.id.clone();
+        let vendor_oninsert = make_routine_node(&vendor_id, "oninsert", 0);
+        let (graph, index) = build_synth_graph(apps, vec![customer, vendor], vec![vendor_oninsert]);
+
+        let caller_rid = RoutineNodeId {
+            object: customer_id.clone(),
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let target_rid = RoutineNodeId {
+            object: vendor_id,
+            name_lc: "oninsert".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let site = SiteId {
+            caller: caller_rid.clone(),
+            span: test_span(1),
+            callee_fingerprint: 1,
+        };
+        let edge = Edge {
+            from: caller_rid,
+            site: site.clone(),
+            kind: EdgeKind::ImplicitTrigger,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions,
+            },
+            routes: vec![source_route(target_rid)],
+        };
+        let mut ctx: HashMap<SiteId, FanOutSiteContext> = HashMap::new();
+        ctx.insert(
+            site,
+            FanOutSiteContext::Trigger(RecordOpCtx {
+                kind: RecordOpKind::Insert,
+                table: customer_id,
+                field: None,
+                run_trigger: RunTrigger::Guarded,
+            }),
+        );
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &ctx, &[]);
+        assert_eq!(
+            report.implicit_trigger_violations, 1,
+            "Vendor's OnInsert must not fire for a Customer Insert — the ported teeth \
+             must catch it"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // EventFlow
+    // -----------------------------------------------------------------------
+
+    fn make_event_unit(src: &'static str) -> (AppId, ParsedUnit) {
+        let app_id = AppId {
+            guid: String::new(),
+            name: "EvApp".into(),
+            publisher: "T".into(),
+            version: "1.0.0.0".into(),
+        };
+        let provenance = Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::Workspace,
+            content_hash: String::new(),
+        };
+        let unit = ParsedUnit {
+            app: app_id.clone(),
+            files: vec![ParsedFile {
+                virtual_path: "Ev.al".into(),
+                file: al_syntax::parse(src),
+                provenance,
+                text: src.to_string(),
+            }],
+        };
+        (app_id, unit)
+    }
+
+    fn build_event_graph(app_id: &AppId, unit: &ParsedUnit) -> (ProgramGraph, ResolveIndex) {
+        let mut apps = AppRegistry::default();
+        let app_ref = apps.intern(app_id);
+        let mut objects: Vec<ObjectNode> = Vec::new();
+        let mut routines: Vec<RoutineNode> = Vec::new();
+        for pf in &unit.files {
+            extract_nodes(
+                app_ref,
+                &pf.file,
+                pf.provenance.tier,
+                &mut objects,
+                &mut routines,
+            );
+        }
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines,
+            obj_index,
+        };
+        let index = ResolveIndex::build(&graph);
+        (graph, index)
+    }
+
+    fn find_obj_id(graph: &ProgramGraph, name_lc: &str) -> ObjectNodeId {
+        graph
+            .objects
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case(name_lc))
+            .unwrap_or_else(|| panic!("object {name_lc} not found"))
+            .id
+            .clone()
+    }
+
+    #[test]
+    fn event_route_passes_when_subscriber_attr_names_publisher() {
+        let src: &'static str = r#"
+codeunit 50800 "EvPub"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnFoo()
+    begin
+    end;
+}
+
+codeunit 50801 "EvSub"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvPub", 'OnFoo', '', false, false)]
+    local procedure Handle()
+    begin
+    end;
+}
+"#;
+        let (app_id, unit) = make_event_unit(src);
+        let (graph, index) = build_event_graph(&app_id, &unit);
+        let pub_id = find_obj_id(&graph, "EvPub");
+        let sub_id = find_obj_id(&graph, "EvSub");
+
+        let pub_rid = RoutineNodeId {
+            object: pub_id,
+            name_lc: "onfoo".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let sub_rid = RoutineNodeId {
+            object: sub_id,
+            name_lc: "handle".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: pub_rid.clone(),
+            site: SiteId {
+                caller: pub_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes: vec![source_route(sub_rid)],
+        };
+
+        let raw_abi = empty_raw_abi();
+        let units = [unit];
+        let report =
+            route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &units);
+        assert_eq!(report.event_violations, 0);
+    }
+
+    #[test]
+    fn event_route_violation_when_subscriber_attr_names_a_different_publisher() {
+        // Fabricated: the Routine route claims EvSub2 subscribes to EvPub2.OnBar, but
+        // EvSub2's raw [EventSubscriber] attribute actually names a different
+        // publisher+event entirely.
+        let src: &'static str = r#"
+codeunit 50802 "EvPub2"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnBar()
+    begin
+    end;
+}
+
+codeunit 50803 "OtherPub2"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnOther()
+    begin
+    end;
+}
+
+codeunit 50804 "EvSub2"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"OtherPub2", 'OnOther', '', false, false)]
+    local procedure Handle()
+    begin
+    end;
+}
+"#;
+        let (app_id, unit) = make_event_unit(src);
+        let (graph, index) = build_event_graph(&app_id, &unit);
+        let pub_id = find_obj_id(&graph, "EvPub2");
+        let sub_id = find_obj_id(&graph, "EvSub2");
+
+        let pub_rid = RoutineNodeId {
+            object: pub_id,
+            name_lc: "onbar".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let sub_rid = RoutineNodeId {
+            object: sub_id,
+            name_lc: "handle".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: pub_rid.clone(),
+            site: SiteId {
+                caller: pub_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes: vec![source_route(sub_rid)],
+        };
+
+        let raw_abi = empty_raw_abi();
+        let units = [unit];
+        let report =
+            route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &units);
+        assert_eq!(
+            report.event_violations, 1,
+            "EvSub2's raw [EventSubscriber] attr names OtherPub2.OnOther, not \
+             EvPub2.OnBar — the ported teeth must catch the mismatch"
+        );
     }
 }
