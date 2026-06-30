@@ -8,6 +8,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3b Task 4 (CAPSTONE): the fresh engine stands alone — L3 oracle
+  retired from validation, verified + honestly documented**
+  (`CHANGELOG.md`; no source changes — verification + docs only) — closes
+  1B.3b and the whole 1B.3 resolution arc. 1B.3b retires the L3 oracle from
+  the fresh resolver's **validation**. As of this task the engine is
+  validated by three things, NONE of which call L3 at run time:
+  (a) **committed, anonymized, frozen L3-verdict goldens** — Member/Interface
+  (`cdo-anon.json`), ImplicitTrigger (`cdo-trigger-anon.json`), EventFlow
+  (`cdo-event-anon.json`) — keyed by per-site target identity, which is the
+  source of COMPLETENESS evidence; the CDO-scale floor is active on the
+  gated/internal runner that has the CDO workspace, public CI validates the
+  goldens' metadata (schema version, non-empty, `genuine_wrong==42` against
+  the committed manifest) without needing the workspace; (b) the
+  **L3-independent contracts** — `coverage_holds`, `evidence_overclaim`,
+  `abi_unmapped` (`abi_ingestion_integrity`), and `route_applicability`
+  (carrying the Task-2-ported fan-out applicability teeth) — these are
+  SOUNDNESS checks: every emitted route is individually well-formed and
+  applicable, re-derived independently of any L3 projection, plus the
+  Histogram + real-unknown-rate ceiling; (c) **always-run synthetic semantic
+  fixtures** (`tests/fixtures/semantic-golden/`, `implicit-trigger/`,
+  `fanout-applicability/`, the EventFlow two-stage-join fixture) that need no
+  `CDO_WS` at all. Stated plainly, per the plan's honesty framing: this is
+  **not first-principles semantic correctness** — it is the FROZEN
+  HISTORICAL L3 verdict (captured before retirement) plus the L3-independent
+  contracts plus fixtures. The teeth prove SOUNDNESS; the frozen goldens
+  carry COMPLETENESS; neither alone would be enough. L3-minting moved
+  entirely to the dev-only `mint-goldens` tool (`src/bin/mint-goldens.rs` +
+  `src/program/l3_mint.rs`, gated behind `CDO_WS`+`CDO_ANON_KEY` or
+  `REGEN_TEMP_GOLDENS=1`); `src/engine/l3` itself STAYS in the tree
+  unchanged — it remains the `aldump`/L4/L5 backbone, a separate consumer
+  from the fresh resolver; `builtins.rs::global_builtins` (clean-room global
+  builtin catalog membership, sourced from `engine::l3::global_builtins`
+  data, not logic) remains the one sanctioned `engine::l3` data dependency
+  inside `src/program/resolve/`. The fixed, committed anonymization salt
+  (`CDO_ANON_KEY` fallback test key) keeps the frozen goldens byte-reproducible;
+  `ENFORCE_CDO_WS=1` hard-fails (rather than silently skipping) a
+  gated/internal run that loses its `CDO_WS` or hits a zero-site audit; a
+  workspace-SHA drift warning (when the live `CDO_WS` content no longer
+  matches the SHA the goldens were minted from) is informational only —
+  the audits load the frozen goldens regardless, so drift does not fail the
+  build.
+  **Capstone verification performed for this task** (binding requirement,
+  not just narrative): `cargo test --workspace` with no `CDO_WS` set —
+  **1610 tests passed, 0 failed**, across 159 test-result blocks (lib +
+  every integration test binary + doctests), fully green without the
+  oracle; `cargo clippy --release --all-features -- -D warnings` — clean,
+  zero warnings; `cargo fmt --check` — clean, no file needs reformatting;
+  `grep -rnE "use .*engine::l3|use .*engine::l2" src/program/resolve/` —
+  the only hits are in `builtins.rs` (two `use` statements plus one doc
+  comment naming the same exception), confirming zero other `engine::l3`/
+  `engine::l2` imports anywhere under `src/program/resolve/`. The five
+  frozen CDO audits/teeth were each run SINGLY (not as the full suite, which
+  cannot run in parallel — unrelated pre-existing constraint) against the
+  real, currently-dirty CDO workspace with `CDO_WS` +
+  `ENFORCE_CDO_WS=1`, all green and deterministic: `cdo_l3_semantic_audit_no_fresh_wrong`
+  (`genuine_wrong=42` exact manifest match, `paired=11377` checked sites,
+  `fresh_wrong=174`→`fresh_ahead_dispatch=132`+`genuine_wrong=42`);
+  `cdo_trigger_audit_frozen_load` (`matches=185`, `fresh_wrong=0`);
+  `cdo_event_audit_frozen_load` (`matched_pairs=2`, `pair_l3_only=0`);
+  `route_applicability_zero_violations` (`total_routes=17241`,
+  `violations=0`, `abi_unmapped=0`); `fan_out_applicability_zero_violations`
+  (all four fan-out violation counters `0`, non-vacuous
+  `routes_checked[interface=28 instance_builtin=449 implicit_trigger=958
+  event=2284]`). No workspace-SHA drift warning printed on this run.
+  **Out of scope for 1B.3b** (explicitly deferred, tracked in the roadmap):
+  `genuine_wrong=42` underlying disambiguation (mostly L3-error-on-builtins);
+  full `fresh⊆l3` partial-recall validation; the same-arity-type overload
+  DISPATCH (Cat-D, 17 divergences); the snapshot double-include root cause;
+  table/page/database trigger-events as EventFlow; `BindSubscription`
+  activation; the receiver-gap buckets; a workspace-pinning operational doc.
+  **The fresh engine now stands alone**: it validates itself, at run time,
+  without ever calling into `project_l3*` — L3 is reachable only from
+  `src/engine/l3` (the unrelated `aldump` backbone) and from the opt-in
+  dev-mint path.
+
 - **Plan 1B.3b Task 2: port fan-out applicability teeth (soundness) into `route_applicability`**
   (`src/program/resolve/semantic_golden.rs`, `tests/program_resolve_harness.rs`,
   `tests/fixtures/fanout-applicability/` NEW; commits `dfec53e` + `1ee0e8e`) —
