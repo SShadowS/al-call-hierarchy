@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plan 1B.3a Task 4 (CAPSTONE): L3-validated semantic edge golden + CDO audit + route-applicability contract**
+  (`src/program/resolve/semantic_golden.rs` NEW, `src/program/resolve/mod.rs`,
+  `tests/program_resolve_harness.rs`, `tests/fixtures/semantic-golden/`,
+  `tests/goldens/semantic-edges/fixture.json`) —
+  captures the post-L3 correctness floor before L3 retirement in 1B.3b.
+  `mint_l3_validated_golden` (LAST SANCTIONED L3 ORACLE USE) projects L3
+  targets per call site into a committed `SemanticGolden` JSON, keyed by
+  column-ignoring `GoldenSiteKey` (mirrors `match_sites` strong key; omits
+  column because L3 uses UTF-16 cols while fresh uses byte cols).
+  `assert_against_semantic_golden` classifies every site into `match`,
+  `fresh_wrong`, `fresh_missing`, `fresh_extra`, `fresh_novel`, or
+  `golden_missing`; the critical class is `fresh_wrong` (fresh confidently
+  resolved to the wrong target — undetectable by Histogram alone).
+  `route_applicability` verifies the structural witness↔evidence contract on
+  every route and delegates ABI check to `abi_ingestion_integrity`.
+  Three new tests: Test 14 (in-repo fixture golden: fresh_wrong=0 and
+  fresh_missing=0, regenerable via `REGEN_TEMP_GOLDENS=1`), Test 15
+  (route-applicability: violations=0 and abi_unmapped=0 on fixture + env-gated
+  CDO), Test 16 (CDO/L3 semantic audit: fresh_wrong ≤ 200 ceiling recorded
+  2026-06-30 as 174 — Method/Interface dispatch divergences; deterministic
+  SHA-256 digest committed as CDO audit fingerprint).
+
 - **Plan 1B.3a Task 3: Obligation-coverage inventory + `resolve_full_program` + taxonomy'd self-reported metric**
   (`src/program/resolve/full.rs` NEW, `src/program/resolve/mod.rs`,
   `src/bin/aldump.rs`, `tests/program_resolve_harness.rs`,

@@ -16,6 +16,7 @@ pub mod index;
 pub mod member_catalog;
 pub mod receiver;
 pub mod resolver;
+pub mod semantic_golden;
 pub mod stub;
 
 pub use edge::{
