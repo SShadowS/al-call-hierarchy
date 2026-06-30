@@ -88,7 +88,12 @@ fn extension_base_kind(kind: ObjectKind) -> Option<ObjectKind> {
 /// - If the routine is NOT in the `BodyMap` (integration gap on a source-bearing tier):
 ///   `Evidence::Unknown` + `Witness::None`.  Surface this as Unknown so the gap shows up
 ///   in `real_unknown_rate` rather than being silently hidden.
-fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyMap<'_>) -> Route {
+fn make_routine_route(
+    rid: &RoutineNodeId,
+    obj_tier: TrustTier,
+    body_map: &BodyMap<'_>,
+    graph: &ProgramGraph,
+) -> Route {
     if let Some((decl, path)) = body_map.get_with_path(rid) {
         Route {
             target: RouteTarget::Routine(rid.clone()),
@@ -109,6 +114,21 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
             ObjKey::Id(n) => (*n, String::new()),
             ObjKey::Name(s) => (0i64, s.clone()),
         };
+        // Read the ABI-sourced routine/event kinds from the graph node.
+        // `graph.routines` is sorted by RoutineNodeId (see build.rs), enabling
+        // O(log n) lookup. Falls back to Procedure/None when the node is absent
+        // (integration gap — should not happen for a valid SymbolOnly boundary).
+        let opt_node = graph
+            .routines
+            .binary_search_by(|probe| probe.id.cmp(rid))
+            .ok()
+            .map(|i| &graph.routines[i]);
+        let routine_kind = opt_node
+            .and_then(|n| n.abi_routine_kind.clone())
+            .unwrap_or(AbiRoutineKind::Procedure);
+        let event_kind = opt_node
+            .and_then(|n| n.abi_event_kind.clone())
+            .unwrap_or(AbiEventKind::None);
         let key = AbiRoutineKey {
             app: rid.object.app,
             object_type: format!("{:?}", rid.object.kind).to_ascii_lowercase(),
@@ -117,8 +137,8 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
             routine_name_lc: rid.name_lc.clone(),
             params_count: rid.params_count,
             param_type_fp: rid.sig_fp,
-            routine_kind: AbiRoutineKind::Procedure,
-            event_kind: AbiEventKind::None,
+            routine_kind,
+            event_kind,
         };
         Route {
             target: RouteTarget::AbiSymbol { key: key.clone() },
@@ -146,16 +166,17 @@ fn make_routine_route(rid: &RoutineNodeId, obj_tier: TrustTier, body_map: &BodyM
 /// next precedence level; see module-level doc).  Returns `None` only when the
 /// name is absent entirely in `obj_id`.
 ///
-/// **SymbolOnly tier exception:** `params_count` is 0 for all SymbolOnly routines
-/// (loaded from .app SymbolReference, no source parse), so arity matching is
-/// impossible.  Any name match immediately produces an `Opaque` boundary route
-/// (via [`make_routine_route`]) rather than a false Unknown that would regress
-/// vs L3's External resolution.
+/// **SymbolOnly tier exception:** `params_count` is now populated from the ABI
+/// (Task 1), but arity matching for SymbolOnly routines remains deferred
+/// (caller-side type inference not yet implemented).  Any name match immediately
+/// produces an `Opaque` boundary route (via [`make_routine_route`]) rather than
+/// a false Unknown that would regress vs L3's External resolution.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
     name_lc: &str,
     arity: usize,
+    graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
 ) -> Option<Route> {
@@ -164,16 +185,18 @@ fn resolve_in_object(
         return None;
     }
 
-    // SymbolOnly: params info is unavailable (loaded from .app SymbolReference,
-    // no source parse) so params_count is always 0. Arity checking is impossible;
-    // use the first candidate directly. `make_routine_route` returns an Opaque
-    // boundary route for SymbolOnly BodyMap misses.
+    // SymbolOnly: `params_count` is now populated from the ABI (Task 1), but
+    // arity matching remains deferred — caller-side type inference is not yet
+    // implemented. Use the first candidate directly. `make_routine_route` returns
+    // an Opaque boundary route for SymbolOnly BodyMap misses, carrying the
+    // ABI-sourced routine_kind and event_kind from the graph node.
     if obj_tier == TrustTier::SymbolOnly {
         // SAFETY: candidates is non-empty (checked above).
         return Some(make_routine_route(
             candidates.first().unwrap(),
             obj_tier,
             body_map,
+            graph,
         ));
     }
 
@@ -184,7 +207,7 @@ fn resolve_in_object(
         // TODO: disambiguate_by_arg_types when multiple same-arity overloads exist
         // (overloads differing only by param type, rare in AL). Deferred to a
         // later task; deterministic: first by RoutineNodeId sorted order.
-        return Some(make_routine_route(rid, obj_tier, body_map));
+        return Some(make_routine_route(rid, obj_tier, body_map, graph));
     }
 
     // Name found but no arity-matched overload: emit Unknown rather than a
@@ -222,6 +245,7 @@ pub fn resolve_bare(
         from_object.tier,
         name_lc,
         arity,
+        graph,
         index,
         body_map,
     ) {
@@ -235,7 +259,8 @@ pub fn resolve_bare(
     {
         let base_id = base_obj.id.clone();
         let base_tier = base_obj.tier;
-        if let Some(route) = resolve_in_object(&base_id, base_tier, name_lc, arity, index, body_map)
+        if let Some(route) =
+            resolve_in_object(&base_id, base_tier, name_lc, arity, graph, index, body_map)
         {
             return vec![route];
         }
@@ -415,7 +440,7 @@ pub fn resolve_object_run(
         );
     };
 
-    let route = make_routine_route(entry_rid, target_obj.tier, body_map);
+    let route = make_routine_route(entry_rid, target_obj.tier, body_map, graph);
     (DispatchShape::Exact, SetCompleteness::Complete, vec![route])
 }
 
@@ -480,7 +505,7 @@ pub fn resolve_implicit_trigger(
 
     // Triggers on the base table itself.
     for rid in index.routines_in_object(&table_object.id, trigger_name) {
-        routes.push(make_routine_route(rid, table_object.tier, body_map));
+        routes.push(make_routine_route(rid, table_object.tier, body_map, graph));
     }
 
     // Triggers on every TableExtension of this table (reverse-dep; whole-snapshot).
@@ -493,7 +518,7 @@ pub fn resolve_implicit_trigger(
             .map(|o| o.tier)
             .unwrap_or(TrustTier::Workspace);
         for rid in index.routines_in_object(ext_id, trigger_name) {
-            routes.push(make_routine_route(rid, ext_tier, body_map));
+            routes.push(make_routine_route(rid, ext_tier, body_map, graph));
         }
     }
 
@@ -670,9 +695,9 @@ pub fn resolve_member(
             };
 
             // 1. Try the base table first (single-dispatch; Exact not Multicast).
-            if let Some(route) =
-                resolve_in_object(table_id, table_tier, method_lc, arity, index, body_map)
-            {
+            if let Some(route) = resolve_in_object(
+                table_id, table_tier, method_lc, arity, graph, index, body_map,
+            ) {
                 return (DispatchShape::Exact, vec![route]);
             }
 
@@ -686,7 +711,7 @@ pub fn resolve_member(
                     .map(|o| o.tier)
                     .unwrap_or(TrustTier::Workspace);
                 if let Some(route) =
-                    resolve_in_object(ext_id, ext_tier, method_lc, arity, index, body_map)
+                    resolve_in_object(ext_id, ext_tier, method_lc, arity, graph, index, body_map)
                 {
                     return (DispatchShape::Exact, vec![route]);
                 }
@@ -717,7 +742,7 @@ pub fn resolve_member(
                 return if let Some(entry_rid) = entry_rid {
                     (
                         DispatchShape::Exact,
-                        vec![make_routine_route(entry_rid, target_tier, body_map)],
+                        vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
                     )
                 } else {
                     // OnRun not indexed — Opaque boundary (object exists, trigger absent).
@@ -741,9 +766,15 @@ pub fn resolve_member(
             }
 
             // General dispatch: resolve the method among the target object's procedures.
-            if let Some(route) =
-                resolve_in_object(&target_id, target_tier, method_lc, arity, index, body_map)
-            {
+            if let Some(route) = resolve_in_object(
+                &target_id,
+                target_tier,
+                method_lc,
+                arity,
+                graph,
+                index,
+                body_map,
+            ) {
                 (DispatchShape::Exact, vec![route])
             } else {
                 // Method name absent from target object's declared procedures.
@@ -768,6 +799,7 @@ pub fn resolve_member(
                 from_object.tier,
                 method_lc,
                 arity,
+                graph,
                 index,
                 body_map,
             ) {
@@ -781,8 +813,8 @@ pub fn resolve_member(
             // Phase 4 Task 2: fan out to all known implementers.
             //
             // For each implementer:
-            //   SymbolOnly tier  → `params_count` is always 0 in .app SymbolReference,
-            //                      so arity matching is impossible; delegate directly to
+            //   SymbolOnly tier  → `params_count` is populated from the ABI (Task 1),
+            //                      but arity matching is deferred; delegate directly to
             //                      `resolve_in_object` which returns AbiSymbol or Unknown.
             //   Source tier      → count arity-matched overloads first:
             //                        0 candidates → Rule 1 Unresolved (method absent/arity mismatch)
@@ -805,15 +837,16 @@ pub fn resolve_member(
                     .unwrap_or(TrustTier::Workspace);
 
                 if impl_tier == TrustTier::SymbolOnly {
-                    // SymbolOnly: arity matching impossible; delegate.
-                    let route =
-                        resolve_in_object(impl_id, impl_tier, method_lc, arity, index, body_map)
-                            .unwrap_or(Route {
-                                target: RouteTarget::Unresolved,
-                                evidence: Evidence::Unknown,
-                                conditions: vec![],
-                                witness: Witness::None,
-                            });
+                    // SymbolOnly: arity matching deferred; delegate.
+                    let route = resolve_in_object(
+                        impl_id, impl_tier, method_lc, arity, graph, index, body_map,
+                    )
+                    .unwrap_or(Route {
+                        target: RouteTarget::Unresolved,
+                        evidence: Evidence::Unknown,
+                        conditions: vec![],
+                        witness: Witness::None,
+                    });
                     routes.push(route);
                 } else {
                     let candidates = index.routines_in_object(impl_id, method_lc);
@@ -834,7 +867,7 @@ pub fn resolve_member(
                             1 => {
                                 // Unique arity-matched overload: guaranteed to resolve.
                                 let route = resolve_in_object(
-                                    impl_id, impl_tier, method_lc, arity, index, body_map,
+                                    impl_id, impl_tier, method_lc, arity, graph, index, body_map,
                                 )
                                 .unwrap_or(Route {
                                     target: RouteTarget::Unresolved,
@@ -943,7 +976,7 @@ pub fn emit_event_flow_edges(
 
                 // Build base route using make_routine_route (handles Source/Opaque/Unknown
                 // tiers via body_map), then inject the subscriber's conditions.
-                let mut route = make_routine_route(&se.subscriber, sub_tier, body_map);
+                let mut route = make_routine_route(&se.subscriber, sub_tier, body_map, graph);
                 route.conditions = se.conditions.clone();
                 route
             })
@@ -1005,7 +1038,7 @@ mod tests {
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::AppRegistry;
-    use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
+    use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{
         Condition, DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, OpenWorldReason,
@@ -3559,6 +3592,201 @@ codeunit 50704 "DefaultSub"
         assert_eq!(
             edges1, edges2,
             "emit_event_flow_edges must be deterministic across calls"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ABI event-kind threading: Task 1B.3a fix
+    //
+    // Verifies that `make_routine_route` threads `abi_routine_kind`/`abi_event_kind`
+    // from the `RoutineNode` into the `AbiRoutineKey` instead of hardcoding
+    // `Procedure`/`None` for every SymbolOnly dep routine.
+    // -----------------------------------------------------------------------
+
+    /// Build a graph with a workspace codeunit + a SymbolOnly dep codeunit that
+    /// has one event-publisher routine and one regular procedure.
+    fn build_abi_kind_fixture() -> (ProgramGraph, Vec<ParsedUnit>) {
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let src: &'static str = r#"
+codeunit 50000 "Caller"
+{
+    procedure Run()
+    begin
+    end;
+}
+"#;
+        let unit = make_unit(ws_id.clone(), "Caller.al", src);
+        let units = vec![unit];
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let mut objects: Vec<ObjectNode> = Vec::new();
+        let mut routines: Vec<RoutineNode> = Vec::new();
+
+        // Extract workspace nodes from source.
+        for pf in &units[0].files {
+            extract_nodes(
+                ws_ref,
+                &pf.file,
+                pf.provenance.tier,
+                &mut objects,
+                &mut routines,
+            );
+        }
+
+        // SymbolOnly dep codeunit 50100 "DepCU".
+        let dep_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50100),
+        };
+        objects.push(ObjectNode {
+            id: dep_obj_id.clone(),
+            name: "DepCU".into(),
+            declared_id: Some(50100),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::SymbolOnly,
+        });
+
+        // Event-publisher routine: abi_routine_kind=EventPublisher, abi_event_kind=Integration.
+        routines.push(RoutineNode {
+            id: RoutineNodeId {
+                object: dep_obj_id.clone(),
+                name_lc: "ondepevent".into(),
+                enclosing_member_lc: None,
+                params_count: 1,
+                sig_fp: 0,
+            },
+            name: "OnDepEvent".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: Some(AbiRoutineKind::EventPublisher),
+            abi_event_kind: Some(AbiEventKind::Integration),
+        });
+
+        // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
+        routines.push(RoutineNode {
+            id: RoutineNodeId {
+                object: dep_obj_id.clone(),
+                name_lc: "dowork".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "DoWork".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+        });
+
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+        };
+        (graph, units)
+    }
+
+    /// A SymbolOnly dep event-publisher resolved via `resolve_member` (Object
+    /// receiver) must carry `AbiRoutineKey.routine_kind == EventPublisher` and
+    /// `event_kind == Integration` — NOT the hardcoded `Procedure/None` that
+    /// existed before Task 1B.3a.
+    ///
+    /// A SymbolOnly dep regular procedure must carry `Procedure/None` (unchanged).
+    #[test]
+    fn symbolonly_event_publisher_route_carries_correct_abi_kind() {
+        let (graph, units) = build_abi_kind_fixture();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+        let from_obj = find_obj(&graph, "Caller");
+
+        // --- event publisher: must be EventPublisher / Integration ---
+        let (shape, routes) = resolve_member(
+            &ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name_lc: "depcu".into(),
+            },
+            "ondepevent",
+            1,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].evidence, Evidence::Opaque);
+        let RouteTarget::AbiSymbol { ref key } = routes[0].target else {
+            panic!(
+                "expected AbiSymbol target for event publisher, got {:?}",
+                routes[0].target
+            );
+        };
+        assert_eq!(
+            key.routine_kind,
+            AbiRoutineKind::EventPublisher,
+            "dep event-publisher must carry EventPublisher kind in AbiRoutineKey"
+        );
+        assert_eq!(
+            key.event_kind,
+            AbiEventKind::Integration,
+            "integration event must carry Integration event_kind in AbiRoutineKey"
+        );
+
+        // --- regular procedure: must be Procedure / None (unchanged) ---
+        let (shape2, routes2) = resolve_member(
+            &ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name_lc: "depcu".into(),
+            },
+            "dowork",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape2, DispatchShape::Exact);
+        assert_eq!(routes2.len(), 1);
+        assert_eq!(routes2[0].evidence, Evidence::Opaque);
+        let RouteTarget::AbiSymbol { key: ref key2 } = routes2[0].target else {
+            panic!(
+                "expected AbiSymbol target for procedure, got {:?}",
+                routes2[0].target
+            );
+        };
+        assert_eq!(
+            key2.routine_kind,
+            AbiRoutineKind::Procedure,
+            "regular dep procedure must carry Procedure kind"
+        );
+        assert_eq!(
+            key2.event_kind,
+            AbiEventKind::None,
+            "regular dep procedure must carry None event_kind"
         );
     }
 }
