@@ -581,6 +581,14 @@ fn phase4_implicit_trigger() {
         report.unverified_extra, 0,
         "no fresh-only trigger route may fail the applicability predicate: {report:?}"
     );
+    // Trigger divergence cap (whole-branch review #1): a PAIRED trigger site where
+    // fresh and L3 both emit non-empty but DIFFERENT trigger targets is arguably more
+    // serious than a missing_site — assert it stays 0 so a future regression can't slip
+    // through silently (the member gate caps divergence; the trigger gate must too).
+    assert_eq!(
+        report.divergence, 0,
+        "a paired ImplicitTrigger site diverged on its target set; inspect before merging: {report:?}"
+    );
 
     // Determinism: two consecutive runs must produce identical output.
     assert_eq!(
@@ -741,6 +749,12 @@ fn phase4_fanout_matches_or_beats_l3() {
     assert_eq!(
         trigger.unverified_extra, 0,
         "Trigger: no fresh-only trigger route may fail the applicability predicate: {trigger:?}"
+    );
+    // Trigger divergence cap (whole-branch review #1): paired-but-different trigger
+    // target sets must stay 0 — a future regression here would otherwise pass silently.
+    assert_eq!(
+        trigger.divergence, 0,
+        "Trigger: a paired ImplicitTrigger site diverged on its target set; inspect: {trigger:?}"
     );
 
     // ── Determinism: both harnesses must produce identical output on re-run ──
