@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase-4 Task 2: Interface Polymorphic fan-out** (`src/program/resolve/resolver.rs`,
+  `src/program/resolve/differential.rs`) — `resolve_member` now implements the
+  `ReceiverType::Interface { name_lc }` arm: fans out to all known implementers via
+  `ResolveIndex::implementers_of`, resolving each via `resolve_in_object`.  For each
+  implementer: SymbolOnly tier delegates directly (arity matching impossible);
+  source-tier checks the arity-matched overload count — exactly 1 resolves to a Routine
+  route, 0 or >1 emits `Route{Unresolved, Unknown}` (Rule 1: no reachability black hole;
+  Rule 2: no guessed route to an ambiguous overload).  Returns `(Polymorphic, routes)`.
+  Gate (`run_member_resolution_harness`): added `DispatchKind::Interface` to the L3 oracle
+  filter; extended `fresh_combined` to carry site arity and original routes; wired
+  `interface_route_applicable` in the FreshOnly handler so every Routine route emitted for
+  an interface call is applicability-checked (`fresh_ahead_interface` or `unverified_extra`).
+  CDO result on DocumentOutput/Cloud workspace: `regression_interface=0` (drained),
+  `unverified_extra=0`, `regression_unexplained=0`, `divergence=56` (cap raised from 45;
+  11 new divergences are fan-out sites where fresh emits N targets and L3 emits 1).
+
 ### Fixed
 - **Phase-4 Task 1: FreshOnly gate discriminator bug** (`src/program/resolve/differential.rs`) —
   The `run_member_resolution_harness` FreshOnly bucketing incorrectly applied the

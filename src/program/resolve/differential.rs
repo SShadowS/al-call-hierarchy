@@ -1778,7 +1778,10 @@ fn project_l3_member_in_scope(workspace_root: &Path) -> Vec<CanonicalEdge> {
             is_member
                 && matches!(
                     edge.dispatch_kind,
-                    DispatchKind::Method | DispatchKind::Builtin | DispatchKind::CodeunitRun
+                    DispatchKind::Method
+                        | DispatchKind::Builtin
+                        | DispatchKind::CodeunitRun
+                        | DispatchKind::Interface
                 )
         })
         .filter_map(|edge| {
@@ -1880,7 +1883,9 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     use crate::program::build::build_program_graph;
     use crate::program::node::{ObjKey, ObjectNodeId};
     use crate::program::node_extract::ObjectNode;
-    use crate::program::resolve::applicability::instance_builtin_route_applicable;
+    use crate::program::resolve::applicability::{
+        instance_builtin_route_applicable, interface_route_applicable,
+    };
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{Evidence, Route, RouteTarget, Witness};
     use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
@@ -1931,11 +1936,20 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     };
 
     // ── Step 4: Resolve fresh Member sites (workspace-only) ───────────────────
-    // Three parallel vecs kept in sync:
-    //   fresh_canonical      — the edge projected to canonical form
-    //   fresh_recv_types     — the inferred ReceiverType (for regression bucketing)
-    //   fresh_diag_text      — (callee_text) for diagnostic printing
-    let mut fresh_combined: Vec<(CanonicalEdge, Option<ReceiverType>, String)> = Vec::new();
+    // Five parallel fields kept in sync (named tuple to appease type_complexity lint).
+    //   .0 fresh_canonical — the edge projected to canonical form
+    //   .1 recv_type       — the inferred ReceiverType (for regression bucketing)
+    //   .2 callee_text     — (callee_text) for diagnostic printing
+    //   .3 arity           — call-site arity (needed for interface applicability check)
+    //   .4 routes          — original routes (for interface applicability: Routine targets)
+    type FreshEntry = (
+        CanonicalEdge,
+        Option<ReceiverType>,
+        String,
+        usize,
+        Vec<Route>,
+    );
+    let mut fresh_combined: Vec<FreshEntry> = Vec::new();
     let mut evidence_overclaim = 0usize;
     let mut fresh_unknown_count = 0usize;
 
@@ -2061,20 +2075,38 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                             kind: EdgeKind::Call,
                             targets,
                         };
-                        fresh_combined.push((edge, recv_type, site.callee_text.clone()));
+                        fresh_combined.push((
+                            edge,
+                            recv_type,
+                            site.callee_text.clone(),
+                            site.arity,
+                            routes,
+                        ));
                     }
                 }
             }
         }
     }
 
-    // Sort all three vecs together (by canonical edge order).
+    // Sort all five vecs together (by canonical edge order).
     fresh_combined.sort_by(|a, b| a.0.cmp(&b.0));
-    let fresh_recv_types: Vec<Option<ReceiverType>> =
-        fresh_combined.iter().map(|(_, r, _)| r.clone()).collect();
-    let fresh_diag_text: Vec<String> = fresh_combined.iter().map(|(_, _, t)| t.clone()).collect();
-    let fresh_canonical: Vec<CanonicalEdge> =
-        fresh_combined.into_iter().map(|(e, _, _)| e).collect();
+    let fresh_recv_types: Vec<Option<ReceiverType>> = fresh_combined
+        .iter()
+        .map(|(_, r, _, _, _)| r.clone())
+        .collect();
+    let fresh_diag_text: Vec<String> = fresh_combined
+        .iter()
+        .map(|(_, _, t, _, _)| t.clone())
+        .collect();
+    let fresh_arities: Vec<usize> = fresh_combined.iter().map(|(_, _, _, a, _)| *a).collect();
+    let fresh_routes: Vec<Vec<Route>> = fresh_combined
+        .iter()
+        .map(|(_, _, _, _, routes)| routes.clone())
+        .collect();
+    let fresh_canonical: Vec<CanonicalEdge> = fresh_combined
+        .into_iter()
+        .map(|(e, _, _, _, _)| e)
+        .collect();
 
     let fresh_total = fresh_canonical.len();
     let fresh_resolved_count = fresh_total.saturating_sub(fresh_unknown_count);
@@ -2101,9 +2133,8 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
     let mut divergence = 0usize;
     let mut missing_site = 0usize;
     let mut extra_site = 0usize;
-    // Phase-4 applicability counters: `fresh_ahead_interface` stays non-mut
-    // (Task 1 doesn't touch it); the others are wired below.
-    let fresh_ahead_interface = 0usize;
+    // Phase-4 applicability counters; all wired in the FreshOnly handler.
+    let mut fresh_ahead_interface = 0usize;
     let mut fresh_ahead_instance_builtin = 0usize;
     let mut fresh_ahead_enum_static = 0usize;
     let mut unverified_extra = 0usize;
@@ -2243,6 +2274,12 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                     let callee_lc = fresh_diag_text[*fi].to_ascii_lowercase();
                     let method_lc: &str = callee_lc.rsplit('.').next().unwrap_or(&callee_lc);
 
+                    // Interface polymorphic fan-out: receiver is Interface{name_lc}.
+                    // Each Routine route is checked by `interface_route_applicable`.
+                    // Unresolved routes (Rule-1/2 failures) claim nothing → no check.
+                    let is_interface_route =
+                        matches!(&fresh_recv_types[*fi], Some(ReceiverType::Interface { .. }));
+
                     // Identify fan-out routes by the canonical target prefix.
                     let is_instance_builtin_target = f.targets.iter().any(|t| {
                         t.kind == 255
@@ -2254,7 +2291,32 @@ pub fn run_member_resolution_harness(workspace_root: &Path) -> MemberResolutionR
                         .iter()
                         .any(|t| t.kind == 255 && t.object_lc.starts_with("Enum::"));
 
-                    if is_instance_builtin_target {
+                    if is_interface_route {
+                        // Interface polymorphic fan-out: applicability-gate every
+                        // Routine route against (iface_lc, method_lc, arity).
+                        // Unresolved routes (Rule-1/2 failures) are unchecked —
+                        // they claim nothing and are always valid.
+                        let iface_lc = match &fresh_recv_types[*fi] {
+                            Some(ReceiverType::Interface { name_lc }) => name_lc.as_str(),
+                            _ => unreachable!(),
+                        };
+                        let site_arity = fresh_arities[*fi];
+                        let original_routes = &fresh_routes[*fi];
+
+                        let all_applicable = original_routes.iter().all(|r| match &r.target {
+                            RouteTarget::Unresolved => true,
+                            RouteTarget::Routine(rid) => interface_route_applicable(
+                                iface_lc, method_lc, site_arity, rid, &graph, &index,
+                            ),
+                            _ => false,
+                        });
+
+                        if all_applicable {
+                            fresh_ahead_interface += 1;
+                        } else {
+                            unverified_extra += 1;
+                        }
+                    } else if is_instance_builtin_target {
                         // Instance-builtin fan-out route: independently re-check
                         // applicability using kind+method derived from the BuiltinId
                         // prefix ("PageInstance::" → Page, "ReportInstance::" →

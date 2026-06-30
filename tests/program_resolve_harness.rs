@@ -498,11 +498,14 @@ fn phase3_member_resolution_matches_or_beats_l3() {
          (unverified_extra is inert at Task 0, gains teeth in Tasks 1-3): {report:?}"
     );
 
-    // Divergence cap: all 45 CDO divergences have been adjudicated (see task-5-report.md).
-    // Any count ABOVE 45 means a NEW unreviewed divergence appeared — must inspect.
+    // Divergence cap: all 56 CDO divergences have been adjudicated.
+    // 45 pre-Task-2 divergences (see task-5-report.md) + 11 new interface fan-out
+    // divergences where fresh emits N Routine routes and L3 emits 1 — fresh is more
+    // precise (see task-2-report.md).  Any count ABOVE 56 is a new unreviewed
+    // divergence and must be inspected before merging.
     assert!(
-        report.divergence <= 45,
-        "Member divergence grew beyond the adjudicated 45; inspect before merging: {report:?}"
+        report.divergence <= 56,
+        "Member divergence grew beyond the adjudicated 56; inspect before merging: {report:?}"
     );
 
     // Determinism: two consecutive runs must produce identical output.

@@ -726,9 +726,89 @@ pub fn resolve_member(
                 member_unknown_route()
             }
         }
-        ReceiverType::Interface { .. } => {
-            // TODO(Phase 4): interface member fan-out.
-            member_unknown_route()
+        ReceiverType::Interface { name_lc } => {
+            // Phase 4 Task 2: fan out to all known implementers.
+            //
+            // For each implementer:
+            //   SymbolOnly tier  → `params_count` is always 0 in .app SymbolReference,
+            //                      so arity matching is impossible; delegate directly to
+            //                      `resolve_in_object` which returns AbiSymbol or Unknown.
+            //   Source tier      → count arity-matched overloads first:
+            //                        0 candidates → Rule 1 Unresolved (method absent/arity mismatch)
+            //                        1 candidate  → unique resolution via `resolve_in_object`
+            //                        >1 candidates→ Rule 2 Unresolved (ambiguous, never guess)
+            //
+            // A known implementer that FAILS resolution MUST emit
+            // `Route{Unresolved, Unknown}` and must NOT be dropped — silently
+            // dropping it would create a reachability black hole where a
+            // runtime-reachable target is invisible in the call graph.
+            let implementers = index.implementers_of(name_lc);
+            let mut routes: Vec<Route> = Vec::with_capacity(implementers.len());
+
+            for impl_id in implementers {
+                let impl_tier = graph
+                    .objects
+                    .iter()
+                    .find(|o| &o.id == impl_id)
+                    .map(|o| o.tier)
+                    .unwrap_or(TrustTier::Workspace);
+
+                if impl_tier == TrustTier::SymbolOnly {
+                    // SymbolOnly: arity matching impossible; delegate.
+                    let route =
+                        resolve_in_object(impl_id, impl_tier, method_lc, arity, index, body_map)
+                            .unwrap_or(Route {
+                                target: RouteTarget::Unresolved,
+                                evidence: Evidence::Unknown,
+                                condition: None,
+                                witness: Witness::None,
+                            });
+                    routes.push(route);
+                } else {
+                    let candidates = index.routines_in_object(impl_id, method_lc);
+                    if candidates.is_empty() {
+                        // Method name absent from this implementer — Rule 1 Unresolved.
+                        routes.push(Route {
+                            target: RouteTarget::Unresolved,
+                            evidence: Evidence::Unknown,
+                            condition: None,
+                            witness: Witness::None,
+                        });
+                    } else {
+                        let matching = candidates
+                            .iter()
+                            .filter(|r| r.params_count == arity)
+                            .count();
+                        match matching {
+                            1 => {
+                                // Unique arity-matched overload: guaranteed to resolve.
+                                let route = resolve_in_object(
+                                    impl_id, impl_tier, method_lc, arity, index, body_map,
+                                )
+                                .unwrap_or(Route {
+                                    target: RouteTarget::Unresolved,
+                                    evidence: Evidence::Unknown,
+                                    condition: None,
+                                    witness: Witness::None,
+                                });
+                                routes.push(route);
+                            }
+                            _ => {
+                                // 0 (arity mismatch) or >1 (ambiguous) — Rule 1+2 Unresolved.
+                                // Never emit a guessed route to a wrong-arity or wrong-overload target.
+                                routes.push(Route {
+                                    target: RouteTarget::Unresolved,
+                                    evidence: Evidence::Unknown,
+                                    condition: None,
+                                    witness: Witness::None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            (DispatchShape::Polymorphic, routes)
         }
         ReceiverType::EnumType { .. } => {
             // Enum instance statics: AsInteger / FromInteger / Names / Ordinals.
@@ -2641,6 +2721,268 @@ codeunit 50617 "ShadowCaller"
         );
         assert_eq!(routes[0].evidence, Evidence::Source);
         assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4 Task 2 — Interface Polymorphic fan-out tests
+    // -----------------------------------------------------------------------
+
+    /// Two codeunits both implementing IFoo, each with a unique Bar() (arity 0).
+    /// Expect: Polymorphic shape, two Routine routes (Source evidence), each
+    /// passing `interface_route_applicable`.
+    #[test]
+    fn resolve_member_interface_two_implementers_emits_two_routine_routes() {
+        use crate::program::resolve::applicability::interface_route_applicable;
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // Two implementers + a caller; all in one file for simplicity.
+        let src: &'static str = r#"
+codeunit 51300 "IFooImpl1" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+
+codeunit 51301 "IFooImpl2" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+
+codeunit 51399 "IfaceCaller1"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "IfaceTwo.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCaller1");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Polymorphic,
+            "shape must be Polymorphic"
+        );
+        assert_eq!(
+            routes.len(),
+            2,
+            "two implementers → two routes; got {:?}",
+            routes
+        );
+
+        // Both routes must be Routine (unique Bar() in each implementer).
+        for r in &routes {
+            assert!(
+                matches!(r.target, RouteTarget::Routine(_)),
+                "each implementer's Bar() route must be Routine; got {:?}",
+                r.target
+            );
+            assert_eq!(r.evidence, Evidence::Source, "evidence must be Source");
+        }
+
+        // Each Routine must pass interface_route_applicable.
+        for r in &routes {
+            let RouteTarget::Routine(ref rid) = r.target else {
+                unreachable!()
+            };
+            assert!(
+                interface_route_applicable("ifoo", "bar", 0, rid, &graph, &index),
+                "Routine route must pass interface_route_applicable; rid={:?}",
+                rid
+            );
+        }
+    }
+
+    /// ONE implementer → exactly 1 Routine route.
+    #[test]
+    fn resolve_member_interface_one_implementer_emits_one_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src: &'static str = r#"
+codeunit 51400 "OnlyImpl" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+
+codeunit 51499 "IfaceCaller2"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "IfaceOne.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCaller2");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Polymorphic);
+        assert_eq!(
+            routes.len(),
+            1,
+            "one implementer → one route; got {:?}",
+            routes
+        );
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "must be Routine route; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    /// ZERO implementers → empty route vec (HonestEmpty).
+    #[test]
+    fn resolve_member_interface_zero_implementers_emits_empty_routes() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // NobodyImpl does NOT implement IFoo.
+        let src: &'static str = r#"
+codeunit 51500 "NobodyImpl"
+{
+    procedure Bar()
+    begin
+    end;
+}
+
+codeunit 51599 "IfaceCaller3"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "IfaceZero.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCaller3");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Polymorphic,
+            "shape must be Polymorphic even with zero implementers"
+        );
+        assert!(
+            routes.is_empty(),
+            "zero implementers → empty routes (HonestEmpty); got {:?}",
+            routes
+        );
+    }
+
+    /// A resolves Bar(), B has Bar(x: Integer) (arity mismatch for arity-0 call) →
+    /// `[Routine(A), Unresolved(B)]`.  B MUST emit Unresolved and NOT be dropped
+    /// (Rule 1: no reachability black hole).
+    #[test]
+    fn resolve_member_interface_failing_implementer_emits_unresolved_not_dropped() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        // FooImpl1 has Bar() (0 params) — unique, resolves OK.
+        // FooImpl2 has Bar(x: Integer) (1 param) — arity mismatch for Bar(0) → Unresolved.
+        let src: &'static str = r#"
+codeunit 51600 "FooImpl1" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+
+codeunit 51601 "FooImpl2" implements IFoo
+{
+    procedure Bar(x: Integer)
+    begin
+    end;
+}
+
+codeunit 51699 "IfaceCaller4"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "IfaceFail.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCaller4");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Polymorphic);
+        assert_eq!(
+            routes.len(),
+            2,
+            "two implementers → two routes (B must NOT be silently dropped); got {:?}",
+            routes
+        );
+
+        // One route must be Routine (A), one must be Unresolved (B).
+        let routine_count = routes
+            .iter()
+            .filter(|r| matches!(r.target, RouteTarget::Routine(_)))
+            .count();
+        let unresolved_count = routes
+            .iter()
+            .filter(|r| r.target == RouteTarget::Unresolved)
+            .count();
+        assert_eq!(
+            routine_count, 1,
+            "exactly one Routine route (A); got {:?}",
+            routes
+        );
+        assert_eq!(
+            unresolved_count, 1,
+            "exactly one Unresolved route (B, NOT dropped); got {:?}",
+            routes
+        );
+
+        // The Unresolved route must have Unknown evidence and None witness.
+        let unresolved_route = routes
+            .iter()
+            .find(|r| r.target == RouteTarget::Unresolved)
+            .unwrap();
+        assert_eq!(unresolved_route.evidence, Evidence::Unknown);
+        assert_eq!(unresolved_route.witness, Witness::None);
     }
 
     // Test 8: Page Object receiver + method not in catalog and not declared → Unknown
