@@ -220,14 +220,105 @@ pub fn build_graphify_document(
         );
     }
 
+    // Group relationships over 3+ nodes (event neighbourhoods, interface families).
+    let hyperedges = build_hyperedges(graph, edges, &obj_by_id, &rtn_by_id);
+
     // Append de-duplicated extra target nodes in sorted id order.
     nodes.extend(extra_nodes.into_values());
 
     GraphifyDocument {
         nodes,
         edges: edges_out,
-        hyperedges: Vec::new(),
+        hyperedges,
     }
+}
+
+/// Build graphify hyperedges (`{ id, label, nodes:[…] }`, 3+ nodes each):
+///
+/// - **event groups** — one publisher event + all its (≥2) subscribers, the
+///   non-pairwise integration unit ("what reacts when this fires");
+/// - **interface families** — one interface + its (≥2) implementers, the
+///   polymorphic-dispatch target set.
+///
+/// graphify renders each as a shaded region; both survive to `graph.json`.
+fn build_hyperedges(
+    graph: &ProgramGraph,
+    edges: &[ClassifiedEdge],
+    obj_by_id: &HashMap<&ObjectNodeId, &ObjectNode>,
+    rtn_by_id: &HashMap<&RoutineNodeId, &RoutineNode>,
+) -> Vec<serde_json::Value> {
+    let mut hyper: Vec<serde_json::Value> = Vec::new();
+
+    // ── Event groups: publisher + its ≥2 real subscribers ─────────────────────
+    for ce in edges {
+        if ce.edge.kind != EdgeKind::EventFlow {
+            continue;
+        }
+        let subs: Vec<String> = ce
+            .edge
+            .routes
+            .iter()
+            .filter(|r| r.evidence != Evidence::Unknown && r.target != RouteTarget::Unresolved)
+            .filter_map(|r| match &r.target {
+                RouteTarget::Routine(nid) => Some(routine_id_str(nid, &graph.apps)),
+                _ => None,
+            })
+            .collect();
+        if subs.len() < 2 {
+            continue; // a hyperedge needs 3+ nodes (publisher + ≥2 subscribers)
+        }
+        let pub_id = routine_id_str(&ce.edge.from, &graph.apps);
+        let label = rtn_by_id
+            .get(&ce.edge.from)
+            .map(|r| routine_label(&ce.edge.from, r.name.as_str(), obj_by_id))
+            .unwrap_or_else(|| routine_label(&ce.edge.from, &ce.edge.from.name_lc, obj_by_id));
+        let mut nodes = Vec::with_capacity(subs.len() + 1);
+        nodes.push(pub_id.clone());
+        nodes.extend(subs);
+        hyper.push(serde_json::json!({
+            "id": format!("hev:{pub_id}"),
+            "label": format!("event: {label}"),
+            "kind": "event_group",
+            "nodes": nodes,
+        }));
+    }
+
+    // ── Interface families: interface + its ≥2 implementers ───────────────────
+    let iface_by_name: HashMap<String, &ObjectNode> = graph
+        .objects
+        .iter()
+        .filter(|o| o.id.kind == ObjectKind::Interface)
+        .map(|o| (o.name.to_ascii_lowercase(), o))
+        .collect();
+    let mut impls: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for o in &graph.objects {
+        for iface in &o.implements {
+            impls
+                .entry(iface.to_ascii_lowercase())
+                .or_default()
+                .push(object_id_str(&o.id, &graph.apps));
+        }
+    }
+    for (iface_lc, impl_ids) in &impls {
+        if impl_ids.len() < 2 {
+            continue;
+        }
+        let Some(iface_obj) = iface_by_name.get(iface_lc) else {
+            continue; // interface not in the graph — skip rather than dangle
+        };
+        let iface_id = object_id_str(&iface_obj.id, &graph.apps);
+        let mut nodes = Vec::with_capacity(impl_ids.len() + 1);
+        nodes.push(iface_id.clone());
+        nodes.extend(impl_ids.iter().cloned());
+        hyper.push(serde_json::json!({
+            "id": format!("hif:{iface_id}"),
+            "label": format!("interface: {} ({} impls)", iface_obj.name, impl_ids.len()),
+            "kind": "interface_group",
+            "nodes": nodes,
+        }));
+    }
+
+    hyper
 }
 
 // ---------------------------------------------------------------------------
@@ -948,5 +1039,73 @@ mod tests {
         assert!(n0.get("id").is_some());
         assert!(n0.get("label").is_some());
         assert_eq!(n0["file_type"], "code");
+    }
+
+    #[test]
+    fn event_with_multiple_subscribers_emits_hyperedge() {
+        use crate::program::resolve::edge::OpenWorldReason;
+        let mut apps = AppRegistry::default();
+        let a = apps.intern(&app_id("MyApp"));
+        let mut objects = vec![
+            obj(a, ObjectKind::Codeunit, 50100, "Pub"),
+            obj(a, ObjectKind::Codeunit, 50101, "SubA"),
+            obj(a, ObjectKind::Codeunit, 50102, "SubB"),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+        let mut routines = vec![
+            rtn(a, 50100, "OnAfterPost", 0),
+            rtn(a, 50101, "HandleA", 1),
+            rtn(a, 50102, "HandleB", 1),
+        ];
+        routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines,
+            obj_index,
+        };
+
+        let pubr = rid(a, 50100, "OnAfterPost", 0);
+        let mk_route = |nid: RoutineNodeId| Route {
+            target: RouteTarget::Routine(nid),
+            evidence: Evidence::Source,
+            conditions: vec![],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 1),
+            },
+        };
+        let edge = Edge {
+            from: pubr.clone(),
+            site: site(pubr.clone(), 9),
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes: vec![
+                mk_route(rid(a, 50101, "HandleA", 1)),
+                mk_route(rid(a, 50102, "HandleB", 1)),
+            ],
+        };
+        let ce = ClassifiedEdge {
+            obligation_id: crate::program::resolve::full::ObligationId::Publisher(pubr),
+            edge,
+        };
+        let doc = build_graphify_document(&graph, &[ce], a);
+
+        let hev: Vec<&serde_json::Value> = doc
+            .hyperedges
+            .iter()
+            .filter(|h| h["kind"] == "event_group")
+            .collect();
+        assert_eq!(hev.len(), 1, "one event with 2 subscribers → one hyperedge");
+        assert_eq!(
+            hev[0]["nodes"].as_array().unwrap().len(),
+            3,
+            "hyperedge groups publisher + 2 subscribers"
+        );
     }
 }

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(export) graphify hyperedges — event neighbourhoods + interface families (P2)**
+  (`src/program/graphify_export.rs`) — the graphify adapter now populates
+  `hyperedges` (previously always empty) with the non-pairwise integration
+  structure: (1) **event groups** — one publisher event + all its ≥2 subscribers
+  (`{id, label, kind:"event_group", nodes:[pub, sub1, …]}`), and (2) **interface
+  families** — one interface + its ≥2 implementers (`kind:"interface_group"`).
+  graphify renders each as a shaded region and preserves them in `graph.json`.
+  Measured on DocumentOutput/Cloud: **529 hyperedges** (453 event groups, sizes
+  3–27, mean 4.6; 76 interface families), zero dangling node refs, all 529
+  round-trip through graphify `attach_hyperedges`. New test
+  `event_with_multiple_subscribers_emits_hyperedge`.
 - **(resolve) platform PAGE-event subscriber wiring (extends the table-event synthesis)**
   (`src/program/resolve/event.rs`, `src/program/build.rs`) — extends synthetic
   `PublisherKind::Platform` publishers to PAGE platform events (`OnOpenPageEvent`,
