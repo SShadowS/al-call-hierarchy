@@ -2591,3 +2591,240 @@ fn ws_overload_collision_control_single_overload_resolves_cleanly() {
         route.witness
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests 23d-23e: beyond-1B.3b Task 2 REVIEW FIX — compound object-duplication
+// × genuine-overload dedup. `dedup_routines_preserving_genuine_overloads`
+// used to be binary per run of equal-`RoutineNodeId` routines: collapse the
+// WHOLE run to 1 when `run_len <= obj_dup`, else keep EVERY entry. When an
+// object is embedded BOTH as workspace source AND as an embedded dep
+// (`obj_dup=2`) AND that object declares a genuine same-name/same-arity
+// overload pair (2 distinct source procedures colliding onto ONE
+// `RoutineNodeId`, since source `sig_fp` is always `0`), the run holds 4 raw
+// entries — `run_len(4) > obj_dup(2)` kept all 4 instead of the canonical 2.
+// This inflated `graph.routines` and could push a legitimate single-target
+// event subscription into `ambiguous_subscriptions` (candidate count 2
+// instead of 1). The fix groups a run by the routine's PARAMETER-TYPE
+// SIGNATURE before collapsing, so genuine re-parse duplicates collapse
+// per-signature while genuine overloads (distinct signatures) are preserved
+// — 2 canonical entries in every case, never 4.
+// ---------------------------------------------------------------------------
+
+/// Hand-builds an `AppSetSnapshot` with the SAME app identity appearing
+/// TWICE — once as the workspace unit, once as a synthetic embedded-dep
+/// unit — mirroring the real "sibling apps in a multi-app workspace whose
+/// compiled .app lands in .alpackages" scenario `build_program_graph`'s Step
+/// 4 comment documents (both units interning to the SAME `AppRef`). Both
+/// units embed the identical `CompoundTarget.al` source, which declares a
+/// genuine same-name/same-arity `Resolve` overload pair — one plain
+/// `Resolve(Value: Integer)`, one `[IntegrationEvent]`-tagged
+/// `Resolve(Value: Text)`. Only the workspace unit also carries the
+/// subscriber file, so the compound duplication is isolated to the
+/// `Compound Overload Target` object.
+fn compound_overload_dup_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
+    use al_call_hierarchy::snapshot::compilation::CompilationContext;
+    use al_call_hierarchy::snapshot::embedded::SourceFile;
+    use al_call_hierarchy::snapshot::provider::SourceRoot;
+    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+
+    let target_src = r#"
+codeunit 50970 "Compound Overload Target"
+{
+    // Non-publisher overload — arity 1, param type Integer.
+    procedure Resolve(Value: Integer)
+    begin
+    end;
+
+    // Publisher overload — SAME name + SAME arity as the sibling above,
+    // differing only by param TYPE (Text). Together they collide onto ONE
+    // `RoutineNodeId` (source `sig_fp` is always 0).
+    [IntegrationEvent(false, false)]
+    procedure Resolve(Value: Text)
+    begin
+    end;
+}
+"#
+    .to_string();
+
+    let subscriber_src = r#"
+codeunit 50971 "Compound Overload Subscriber"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Compound Overload Target", 'Resolve', '', false, false)]
+    procedure OnResolve(Value: Text)
+    begin
+    end;
+}
+"#
+    .to_string();
+
+    let app_id = AppId {
+        guid: String::new(),
+        name: "Compound App".into(),
+        publisher: "Test".into(),
+        version: "1.0.0.0".into(),
+    };
+
+    let ws_source = SourceRoot {
+        files: vec![
+            SourceFile {
+                virtual_path: "CompoundTarget.al".into(),
+                text: target_src.clone(),
+            },
+            SourceFile {
+                virtual_path: "CompoundSubscriber.al".into(),
+                text: subscriber_src,
+            },
+        ],
+        tier: TrustTier::Workspace,
+        content_hash: "ws-hash".into(),
+    };
+    // Synthetic "embedded dep" copy of the SAME source file — the exact
+    // compound scenario `build_program_graph`'s Step 4 comment documents
+    // ("Same app can appear as both a workspace source and an embedded dep").
+    let dep_source = SourceRoot {
+        files: vec![SourceFile {
+            virtual_path: "CompoundTarget.al".into(),
+            text: target_src,
+        }],
+        tier: TrustTier::EmbeddedSource,
+        content_hash: "dep-hash".into(),
+    };
+
+    let ws_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::Workspace,
+            content_hash: "ws-hash".into(),
+        },
+        source: Some(ws_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        abi: None,
+        app_path: None,
+    };
+    let dep_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::EmbeddedSource,
+            content_hash: "dep-hash".into(),
+        },
+        source: Some(dep_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        abi: None,
+        app_path: None,
+    };
+
+    AppSetSnapshot {
+        workspace_app: app_id,
+        apps: vec![ws_unit, dep_unit],
+        world: World::Closed,
+    }
+}
+
+/// Test 23d: the compound duplication must collapse `graph.routines` to the
+/// CANONICAL count (2 — one per genuine overload), never inflate to 4 (2
+/// overloads × obj_dup 2). Proves the content-aware (param-signature) dedup
+/// fix at the `build_program_graph` layer.
+#[test]
+fn compound_obj_dup_and_overload_dedups_to_canonical_count() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+
+    let snap = compound_overload_dup_snapshot();
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        2,
+        "compound case (obj_dup=2 x 2 genuine overloads = 4 raw entries) must \
+         collapse to the CANONICAL count of 2 -- one per genuine overload, \
+         never inflate to 4; got {} entries: {:?}",
+        resolve_entries.len(),
+        resolve_entries.iter().map(|r| &r.name).collect::<Vec<_>>()
+    );
+
+    // Exactly one of the two canonical entries carries the publisher
+    // attribute (the `[IntegrationEvent]`-tagged overload); the other does
+    // not -- proves BOTH signature groups survived distinctly, not two
+    // copies of the same one.
+    let publisher_count = resolve_entries
+        .iter()
+        .filter(|r| r.publisher_kind.is_some())
+        .count();
+    assert_eq!(
+        publisher_count,
+        1,
+        "exactly one canonical `Resolve` entry must carry the publisher \
+         attribute; got {publisher_count} of {}",
+        resolve_entries.len()
+    );
+
+    // The object itself must still be deduped to exactly one entry (Step 4's
+    // existing unconditional `objects.dedup_by` -- unaffected by this fix).
+    let target_objects: Vec<_> = graph
+        .objects
+        .iter()
+        .filter(|o| o.name == "Compound Overload Target")
+        .collect();
+    assert_eq!(target_objects.len(), 1, "object dedup must be unaffected");
+}
+
+/// Test 23e: the compound duplication must NOT push the legitimate
+/// single-target `OnResolve` subscription into `ambiguous_subscriptions`.
+/// Before the fix, the inflated 4-entry run left 2 publisher-tagged raw
+/// candidates (both from the SAME genuine overload, duplicated by `obj_dup`)
+/// with equal arity, so `ResolveIndex::build`'s `>1` arm found no unique
+/// strict-arity match and dropped the subscription as ambiguous.
+#[test]
+fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+    use al_call_hierarchy::program::resolve::index::ResolveIndex;
+
+    let snap = compound_overload_dup_snapshot();
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+    let idx = ResolveIndex::build(&graph);
+
+    assert!(
+        idx.ambiguous_subscriptions().is_empty(),
+        "a legitimate single-target subscription must NOT be pushed into \
+         ambiguous_subscriptions by the compound obj_dup x overload \
+         inflation; got {:?}",
+        idx.ambiguous_subscriptions()
+            .iter()
+            .map(|a| (a.event_name_lc.clone(), a.candidate_count))
+            .collect::<Vec<_>>()
+    );
+
+    let app = graph
+        .apps
+        .find_by_name("Compound App")
+        .expect("app interned");
+    let target_id = ObjectNodeId {
+        app,
+        kind: ObjectKind::Codeunit,
+        key: ObjKey::Id(50970),
+    };
+    let publisher_id = RoutineNodeId {
+        object: target_id,
+        name_lc: "resolve".into(),
+        enclosing_member_lc: None,
+        params_count: 1,
+        sig_fp: 0,
+    };
+    assert_eq!(
+        idx.subscribers_of(&publisher_id).len(),
+        1,
+        "the legitimate subscriber must resolve to exactly one entry"
+    );
+}

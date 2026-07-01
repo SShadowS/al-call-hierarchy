@@ -2269,6 +2269,7 @@ mod tests {
             publisher_kind: None,
             abi_routine_kind: None,
             abi_event_kind: None,
+            param_sig_key: String::new(),
         }
     }
 

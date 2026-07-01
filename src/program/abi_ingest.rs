@@ -280,6 +280,10 @@ pub fn ingest_abi(
                 publisher_kind,
                 abi_routine_kind: Some(routine_kind),
                 abi_event_kind: Some(event_kind),
+                // ABI routines already carry a non-zero `sig_fp` in `rid` when
+                // signatures differ (see `param_type_fp` above), so a same-id
+                // run here is already a true duplicate — no content key needed.
+                param_sig_key: String::new(),
             });
         }
     }

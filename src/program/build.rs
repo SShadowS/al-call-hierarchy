@@ -1,10 +1,8 @@
 //! Builds a `ProgramGraph` from an `AppSetSnapshot`.
 
-use std::collections::HashMap;
-
 use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
-use crate::program::node::{AppRef, AppRegistry, ObjectNodeId};
+use crate::program::node::{AppRef, AppRegistry};
 use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
 use crate::program::topology::DependencyGraph;
 use crate::snapshot::{AppSetSnapshot, parse_snapshot};
@@ -99,24 +97,26 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
     // duplicate ObjectNode/RoutineNode entries with identical ids.  Dedup after
     // sort keeps the first occurrence (arbitrary but stable).
     //
-    // Count each object's raw duplication factor BEFORE any dedup runs — it is
-    // the yardstick `dedup_routines_preserving_genuine_overloads` (below) uses
-    // to tell that legitimate whole-file re-parse apart from a genuine
-    // same-arity SOURCE overload collision (beyond-1B.3b Task 2). Two DISTINCT
-    // source procedures sharing `(object, name_lc, params_count)` collide onto
-    // one `RoutineNodeId` (source `sig_fp` is always `0` — see node.rs), so a
-    // blanket `dedup_by` would silently drop one of them with no record. A
-    // later confident `Source` route to the survivor would then be a
-    // false-positive (the cardinal sin this engine exists to avoid).
-    let mut obj_dup_counts: HashMap<ObjectNodeId, usize> = HashMap::new();
-    for o in &objects {
-        *obj_dup_counts.entry(o.id.clone()).or_insert(0) += 1;
-    }
-
+    // Objects dedup unconditionally on id — an `ObjectNode` carries no content
+    // that can distinguish a re-parse duplicate from anything else, and two
+    // objects sharing an id are always the same object.
+    //
+    // Routines need more care: two DISTINCT source procedures sharing
+    // `(object, name_lc, params_count)` also collide onto one `RoutineNodeId`
+    // (source `sig_fp` is always `0` — see node.rs) — a genuine same-arity
+    // SOURCE overload collision (beyond-1B.3b Task 2), not a duplicate. A
+    // blanket `dedup_by` would silently drop one of them with no record, and a
+    // later confident `Source` route to the survivor would be a false-positive
+    // (the cardinal sin this engine exists to avoid).
+    // `dedup_routines_preserving_genuine_overloads` (below) tells the two
+    // apart by parameter-type CONTENT rather than by counting how many times
+    // the enclosing object was duplicated (beyond-1B.3b Task 2 review fix: the
+    // former dup-factor heuristic under-collapsed when both a whole-object
+    // re-parse AND a genuine overload collision applied to the same run).
     objects.sort_by(|a, b| a.id.cmp(&b.id));
     objects.dedup_by(|a, b| a.id == b.id);
     routines.sort_by(|a, b| a.id.cmp(&b.id));
-    dedup_routines_preserving_genuine_overloads(&mut routines, &obj_dup_counts);
+    dedup_routines_preserving_genuine_overloads(&mut routines);
 
     // ── Step 5: build index from sorted objects ───────────────────────────────
     let obj_index = ObjectIndex::build(&objects);
@@ -131,23 +131,36 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
 }
 
 /// Collapse a SORTED `routines` vec's runs of equal `RoutineNodeId` down to
-/// the enclosing object's raw duplication factor — never below it.
+/// one canonical entry PER DISTINCT parameter-type signature.
 ///
-/// A run whose length is fully explained by `obj_dup_counts` (the object
-/// itself was extracted that many times — e.g. a whole file re-parsed
-/// because its app appears as both workspace source and embedded dep; see
-/// the Step 4 comment above) collapses to one canonical entry, exactly like
-/// the previous blanket `dedup_by`. A run LONGER than that factor holds
-/// genuinely DISTINCT source routines that collided onto one `RoutineNodeId`
-/// (beyond-1B.3b Task 2: source `sig_fp` is always `0`, so two same-arity
-/// overloads are indistinguishable at the id level) — every entry in that
-/// excess is preserved so `ResolveIndex`/`resolve_in_object` observe the true
-/// candidate count downstream and can fail closed instead of guessing.
-/// Never drops a genuine collision silently.
-fn dedup_routines_preserving_genuine_overloads(
-    routines: &mut Vec<RoutineNode>,
-    obj_dup_counts: &HashMap<ObjectNodeId, usize>,
-) {
+/// Two SOURCE routines collide onto the same `RoutineNodeId` whenever they
+/// share `(object, name_lc, enclosing_member_lc, params_count)` — source
+/// `sig_fp` is always `0` (see node.rs) — so the id alone cannot tell a
+/// re-parsed DUPLICATE of one routine (e.g. its owning object embedded both
+/// as workspace source and as an embedded dep; see the Step 4 comment above)
+/// apart from a genuine same-name/same-arity SOURCE overload PAIR (two
+/// textually distinct declarations differing only by parameter type).
+///
+/// Within a run, entries are grouped by [`RoutineNode::param_sig_key`] — the
+/// lowercased, `|`-joined parameter-type-text sequence (mirrors
+/// `abi_ingest::param_type_fp`'s normalization, computed for source params).
+/// Each distinct key collapses to its first occurrence (arbitrary but
+/// stable); a run with N distinct keys yields exactly N canonical entries.
+///
+/// This is correct independent of how many times the enclosing object itself
+/// was duplicated: two re-parses of the SAME declaration always share a
+/// param signature and collapse together, while two genuinely distinct
+/// overloads always differ in param signature and are both preserved — even
+/// in the COMPOUND case where an object is both duplicated AND declares a
+/// genuine overload pair (beyond-1B.3b Task 2 review fix: the previous
+/// dup-factor heuristic under-collapsed that case, e.g. 2 overloads × 2
+/// object copies = 4 raw entries kept instead of the canonical 2). The two
+/// canonical entries preserved for a genuine overload pair still share one
+/// `RoutineNodeId` (source `sig_fp` stays `0`) — `resolve_in_object`'s `>1`
+/// arm still returns an honest `Unresolved` rather than guessing; only the
+/// CANONICAL COUNT is fixed here, not distinct node identity (deferred
+/// overload-dispatch work). Never drops a genuine collision silently.
+fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) {
     let mut out: Vec<RoutineNode> = Vec::with_capacity(routines.len());
     let mut i = 0;
     while i < routines.len() {
@@ -155,21 +168,13 @@ fn dedup_routines_preserving_genuine_overloads(
         while j < routines.len() && routines[j].id == routines[i].id {
             j += 1;
         }
-        let run_len = j - i;
-        let obj_dup = obj_dup_counts
-            .get(&routines[i].id.object)
-            .copied()
-            .unwrap_or(1)
-            .max(1);
-        if run_len > obj_dup {
-            // Genuine overload collision (or a compound case with BOTH a
-            // whole-file re-parse AND a genuine collision) — keep every raw
-            // entry so the true ambiguity is visible downstream.
-            out.extend(routines[i..j].iter().cloned());
-        } else {
-            // Fully explained by whole-file re-parse (or no duplication at
-            // all) — collapse to a single canonical entry, as before.
-            out.push(routines[i].clone());
+        // Preserve first-occurrence order for determinism; collapse every
+        // later entry in the run that repeats an already-seen param signature.
+        let mut seen_sigs: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for r in &routines[i..j] {
+            if seen_sigs.insert(r.param_sig_key.as_str()) {
+                out.push(r.clone());
+            }
         }
         i = j;
     }

@@ -108,15 +108,27 @@ impl ResolveIndex {
     pub fn build(graph: &ProgramGraph) -> Self {
         let mut routines_by_obj_name: HashMap<(ObjectNodeId, String), Vec<RoutineNodeId>> =
             HashMap::new();
-        // routine_by_id maps each RoutineNodeId to its index in graph.routines so we can
-        // look up publisher_kind during subscriber resolution below.
-        let mut routine_by_id: HashMap<RoutineNodeId, usize> = HashMap::new();
+        // `routine_indices_by_obj_name` groups `graph.routines` INDICES (not
+        // ids) by `(object, name_lc)`, grown in lockstep with
+        // `routines_by_obj_name` below. Indices — not a `RoutineNodeId`-keyed
+        // map — are required here: a genuine same-name/same-arity SOURCE
+        // overload pair legitimately shares one `RoutineNodeId` (source
+        // `sig_fp` is always `0`; see node.rs and
+        // `build::dedup_routines_preserving_genuine_overloads`), so a
+        // `HashMap<RoutineNodeId, usize>` can hold only ONE of the two
+        // physical routines and silently loses the other's `publisher_kind`
+        // on the second `insert` — corrupting the subscriber-candidate
+        // filter below into either double-counting or dropping a legitimate
+        // publisher (beyond-1B.3b Task 2 review fix).
+        let mut routine_indices_by_obj_name: HashMap<(ObjectNodeId, String), Vec<usize>> =
+            HashMap::new();
         for (i, r) in graph.routines.iter().enumerate() {
+            let key = (r.id.object.clone(), r.id.name_lc.clone());
             routines_by_obj_name
-                .entry((r.id.object.clone(), r.id.name_lc.clone()))
+                .entry(key.clone())
                 .or_default()
                 .push(r.id.clone());
-            routine_by_id.insert(r.id.clone(), i);
+            routine_indices_by_obj_name.entry(key).or_default().push(i);
         }
 
         let mut objs_by_number: HashMap<(AppRef, ObjectKind, i64), ObjectNodeId> = HashMap::new();
@@ -175,20 +187,21 @@ impl ResolveIndex {
                 let pub_obj_id = pub_obj.id.clone();
                 let event_name_lc = args.event_name.to_ascii_lowercase();
 
-                // (c) Candidates: routines in that object matching name +
-                //     publisher_kind.is_some() + params_count >= sub_params.
-                let candidates: Vec<RoutineNodeId> = routines_by_obj_name
+                // (c) Candidates: PHYSICAL routines (by index, not id — see
+                //     the comment on `routine_indices_by_obj_name` above) in
+                //     that object matching name + publisher_kind.is_some() +
+                //     params_count >= sub_params. Counts every matching
+                //     routine even when two share a `RoutineNodeId`.
+                let candidates: Vec<RoutineNodeId> = routine_indices_by_obj_name
                     .get(&(pub_obj_id.clone(), event_name_lc.clone()))
                     .map(Vec::as_slice)
                     .unwrap_or(&[])
                     .iter()
-                    .filter(|rid| {
-                        rid.params_count >= sub_params
-                            && routine_by_id
-                                .get(*rid)
-                                .is_some_and(|&i| graph.routines[i].publisher_kind.is_some())
+                    .filter_map(|&i| {
+                        let r = &graph.routines[i];
+                        (r.id.params_count >= sub_params && r.publisher_kind.is_some())
+                            .then(|| r.id.clone())
                     })
-                    .cloned()
                     .collect();
 
                 // (d) Dispatch on candidate count.
@@ -444,6 +457,7 @@ mod tests {
             publisher_kind: None,
             abi_routine_kind: None,
             abi_event_kind: None,
+            param_sig_key: String::new(),
         }
     }
 
@@ -470,6 +484,7 @@ mod tests {
             publisher_kind: Some(kind),
             abi_routine_kind: None,
             abi_event_kind: None,
+            param_sig_key: String::new(),
         }
     }
 
@@ -497,6 +512,7 @@ mod tests {
             publisher_kind: None,
             abi_routine_kind: None,
             abi_event_kind: None,
+            param_sig_key: String::new(),
         }
     }
 

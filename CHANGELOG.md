@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **(resolve) Fail-closed same-arity SOURCE-overload guard — node soundness
-  prerequisite (beyond-1B.3b Task 2)**
-  (`src/program/build.rs`, `src/program/resolve/resolver.rs`,
+  prerequisite (beyond-1B.3b Task 2, incl. review-fix pass)**
+  (`src/program/build.rs`, `src/program/node_extract.rs`,
+  `src/program/abi_ingest.rs`, `src/program/resolve/resolver.rs`,
+  `src/program/resolve/index.rs`, `src/program/resolve/applicability.rs`,
+  `src/program/resolve/semantic_golden.rs`,
   `tests/r0-corpus/ws-overload-collision/` NEW, `tests/program_resolve_harness.rs`,
   `tests/ir-l2-goldens/l2_features.snapshot`, `tests/parser-ir-goldens/projection.snapshot`) —
   `RoutineNodeId.sig_fp` is always `0` for source-bearing routines, so two
@@ -50,6 +53,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `genuine_wrong` (42→42, exact manifest match, no new divergence), or to the
   `fresh_missing` completeness ceiling (191→191) — a pure soundness
   correction, not a regression.
+  **Review-fix pass (compound object-duplication × overload dedup):** review
+  found `dedup_routines_preserving_genuine_overloads` was binary per
+  duplicate-id run (collapse the whole run to 1, or keep every entry) — in
+  the COMPOUND case where an object is embedded BOTH as workspace source AND
+  an embedded dep (`obj_dup=2`) AND declares a genuine same-arity overload
+  pair, a run of 4 raw entries (2 overloads × 2 copies) was kept in full
+  instead of collapsing to the canonical 2, and `ResolveIndex::build`'s
+  `routine_by_id: HashMap<RoutineNodeId, usize>` silently lost one
+  physical routine's `publisher_kind` on the second `insert` whenever two
+  canonical routines shared an id — together these could inflate
+  `graph.routines`/event-flow obligations for a duplicated publisher, or
+  push a LEGITIMATE single-target event subscription into
+  `ambiguous_subscriptions` and drop it. Root-caused by making the dedup
+  CONTENT-AWARE instead of a duplication-factor heuristic: `RoutineNode`
+  gained `param_sig_key` (the lowercased, `|`-joined parameter-type-text
+  sequence, computed at extraction time, mirroring
+  `abi_ingest::param_type_fp`'s normalization for source params), and
+  `dedup_routines_preserving_genuine_overloads` now collapses a run to one
+  canonical entry PER DISTINCT signature — correct regardless of how many
+  times the object itself was duplicated (no `obj_dup` counting needed
+  anymore; the pre-pass `HashMap<ObjectNodeId, usize>` computation was
+  removed). `ResolveIndex::build`'s event-subscriber index now groups
+  `graph.routines` INDICES (not lossy `RoutineNodeId` keys) per
+  `(object, name_lc)`, so a `publisher_kind` lookup can never collapse two
+  physical routines sharing an id into one. New fixture (hand-built
+  `AppSetSnapshot` with the same app identity present twice — one workspace
+  unit, one synthetic embedded-dep unit — both embedding an object with a
+  genuine `Resolve(Integer)`/`[IntegrationEvent] Resolve(Text)` overload
+  pair) proves the compound case: `graph.routines` holds exactly 2 canonical
+  `Resolve` entries (not 4), and a legitimate single-target `OnResolve`
+  subscription resolves cleanly (`ambiguous_subscriptions` stays empty)
+  where it was previously mis-flagged ambiguous with `candidate_count=4`;
+  both assertions confirmed failing against the pre-fix code before the fix
+  landed. CDO re-run (`CDO_WS`, single isolated test) shows the original
+  Task 2 correction preserved exactly, byte-for-byte: `resolved_source=8607`,
+  `unknown=1199`, primary `real_unknown_rate=6.62%` — no new drift.
 - **(resolve) Source shadows builtin — lookup-precedence soundness fix +
   structural builtin-catalog match (beyond-1B.3b Task 1, incl. review-fix
   pass)**

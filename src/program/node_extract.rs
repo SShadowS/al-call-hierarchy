@@ -1,6 +1,6 @@
 //! Extract object + routine nodes from one parsed `AlFile`.
 
-use al_syntax::ir::{AlFile, RoutineKind};
+use al_syntax::ir::{AlFile, Param, RoutineKind};
 
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
@@ -57,6 +57,37 @@ pub struct RoutineNode {
     pub abi_routine_kind: Option<AbiRoutineKind>,
     /// ABI-only: the event kind for ABI-boundary publisher annotation. `None` for source routines.
     pub abi_event_kind: Option<AbiEventKind>,
+    /// Content key distinguishing SOURCE routines that collide onto the same
+    /// `RoutineNodeId` (source `sig_fp` is always `0` — see node.rs): the
+    /// lowercased, `|`-joined parameter-type-text sequence, computed by
+    /// [`param_sig_key`]. Two re-parses of the SAME declaration always share
+    /// this key; two genuine same-name/same-arity overloads (differing only
+    /// by parameter TYPE) always differ in it. Used by
+    /// `build::dedup_routines_preserving_genuine_overloads` (beyond-1B.3b
+    /// Task 2 review fix) to collapse a duplicate-id run to its true
+    /// canonical count regardless of how many times the owning object itself
+    /// was duplicated. Always `String::new()` for ABI/SymbolOnly routines —
+    /// those already carry a non-zero `sig_fp` in their `RoutineNodeId` when
+    /// signatures differ, so same-id runs there are already true duplicates.
+    pub param_sig_key: String,
+}
+
+/// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
+/// params — the content key [`RoutineNode::param_sig_key`] stores. Mirrors
+/// the normalization in `abi_ingest::param_type_fp` (lowercase + `|`-join),
+/// computed here from source `Param.ty` rather than ABI `AbiParameter::type_text`.
+/// An absent/unparsed type normalizes to `""`. Two params that BOTH fail to
+/// parse a type are therefore indistinguishable by this key alone, which
+/// could over-collapse a genuine overload pair in that narrow pathological
+/// corner (same failure mode the pre-Task-2 blanket `dedup_by` had for every
+/// routine); ordinary parsed source does not hit this, since `Param.ty` is
+/// populated whenever the parameter list itself parsed.
+fn param_sig_key(params: &[Param]) -> String {
+    params
+        .iter()
+        .map(|p| p.ty.as_deref().unwrap_or("").trim().to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 pub fn extract_nodes(
@@ -118,6 +149,7 @@ pub fn extract_nodes(
                 publisher_kind,
                 abi_routine_kind: None,
                 abi_event_kind: None,
+                param_sig_key: param_sig_key(&r.params),
             });
         }
     }
