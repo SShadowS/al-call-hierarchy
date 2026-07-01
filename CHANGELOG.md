@@ -8,6 +8,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **follow-up plan v2.1 Task 4 (FINAL, CAPSTONE): the fail-closed object-resolution +
+  bare implicit-`Rec` follow-up arc is closed — re-measured, ratchets tightened to the
+  new floor** (`tests/program_resolve_harness.rs`; no resolver source changes — this
+  task is verification + ratchet + docs, by design) — closes the follow-up plan v2.1 arc
+  (Tasks 1-3, all already individually logged below in this same `[Unreleased]` section).
+  Summary of the whole arc, before/after:
+  - **Task 1 (I1 root fix)**: `resolve_object`/`object_by_number` made ambiguity-aware —
+    an own-app declaration still shadows (wins), but more than one VISIBLE-in-closure
+    dependency match now fails closed to `None` instead of the old lowest-`ObjectNodeId`
+    pick-first tiebreak, which could silently route a cross-app same-name/id table
+    collision to the WRONG dependency as a confident `Source` edge. `resolve_object_ref`'s
+    `Id` arm gained the same own-app-shadow the `Name` arm already had.
+    `parsed_type_to_receiver`'s declared-var `Record` arm made shape-preserving
+    (`ParsedType::Record` now carries a structured `ObjectRef`, not a lossy lowercased
+    string, so `Record 18` and `Record "18"` are no longer conflated). The pick-first
+    `resolve_table_id` helper was deleted outright; every semantic caller inherits the
+    fail-closed behavior automatically from the shared base functions. CDO-dormant (a
+    real compile closure is AL-illegal for same-name cross-app tables), validated by new
+    synthetic multi-app unit/e2e tests instead.
+  - **Task 2 (visibility-scoped extraction)**: `resolve_member`'s Record-receiver scope
+    search extracted into a new shared helper, `resolve_in_table_scope`, now
+    closure-scoped (a `TableExtension` outside `from_object`'s dependency closure is
+    excluded — was previously whole-snapshot, `WorldMode::AnalyzedSnapshot`) and
+    `Access`-filtered (a cross-app `Internal`/`Local` candidate is excluded — was
+    previously counted despite being AL-invisible). A false `Source` route is the
+    cardinal sin this closes. CDO: 6 sites moved `fresh_extra`→`matches` (both now
+    correctly decline); `genuine_wrong` stayed 0; zero collateral movement on
+    `fresh_missing`/`fresh_wrong`.
+  - **Task 3 (`resolve_bare` Step 3 — bare implicit-`Rec`)**: implemented the
+    previously-empty `// 3. Implicit-Rec (deferred)` TODO — a bare (unqualified) call
+    inside a `Table`/`Page`/`TableExtension`/`PageExtension` object that falls through
+    Step 1 (own object) and Step 2 (extension base) now implicitly dispatches to `Rec`,
+    matching real AL semantics. Every guard independently fail-closed: strict
+    `ObjectKind` guard (Codeunit — even with a matching `TableNo` — Report, XmlPort,
+    Query never enter Step 3); tri-state `with`-guard (AST `with`-depth AND a redundant
+    raw-text scan must BOTH agree there's no enclosing `with` before Step 3 runs);
+    per-kind implicit-table lookup reusing the same helpers Tasks 5-7 built for the
+    EXPLICIT `Rec.Foo()` case; Task 2's `resolve_in_table_scope` reused unchanged for the
+    visibility-scoped search; builtin/`PageInstance`-intrinsic collision PROBE-THEN-DECIDE
+    (a table-scope hit whose name ALSO matches a global builtin or page intrinsic fails
+    closed to `Unknown`, never assumes precedence). Surfaced and root-caused 7 NEW
+    `genuine_wrong` sites on the first CDO run — all one shape, a `Navigate` action's bare
+    `Navigate();` call newly resolving via Step 3 to 7 distinct real Microsoft Base
+    Application posted-document-header tables' own genuine `procedure Navigate()`,
+    independently re-verified against Base App's embedded ShowMyCode source table by
+    table — adjudicated via the established `CrossAppSourceProcedure` overlay mechanism
+    (extended to accept a BARE, not just qualified-member, callee shape), never
+    whitelisted; `known-genuine-divergences.json`/`adjudicated-overrides.json` grew
+    44→51, re-confirmed by the independent `cdo_genuine_wrong_is_precedence_adjudicated`
+    re-derivation test. 13 new fixtures in `tests/r0-corpus/ws-bare-implicit-rec/`
+    (11 original + 2 from a review fix pass closing a `TableExtension`/`PageExtension`
+    caller coverage gap), exercised via `resolve_full_program` end-to-end.
+  - **Net result** (CDO `CDO_WS`, RE-MEASURED and CONFIRMED byte-identical 2026-07-01 for
+    this Task 4 closing report — reproduced independently against the live workspace,
+    once by Task 3 and once again here, both single-threaded release runs matching to
+    the exact float): primary real-`unknown` rate **2.81%→1.91%** (`unknown` 346/18104,
+    exact `realUnknownRate=0.0191118` per `aldump --program-call-graph-stats`);
+    whole-program **1.19%→0.81%** (`unknown` 346/42843, exact `0.0080760`). L3 semantic
+    audit `fresh_missing` **102→4** — closes the dominant bare-call-implicit-
+    SourceTable-dispatch bucket the beyond-1B.3b Task 8 characterization identified
+    (82/102), plus almost all of the residual 12+8 (not individually re-characterized
+    site-by-site this arc — an honest open item, not a specific root cause claim).
+    `fresh_wrong` 139→149 (all 149 adjudicated `fresh_ahead_dispatch` — fresh REFINES L3,
+    expected collateral movement from closing a real completeness gap, not a
+    divergence). `genuine_wrong` stays exactly **0** throughout the whole arc (the 7
+    newly-surfaced Task-3 sites were root-caused and adjudicated, never whitelisted).
+    Coverage holds (`parsed_obligations==classified_edges==42843`), ABI integrity clean
+    (`abi_unmapped=0`, `abi_routes_total=4`), deterministic across repeated runs (two
+    independent full single-threaded CDO runs this task, in addition to Task 3's own
+    determinism checks, produced identical histograms/digests).
+  - **What stays honestly `Unknown`** (unchanged by this arc; the residual is
+    CHARACTERIZED, not fixed — fixing it is future work; see
+    `docs/superpowers/plans/2026-07-01-resolve-followup-fail-closed-bare-rec.md`'s
+    "Roadmap — beyond this plan"): the 4-site `fresh_missing` residual (not individually
+    re-diagnosed this arc); `with`-scope RESOLUTION (Step 3's guard only SKIPS inside a
+    `with` block today — it does not yet BIND a bare call to the `with` record variable,
+    so a genuinely-resolvable call inside `with` still honestly declines rather than
+    resolving); Codeunit `TableNo`/`OnRun` implicit-`Rec` for a BARE call (Step 3's
+    `ObjectKind` guard structurally excludes Codeunit — AL's bare-implicit-dispatch
+    fallback is a Page/Table source-record mechanism, distinct from the Codeunit
+    `TableNo` one Task 6 already closed for the EXPLICIT `Rec.Foo()` shape); a
+    compiler-verified table-proc↔builtin PRECEDENCE proof (the probe-then-decide
+    collision guard fails closed to `Unknown` rather than assuming a direction —
+    relaxing it needs independent proof of real AL compiler precedence, not assumption);
+    `Access::Protected` visibility (Task 2 intentionally left it unfiltered, a documented
+    gap) and same-app `local`-object-scope visibility nuances; same-arity-TYPE overload
+    DISPATCH (the genuinely-ambiguous `Variant`-typed-arg case, out of scope for the
+    whole arc); Report/ReportExtension implicit `Rec` (dataitem block-scope, not
+    object-level — excluded since beyond-1B.3b Task 5).
+  - **Ratchets tightened** (`tests/program_resolve_harness.rs`,
+    `cdo_full_program_coverage_and_self_reported_metric` +
+    `cdo_l3_semantic_audit_no_fresh_wrong`; a ratchet never loosens): `primary_rate <=`
+    **0.030 → 0.022 (Task 3) → 0.021** (measured 0.0191, dated 2026-07-01); primary
+    `unknown` COUNT ceiling **520 → 360 (Task 3) → 355** (measured 346); companion
+    whole-program `unknown` COUNT ceiling, same trajectory and same measured value;
+    `FRESH_MISSING_CEILING` **110 → 15 (Task 3) → 10** (measured 4, breakdown comment
+    updated to note this task's byte-identical re-confirmation); `genuine_wrong == 0`
+    stays the pre-existing HARD gate (unchanged, still exact-zero); `FRESH_WRONG_CEILING`
+    **150 → 152 (Task 3) → 149** (measured 149, now EXACT — zero margin, matching
+    `genuine_wrong`'s own zero-tolerance philosophy, so even ONE new `fresh_wrong` site
+    trips a manual review rather than passing inside slack).
+  - No `engine::l3`/`engine::l2` import exists anywhere under `src/program/resolve`
+    beyond the one sanctioned `builtins.rs::global_builtins` exception —
+    `resolve_module_has_no_stray_engine_l3_l2_imports` (unmodified this task) still
+    passes.
+  - Gates: `cargo clippy --release --all-features -- -D warnings` clean; `cargo fmt
+    --check` clean; `cargo test --workspace` green (no `CDO_WS`, all 65
+    `program_resolve_harness.rs` tests plus the full workspace suite); full
+    `program_resolve_harness.rs` suite (65 tests) green under `CDO_WS` +
+    `ENFORCE_CDO_WS=1`, single-threaded, release, against the tightened ratchets above,
+    including the non-vacuity route-count checks (`fan_out_applicability_zero_violations`
+    routes_checked interface=28/instance_builtin=455/implicit_trigger=1183/event=2464,
+    `route_applicability_zero_violations` total_routes=17646).
+
+### Added
 - **(resolve) `resolve_bare` Step 3 — bare implicit-`Rec` dispatch, `with`-guarded + builtin-collision-fail-closed, visibility-scoped (follow-up plan v2.1 Task 3)**
   (`src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
   `src/program/resolve/receiver.rs`) — implements `resolve_bare`'s Step 3,

@@ -1261,47 +1261,49 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 
     // ── Regression guard: primary real_unknown_rate ≤ recorded ceiling ───────
     // Ceiling history: 6.46% (2026-06-30, 1B.3a) → 0.07 (~8% headroom) →
-    // 0.030 (beyond-1B.3b Tasks 1-7 + 5.5, recorded 2.81%). follow-up plan
-    // v2.1 Task 3 (`resolve_bare` Step 3 — bare implicit-Rec dispatch) closed
-    // most of the remaining bare-call implicit-SourceTable gap: re-measured,
-    // re-confirmed 1.91% (recorded 2026-07-01: primary unknown=346/18104;
-    // whole-program 0.81%, unknown=346/42843). Ratchets only ever TIGHTEN:
-    // 0.022 gives a small deterministic margin above 0.0191 without
-    // re-opening prior headroom a future regression could hide in.
+    // 0.030 (beyond-1B.3b Tasks 1-7 + 5.5, recorded 2.81%) → 0.022 (follow-up
+    // plan v2.1 Task 3, recorded 1.91%). follow-up plan v2.1 Task 4 (FINAL,
+    // arc capstone) RE-CONFIRMED 1.91% by an independent re-run on
+    // 2026-07-01 (primary unknown=346/18104; whole-program 0.81%,
+    // unknown=346/42843 — byte-identical to Task 3's own measurement, no
+    // drift). Ratchets only ever TIGHTEN: 0.021 gives a tiny deterministic
+    // margin above the measured 0.0191 without re-opening prior headroom a
+    // future regression could hide in.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.022,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.022 \
-         (recorded 2026-07-01 post follow-up plan v2.1 Task 3: 1.91%, was 2.81% \
-         pre-Task-3) — engine regressed; investigate before raising the ceiling"
+        primary_rate <= 0.021,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.021 \
+         (recorded 2026-07-01 post follow-up plan v2.1 Task 4: 1.91%, was 2.81% \
+         pre-follow-up, 6.46% pre-beyond-1B.3b) — engine regressed; investigate \
+         before raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
     // A ratio ceiling alone can hide a regression if `total` also shifts (a
     // denominator change masking a numerator increase) — pin the absolute
-    // `unknown` COUNT too. Recorded 2026-07-01 (follow-up plan v2.1 Task 3):
-    // primary `unknown`=346, which (empirically, for CDO — not an
-    // architectural guarantee) equals whole-program `unknown`=346: every
-    // current `Unknown` route happens to originate from a workspace
-    // (primary) routine; a dependency-internal `Unknown` would inflate
-    // whole-program above primary without this count catching it, hence the
-    // separate whole-program ceiling below. 360 gives a small margin.
+    // `unknown` COUNT too. Re-confirmed 2026-07-01 (follow-up plan v2.1
+    // Task 4, arc capstone): primary `unknown`=346, which (empirically, for
+    // CDO — not an architectural guarantee) equals whole-program
+    // `unknown`=346: every current `Unknown` route happens to originate from
+    // a workspace (primary) routine; a dependency-internal `Unknown` would
+    // inflate whole-program above primary without this count catching it,
+    // hence the separate whole-program ceiling below. 355 gives a tiny margin.
     assert!(
-        ph.unknown <= 360,
-        "primary unknown count {} exceeds ceiling 360 (recorded 2026-07-01 post \
-         follow-up plan v2.1 Task 3: 346, was 508 pre-Task-3) — \
+        ph.unknown <= 355,
+        "primary unknown count {} exceeds ceiling 355 (recorded 2026-07-01 post \
+         follow-up plan v2.1 Task 4: 346, was 508 pre-follow-up) — \
          engine regressed; investigate before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
     // future regression lands in a dependency-internal (non-primary) routine
     // — the primary-scoped count above would not catch that on its own.
-    // Recorded 2026-07-01: whole-program `unknown`=346 (same value as
-    // primary today — see comment above); 360 gives the same small margin.
+    // Re-confirmed 2026-07-01: whole-program `unknown`=346 (same value as
+    // primary today — see comment above); 355 gives the same tiny margin.
     assert!(
-        h.unknown <= 360,
-        "whole-program unknown count {} exceeds ceiling 360 (recorded 2026-07-01 post \
-         follow-up plan v2.1 Task 3: 346, was 508 pre-Task-3) — \
+        h.unknown <= 355,
+        "whole-program unknown count {} exceeds ceiling 355 (recorded 2026-07-01 post \
+         follow-up plan v2.1 Task 4: 346, was 508 pre-follow-up) — \
          engine regressed; investigate before raising the ceiling",
         h.unknown,
     );
@@ -1830,19 +1832,24 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // pass — a possible root cause is that `resolve_in_table_scope`'s
     // visibility-scoped search subsumes some of those cases too, since a
     // nested field-trigger's enclosing object is still one of Step 3's four
-    // eligible kinds, but this is NOT independently confirmed here). 15
-    // tightens the ceiling to the new floor with a small margin (was 110 — a
-    // ratchet never loosens); raising it further requires re-justifying the
-    // new value against a real characterization, not just bumping the
-    // number.
-    const FRESH_MISSING_CEILING: usize = 15;
+    // eligible kinds, but this is NOT independently confirmed here). Task 4
+    // (FINAL, arc capstone) RE-CONFIRMED the same **4** by an independent
+    // re-run on 2026-07-01 (byte-identical to Task 3's own measurement, no
+    // drift after the Task-3 fix-pass's 2 additional TableExtension/
+    // PageExtension-caller fixtures, which are workspace-fixture-only and do
+    // not touch CDO). 10 tightens the ceiling to the new floor with a tiny
+    // margin (was 15, was 110 before that — a ratchet never loosens);
+    // raising it further requires re-justifying the new value against a real
+    // characterization, not just bumping the number.
+    const FRESH_MISSING_CEILING: usize = 10;
     assert!(
         audit.fresh_missing_count <= FRESH_MISSING_CEILING,
         "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
-         ceiling {} (baseline pinned 2026-07-01 post follow-up plan v2.1 Task 3 \
-         [`resolve_bare` Step 3 bare implicit-Rec]: 4, was 102 pre-Task-3; see \
-         CHANGELOG.md). The fresh resolver lost an L3-resolved target it used \
-         to find — investigate before raising the ceiling.",
+         ceiling {} (baseline pinned 2026-07-01 post follow-up plan v2.1 Task 4 \
+         [`resolve_bare` Step 3 bare implicit-Rec, arc capstone]: 4, was 102 \
+         pre-follow-up; see CHANGELOG.md). The fresh resolver lost an \
+         L3-resolved target it used to find — investigate before raising the \
+         ceiling.",
         audit.fresh_missing_count,
         FRESH_MISSING_CEILING,
     );
@@ -1862,17 +1869,23 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // collateral movement from closing a real completeness gap, NOT a
     // regression — `genuine_wrong` stays hard-gated to 0 above regardless).
     // Recorded 2026-07-01: `fresh_wrong_count=149` (all 149 adjudicated
-    // `fresh_ahead_dispatch`, 0 `genuine_wrong`). 152 gives a small margin; a
-    // ratchet never loosens.
-    const FRESH_WRONG_CEILING: usize = 152;
+    // `fresh_ahead_dispatch`, 0 `genuine_wrong`). Task 4 (FINAL, arc
+    // capstone) RE-CONFIRMED the same 149 by an independent re-run
+    // (byte-identical, no drift) and pins the ceiling to EXACTLY the
+    // measured value — zero margin, matching `genuine_wrong`'s own
+    // zero-tolerance philosophy — so that even ONE new `fresh_wrong` site
+    // (whether a genuine `fresh_ahead_dispatch` refinement or a
+    // misclassified `genuine_wrong`) trips this gate for manual review
+    // rather than silently passing inside slack; a ratchet never loosens.
+    const FRESH_WRONG_CEILING: usize = 149;
     assert!(
         audit.fresh_wrong_count <= FRESH_WRONG_CEILING,
         "DIVERGENCE REGRESSION: fresh_wrong_count={} exceeds the recorded \
-         ceiling {} (recorded 2026-07-01 post follow-up plan v2.1 Task 3: 149, \
-         all fresh_ahead_dispatch, genuine_wrong=0) — a new site diverged from \
-         the L3-validated golden; investigate (is it a new fresh_ahead_dispatch \
-         refinement, or a genuine_wrong that the adjudication heuristic \
-         mis-classified?) before raising the ceiling.",
+         ceiling {} (recorded 2026-07-01 post follow-up plan v2.1 Task 4, arc \
+         capstone: 149, all fresh_ahead_dispatch, genuine_wrong=0) — a new site \
+         diverged from the L3-validated golden; investigate (is it a new \
+         fresh_ahead_dispatch refinement, or a genuine_wrong that the \
+         adjudication heuristic mis-classified?) before raising the ceiling.",
         audit.fresh_wrong_count,
         FRESH_WRONG_CEILING,
     );
