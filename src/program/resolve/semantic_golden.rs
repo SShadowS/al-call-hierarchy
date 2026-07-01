@@ -839,10 +839,22 @@ pub const ADJUDICATED_OVERRIDES_SCHEMA_VERSION: u32 = 1;
 /// See `tests/goldens/semantic-edges/adjudicated-overrides.json` (the
 /// committed dataset) and
 /// `tests/program_resolve_harness.rs::cdo_genuine_wrong_is_precedence_adjudicated`
-/// (the CDO-gated test that RE-DERIVES every field from LIVE CDO source at
-/// test time — independently of this struct's own committed values — and
-/// asserts agreement; a `source_sha256` mismatch fails loudly as source
-/// drift rather than silently passing).
+/// (the CDO-gated test that, at test time, INDEPENDENTLY of this struct's
+/// own committed values: (a) re-hashes the unit and fails loudly on any
+/// `source_sha256` mismatch — source drift, not a silent pass; (b) confirms
+/// `callee_text` is still present on the claimed line; (c) cross-checks the
+/// call SHAPE parsed from `callee_text` against `receiver_kind` and
+/// `catalog_key`'s method component (`assert_shape_matches_receiver_kind`),
+/// catching e.g. a Global-vs-member mislabel; (d) cross-checks `arity`
+/// against an independently-counted argument list at the call site
+/// (`count_call_arity_on_line`, best-effort — it conservatively skips call
+/// forms it cannot soundly parse rather than guessing); and (e) re-derives
+/// `verdict` from the structural catalog + a same-unit source-shadow scan
+/// and asserts it matches. The site KEY fields
+/// (`from_app_guid`/`from_object_kind`/`from_object_lc`/`from_routine_lc`/
+/// `edge_kind`/`unit`/`line`/`callee_fp`) are identity fields used only to
+/// locate the site, not independently re-derived facts — "every field" is
+/// not a literal claim).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdjudicatedOverride {
     pub from_app_guid: String,

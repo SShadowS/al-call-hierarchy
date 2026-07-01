@@ -2223,14 +2223,257 @@ fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str 
     "l3_error_intrinsic"
 }
 
+/// The call SHAPE parsed straight from `callee_text`, independent of the
+/// overlay's own `receiver_kind`: a bare GLOBAL call (no `.`) or a MEMBER
+/// call `<receiver>.<method>`, split on the FINAL `.`. Every `callee_text`
+/// in the overlay is a simple `Receiver.Method` token pair — no
+/// chained/qualified receivers appear among the 42 adjudicated sites — so a
+/// single `rfind('.')` split is sufficient. Deliberately lightweight: this
+/// is a syntax check, not a type-inferring parser (see
+/// `assert_shape_matches_receiver_kind`'s doc comment for what it does and
+/// does not prove).
+enum CallShape<'a> {
+    Global(&'a str),
+    Member { receiver: &'a str, method: &'a str },
+}
+
+fn parse_callee_shape(callee_text: &str) -> CallShape<'_> {
+    match callee_text.rfind('.') {
+        Some(idx) => CallShape::Member {
+            receiver: &callee_text[..idx],
+            method: &callee_text[idx + 1..],
+        },
+        None => CallShape::Global(callee_text),
+    }
+}
+
+/// Review-fix (beyond-1B.3b Task 3 fix pass): independently cross-check
+/// `ov.receiver_kind` and `ov.catalog_key`'s method component against the
+/// call SHAPE parsed straight from `ov.callee_text`, BEFORE `derive_verdict`
+/// is allowed to trust `receiver_kind` as given. Closes the review gap where
+/// a mislabeled `receiver_kind` (e.g. `"Global"` recorded for what is
+/// actually a member call `X.Method(...)` whose method name also happens to
+/// be a valid global builtin) would otherwise sail through `derive_verdict`
+/// unchallenged.
+///
+/// Checks performed (a lightweight SYNTAX check, not full type inference of
+/// the receiver variable's declared type — the shadow-absence and
+/// catalog-membership checks in `derive_verdict` already bound that; this
+/// only needs to catch a Global-vs-member/page-instance MISLABEL):
+/// - `Global` receiver_kind ⟺ `callee_text` has no `.`.
+/// - `PageInstance`/`Record`/`RecordRef` receiver_kind ⟺ `callee_text` has a
+///   `.` (a member call).
+/// - For a member call with `receiver_kind == "PageInstance"`, the receiver
+///   token (text before the final `.`) must be `CurrPage` or `Page` — the
+///   only page-instance forms this overlay uses.
+/// - In both shapes, the parsed method token must match `catalog_key`'s
+///   method component (the part after `::`, or the whole key for a bare
+///   global).
+///
+/// Panics via `assert!`/`assert_eq!` on any mismatch — a hard, load-bearing
+/// check, not advisory.
+fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride) {
+    let expected_method_lc = ov
+        .catalog_key
+        .rsplit("::")
+        .next()
+        .unwrap_or(&ov.catalog_key)
+        .to_ascii_lowercase();
+    match parse_callee_shape(&ov.callee_text) {
+        CallShape::Global(method) => {
+            assert_eq!(
+                ov.receiver_kind, "Global",
+                "{}:{}: callee_text {:?} is a bare (dot-free) call, but receiver_kind is \
+                 {:?} not \"Global\" — shape/receiver_kind mismatch",
+                ov.unit, ov.line, ov.callee_text, ov.receiver_kind,
+            );
+            assert_eq!(
+                method.to_ascii_lowercase(),
+                expected_method_lc,
+                "{}:{}: callee_text {:?} does not match catalog_key {:?}'s method component",
+                ov.unit,
+                ov.line,
+                ov.callee_text,
+                ov.catalog_key,
+            );
+        }
+        CallShape::Member { receiver, method } => {
+            assert!(
+                matches!(
+                    ov.receiver_kind.as_str(),
+                    "PageInstance" | "Record" | "RecordRef"
+                ),
+                "{}:{}: callee_text {:?} is a member call (`<receiver>.<method>`), but \
+                 receiver_kind is {:?} — expected PageInstance/Record/RecordRef",
+                ov.unit,
+                ov.line,
+                ov.callee_text,
+                ov.receiver_kind,
+            );
+            if ov.receiver_kind == "PageInstance" {
+                assert!(
+                    receiver.eq_ignore_ascii_case("CurrPage")
+                        || receiver.eq_ignore_ascii_case("Page"),
+                    "{}:{}: PageInstance member call {:?} has receiver token {:?}, expected \
+                     CurrPage or Page (the page-instance forms this overlay uses)",
+                    ov.unit,
+                    ov.line,
+                    ov.callee_text,
+                    receiver,
+                );
+            }
+            assert_eq!(
+                method.to_ascii_lowercase(),
+                expected_method_lc,
+                "{}:{}: callee_text {:?}'s method {:?} does not match catalog_key {:?}'s \
+                 method component",
+                ov.unit,
+                ov.line,
+                ov.callee_text,
+                method,
+                ov.catalog_key,
+            );
+        }
+    }
+}
+
+/// Count the top-level (paren/quote-depth-aware) comma-separated arguments
+/// of the call to `callee_text` found on `line_text` — an independent arity
+/// cross-check against `ov.arity`, so that field is load-bearing rather than
+/// vestigial (review-fix, beyond-1B.3b Task 3 fix pass).
+///
+/// Returns `None` — a deliberate, conservative bail-out, NOT arity 0 — when
+/// `callee_text` isn't immediately followed by `(` on this line, or when the
+/// argument list doesn't close before line end (e.g. a call whose arguments
+/// wrap onto a following line). Robustly counting arguments from source text
+/// is not reliable for every call form; callers must treat `None` as
+/// "cannot cross-check this site", never as a synthesized answer.
+///
+/// Quote-aware (both `'...'` string literals and `"..."` quoted
+/// identifiers, including the AL doubled-quote escape `''`/`""`) so commas
+/// inside string/identifier literals are never miscounted, and
+/// paren-depth-aware so a nested call's arguments (e.g. `CopyStr(X, 1,
+/// MaxStrLen(X))`) are not double-counted at the outer level.
+fn count_call_arity_on_line(line_text: &str, callee_text: &str) -> Option<usize> {
+    let lc_line = line_text.to_ascii_lowercase();
+    let lc_callee = callee_text.to_ascii_lowercase();
+    let start = lc_line.find(&lc_callee)?;
+    let after_callee = start + callee_text.len();
+    let bytes = line_text.as_bytes();
+
+    let mut i = after_callee;
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if bytes.get(i) != Some(&b'(') {
+        return None; // not a call at this occurrence — cannot cross-check
+    }
+    i += 1; // past the opening '('
+    let arg_start = i;
+
+    let mut depth = 1i32;
+    let mut quote: Option<u8> = None;
+    let mut commas_at_top = 0usize;
+    let mut close_idx = None;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if let Some(q) = quote {
+            if c == q {
+                if bytes.get(i + 1) == Some(&q) {
+                    i += 2; // doubled-quote escape — stays inside the quote
+                    continue;
+                }
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\'' | b'"' => quote = Some(c),
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close_idx = Some(i);
+                    break;
+                }
+            }
+            b',' if depth == 1 => commas_at_top += 1,
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let close_idx = close_idx?; // unbalanced by line end — bail out, don't guess
+    let inner = line_text[arg_start..close_idx].trim();
+    if inner.is_empty() {
+        Some(0)
+    } else {
+        Some(commas_at_top + 1)
+    }
+}
+
+/// Whether a source-level top-level comma count is a SOUND oracle for the
+/// overlay's recorded `arity` at this call (review-fix, beyond-1B.3b Task 3
+/// fix pass).
+///
+/// It is NOT sound for the "object-run static" dispatch forms —
+/// `Page.RunModal` / `Page.Run` / `Report.Run` / `Report.RunModal` /
+/// `Codeunit.Run` / `Query.Open` / `XmlPort.*` — whose FIRST syntactic
+/// argument is an object DESIGNATOR (`Page::"…"`) rather than a value
+/// argument. Whether that designator counts toward "arity" is a convention
+/// the committed overlay does NOT fix consistently: the two `Page.RunModal`
+/// entries disagree — `Page.RunModal(Page::"User Setup")` records arity 1
+/// (counting the designator), while `Page.RunModal(Page::"CDO Field List",
+/// Field)` records arity 1 (NOT counting it, i.e. only the record). Because
+/// `arity` is descriptive metadata only (it is NOT part of the site key and
+/// is never consumed by `apply_adjudicated_overrides`/the audit), this
+/// inconsistency is cosmetic; rather than false-fail a valid entry on an
+/// ambiguous convention we skip the numeric arity oracle for exactly these
+/// forms and document it (the shape/receiver-kind cross-check STILL runs for
+/// them). For every OTHER call form — bare globals and `CurrPage`/Record/
+/// RecordRef member calls — the parenthesized arguments are all value
+/// arguments and the count is a sound oracle.
+fn arity_source_count_is_sound(callee_text: &str) -> bool {
+    match parse_callee_shape(callee_text) {
+        CallShape::Member { receiver, .. } => !matches!(
+            receiver.to_ascii_lowercase().as_str(),
+            "page" | "report" | "codeunit" | "query" | "xmlport"
+        ),
+        CallShape::Global(_) => true,
+    }
+}
+
 /// beyond-1B.3b Task 3: for every entry in the committed adjudication overlay
-/// (`adjudicated-overrides.json`), INDEPENDENTLY re-derive its verdict from
-/// LIVE CDO source + the structural builtin catalog (never from fresh's
-/// output, never from this override's own `verdict`/`catalog_key` fields) and
-/// assert it matches the committed value. Also re-hashes the unit at test
-/// time and FAILS LOUDLY on any `source_sha256` mismatch (source drift —
-/// CDO_WS is a dirty live workspace with uncommitted edits) rather than
-/// silently trusting a possibly-stale adjudication.
+/// (`adjudicated-overrides.json`), INDEPENDENTLY re-derive/cross-check it
+/// from LIVE CDO source + the structural builtin catalog (never from
+/// fresh's output, never from this override's own committed fields) and
+/// assert agreement. Concretely, for each entry this test:
+///
+/// 1. Re-hashes the unit at test time and FAILS LOUDLY on any
+///    `source_sha256` mismatch (source drift — CDO_WS is a dirty live
+///    workspace with uncommitted edits) rather than silently trusting a
+///    possibly-stale adjudication.
+/// 2. Confirms `callee_text` still appears on the claimed line (line-drift
+///    catch).
+/// 3. Cross-checks the call SHAPE parsed straight from `callee_text` against
+///    `receiver_kind` and `catalog_key`'s method component
+///    ([`assert_shape_matches_receiver_kind`]) — BEFORE anything downstream
+///    is allowed to trust `receiver_kind` as given. Catches a
+///    Global-vs-member (and page-instance) mislabel.
+/// 4. Cross-checks `arity` against an independently-counted top-level
+///    argument count parsed from the call site
+///    ([`count_call_arity_on_line`]), when that count can be determined
+///    soundly from the single source line (a conservative bail-out
+///    otherwise — see that function's doc comment).
+/// 5. Re-derives the `verdict` itself ([`derive_verdict`]) from the
+///    structural catalog + a same-unit source-shadow scan, and asserts it
+///    matches the committed value.
+///
+/// This does NOT re-derive every field of [`AdjudicatedOverride`] — the site
+/// KEY fields (`from_app_guid`/`from_object_kind`/`from_object_lc`/
+/// `from_routine_lc`/`edge_kind`/`unit`/`line`/`callee_fp`) are identity
+/// fields used only to locate the site, not independently re-computed facts.
 ///
 /// Fail-closed: ANY `needs_manual_review` or `fresh_false_builtin` survivor
 /// is a real bug (a mis-adjudicated site, or a genuine fresh-catalog gap
@@ -2296,6 +2539,43 @@ fn cdo_genuine_wrong_is_precedence_adjudicated() {
             line_1based,
             line_text,
         );
+
+        // ── shape / receiver_kind cross-check — BEFORE trusting either ──────
+        assert_shape_matches_receiver_kind(ov);
+
+        // ── arity cross-check — BEFORE trusting `arity` ─────────────────────
+        // Only where source-level comma counting is a sound oracle for the
+        // recorded arity (see `arity_source_count_is_sound`: the object-run
+        // static forms carry an object-designator first argument whose
+        // arity convention the overlay does not fix, so they are skipped).
+        if arity_source_count_is_sound(&ov.callee_text) {
+            match count_call_arity_on_line(line_text, &ov.callee_text) {
+                Some(counted_arity) => {
+                    assert_eq!(
+                        counted_arity, ov.arity,
+                        "{}:{}: counted {counted_arity} top-level argument(s) for {:?} at the \
+                         call site, but the committed arity is {} — arity cross-check mismatch \
+                         (re-verify the site)",
+                        ov.unit, ov.line, ov.callee_text, ov.arity,
+                    );
+                }
+                None => {
+                    eprintln!(
+                        "NOTE: arity cross-check skipped for {}:{} ({:?}) — could not robustly \
+                         parse a single-line balanced argument list (conservative bail-out, not \
+                         a failure)",
+                        ov.unit, ov.line, ov.callee_text,
+                    );
+                }
+            }
+        } else {
+            eprintln!(
+                "NOTE: arity cross-check skipped for {}:{} ({:?}) — object-run static dispatch \
+                 form (object-designator first argument makes source comma count an unsound \
+                 arity oracle; shape/receiver-kind still checked)",
+                ov.unit, ov.line, ov.callee_text,
+            );
+        }
 
         // ── independent verdict re-derivation ───────────────────────────────
         let verdict = derive_verdict(ov, &content);
