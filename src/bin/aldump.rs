@@ -52,7 +52,7 @@ fn usage() -> ExitCode {
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
          --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
          --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats | \
-         --graphify-export | --integration-points] \
+         --graphify-export | --graphify-export-fragments | --integration-points] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -66,6 +66,7 @@ fn main() -> ExitCode {
     let mut l3_call_graph_stats_cross_app = false;
     let mut program_call_graph_stats = false;
     let mut graphify_export = false;
+    let mut graphify_export_fragments = false;
     let mut integration_points = false;
     let mut l3_unknown_breakdown = false;
     let mut l3_unknown_breakdown_cross_app = false;
@@ -114,6 +115,10 @@ fn main() -> ExitCode {
         }
         if arg == "--graphify-export" {
             graphify_export = true;
+            continue;
+        }
+        if arg == "--graphify-export-fragments" {
+            graphify_export_fragments = true;
             continue;
         }
         if arg == "--integration-points" {
@@ -1316,6 +1321,29 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize graphify export: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if graphify_export_fragments {
+        // graphify INCREMENTAL: the graphify document partitioned into per-object
+        // fragments + a content-hash manifest (`{ manifest, fragments, shared }`).
+        // Diff the manifest across runs → only re-process the objects whose output
+        // changed (see `program::graphify_export::FragmentSet`). Fail-closed.
+        let Some(fs) =
+            al_call_hierarchy::program::graphify_export::export_workspace_fragments(&workspace)
+        else {
+            eprintln!("aldump: error: graphify fragment export failed (snapshot build error)");
+            return ExitCode::FAILURE;
+        };
+        return match serde_json::to_string_pretty(&fs) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize graphify fragments: {e}");
                 ExitCode::FAILURE
             }
         };

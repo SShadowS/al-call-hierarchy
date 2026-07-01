@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(export) incremental graphify fragments + content-hash manifest — `aldump --graphify-export-fragments` (P3)**
+  (`src/program/graphify_export.rs`, `src/bin/aldump.rs`) — partitions the graphify
+  document into one fragment per AL object (`{nodes, edges, hyperedges}`: the
+  object node + its routines + `contains` + the edges/hyperedges ORIGINATING from
+  it) plus a `shared` fragment for cross-fragment target nodes (builtin / external
+  / dynamic / unresolved) so nothing dangles when graphify `build_merge`s them.
+  `manifest[objectId]` is a stable FNV-1a content hash of the fragment; a
+  downstream consumer (Obsidian vault, embeddings) diffs the manifest across runs
+  to re-process ONLY the objects whose output changed — the incremental primitive
+  that matters for AL (whole-program resolution is already cheap, so the win is
+  skipping downstream vault/vector work, not extraction). Verified: manifest is
+  run-stable (unit test); editing a fixture leaves unchanged objects hash-identical
+  and surfaces the new object as ADDED; scales to the real workspace (11,718
+  fragments + manifest, partition totals reconcile with the flat document). New
+  test `fragments_partition_by_object_with_stable_manifest`. 812 lib tests.
 - **(export) integration-points report — `aldump --integration-points` + `program::integration_report`**
   (`src/program/integration_report.rs`, `src/bin/aldump.rs`) — a dedicated
   "who-reacts-to-what" projection of the resolved event wiring, scoped to the

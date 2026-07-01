@@ -783,6 +783,134 @@ fn open_world_reason_str(c: SetCompleteness) -> Option<&'static str> {
 }
 
 // ---------------------------------------------------------------------------
+// Incremental: per-object fragments + content-hash manifest (P3)
+// ---------------------------------------------------------------------------
+
+/// The whole graphify document partitioned into per-object fragments plus a
+/// change-detection manifest.
+///
+/// Whole-program resolution is cheap for AL (re-run on any edit), so the
+/// incremental value is NOT skipping extraction — it is telling a downstream
+/// consumer (Obsidian vault, embeddings) exactly which objects' output changed
+/// so only those are re-processed. Each object owns one fragment (`{nodes,
+/// edges, hyperedges}`: its object node + routines + `contains` + the edges/
+/// hyperedges ORIGINATING from it); `manifest[obj]` is a stable content hash of
+/// that fragment. Re-run, diff the manifest → the changed set. `shared` holds
+/// the synthetic/builtin/external target nodes referenced across fragments (so
+/// nothing dangles when graphify `build_merge`s them all).
+#[derive(Debug, Clone, Serialize)]
+pub struct FragmentSet {
+    /// objectId → stable content hash of its fragment.
+    pub manifest: BTreeMap<String, String>,
+    /// objectId → its fragment.
+    pub fragments: BTreeMap<String, GraphifyDocument>,
+    /// Cross-fragment target nodes (builtin / external / dynamic / unresolved).
+    pub shared: GraphifyDocument,
+}
+
+/// Build the per-object fragment set for a workspace (resolve, project, partition).
+#[must_use]
+pub fn export_workspace_fragments(workspace_root: &Path) -> Option<FragmentSet> {
+    let (graph, edges, primary) =
+        crate::program::resolve::full::resolve_full_program_for_export(workspace_root)?;
+    Some(build_fragment_set(&graph, &edges, primary))
+}
+
+/// Partition a built document into per-object fragments + a content-hash manifest.
+#[must_use]
+pub fn build_fragment_set(
+    graph: &ProgramGraph,
+    edges: &[ClassifiedEdge],
+    primary_app_ref: AppRef,
+) -> FragmentSet {
+    let doc = build_graphify_document(graph, edges, primary_app_ref);
+    let empty = || GraphifyDocument {
+        nodes: Vec::new(),
+        edges: Vec::new(),
+        hyperedges: Vec::new(),
+    };
+    let mut fragments: BTreeMap<String, GraphifyDocument> = BTreeMap::new();
+    let mut shared = empty();
+
+    for n in doc.nodes {
+        match owning_object(&n.id) {
+            Some(obj) => fragments.entry(obj).or_insert_with(empty).nodes.push(n),
+            None => shared.nodes.push(n),
+        }
+    }
+    for e in doc.edges {
+        // Every edge originates at a real object-owned node (object for
+        // `contains`, routine otherwise); it belongs to that object's fragment.
+        match owning_object(&e.source) {
+            Some(obj) => fragments.entry(obj).or_insert_with(empty).edges.push(e),
+            None => shared.edges.push(e),
+        }
+    }
+    for h in doc.hyperedges {
+        // A hyperedge is anchored at its first node (publisher / interface).
+        let anchor = h
+            .get("nodes")
+            .and_then(|n| n.get(0))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        match owning_object(anchor) {
+            Some(obj) => fragments
+                .entry(obj)
+                .or_insert_with(empty)
+                .hyperedges
+                .push(h),
+            None => shared.hyperedges.push(h),
+        }
+    }
+
+    // Sort within each fragment for a stable serialization, then hash.
+    let mut manifest: BTreeMap<String, String> = BTreeMap::new();
+    for (obj, f) in &mut fragments {
+        f.nodes.sort_by(|a, b| a.id.cmp(&b.id));
+        f.edges.sort_by(|a, b| {
+            (a.source.as_str(), a.target.as_str(), a.relation).cmp(&(
+                b.source.as_str(),
+                b.target.as_str(),
+                b.relation,
+            ))
+        });
+        let json = serde_json::to_string(f).unwrap_or_default();
+        manifest.insert(obj.clone(), format!("{:016x}", fnv1a(json.as_bytes())));
+    }
+    shared.nodes.sort_by(|a, b| a.id.cmp(&b.id));
+
+    FragmentSet {
+        manifest,
+        fragments,
+        shared,
+    }
+}
+
+/// The `al:obj:…` id owning a node/edge-source id, or `None` for a
+/// cross-fragment target (builtin / external / dynamic / unresolved).
+fn owning_object(id: &str) -> Option<String> {
+    if id.starts_with("al:obj:") {
+        return Some(id.to_string());
+    }
+    if let Some(rest) = id.strip_prefix("al:rtn:") {
+        let obj = rest.split('#').next().unwrap_or(rest);
+        return Some(format!("al:obj:{obj}"));
+    }
+    None
+}
+
+/// FNV-1a 64-bit — a small, dependency-free, run-stable content hash for the
+/// manifest (deterministic across processes; only used for change detection).
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+// ---------------------------------------------------------------------------
 // Tests — the mapping contract, pinned against in-memory graphs
 // ---------------------------------------------------------------------------
 
@@ -1107,5 +1235,29 @@ mod tests {
             3,
             "hyperedge groups publisher + 2 subscribers"
         );
+    }
+
+    #[test]
+    fn fragments_partition_by_object_with_stable_manifest() {
+        let (g, edges, primary) = fixture();
+        let fs = build_fragment_set(&g, &edges, primary);
+
+        // One fragment per object; the calls edge lives in the caller's fragment.
+        assert_eq!(fs.fragments.len(), 2);
+        assert!(fs.fragments.contains_key("al:obj:myapp/codeunit/50100"));
+        assert!(fs.fragments.contains_key("al:obj:myapp/codeunit/50101"));
+        assert_eq!(fs.manifest.len(), 2);
+        let caller = &fs.fragments["al:obj:myapp/codeunit/50100"];
+        assert!(
+            caller.edges.iter().any(|e| e.relation == "calls"),
+            "outgoing calls edge belongs to the caller object's fragment"
+        );
+        // The callee fragment has the contains edge but not the calls edge.
+        let callee = &fs.fragments["al:obj:myapp/codeunit/50101"];
+        assert!(callee.edges.iter().all(|e| e.relation != "calls"));
+
+        // Manifest must be run-stable (prerequisite for change detection).
+        let fs2 = build_fragment_set(&g, &edges, primary);
+        assert_eq!(fs.manifest, fs2.manifest, "manifest must be deterministic");
     }
 }
