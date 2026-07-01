@@ -34,8 +34,9 @@ use crate::program::resolve::abi_check::{
 };
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{
-    CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, Histogram, OpenWorldReason, Route,
-    RouteTarget, SetCompleteness, SiteId, Witness, callee_fp, classify_obligation,
+    CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind, Histogram,
+    OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, UnknownReason, Witness,
+    callee_fp, classify_obligation,
 };
 use crate::program::resolve::extract::{CalleeShape, WithState, extract_sites_for_routine};
 use crate::program::resolve::index::ResolveIndex;
@@ -255,12 +256,28 @@ pub fn obligation_inventory(
 // ---------------------------------------------------------------------------
 
 /// Inline helper: an Unknown-evidence Unresolved route (resolution failure).
-fn unknown_route() -> Route {
+/// Task 3: `reason` is REQUIRED — every call site supplies a diagnostic
+/// [`UnknownReason`].
+fn unknown_route(reason: UnknownReason) -> Route {
     Route {
         target: RouteTarget::Unresolved,
-        evidence: Evidence::Unknown,
+        evidence: Evidence::Unknown(reason),
         conditions: vec![],
         witness: Witness::None,
+    }
+}
+
+/// Task 3: classify `CalleeShape::Unknown`'s decline reason from the raw
+/// callee text. A `callee_text` with >=2 dot separators (`A.B.C`) is a
+/// multi-segment receiver chain the extractor structurally cannot classify
+/// into a `Member { receiver_text, method }` shape (which only ever captures
+/// ONE dot); anything else reaching `Unknown` is some other unclassifiable
+/// call expression shape.
+fn unclassified_callee_reason(callee_text: &str) -> UnknownReason {
+    if callee_text.matches('.').count() >= 2 {
+        UnknownReason::CompoundReceiver
+    } else {
+        UnknownReason::UnclassifiedCallee
     }
 }
 
@@ -285,6 +302,7 @@ fn completeness_for_shape(shape: DispatchShape) -> SetCompleteness {
 fn resolve_call_site_obligation(
     shape: &CalleeShape,
     arity: usize,
+    callee_text: &str,
     obj_node_opt: Option<&ObjectNode>,
     routine: &al_syntax::ir::RoutineDecl,
     obj: &al_syntax::ir::ObjectDecl,
@@ -302,7 +320,7 @@ fn resolve_call_site_obligation(
                     obj_node, &name_lc, arity, graph, index, body_map, with_state,
                 )
             } else {
-                vec![unknown_route()]
+                vec![unknown_route(UnknownReason::IndexIntegrationGap)]
             };
             (
                 EdgeKind::Call,
@@ -318,7 +336,7 @@ fn resolve_call_site_obligation(
         } => {
             let receiver_lc = receiver_text.to_ascii_lowercase();
             let method_lc = method.to_ascii_lowercase();
-            let (member_shape, routes) = if let Some(obj_node) = obj_node_opt {
+            let (member_shape, mut routes) = if let Some(obj_node) = obj_node_opt {
                 let recv = infer_receiver_type(
                     &receiver_lc,
                     routine,
@@ -329,8 +347,28 @@ fn resolve_call_site_obligation(
                 );
                 resolve_member(&recv, &method_lc, arity, obj_node, graph, index, body_map)
             } else {
-                (DispatchShape::Exact, vec![unknown_route()])
+                (
+                    DispatchShape::Exact,
+                    vec![unknown_route(UnknownReason::IndexIntegrationGap)],
+                )
             };
+            // Task 3: a dotted `receiver_text` (`A.B.C`) means Phase A was
+            // asked to type a multi-segment/compound receiver chain — AL
+            // variable/singleton/framework names never contain a dot, so
+            // `infer_receiver_type` structurally cannot match one (except the
+            // narrow `CurrPage.<part>.Page` shape, which resolves and never
+            // reaches here). Relabel the generic `UntrackedReceiver` tag with
+            // the more specific `CompoundReceiver` in that case.
+            if receiver_lc.contains('.') {
+                for r in &mut routes {
+                    if matches!(
+                        r.evidence,
+                        Evidence::Unknown(UnknownReason::UntrackedReceiver)
+                    ) {
+                        r.evidence = Evidence::Unknown(UnknownReason::CompoundReceiver);
+                    }
+                }
+            }
             let completeness = completeness_for_shape(member_shape);
             (EdgeKind::Call, member_shape, completeness, routes)
         }
@@ -363,7 +401,7 @@ fn resolve_call_site_obligation(
                     EdgeKind::Run,
                     DispatchShape::Exact,
                     SetCompleteness::Complete,
-                    vec![unknown_route()],
+                    vec![unknown_route(UnknownReason::UnclassifiedCallee)],
                 )
             }
         }
@@ -414,7 +452,7 @@ fn resolve_call_site_obligation(
             let routes = if let Some(obj_node) = obj_node_opt {
                 resolve_bare(obj_node, "commit", 0, graph, index, body_map, with_state)
             } else {
-                vec![unknown_route()]
+                vec![unknown_route(UnknownReason::IndexIntegrationGap)]
             };
             (
                 EdgeKind::Call,
@@ -430,7 +468,7 @@ fn resolve_call_site_obligation(
                 EdgeKind::Call,
                 DispatchShape::Exact,
                 SetCompleteness::Complete,
-                vec![unknown_route()],
+                vec![unknown_route(unclassified_callee_reason(callee_text))],
             )
         }
     }
@@ -528,6 +566,7 @@ fn resolve_full_program_from_parts(
                         let (kind, shape, completeness, routes) = resolve_call_site_obligation(
                             &site.shape,
                             site.arity,
+                            &site.callee_text,
                             obj_node_opt,
                             routine,
                             obj,
@@ -709,7 +748,7 @@ fn count_into_histogram(h: &mut Histogram, e: &Edge) {
             // Classify by best evidence (Source=0, Catalog=1, Abi/Opaque=2).
             let mut best: Option<u8> = None;
             for r in &e.routes {
-                if r.evidence == Evidence::Unknown
+                if r.evidence.kind() == EvidenceKind::Unknown
                     || r.target == RouteTarget::Unresolved
                     || !r.fires_by_default()
                 {
@@ -719,7 +758,7 @@ fn count_into_histogram(h: &mut Histogram, e: &Edge) {
                     Evidence::Source => 0,
                     Evidence::Catalog => 1,
                     Evidence::Abi | Evidence::Opaque => 2,
-                    Evidence::Unknown => continue,
+                    Evidence::Unknown(_) => continue,
                 };
                 best = Some(best.map_or(score, |b: u8| b.min(score)));
             }

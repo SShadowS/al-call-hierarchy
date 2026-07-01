@@ -2275,10 +2275,10 @@ mod tests {
         );
         assert_eq!(shape, crate::program::resolve::edge::DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
-        assert_eq!(
+        assert!(matches!(
             routes[0].evidence,
-            crate::program::resolve::edge::Evidence::Unknown
-        );
+            crate::program::resolve::edge::Evidence::Unknown(_)
+        ));
         assert_eq!(
             routes[0].target,
             crate::program::resolve::edge::RouteTarget::Unresolved

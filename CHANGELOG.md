@@ -95,6 +95,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tripped, left unchanged).
 
 ### Added
+- **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
+  stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
+  ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**
+  (`src/program/resolve/edge.rs`, `resolver.rs`, `full.rs`, `stub.rs`, `differential.rs`,
+  `src/bin/aldump.rs`). `Evidence::Unknown` is now `Evidence::Unknown(UnknownReason)` — a new
+  15-variant, fresh-native enum (`CompoundReceiver`, `UntrackedReceiver`, `UnclassifiedCallee`,
+  `OverloadAmbiguous`, `BuiltinPrecedenceCollision`, `WithScopeGuard`,
+  `CodeunitTableNoExcluded`, `ReportRecExcluded`, `ProtectedNotVisible`, `LocalNotVisible`,
+  `InternalNotVisible`, `CatalogMiss`, `ReceiverOutOfClosure`, `MemberNotFound`,
+  `IndexIntegrationGap`) tagging EVERY structurally-distinct
+  `Evidence::Unknown` construction site across `resolver.rs`/`full.rs`/`stub.rs` with the site-specific
+  decline cause (the payload is REQUIRED at construction — the compiler enumerated every site;
+  no catch-all "forgot to tag" bucket). Two new resolver helpers thread the reason through
+  multi-step precedence chains that previously converged on one shared fallback route:
+  `resolve_bare`'s Step 5 now tracks a running `reason` set by whichever precedence step
+  declined (`WithScopeGuard`/`ReceiverOutOfClosure`/`CodeunitTableNoExcluded`/
+  `ReportRecExcluded`/access-exclusion), and `resolve_in_table_scope` returns a new
+  `TableScopeOutcome` (`Resolved`/`Ambiguous`/`NotVisible{access_excluded}`) instead of a bare
+  `Option`, letting both its callers (`resolve_bare` Step 3, `resolve_member`'s `Record` arm)
+  distinguish "no candidate at all" from "a candidate existed but was
+  `Local`/`Internal`/`Protected`-excluded" via a new `access_exclusion_reason` helper. A dotted
+  `receiver_text` (`A.B.C`) on an otherwise-`UntrackedReceiver` member call is relabeled
+  `CompoundReceiver` in `full.rs` (AL variable/singleton/framework names never contain a dot).
+  **Serialization boundary:** a new `Evidence::kind() -> EvidenceKind` projection collapses
+  `Unknown(_)` back to a single reason-agnostic `Unknown` kind; `differential.rs`'s
+  `witness_contract_holds` and `Histogram`'s evidence-scoring both switched to comparing on
+  `.kind()`, never the raw payload — the committed anonymized semantic goldens
+  (`tests/goldens/semantic-edges/*.json`) never serialized `Evidence` in the first place
+  (`CanonicalTarget`/`GoldenTarget` only carry `RouteTarget`-derived identity), so they stay
+  byte-identical with **no regen** (verified: `git status` clean on the goldens dir after the
+  full CDO audit run). New `unknown_reason_breakdown(&[Edge]) -> BTreeMap<UnknownReason, usize>`
+  (`edge.rs`) surfaces the stratification, counted per-edge (not per-route) so
+  `sum(values()) == ` the `Unknown` obligation count by construction — pinned by a synthetic
+  unit test (5 edges, 4 distinct reasons incl. a duplicate) and an end-to-end integration test
+  over 6 real `ws-*`/fixture workspaces via `resolve_full_program` (spans 5 distinct reasons).
+  `aldump --program-call-graph-stats` gained an `unknownByReason` object (camelCase keys via
+  `UnknownReason::as_str()`, never `Debug`) on both the `wholeProgram` and `primaryScoped`
+  histograms. CDO (`CDO_WS`): `real_unknown_rate`/`unknown` COUNT UNCHANGED (primary 1.97%,
+  356 both whole-program and primary-scoped — byte-identical to the pre-Task-3 measurement);
+  `cdo_l3_semantic_audit_no_fresh_wrong` still `genuine_wrong=0` with the goldens untouched.
 - **follow-up plan v2.1 Task 4 (FINAL, CAPSTONE): the fail-closed object-resolution +
   bare implicit-`Rec` follow-up arc is closed — re-measured, ratchets tightened to the
   new floor** (`tests/program_resolve_harness.rs`; no resolver source changes — this

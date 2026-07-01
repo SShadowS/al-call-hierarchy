@@ -419,15 +419,18 @@ pub fn match_sites(fresh: &[CanonicalEdge], l3: &[CanonicalEdge]) -> Vec<SiteMat
 /// - `Opaque`  → `AbiSymbol`
 /// - `Unknown` → `None`
 pub(crate) fn witness_contract_holds(route: &crate::program::resolve::edge::Route) -> bool {
-    use crate::program::resolve::edge::{Evidence, RouteTarget, Witness};
+    use crate::program::resolve::edge::{EvidenceKind, RouteTarget, Witness};
     // For Unresolved targets the evidence must be Unknown (per resolver invariants).
-    // Check both the evidence type and the witness shape.
-    match (&route.evidence, &route.witness) {
-        (Evidence::Source, Witness::SourceSpan { file, .. }) => !file.is_empty(),
-        (Evidence::Abi, Witness::AbiSymbol { .. }) => true,
-        (Evidence::Catalog, Witness::CatalogEntry { .. }) => true,
-        (Evidence::Opaque, Witness::AbiSymbol { .. }) => true,
-        (Evidence::Unknown, Witness::None) => {
+    // Check both the evidence type and the witness shape. Task 3: compares on
+    // `Evidence::kind()` (the reason-agnostic projection), never the raw
+    // `Evidence` value — this contract must hold identically regardless of
+    // WHICH `UnknownReason` a route's `Unknown` evidence carries.
+    match (route.evidence.kind(), &route.witness) {
+        (EvidenceKind::Source, Witness::SourceSpan { file, .. }) => !file.is_empty(),
+        (EvidenceKind::Abi, Witness::AbiSymbol { .. }) => true,
+        (EvidenceKind::Catalog, Witness::CatalogEntry { .. }) => true,
+        (EvidenceKind::Opaque, Witness::AbiSymbol { .. }) => true,
+        (EvidenceKind::Unknown, Witness::None) => {
             // Unknown evidence must pair with Unresolved target.
             matches!(route.target, RouteTarget::Unresolved)
         }

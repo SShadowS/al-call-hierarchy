@@ -53,7 +53,7 @@ use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
     EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
-    Witness, callee_fp,
+    UnknownReason, Witness, callee_fp,
 };
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::ResolveIndex;
@@ -168,12 +168,20 @@ fn make_routine_route(
     } else {
         // Source-tier BodyMap miss: integration bug.  Surface it as Unknown so
         // the gap shows up in `real_unknown_rate` rather than being silently hidden.
-        Route {
-            target: RouteTarget::Unresolved,
-            evidence: Evidence::Unknown,
-            conditions: vec![],
-            witness: Witness::None,
-        }
+        unresolved_route(UnknownReason::IndexIntegrationGap)
+    }
+}
+
+/// Build an `Unresolved`/`Unknown(reason)` route — the shared constructor for
+/// every genuine resolution-failure route (Task 3: the `reason` argument is
+/// REQUIRED, so every call site is forced to supply a diagnostic
+/// [`UnknownReason`]).
+fn unresolved_route(reason: UnknownReason) -> Route {
+    Route {
+        target: RouteTarget::Unresolved,
+        evidence: Evidence::Unknown(reason),
+        conditions: vec![],
+        witness: Witness::None,
     }
 }
 
@@ -242,24 +250,14 @@ fn resolve_in_object(
         0 => {}
         1 => return Some(make_routine_route(matched[0], obj_tier, body_map, graph)),
         _ => {
-            return Some(Route {
-                target: RouteTarget::Unresolved,
-                evidence: Evidence::Unknown,
-                conditions: vec![],
-                witness: Witness::None,
-            });
+            return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
         }
     }
 
     // Name found but no arity-matched overload: emit Unknown rather than a
     // false-confident route to a wrong-arity candidate. Does NOT fall through
     // to extension-base / global-builtin — mirrors L3's MemberNotFound stop.
-    Some(Route {
-        target: RouteTarget::Unresolved,
-        evidence: Evidence::Unknown,
-        conditions: vec![],
-        witness: Witness::None,
-    })
+    Some(unresolved_route(UnknownReason::OverloadAmbiguous))
 }
 
 /// Whether `obj_id` (at trust tier `obj_tier`) carries a visible source/ABI
@@ -380,6 +378,67 @@ fn object_has_visible_member_candidate(
         })
 }
 
+/// Diagnostic companion to [`object_has_visible_member_candidate`] (Task 3):
+/// when NO visible candidate exists for `method_lc`/`arity` in `obj_id`,
+/// determine WHY the most specific excluded candidate (if any) was excluded
+/// — `Local`/`Internal`/`Protected` access not visible from `from_object`'s
+/// identity. Returns `None` when no same-name/arity candidate exists in
+/// `obj_id` at all (genuine absence, not a visibility exclusion) — mirrors
+/// [`object_has_visible_member_candidate`]'s own per-access rule exactly, so
+/// the two never disagree on WHETHER a candidate is visible, only on WHY not.
+fn access_exclusion_reason(
+    obj_id: &ObjectNodeId,
+    obj_tier: TrustTier,
+    method_lc: &str,
+    arity: usize,
+    from_object: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<UnknownReason> {
+    // SymbolOnly candidates are always ingested as `Access::Public` (see
+    // `object_has_visible_member_candidate`'s doc) — never access-excluded.
+    if obj_tier == TrustTier::SymbolOnly {
+        return None;
+    }
+    index
+        .routines_in_object(obj_id, method_lc)
+        .iter()
+        .filter(|rid| rid.params_count == arity)
+        .find_map(|rid| match lookup_routine_access(graph, rid) {
+            Some(Access::Local) if obj_id != from_object => Some(UnknownReason::LocalNotVisible),
+            Some(Access::Internal) if obj_id.app != from_object.app => {
+                Some(UnknownReason::InternalNotVisible)
+            }
+            Some(Access::Protected)
+                if obj_id != from_object && !index.object_extends(graph, from_object, obj_id) =>
+            {
+                Some(UnknownReason::ProtectedNotVisible)
+            }
+            _ => None,
+        })
+}
+
+/// The outcome of a [`resolve_in_table_scope`] search — sufficient for the
+/// caller to know not just WHETHER it resolved, but on decline, WHY (Task 3's
+/// diagnostic [`UnknownReason`] payload).
+enum TableScopeOutcome {
+    /// Exactly one visible candidate — resolved.
+    Resolved(DispatchShape, Vec<Route>),
+    /// `>1` visible candidates — honest ambiguous `Unknown`. Callers MUST
+    /// return this immediately (never fall through to the catalog — source
+    /// ambiguity still shadows a same-named intrinsic).
+    Ambiguous,
+    /// Zero visible candidates. `access_excluded` is `Some(reason)` when a
+    /// same-name/arity candidate existed in scope but was excluded by the
+    /// caller-identity access filter — the most specific decline reason
+    /// available; `None` when no candidate existed in scope at all (name
+    /// genuinely absent — the caller should fall through / use its own
+    /// default reason).
+    NotVisible {
+        access_excluded: Option<UnknownReason>,
+    },
+}
+
 /// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED table scope: the
 /// base table `table_id` plus every `TableExtension` of it that is reachable
 /// in `from_object`'s compile-time app dependency closure (beyond-1B.3b Task
@@ -416,14 +475,16 @@ fn object_has_visible_member_candidate(
 ///    — beyond-1B.3b Task 1, superseding the earlier app-scoped-only Task 2
 ///    version of this filter).
 ///
-/// # Cardinality (unchanged from the pre-extraction Record arm)
+/// # Cardinality (unchanged from the pre-extraction Record arm; Task 3 wraps
+/// the same three outcomes in [`TableScopeOutcome`] so a decline also
+/// carries WHY)
 ///
-/// - 0 visible candidates (or `table_id` itself not visible) → `None` — fall
-///   through to the caller's next precedence level (e.g. the Record builtin
-///   catalog).
-/// - Exactly 1 visible candidate → `Some((Exact, [route]))`, a single
+/// - 0 visible candidates (or `table_id` itself not visible) →
+///   [`TableScopeOutcome::NotVisible`] — fall through to the caller's next
+///   precedence level (e.g. the Record builtin catalog).
+/// - Exactly 1 visible candidate → [`TableScopeOutcome::Resolved`], a single
 ///   `Source`/`Abi`/`Opaque` route via [`resolve_in_object`].
-/// - `>1` visible candidates → `Some(member_unknown_route())` — honest
+/// - `>1` visible candidates → [`TableScopeOutcome::Ambiguous`] — honest
 ///   ambiguous `Unknown`; never pick-first, never fall through to the
 ///   catalog (source ambiguity still shadows a same-named intrinsic).
 ///
@@ -437,17 +498,24 @@ fn resolve_in_table_scope(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
-) -> Option<(DispatchShape, Vec<Route>)> {
+) -> TableScopeOutcome {
     let closure = graph.topology.closure(from_object.id.app);
 
     if !closure.contains(&table_id.app) {
-        return None;
+        return TableScopeOutcome::NotVisible {
+            access_excluded: None,
+        };
     }
-    let (table_tier, table_name_lc) = graph
+    let Some((table_tier, table_name_lc)) = graph
         .objects
         .iter()
         .find(|o| o.id == table_id)
-        .map(|o| (o.tier, o.name.to_ascii_lowercase()))?;
+        .map(|o| (o.tier, o.name.to_ascii_lowercase()))
+    else {
+        return TableScopeOutcome::NotVisible {
+            access_excluded: None,
+        };
+    };
 
     // Visible scope: the base table plus every TableExtension of it that is
     // reachable in `from_object`'s app dependency closure.
@@ -486,11 +554,26 @@ fn resolve_in_table_scope(
     let second = candidate_objects.next();
 
     match (first, second) {
-        (None, _) => None,
-        (Some(_), Some(_)) => Some(member_unknown_route()),
+        (None, _) => {
+            // Zero visible candidates in the whole scope — diagnose WHY, in
+            // scope order (deterministic): the first same-name/arity
+            // candidate that exists but is access-excluded, if any.
+            let access_excluded = scope.iter().find_map(|(oid, tier)| {
+                access_exclusion_reason(oid, *tier, name_lc, arity, &from_object.id, graph, index)
+            });
+            TableScopeOutcome::NotVisible { access_excluded }
+        }
+        (Some(_), Some(_)) => TableScopeOutcome::Ambiguous,
         (Some((oid, tier)), None) => {
-            resolve_in_object(oid, *tier, name_lc, arity, graph, index, body_map)
-                .map(|route| (DispatchShape::Exact, vec![route]))
+            match resolve_in_object(oid, *tier, name_lc, arity, graph, index, body_map) {
+                Some(route) => TableScopeOutcome::Resolved(DispatchShape::Exact, vec![route]),
+                // Defensive: `object_has_visible_member_candidate` already
+                // confirmed a visible arity match exists, so `resolve_in_object`
+                // should always return `Some` here.
+                None => TableScopeOutcome::NotVisible {
+                    access_excluded: Some(UnknownReason::IndexIntegrationGap),
+                },
+            }
         }
     }
 }
@@ -603,6 +686,12 @@ pub fn resolve_bare(
         return vec![route];
     }
 
+    // Task 3: running diagnostic reason for the eventual Step 5 fallback, in
+    // case no earlier step resolves. Steps 2/3 below OVERWRITE this with a
+    // more specific finding as they run; the DEFAULT (`MemberNotFound`)
+    // survives when nothing more specific was found — genuine absence.
+    let mut reason = UnknownReason::MemberNotFound;
+
     // 2. Extension base (Task 1.5 — access-filtered). `resolve_in_object`
     // itself does ZERO access filtering, so gate it behind the SAME
     // caller-identity-aware visibility check Task 1 established
@@ -632,10 +721,22 @@ pub fn resolve_bare(
             &from_object.id,
             graph,
             index,
-        ) && let Some(route) =
-            resolve_in_object(&base_id, base_tier, name_lc, arity, graph, index, body_map)
-        {
-            return vec![route];
+        ) {
+            if let Some(route) =
+                resolve_in_object(&base_id, base_tier, name_lc, arity, graph, index, body_map)
+            {
+                return vec![route];
+            }
+        } else if let Some(r) = access_exclusion_reason(
+            &base_id,
+            base_tier,
+            name_lc,
+            arity,
+            &from_object.id,
+            graph,
+            index,
+        ) {
+            reason = r;
         }
     }
 
@@ -647,7 +748,10 @@ pub fn resolve_bare(
     // a Page/Table source-record mechanism in AL — ONLY these four kinds are
     // eligible. Every other kind (Codeunit/Report/XmlPort/Query/…) skips this
     // step entirely, no accidental leakage via `implicit_rec_table_id`'s own
-    // (defense-in-depth) kind match.
+    // (defense-in-depth) kind match. Task 3: tag WHY it's skipped for the two
+    // named, high-volume excluded kinds (Codeunit/Report(Extension)) so the
+    // eventual Step 5 Unknown carries that context rather than the generic
+    // `MemberNotFound` default.
     if matches!(
         from_object.id.kind,
         ObjectKind::Table
@@ -660,38 +764,66 @@ pub fn resolve_bare(
         // the two with-detection signals disagree) skip Step 3 — a false
         // `Source` inside an unrepresented `with` is the fatal case this
         // guards against (see `WithState`'s doc).
-        if with_state == WithState::NoWithProven
+        if with_state == WithState::NoWithProven {
             // (2) Compute the implicit-Rec table id by kind; no unique
             // in-closure table → fall through (nothing to search).
-            && let Some(table_id) = implicit_rec_table_id(from_object, graph, index)
-            // (3) Visibility-scoped table ∪ extensions search (Task 2):
-            // `None` (0 visible candidates) falls through to Step 4/5;
-            // `Some` is either a clean Source/Abi/Opaque route or an honest
-            // ambiguous Unknown (>1 visible candidate — never pick-first).
-            && let Some((_, routes)) = resolve_in_table_scope(
-                from_object,
-                table_id,
-                name_lc,
-                arity,
-                graph,
-                index,
-                body_map,
-            )
-        {
-            // (4) Builtin/intrinsic PROBE-THEN-DECIDE: the probe (step 3)
-            // already ran; a same-name+arity table-scope candidate exists
-            // AND `name_lc` is also a global builtin or a bare-callable
-            // page/instance intrinsic is an UNPROVEN precedence collision —
-            // fail closed to `Unknown` rather than assume the table wins
-            // (never emit `Catalog` here; Step 4 below is the only place
-            // that does). No table-scope candidate at all means there is
-            // nothing to collide with, so this arm is unreachable in that
-            // case — the surrounding `if let` already required `Some`.
-            if is_bare_builtin_or_page_intrinsic(name_lc) {
-                return member_unknown_route().1;
+            if let Some(table_id) = implicit_rec_table_id(from_object, graph, index) {
+                // (3) Visibility-scoped table ∪ extensions search (Task 2):
+                // `NotVisible` falls through to Step 4/5 (tagging WHY when a
+                // candidate existed but was access-excluded); `Resolved` is a
+                // clean Source/Abi/Opaque route; `Ambiguous` is an honest
+                // ambiguous Unknown (>1 visible candidate — never pick-first,
+                // never falls through to the catalog).
+                match resolve_in_table_scope(
+                    from_object,
+                    table_id,
+                    name_lc,
+                    arity,
+                    graph,
+                    index,
+                    body_map,
+                ) {
+                    TableScopeOutcome::Resolved(_, routes) => {
+                        // (4) Builtin/intrinsic PROBE-THEN-DECIDE: the probe
+                        // (step 3) already ran; a same-name+arity table-scope
+                        // candidate exists AND `name_lc` is also a global
+                        // builtin or a bare-callable page/instance intrinsic
+                        // is an UNPROVEN precedence collision — fail closed
+                        // to `Unknown` rather than assume the table wins
+                        // (never emit `Catalog` here; Step 4 below is the
+                        // only place that does).
+                        if is_bare_builtin_or_page_intrinsic(name_lc) {
+                            return vec![unresolved_route(
+                                UnknownReason::BuiltinPrecedenceCollision,
+                            )];
+                        }
+                        return routes;
+                    }
+                    TableScopeOutcome::Ambiguous => {
+                        return vec![unresolved_route(UnknownReason::OverloadAmbiguous)];
+                    }
+                    TableScopeOutcome::NotVisible { access_excluded } => {
+                        if let Some(r) = access_excluded {
+                            reason = r;
+                        }
+                    }
+                }
+            } else {
+                // No unique in-closure implicit-Rec table (ambiguous
+                // cross-app name, out-of-closure, or unresolved).
+                reason = UnknownReason::ReceiverOutOfClosure;
             }
-            return routes;
+        } else {
+            // Lexically inside a `with` block (or with-freedom unproven).
+            reason = UnknownReason::WithScopeGuard;
         }
+    } else if matches!(from_object.id.kind, ObjectKind::Codeunit) {
+        reason = UnknownReason::CodeunitTableNoExcluded;
+    } else if matches!(
+        from_object.id.kind,
+        ObjectKind::Report | ObjectKind::ReportExtension
+    ) {
+        reason = UnknownReason::ReportRecExcluded;
     }
 
     // 4. Global builtin.
@@ -708,12 +840,7 @@ pub fn resolve_bare(
     }
 
     // 5. Unknown.
-    vec![Route {
-        target: RouteTarget::Unresolved,
-        evidence: Evidence::Unknown,
-        conditions: vec![],
-        witness: Witness::None,
-    }]
+    vec![unresolved_route(reason)]
 }
 
 // ---------------------------------------------------------------------------
@@ -782,12 +909,7 @@ pub fn resolve_object_run(
             SetCompleteness::Partial {
                 reason: OpenWorldReason::RuntimeTypeUnbounded,
             },
-            vec![Route {
-                target: RouteTarget::Unresolved,
-                evidence: Evidence::Unknown,
-                conditions: vec![],
-                witness: Witness::None,
-            }],
+            vec![unresolved_route(UnknownReason::UntrackedReceiver)],
         );
     };
 
@@ -813,12 +935,7 @@ pub fn resolve_object_run(
         return (
             DispatchShape::Exact,
             SetCompleteness::Complete,
-            vec![Route {
-                target: RouteTarget::Unresolved,
-                evidence: Evidence::Unknown,
-                conditions: vec![],
-                witness: Witness::None,
-            }],
+            vec![unresolved_route(UnknownReason::MemberNotFound)],
         );
     };
 
@@ -967,29 +1084,19 @@ fn member_catalog_route(bid: BuiltinId) -> (DispatchShape, Vec<Route>) {
     )
 }
 
-/// Build a `(Exact, [Unknown route])` outcome.
-fn member_unknown_route() -> (DispatchShape, Vec<Route>) {
-    (
-        DispatchShape::Exact,
-        vec![Route {
-            target: RouteTarget::Unresolved,
-            evidence: Evidence::Unknown,
-            conditions: vec![],
-            witness: Witness::None,
-        }],
-    )
+/// Build a `(Exact, [Unknown route])` outcome (Task 3: `reason` is REQUIRED —
+/// every caller supplies a diagnostic [`UnknownReason`]).
+fn member_unknown_route(reason: UnknownReason) -> (DispatchShape, Vec<Route>) {
+    (DispatchShape::Exact, vec![unresolved_route(reason)])
 }
 
-/// Build a `(DynamicOpen, [Unknown blocker])` outcome for Dynamic receivers.
+/// Build a `(DynamicOpen, [Unknown blocker])` outcome for Dynamic receivers —
+/// the receiver's static type is genuinely untracked (a runtime Variant), so
+/// the single fixed reason is always [`UnknownReason::UntrackedReceiver`].
 fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
     (
         DispatchShape::DynamicOpen,
-        vec![Route {
-            target: RouteTarget::Unresolved,
-            evidence: Evidence::Unknown,
-            conditions: vec![],
-            witness: Witness::None,
-        }],
+        vec![unresolved_route(UnknownReason::UntrackedReceiver)],
     )
 }
 
@@ -1071,28 +1178,28 @@ pub fn resolve_member(
             if let Some(bid) = member_builtin_id(MemberCatalogKind::RecordRef, method_lc) {
                 member_catalog_route(bid)
             } else {
-                member_unknown_route()
+                member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
         ReceiverType::FieldRef => {
             if let Some(bid) = member_builtin_id(MemberCatalogKind::FieldRef, method_lc) {
                 member_catalog_route(bid)
             } else {
-                member_unknown_route()
+                member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
         ReceiverType::KeyRef => {
             if let Some(bid) = member_builtin_id(MemberCatalogKind::KeyRef, method_lc) {
                 member_catalog_route(bid)
             } else {
-                member_unknown_route()
+                member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
         ReceiverType::Framework(kind) => {
             if let Some(bid) = member_builtin_id(MemberCatalogKind::Framework(kind), method_lc) {
                 member_catalog_route(bid)
             } else {
-                member_unknown_route()
+                member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
         ReceiverType::Record { table } => {
@@ -1122,8 +1229,15 @@ pub fn resolve_member(
             // it (Source/Abi/Opaque); more than one → honest ambiguous Unknown
             // — source ambiguity STILL shadows the catalog, never fall through
             // to a false intrinsic; zero → consult the catalog.
-            if let Some(table_id) = table
-                && let Some((shape, routes)) = resolve_in_table_scope(
+            //
+            // Task 3: `reason` defaults to `CatalogMiss` (the catalog-fallback
+            // outcome below); `table: None` means Phase A already declined to
+            // pin a unique receiver table (ambiguous/out-of-closure/
+            // unresolved) — `ReceiverOutOfClosure`. A `NotVisible` table-scope
+            // outcome with an access-excluded candidate overrides the default.
+            let mut reason = UnknownReason::CatalogMiss;
+            if let Some(table_id) = table {
+                match resolve_in_table_scope(
                     from_object,
                     table_id.clone(),
                     method_lc,
@@ -1131,9 +1245,22 @@ pub fn resolve_member(
                     graph,
                     index,
                     body_map,
-                )
-            {
-                return (shape, routes);
+                ) {
+                    TableScopeOutcome::Resolved(shape, routes) => return (shape, routes),
+                    TableScopeOutcome::Ambiguous => {
+                        return (
+                            DispatchShape::Exact,
+                            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                        );
+                    }
+                    TableScopeOutcome::NotVisible { access_excluded } => {
+                        if let Some(r) = access_excluded {
+                            reason = r;
+                        }
+                    }
+                }
+            } else {
+                reason = UnknownReason::ReceiverOutOfClosure;
             }
 
             // Zero visible source/ABI candidates in scope (or `table`
@@ -1143,7 +1270,7 @@ pub fn resolve_member(
             if let Some(bid) = member_builtin_id(MemberCatalogKind::Record, method_lc) {
                 return member_catalog_route(bid);
             }
-            member_unknown_route()
+            member_unknown_route(reason)
         }
         ReceiverType::Object { kind, name_lc, id } => {
             // Resolve the target object (topology-scoped from the calling app).
@@ -1162,7 +1289,7 @@ pub fn resolve_member(
             let Some(target) = target else {
                 // Target not in the graph — honest Unknown (not Opaque: we have no
                 // identity for an unresolvable typed receiver).
-                return member_unknown_route();
+                return member_unknown_route(UnknownReason::MemberNotFound);
             };
             let target_id = target.id.clone();
             let target_tier = target.tier;
@@ -1226,7 +1353,7 @@ pub fn resolve_member(
                 {
                     return member_catalog_route(bid);
                 }
-                member_unknown_route()
+                member_unknown_route(UnknownReason::MemberNotFound)
             }
         }
         ReceiverType::SelfObject => {
@@ -1243,7 +1370,7 @@ pub fn resolve_member(
                 (DispatchShape::Exact, vec![route])
             } else {
                 // Method not found in own object.
-                member_unknown_route()
+                member_unknown_route(UnknownReason::MemberNotFound)
             }
         }
         ReceiverType::Interface { name_lc } => {
@@ -1274,27 +1401,20 @@ pub fn resolve_member(
                     .unwrap_or(TrustTier::Workspace);
 
                 if impl_tier == TrustTier::SymbolOnly {
-                    // SymbolOnly: arity matching deferred; delegate.
+                    // SymbolOnly: arity matching deferred; delegate. The
+                    // `unwrap_or` fires whenever this implementer does not
+                    // declare `method_lc` at all (`resolve_in_object` returns
+                    // `None` only on a name-absent `candidates.is_empty()`).
                     let route = resolve_in_object(
                         impl_id, impl_tier, method_lc, arity, graph, index, body_map,
                     )
-                    .unwrap_or(Route {
-                        target: RouteTarget::Unresolved,
-                        evidence: Evidence::Unknown,
-                        conditions: vec![],
-                        witness: Witness::None,
-                    });
+                    .unwrap_or_else(|| unresolved_route(UnknownReason::MemberNotFound));
                     routes.push(route);
                 } else {
                     let candidates = index.routines_in_object(impl_id, method_lc);
                     if candidates.is_empty() {
                         // Method name absent from this implementer — Rule 1 Unresolved.
-                        routes.push(Route {
-                            target: RouteTarget::Unresolved,
-                            evidence: Evidence::Unknown,
-                            conditions: vec![],
-                            witness: Witness::None,
-                        });
+                        routes.push(unresolved_route(UnknownReason::MemberNotFound));
                     } else {
                         let matching = candidates
                             .iter()
@@ -1302,27 +1422,22 @@ pub fn resolve_member(
                             .count();
                         match matching {
                             1 => {
-                                // Unique arity-matched overload: guaranteed to resolve.
+                                // Unique arity-matched overload: guaranteed to
+                                // resolve — the `unwrap_or` is defensive
+                                // (should never fire; `resolve_in_object`
+                                // itself finds `matched.len() == 1`).
                                 let route = resolve_in_object(
                                     impl_id, impl_tier, method_lc, arity, graph, index, body_map,
                                 )
-                                .unwrap_or(Route {
-                                    target: RouteTarget::Unresolved,
-                                    evidence: Evidence::Unknown,
-                                    conditions: vec![],
-                                    witness: Witness::None,
+                                .unwrap_or_else(|| {
+                                    unresolved_route(UnknownReason::IndexIntegrationGap)
                                 });
                                 routes.push(route);
                             }
                             _ => {
                                 // 0 (arity mismatch) or >1 (ambiguous) — Rule 1+2 Unresolved.
                                 // Never emit a guessed route to a wrong-arity or wrong-overload target.
-                                routes.push(Route {
-                                    target: RouteTarget::Unresolved,
-                                    evidence: Evidence::Unknown,
-                                    conditions: vec![],
-                                    witness: Witness::None,
-                                });
+                                routes.push(unresolved_route(UnknownReason::OverloadAmbiguous));
                             }
                         }
                     }
@@ -1339,18 +1454,18 @@ pub fn resolve_member(
             ) {
                 member_catalog_route(bid)
             } else {
-                member_unknown_route()
+                member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
         ReceiverType::Primitive => {
             // Non-catalog type — honest Unknown (not a false resolution gap).
-            member_unknown_route()
+            member_unknown_route(UnknownReason::CatalogMiss)
         }
         ReceiverType::Dynamic => {
             // Variant-typed receiver — genuinely dynamic, not a resolution hole.
             member_dynamic_open_route()
         }
-        ReceiverType::Unknown => member_unknown_route(),
+        ReceiverType::Unknown => member_unknown_route(UnknownReason::UntrackedReceiver),
     }
 }
 
@@ -1759,7 +1874,7 @@ codeunit 50102 "AnotherCU"
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
         assert_eq!(r.target, RouteTarget::Unresolved);
-        assert_eq!(r.evidence, Evidence::Unknown);
+        assert!(matches!(r.evidence, Evidence::Unknown(_)));
         assert_eq!(r.witness, Witness::None);
     }
 
@@ -1905,7 +2020,7 @@ tableextension 52901 "ExtA" extends Base
              call from ANY of its extensions (base-self only); got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (b) CONTROL: same shape as (a), but `Base` declares a `Public`
@@ -2002,7 +2117,7 @@ tableextension 52905 "ExtA" extends Base
              bare call from an extension in a DIFFERENT app; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (d) CONTROL: `ExtA` bare-calls a `protected procedure P()` on `Base` —
@@ -2100,7 +2215,7 @@ pageextension 52909 "ExtA" extends BasePage
              call from ANY of its PageExtensions; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (f) PageExtension→base-Page variant of (b) CONTROL: `Public` still
@@ -2219,7 +2334,10 @@ codeunit 50200 "ContractCU"
         );
         assert_eq!(unk_routes.len(), 1);
         let unk_route = &unk_routes[0];
-        assert_eq!(unk_route.evidence, Evidence::Unknown, "Unknown evidence");
+        assert!(
+            matches!(unk_route.evidence, Evidence::Unknown(_)),
+            "Unknown evidence"
+        );
         assert_eq!(
             unk_route.witness,
             Witness::None,
@@ -2269,9 +2387,8 @@ codeunit 50103 "ArityMismatchCU"
             RouteTarget::Unresolved,
             "arity-mismatch must yield Unresolved target, not a Source route to the wrong-arity proc"
         );
-        assert_eq!(
-            r.evidence,
-            Evidence::Unknown,
+        assert!(
+            matches!(r.evidence, Evidence::Unknown(_)),
             "arity-mismatch must yield Unknown evidence"
         );
         assert_eq!(
@@ -2444,7 +2561,7 @@ codeunit 50201 "CallerCU"
         assert!(!routes.is_empty(), "must include a blocker route");
         let r = &routes[0];
         assert_eq!(r.target, RouteTarget::Unresolved);
-        assert_eq!(r.evidence, Evidence::Unknown);
+        assert!(matches!(r.evidence, Evidence::Unknown(_)));
         assert_eq!(r.witness, Witness::None);
     }
 
@@ -2500,9 +2617,8 @@ codeunit 50202 "AnotherCaller"
             "target not in any indexed app must yield Unresolved (not AbiSymbol); got {:?}",
             r.target
         );
-        assert_eq!(
-            r.evidence,
-            Evidence::Unknown,
+        assert!(
+            matches!(r.evidence, Evidence::Unknown(_)),
             "not-found target must use Unknown evidence (honest failure)"
         );
         assert_eq!(r.witness, Witness::None);
@@ -2651,9 +2767,8 @@ codeunit 50104 "BodyMissCU"
             RouteTarget::Unresolved,
             "BodyMap-miss must yield Unresolved (not Routine+Abi)"
         );
-        assert_eq!(
-            r.evidence,
-            Evidence::Unknown,
+        assert!(
+            matches!(r.evidence, Evidence::Unknown(_)),
             "BodyMap-miss must yield Unknown evidence"
         );
         assert_eq!(
@@ -2879,7 +2994,7 @@ codeunit 50300 "OverloadCU"
             &body_map,
         );
         assert_eq!(routes2[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes2[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes2[0].evidence, Evidence::Unknown(_)));
     }
 
     #[test]
@@ -2897,7 +3012,7 @@ codeunit 50300 "OverloadCU"
             &body_map,
         );
         assert_eq!(shape, DispatchShape::Exact);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     #[test]
@@ -3195,7 +3310,7 @@ codeunit 50506 "AnotherCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -3239,7 +3354,7 @@ codeunit 50507 "OrphanCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -3482,7 +3597,7 @@ codeunit 51000 "NoneTableCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -3533,7 +3648,7 @@ codeunit 51101 "NotFoundCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -3673,9 +3788,8 @@ codeunit 50963 "AmbiguousCaller"
              fall through to a false Catalog hit; got {:?}",
             routes[0].target
         );
-        assert_eq!(
-            routes[0].evidence,
-            Evidence::Unknown,
+        assert!(
+            matches!(routes[0].evidence, Evidence::Unknown(_)),
             "source ambiguity must shadow the catalog as honest Unknown"
         );
         assert_eq!(routes[0].witness, Witness::None);
@@ -3743,7 +3857,7 @@ codeunit 52202 "CollCaller"
             "base+extension same-name collision must NOT pick-first; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -3812,9 +3926,8 @@ codeunit 52302 "OutClosureCaller"
              have imported that symbol; got {:?}",
             routes[0].target
         );
-        assert_eq!(
-            routes[0].evidence,
-            Evidence::Unknown,
+        assert!(
+            matches!(routes[0].evidence, Evidence::Unknown(_)),
             "must decline honestly, not fabricate a false Source"
         );
         assert_eq!(routes[0].witness, Witness::None);
@@ -3871,7 +3984,7 @@ codeunit 52501 "BaseIntCallerA"
              excluded, not just on extensions; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (k) A TableExtension declared in a DEPENDENCY app (in-closure) whose
@@ -3932,7 +4045,7 @@ codeunit 52402 "IntCallerA"
              got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (l) Same shape as (k) but with `local` instead of `internal` — `local`
@@ -3989,7 +4102,7 @@ codeunit 52412 "LocCallerA"
             "a cross-app `local` TableExtension method must be excluded; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (m) Regression guard: a cross-app TableExtension method with NO access
@@ -4178,7 +4291,7 @@ codeunit 52612 "CallerA"
              got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (c) TableExtension `local` SELF-call: the extension declares its own
@@ -4299,7 +4412,7 @@ tableextension 52632 "FooExtB" extends Foo
              sibling extension; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (f) SELF: the declaring TABLE calls its OWN `protected procedure` via
@@ -4402,7 +4515,7 @@ codeunit 52651 "CallerG"
              got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (g) supplemental: same shape as above, but the same-app caller is a
@@ -4460,7 +4573,7 @@ page 52653 "CallerGPage"
              extend Bar, must NOT see Bar's `protected` procedure; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (h) cross-app NON-extension: same shape as (g), but the caller is in a
@@ -4515,7 +4628,7 @@ codeunit 52661 "CallerH"
              table's `protected` procedure; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (i) valid extension → base protected: a `TableExtension` on `Bar`
@@ -4807,7 +4920,7 @@ tableextension 52700 "BarExtB" extends Bar
              ExtA) — the sibling-bleed guard; got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
     // (k) same-app `internal`: `Table Foo` with `internal procedure P()`; a
@@ -5083,7 +5196,7 @@ codeunit 50613 "ReportCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -5132,7 +5245,7 @@ codeunit 50615 "AnotherPageCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 
@@ -5445,7 +5558,7 @@ codeunit 51699 "IfaceCaller4"
             .iter()
             .find(|r| r.target == RouteTarget::Unresolved)
             .unwrap();
-        assert_eq!(unresolved_route.evidence, Evidence::Unknown);
+        assert!(matches!(unresolved_route.evidence, Evidence::Unknown(_)));
         assert_eq!(unresolved_route.witness, Witness::None);
     }
 
@@ -5602,7 +5715,7 @@ codeunit 50619 "EmptyPageCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
         assert_eq!(routes[0].witness, Witness::None);
     }
 

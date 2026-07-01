@@ -16,8 +16,8 @@ use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{
-    DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId, Witness,
-    callee_fp,
+    DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId,
+    UnknownReason, Witness, callee_fp,
 };
 use crate::program::resolve::extract_min::extract_raw_sites;
 use crate::program::resolve::index::ResolveIndex;
@@ -82,7 +82,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                             completeness: SetCompleteness::Complete,
                             routes: vec![Route {
                                 target: RouteTarget::Unresolved,
-                                evidence: Evidence::Unknown,
+                                evidence: Evidence::Unknown(UnknownReason::UnclassifiedCallee),
                                 conditions: vec![],
                                 witness: Witness::None,
                             }],
@@ -138,7 +138,7 @@ pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
         completeness: SetCompleteness::Complete,
         routes: vec![Route {
             target: RouteTarget::Unresolved,
-            evidence: Evidence::Unknown,
+            evidence: Evidence::Unknown(UnknownReason::UnclassifiedCallee),
             conditions: vec![],
             witness: Witness::None,
         }],

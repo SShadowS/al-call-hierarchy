@@ -1222,7 +1222,10 @@ fn main() -> ExitCode {
         //
         // Both `--l3-call-graph-stats` and `--l3-call-graph-stats-cross-app`
         // are KEPT unchanged; this flag is now fully independent of L3.
-        use al_call_hierarchy::program::resolve::full::{coverage_holds, resolve_full_program};
+        use al_call_hierarchy::program::resolve::edge::unknown_reason_breakdown;
+        use al_call_hierarchy::program::resolve::full::{
+            coverage_holds, is_primary_scope, resolve_full_program,
+        };
 
         let Some(r) = resolve_full_program(&workspace) else {
             eprintln!("aldump: error: resolve_full_program failed (snapshot build error)");
@@ -1233,6 +1236,25 @@ fn main() -> ExitCode {
         let ph = &r.primary_histogram;
         let cov = &r.coverage;
         let abi = &r.abi_integrity;
+
+        // Task 3: stratified `Unknown`-reason breakdown (charter §8). Purely
+        // diagnostic — never changes `h`/`ph`/`cov` above. Rendered via
+        // `UnknownReason::as_str()` (stable camelCase keys), never `Debug`.
+        let whole_by_reason: std::collections::BTreeMap<String, usize> =
+            unknown_reason_breakdown(r.edges.iter().map(|ce| &ce.edge))
+                .into_iter()
+                .map(|(reason, count)| (reason.as_str().to_string(), count))
+                .collect();
+        let primary_by_reason: std::collections::BTreeMap<String, usize> =
+            unknown_reason_breakdown(
+                r.edges
+                    .iter()
+                    .filter(|ce| is_primary_scope(ce, r.primary_app_ref))
+                    .map(|ce| &ce.edge),
+            )
+            .into_iter()
+            .map(|(reason, count)| (reason.as_str().to_string(), count))
+            .collect();
 
         let value = serde_json::json!({
             // ── Whole-program histogram ──────────────────────────────────────
@@ -1246,6 +1268,7 @@ fn main() -> ExitCode {
                 "honestEmpty": h.honest_empty,
                 "unknown": h.unknown,
                 "realUnknownRate": h.real_unknown_rate(),
+                "unknownByReason": whole_by_reason,
             },
             // ── Primary-scoped histogram (workspace edges only) ──────────────
             // Mirrors --l3-call-graph-stats-cross-app scoping.
@@ -1259,6 +1282,7 @@ fn main() -> ExitCode {
                 "honestEmpty": ph.honest_empty,
                 "unknown": ph.unknown,
                 "realUnknownRate": ph.real_unknown_rate(),
+                "unknownByReason": primary_by_reason,
             },
             // ── Coverage contract ────────────────────────────────────────────
             "coverage": {

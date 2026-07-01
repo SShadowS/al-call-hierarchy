@@ -400,7 +400,8 @@ use al_call_hierarchy::program::resolve::abi_check::{
 };
 use al_call_hierarchy::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
-    EdgeKind, Evidence, Histogram, Route, RouteTarget, SetCompleteness, SiteId, SourcePos, Witness,
+    EdgeKind, Evidence, Histogram, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
+    UnknownReason, Witness,
 };
 
 /// Build a minimal dep abi with Codeunit 50100 "Dep Pub":
@@ -800,7 +801,7 @@ fn histogram_taxonomy_split() {
         ws_rid,
         Route {
             target: RouteTarget::Unresolved,
-            evidence: Evidence::Unknown,
+            evidence: Evidence::Unknown(UnknownReason::MemberNotFound),
             conditions: vec![],
             witness: Witness::None,
         },
@@ -3436,9 +3437,8 @@ fn ws_builtin_shadow_near_miss_name_is_not_classified_builtin() {
         "near-miss name must NOT resolve to any target; got {:?}",
         route.target
     );
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "near-miss name must NOT be classified Catalog; got {route:?}"
     );
     assert_eq!(route.witness, Witness::None);
@@ -3639,9 +3639,8 @@ fn ws_overload_collision_ambiguous_call_is_honest_unknown() {
         "an unresolvable same-arity overload set must NEVER pick a route by \
          guessing; got {route:?}"
     );
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "no arg-type evidence exists to disambiguate the two `Resolve` \
          overloads — must be honest Unknown, not a confident Source \
          pick-first; got {route:?}"
@@ -4122,7 +4121,7 @@ fn ws_page_rec_no_source_table_stays_unknown() {
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 22c (fixture c, NEGATIVE — the soundness backstop): `"Amb Table"` is
@@ -4141,7 +4140,7 @@ fn ws_page_rec_cross_app_ambiguous_source_table_declines_to_unknown() {
         RouteTarget::Unresolved,
         "ambiguous cross-app SourceTable must NOT resolve to either dependency's table"
     );
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 22d: a LOCAL `var Rec: Record "Other Table"` in `OnOpenPage` shadows
@@ -4181,7 +4180,7 @@ fn ws_page_rec_report_dataitem_stays_excluded_and_unknown() {
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 // ---------------------------------------------------------------------------
@@ -4277,7 +4276,7 @@ fn ws_baseapp_closure_control_no_application_field_stays_unknown() {
         RouteTarget::Unresolved,
         "without `application`, Base App must stay OUT of the closure — no injection"
     );
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 // ---------------------------------------------------------------------------
@@ -4399,7 +4398,7 @@ fn ws_codeunit_rec_no_table_no_stays_unknown() {
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 26c (fixture c, NEGATIVE): `Subtype = TestRunner` never declares
@@ -4414,7 +4413,7 @@ fn ws_codeunit_rec_test_runner_subtype_stays_unknown() {
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 26d (fixture d, NEGATIVE — the soundness backstop): `"Amb Table"` is
@@ -4436,7 +4435,7 @@ fn ws_codeunit_rec_cross_app_ambiguous_table_no_declines_to_unknown() {
         RouteTarget::Unresolved,
         "ambiguous cross-app TableNo must NOT resolve to either dependency's table"
     );
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 26e: a LOCAL `var Rec: Record "Other Table"` in `OnRun` shadows the
@@ -4540,7 +4539,12 @@ fn ws_compound_receiver_currpage_part_page_resolves_subpage_all_others_stay_unkn
 
     let unknown_edges: Vec<&&ClassifiedEdge> = edges
         .iter()
-        .filter(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Unknown))
+        .filter(|ce| {
+            matches!(
+                ce.edge.routes.first().map(|r| &r.evidence),
+                Some(Evidence::Unknown(_))
+            )
+        })
         .collect();
     assert_eq!(
         unknown_edges.len(),
@@ -4556,6 +4560,78 @@ fn ws_compound_receiver_currpage_part_page_resolves_subpage_all_others_stay_unkn
             Some(&RouteTarget::Unresolved),
             "an Unknown-evidence route must target Unresolved; got {:?}",
             ce.edge.routes
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 3 (no CDO — always runs): fresh-native `UnknownReason` diagnostic +
+// stratified breakdown, end-to-end over a real `resolve_full_program` run
+// (not just the synthetic edges `edge::tests::unknown_reason_breakdown_
+// sums_to_unknown_count` constructs directly).
+// ---------------------------------------------------------------------------
+
+/// Runs `unknown_reason_breakdown` over `resolve_full_program`'s real output
+/// (not synthetic edges) for a corpus of existing `ws-*`/fixture workspaces
+/// chosen to span multiple structurally-distinct decline sites, and pins:
+/// (i) per-fixture `sum(breakdown.values()) == histogram.unknown` (the
+/// EXHAUSTIVE stratification invariant — the same one `aldump`'s
+/// `unknownByReason` relies on); (ii) the COMBINED corpus spans >=4 distinct
+/// [`UnknownReason`]s (observed via a one-off `--ignored` dump — see git
+/// history — then pinned here); (iii) the full histogram is untouched by
+/// Task 3 (a `real_unknown_rate`/`unknown` count sanity check per fixture).
+#[test]
+fn unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons() {
+    use al_call_hierarchy::program::resolve::edge::{UnknownReason, unknown_reason_breakdown};
+    use std::collections::BTreeMap;
+
+    let fixtures = [
+        "tests/fixtures/full_program_fixture",
+        "tests/r0-corpus/ws-compound-receiver",
+        "tests/r0-corpus/ws-codeunit-rec",
+        "tests/r0-corpus/ws-page-rec",
+        "tests/r0-corpus/ws-builtin-shadow",
+        "tests/r0-corpus/ws-overload-collision",
+    ];
+
+    let mut combined: BTreeMap<UnknownReason, usize> = BTreeMap::new();
+    for fx in fixtures {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fx);
+        assert!(path.exists(), "fixture must exist: {fx}");
+        let report =
+            resolve_full_program(&path).unwrap_or_else(|| panic!("{fx}: resolve_full_program"));
+
+        let edges: Vec<&_> = report.edges.iter().map(|ce| &ce.edge).collect();
+        let breakdown = unknown_reason_breakdown(edges.iter().copied());
+        let sum: usize = breakdown.values().sum();
+        assert_eq!(
+            sum, report.histogram.unknown,
+            "{fx}: sum(unknownByReason) must equal the Unknown obligation count; \
+             breakdown={breakdown:?}"
+        );
+        for (reason, count) in breakdown {
+            *combined.entry(reason).or_insert(0) += count;
+        }
+    }
+
+    assert!(
+        combined.len() >= 4,
+        "combined corpus must span >=4 distinct UnknownReasons, got {}: {combined:?}",
+        combined.len()
+    );
+    // Pin the specific reasons this corpus is known to exercise (observed via
+    // the one-off dump; a change here means the corpus's decline sites
+    // shifted — investigate before updating).
+    for expected in [
+        UnknownReason::CodeunitTableNoExcluded,
+        UnknownReason::CompoundReceiver,
+        UnknownReason::UntrackedReceiver,
+        UnknownReason::ReceiverOutOfClosure,
+        UnknownReason::OverloadAmbiguous,
+    ] {
+        assert!(
+            combined.contains_key(&expected),
+            "expected reason {expected} to appear in the combined breakdown: {combined:?}"
         );
     }
 }
@@ -4924,9 +5000,8 @@ fn ws_bare_implicit_rec_sibling_extension_ambiguity_is_unknown() {
     assert_eq!(edges.len(), 1, "IR Page D.OnOpenPage has 1 call obligation");
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "ambiguous sibling-extension Dup() must stay honest Unknown, never pick-first; got {route:?}"
     );
 }
@@ -4942,9 +5017,8 @@ fn ws_bare_implicit_rec_builtin_collision_is_unknown_not_catalog() {
     assert_eq!(edges.len(), 1, "IR Page E.OnOpenPage has 1 call obligation");
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "StrLen(Txt) table-proc/builtin collision must fail closed to Unknown, \
          never assume the table wins; got {route:?}"
     );
@@ -4962,9 +5036,8 @@ fn ws_bare_implicit_rec_page_intrinsic_collision_is_unknown() {
     assert_eq!(edges.len(), 1, "IR Page F.OnOpenPage has 1 call obligation");
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "Update() table-proc/page-intrinsic collision must fail closed to \
          Unknown; got {route:?}"
     );
@@ -4983,9 +5056,8 @@ fn ws_bare_implicit_rec_inside_with_block_skips_step3() {
     assert_eq!(edges.len(), 1, "IR Page G.OnOpenPage has 1 call obligation");
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
         "a bare call inside `with OtherRec do` must NEVER resolve through the \
          page's own SourceTable implicit-Rec — the with-guard must skip Step 3; \
          got {route:?}"
@@ -5003,7 +5075,7 @@ fn ws_bare_implicit_rec_codeunit_no_table_stays_unknown() {
     assert_eq!(edges.len(), 1, "IR No Table CU.OnRun has 1 call obligation");
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
-    assert_eq!(route.evidence, Evidence::Unknown);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
 /// Test 27i (fixture i, SHADOW-GUARD — NOT a Step-3 proof): `IR Self Table`'s
@@ -5083,9 +5155,8 @@ fn ws_bare_implicit_rec_strict_kind_report_and_codeunit_tableno_stay_unknown() {
     );
     let report_route = &report_edges[0].edge.routes[0];
     assert_eq!(report_route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        report_route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(report_route.evidence, Evidence::Unknown(_)),
         "Report is structurally excluded from Step 3; got {report_route:?}"
     );
 
@@ -5097,9 +5168,8 @@ fn ws_bare_implicit_rec_strict_kind_report_and_codeunit_tableno_stay_unknown() {
     );
     let cu_route = &cu_edges[0].edge.routes[0];
     assert_eq!(cu_route.target, RouteTarget::Unresolved);
-    assert_eq!(
-        cu_route.evidence,
-        Evidence::Unknown,
+    assert!(
+        matches!(cu_route.evidence, Evidence::Unknown(_)),
         "Codeunit is structurally excluded from Step 3 even WITH a matching \
          TableNo; got {cu_route:?}"
     );

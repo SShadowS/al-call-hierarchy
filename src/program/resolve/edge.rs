@@ -113,6 +113,114 @@ pub enum SetCompleteness {
     Partial { reason: OpenWorldReason },
 }
 
+/// Diagnostic reason for an [`Evidence::Unknown`] route (Task 3; charter §8
+/// stratified reporting).
+///
+/// Fresh-native: carries NO information from `engine::l3`/`engine::l2` (the
+/// grep-guard on `src/program/resolve` importing those modules stays green).
+/// Purely a DIAGNOSTIC payload — it never feeds [`classify_obligation`] or
+/// [`ObligationOutcome`]; the real-`unknown` COUNT and classification are
+/// byte-identical with or without this enum's existence. It exists so the
+/// ~2% residual `unknown` edge rate can be precisely characterized (which of
+/// the ~13 structurally-distinct decline sites produced each edge) instead of
+/// collapsing into one bare, uninformative bucket.
+///
+/// `derive(Ord)` gives a deterministic `BTreeMap<UnknownReason, usize>`
+/// iteration order for `aldump`'s stratified breakdown. Render via
+/// [`UnknownReason::as_str`], never `Debug` — `Debug`'s PascalCase spelling is
+/// not a public wire format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum UnknownReason {
+    /// `CalleeShape::Unknown` whose raw callee text is a multi-segment
+    /// (`A.B.C`, ≥2 dots) receiver chain the extractor could not classify
+    /// into a `Member` call.
+    CompoundReceiver,
+    /// The receiver's static type could not be tracked at all:
+    /// `ReceiverType::Unknown`/`Dynamic` (a runtime-typed Variant receiver),
+    /// or an `ObjectRun` target that is a runtime variable rather than a
+    /// static name/number.
+    UntrackedReceiver,
+    /// `CalleeShape::Unknown` for any other call expression shape the
+    /// extractor could not classify (not multi-segment — see
+    /// [`Self::CompoundReceiver`]).
+    UnclassifiedCallee,
+    /// Overload/arity resolution could not pick a unique candidate: zero
+    /// arity-matched overloads, more than one same-arity SOURCE overload
+    /// collision, or more than one visible table-scope candidate (base table
+    /// ∪ its `TableExtension`s).
+    OverloadAmbiguous,
+    /// A bare-call table-scope candidate collides in name+arity with a
+    /// global builtin or a bare-callable page/instance intrinsic — unproven
+    /// precedence, fail closed rather than guess which wins.
+    BuiltinPrecedenceCollision,
+    /// A bare call lexically inside a `with` block (or whose `with`-freedom
+    /// could not be proven) — implicit-`Rec` dispatch (Step 3) is skipped
+    /// unconditionally rather than risk a false `Source` inside an
+    /// unrepresented `with`.
+    WithScopeGuard,
+    /// A bare call from a `Codeunit`: implicit-`Rec` dispatch is a Page/Table
+    /// source-record mechanism only — a `Codeunit`'s `TableNo` is never
+    /// consulted by Step 3.
+    CodeunitTableNoExcluded,
+    /// A bare/record-op call from a `Report`/`ReportExtension`: the
+    /// per-dataitem implicit `Rec` is not object-level and is not modeled.
+    ReportRecExcluded,
+    /// A same-name/arity candidate exists but its declared `Protected`
+    /// access is not visible from the caller's identity.
+    ProtectedNotVisible,
+    /// A same-name/arity candidate exists but its declared `Local` access is
+    /// not visible outside its declaring object.
+    LocalNotVisible,
+    /// A same-name/arity candidate exists but its declared `Internal` access
+    /// is not visible outside its declaring app.
+    InternalNotVisible,
+    /// The relevant platform builtin catalog (Record / RecordRef / FieldRef /
+    /// KeyRef / Framework / Enum) has no entry for this method name.
+    CatalogMiss,
+    /// No unique in-closure receiver/table identity: an ambiguous cross-app
+    /// name, an out-of-closure declared type, or an otherwise-unresolved
+    /// receiver.
+    ReceiverOutOfClosure,
+    /// The callee name is not declared anywhere reachable from this call
+    /// site (own object, extension base, target object, or interface
+    /// implementer) — genuine absence, not a visibility or overload issue.
+    MemberNotFound,
+    /// An internal index/body-map lookup that should structurally never miss
+    /// did — a defensive fallback, not a normal AL-semantics decline.
+    IndexIntegrationGap,
+}
+
+impl UnknownReason {
+    /// Stable camelCase identifier for diagnostic rendering (`aldump`'s
+    /// stratified breakdown). Render via this, NEVER `Debug`.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UnknownReason::CompoundReceiver => "compoundReceiver",
+            UnknownReason::UntrackedReceiver => "untrackedReceiver",
+            UnknownReason::UnclassifiedCallee => "unclassifiedCallee",
+            UnknownReason::OverloadAmbiguous => "overloadAmbiguous",
+            UnknownReason::BuiltinPrecedenceCollision => "builtinPrecedenceCollision",
+            UnknownReason::WithScopeGuard => "withScopeGuard",
+            UnknownReason::CodeunitTableNoExcluded => "codeunitTableNoExcluded",
+            UnknownReason::ReportRecExcluded => "reportRecExcluded",
+            UnknownReason::ProtectedNotVisible => "protectedNotVisible",
+            UnknownReason::LocalNotVisible => "localNotVisible",
+            UnknownReason::InternalNotVisible => "internalNotVisible",
+            UnknownReason::CatalogMiss => "catalogMiss",
+            UnknownReason::ReceiverOutOfClosure => "receiverOutOfClosure",
+            UnknownReason::MemberNotFound => "memberNotFound",
+            UnknownReason::IndexIntegrationGap => "indexIntegrationGap",
+        }
+    }
+}
+
+impl std::fmt::Display for UnknownReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Evidence {
     Source,
@@ -120,7 +228,50 @@ pub enum Evidence {
     Catalog,
     /// ABI body-unavailable boundary ONLY — never a visibility conclusion (spec §5.4).
     Opaque,
+    /// Genuine resolution failure, carrying a diagnostic [`UnknownReason`]
+    /// (Task 3). The payload is REQUIRED at construction (no zero-arg
+    /// constructor survives — see [`crate::program::resolve::resolver`]'s
+    /// `member_unknown_route`/`unresolved_route`), which is what forces every
+    /// decline site in the resolver to be tagged: the compiler enumerates
+    /// every construction/match on this variant.
+    ///
+    /// **Serialization boundary (Task 3):** the payload MUST NEVER be
+    /// serialized into or compared against the committed semantic goldens
+    /// (`tests/goldens/semantic-edges/*.json`) or the semantic-audit path —
+    /// those use [`Evidence::kind`], which projects `Unknown(_)` down to the
+    /// same [`EvidenceKind::Unknown`] regardless of reason. The reason lives
+    /// ONLY in the `aldump --program-call-graph-stats` `unknownByReason`
+    /// diagnostic breakdown.
+    Unknown(UnknownReason),
+}
+
+/// Serialization/comparison-stable PROJECTION of [`Evidence`] that discards
+/// the [`UnknownReason`] payload — `Unknown(_)` always maps to the same
+/// `Unknown` kind, regardless of reason. Every semantic-golden /
+/// semantic-audit serialization and comparison path MUST use
+/// [`Evidence::kind`], never the raw `Evidence` value, so a future change to
+/// `UnknownReason` can never perturb the committed anonymized goldens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum EvidenceKind {
+    Source,
+    Abi,
+    Catalog,
+    Opaque,
     Unknown,
+}
+
+impl Evidence {
+    /// Project away the [`UnknownReason`] payload — see [`EvidenceKind`].
+    #[must_use]
+    pub fn kind(&self) -> EvidenceKind {
+        match self {
+            Evidence::Source => EvidenceKind::Source,
+            Evidence::Abi => EvidenceKind::Abi,
+            Evidence::Catalog => EvidenceKind::Catalog,
+            Evidence::Opaque => EvidenceKind::Opaque,
+            Evidence::Unknown(_) => EvidenceKind::Unknown,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -253,7 +404,7 @@ pub fn classify_obligation(e: &Edge) -> ObligationOutcome {
     let mut all_manual = true; // only meaningful when has_real is true
 
     for r in &e.routes {
-        if r.evidence != Evidence::Unknown && r.target != RouteTarget::Unresolved {
+        if r.evidence.kind() != EvidenceKind::Unknown && r.target != RouteTarget::Unresolved {
             has_real = true;
             if r.fires_by_default() {
                 all_manual = false;
@@ -346,7 +497,7 @@ impl Histogram {
                     // routes.  Priority: Source (0) > Catalog (1) > Abi/Opaque (2).
                     let mut best: Option<u8> = None;
                     for r in &e.routes {
-                        if r.evidence == Evidence::Unknown
+                        if r.evidence.kind() == EvidenceKind::Unknown
                             || r.target == RouteTarget::Unresolved
                             || !r.fires_by_default()
                         {
@@ -356,7 +507,7 @@ impl Histogram {
                             Evidence::Source => 0,
                             Evidence::Catalog => 1,
                             Evidence::Abi | Evidence::Opaque => 2,
-                            Evidence::Unknown => continue,
+                            Evidence::Unknown(_) => continue,
                         };
                         best = Some(best.map_or(score, |b: u8| b.min(score)));
                     }
@@ -390,6 +541,44 @@ impl Histogram {
             self.unknown as f64 / self.total as f64
         }
     }
+}
+
+/// Stratified breakdown of `Unknown`-obligation edges by [`UnknownReason`]
+/// (Task 3; charter §8 stratified reporting). Deterministic
+/// (`BTreeMap` iteration order, [`UnknownReason`]'s derived `Ord`).
+///
+/// Counts per EDGE (mirrors [`Histogram`], which also counts edges, not
+/// routes): an `Unknown`-classified edge structurally carries exactly one
+/// `Unresolved`/`Unknown(reason)` route (every decline site in the resolver
+/// returns a single-route `Vec`, never an empty one, for the non-fan-out
+/// shapes that can reach `ObligationOutcome::Unknown` — see
+/// `classify_obligation`), so the first `Unknown`-evidence route's reason is
+/// used. `sum(values()) == ` the number of edges classified
+/// [`ObligationOutcome::Unknown`] in `edges` — see the `unknown_reason_
+/// breakdown_sum_matches_unknown_count` test below and the `aldump`
+/// `--program-call-graph-stats` `unknownByReason` field.
+///
+/// DIAGNOSTIC ONLY: does not affect `classify_obligation`/`ObligationOutcome`
+/// — the real-`unknown` count and classification are unchanged by this
+/// function's existence.
+#[must_use]
+pub fn unknown_reason_breakdown<'a>(
+    edges: impl IntoIterator<Item = &'a Edge>,
+) -> std::collections::BTreeMap<UnknownReason, usize> {
+    let mut map = std::collections::BTreeMap::new();
+    for e in edges {
+        if classify_obligation(e) != ObligationOutcome::Unknown {
+            continue;
+        }
+        let reason = e.routes.iter().find_map(|r| match r.evidence {
+            Evidence::Unknown(reason) => Some(reason),
+            _ => None,
+        });
+        if let Some(reason) = reason {
+            *map.entry(reason).or_insert(0) += 1;
+        }
+    }
+    map
 }
 
 #[cfg(test)]
@@ -774,5 +963,113 @@ mod tests {
         // all_routes: also includes both (resolution context)
         let all_r: Vec<_> = edge.all_routes().collect();
         assert_eq!(all_r.len(), 2, "all_routes must include all routes");
+    }
+
+    // ---- Task 3: UnknownReason payload + stratified breakdown ----
+
+    fn unknown_route_with(reason: UnknownReason) -> Route {
+        Route {
+            target: RouteTarget::Unresolved,
+            evidence: Evidence::Unknown(reason),
+            conditions: vec![],
+            witness: Witness::None,
+        }
+    }
+
+    /// (i) code-level invariant: every `ObligationOutcome::Unknown` edge's
+    /// `Evidence::Unknown` route carries a reason — trivial by construction
+    /// (the payload is required at construction, no zero-arg constructor
+    /// survives), but pinned explicitly so a future regression that somehow
+    /// reintroduces an un-tagged `Unknown` route fails a test, not just a
+    /// silent diagnostic gap. Also pins `Evidence::kind()`'s projection.
+    #[test]
+    fn unknown_route_requires_reason_and_kind_projects_to_unknown() {
+        let e = edge_with(
+            EdgeKind::Call,
+            DispatchShape::Exact,
+            SetCompleteness::Complete,
+            vec![unknown_route_with(UnknownReason::MemberNotFound)],
+        );
+        assert_eq!(classify_obligation(&e), ObligationOutcome::Unknown);
+        let route = &e.routes[0];
+        assert_eq!(route.evidence.kind(), EvidenceKind::Unknown);
+        match route.evidence {
+            Evidence::Unknown(reason) => {
+                assert_eq!(reason, UnknownReason::MemberNotFound);
+            }
+            _ => panic!("expected Evidence::Unknown(_), got {:?}", route.evidence),
+        }
+    }
+
+    /// `Evidence::kind()` must project every `Unknown(_)` payload to the SAME
+    /// `EvidenceKind::Unknown` — the boundary the committed semantic goldens
+    /// rely on staying byte-identical (Task 3).
+    #[test]
+    fn evidence_kind_projection_ignores_reason_payload() {
+        let a = Evidence::Unknown(UnknownReason::MemberNotFound);
+        let b = Evidence::Unknown(UnknownReason::OverloadAmbiguous);
+        assert_ne!(
+            a, b,
+            "distinct reasons must remain distinct Evidence values"
+        );
+        assert_eq!(
+            a.kind(),
+            b.kind(),
+            "kind() must project away the reason payload"
+        );
+        assert_eq!(a.kind(), EvidenceKind::Unknown);
+    }
+
+    /// (ii) sum invariant: `unknown_reason_breakdown` is EXHAUSTIVE — every
+    /// `Unknown`-classified edge contributes exactly one count, so the sum of
+    /// the per-reason breakdown equals the total `Unknown` obligation count
+    /// (mirrors `Histogram::of_edges().unknown`). Spans >=4 distinct reasons.
+    #[test]
+    fn unknown_reason_breakdown_sums_to_unknown_count() {
+        let reasons = [
+            UnknownReason::MemberNotFound,
+            UnknownReason::OverloadAmbiguous,
+            UnknownReason::CatalogMiss,
+            UnknownReason::UntrackedReceiver,
+            UnknownReason::CatalogMiss, // duplicate reason: must accumulate, not overwrite
+        ];
+        let mut edges: Vec<Edge> = reasons
+            .iter()
+            .map(|r| {
+                edge_with(
+                    EdgeKind::Call,
+                    DispatchShape::Exact,
+                    SetCompleteness::Complete,
+                    vec![unknown_route_with(*r)],
+                )
+            })
+            .collect();
+        // Plus a non-Unknown edge, which must NOT contribute to the breakdown.
+        edges.push(edge_with(
+            EdgeKind::Call,
+            DispatchShape::Exact,
+            SetCompleteness::Complete,
+            vec![src_route()],
+        ));
+
+        let hist = Histogram::of_edges(&edges);
+        assert_eq!(hist.unknown, 5, "sanity: 5 Unknown edges in the fixture");
+
+        let breakdown = unknown_reason_breakdown(&edges);
+        assert!(
+            breakdown.len() >= 4,
+            "fixture must span >=4 distinct reasons, got {}: {breakdown:?}",
+            breakdown.len()
+        );
+        assert_eq!(
+            breakdown.get(&UnknownReason::CatalogMiss).copied(),
+            Some(2),
+            "duplicate reasons must accumulate: {breakdown:?}"
+        );
+        let sum: usize = breakdown.values().sum();
+        assert_eq!(
+            sum, hist.unknown,
+            "sum(unknownByReason) must equal the Unknown obligation count"
+        );
     }
 }
