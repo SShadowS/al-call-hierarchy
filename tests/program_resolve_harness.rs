@@ -2343,3 +2343,95 @@ fn ws_builtin_shadow_qualified_intrinsic_bypasses_local_shadow() {
         "System.CreateGuid() must resolve to Catalog despite the local shadow"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 22: beyond-1B.3b Task 1 REVIEW FIX (Finding 1) — base-table wrong-arity
+// falls through to a TableExtension's matching-arity overload.
+//
+// The precedence rewrite (Test 21a) made a real, correct, but previously
+// undisclosed secondary behavior change: pre-fix, ANY name match on the base
+// table (regardless of arity) short-circuited the Record arm straight to that
+// base-table routine (or, in the catalog-first world, to the catalog) without
+// ever considering a TableExtension. Post-fix, `object_has_member_candidate`
+// requires an EXACT arity match for Source/ABI-tier objects, so a base-table
+// name-only match with the wrong arity is no longer a candidate at all — the
+// scope walk correctly falls through to a TableExtension that DOES declare
+// the matching arity. `tests/r0-corpus/ws-builtin-shadow-arity/`: `BaseTable`
+// declares `Foo()` (arity 0); `BaseTableExt` (a TableExtension of it)
+// declares `Foo(X: Integer)` (arity 1); the caller does `R.Foo(5)` (arity 1).
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-builtin-shadow-arity` and returns the full
+/// `resolve_full_program` report.
+fn ws_builtin_shadow_arity_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-builtin-shadow-arity");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-builtin-shadow-arity")
+}
+
+/// `R.Foo(5)` (arity 1) must resolve to `BaseTableExt.Foo` (`Evidence::Source`)
+/// — the base table's `Foo()` (arity 0) name-matches but arity-mismatches, so
+/// it must NOT short-circuit the scope walk; it must NOT resolve to
+/// `Unresolved`/`Unknown` either (that would mean the wrong-arity base-table
+/// match incorrectly suppressed the extension candidate, or the ambiguity
+/// branch incorrectly fired for what is actually a single valid candidate).
+///
+/// Sanity-checked by reasoning against `object_has_member_candidate`
+/// (`resolver.rs`): for a Source-tier object, `candidates.iter().any(|rid|
+/// rid.params_count == arity)` — the base table's ONLY `foo` candidate has
+/// `params_count == 0 != 1`, so `object_has_member_candidate` returns `false`
+/// for the base table and the arity-1 scan advances to the TableExtension,
+/// which has exactly one `params_count == 1` match. If the pre-fix
+/// any-name-match short-circuit were reintroduced (matching on name alone,
+/// ignoring arity), the base table would wrongly become the sole "candidate"
+/// found and `resolve_in_object` would either mis-resolve to the arity-0
+/// `Foo` or fail to find an arity-1 routine there and fall through to the
+/// Record builtin catalog (there is no arity-1 Record builtin named `Foo`),
+/// landing on `Unresolved`/`Unknown` — either way NOT this test's asserted
+/// `Evidence::Source` + `TableExtension` target, so this test fails under
+/// that regression.
+#[test]
+fn ws_builtin_shadow_arity_base_wrong_arity_falls_through_to_extension() {
+    let report = ws_builtin_shadow_arity_report();
+    let edges = edges_for_caller(&report, "callfoo");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallFoo must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(
+        routes.len(),
+        1,
+        "Record member call is single-dispatch (Exact)"
+    );
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "arity-1 call must resolve to the TableExtension's Foo(X: Integer), \
+         not fall through to Unknown or mis-hit the base table's arity-0 Foo(); \
+         got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!(
+            "expected RouteTarget::Routine (the TableExtension's Foo), got {:?}",
+            route.target
+        );
+    };
+    assert_eq!(rid.name_lc, "foo");
+    assert_eq!(rid.params_count, 1);
+    assert_eq!(
+        rid.object.kind,
+        ObjectKind::TableExtension,
+        "must resolve to the TableExtension's overload, not the base table's; got {:?}",
+        rid.object.kind
+    );
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+}

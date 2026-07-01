@@ -1,0 +1,8 @@
+{
+	"id": "cc2e3f4a-5555-6666-7777-888899990000",
+	"name": "BuiltinShadowArityProbe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51000, "to": 51049 }]
+}

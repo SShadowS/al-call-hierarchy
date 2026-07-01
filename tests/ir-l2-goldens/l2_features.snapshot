@@ -15,6 +15,9 @@ ws-builtin-shadow/ShadowCallerC.Codeunit.al::0::CallC	36decfdd3637572c
 ws-builtin-shadow/ShadowCallerD.Codeunit.al::0::CallD	542018bed4ac1cbb
 ws-builtin-shadow/ShadowCallerE.Codeunit.al::0::CallE	30f6e84be0937ecf
 ws-builtin-shadow/ShadowCallerE.Codeunit.al::0::CreateGuid	8aafbefaccda4416
+ws-builtin-shadow-arity/BaseTable.Table.al::0::Foo	39d46e1341e3633b
+ws-builtin-shadow-arity/BaseTableExt.TableExtension.al::0::Foo	d7e6a77a8213604d
+ws-builtin-shadow-arity/Caller.Codeunit.al::0::CallFoo	a1fd49d5e0254e9d
 ws-builtin-unresolved/src/Caller.Codeunit.al::0::Run	f07da037775356ec
 ws-calls/src/caller.al::0::CallMember	a1809db70c5b4814
 ws-calls/src/caller.al::0::RunIt	f0018586df2d14f0

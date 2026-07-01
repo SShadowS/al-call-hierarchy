@@ -36,14 +36,14 @@ use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
-use crate::program::resolve::builtins::{catalog_version, global_builtin_id_checked};
+use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
     EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
     Witness, callee_fp,
 };
 use crate::program::resolve::index::ResolveIndex;
-use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id_checked};
+use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
 use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
 use crate::snapshot::TrustTier;
 
@@ -301,7 +301,7 @@ pub fn resolve_bare(
     // attributable to this gap.
 
     // 4. Global builtin.
-    if let Some(builtin_id) = global_builtin_id_checked(name_lc) {
+    if let Some(builtin_id) = global_builtin_id(name_lc) {
         return vec![Route {
             target: RouteTarget::Builtin(builtin_id.clone()),
             evidence: Evidence::Catalog,
@@ -670,30 +670,28 @@ pub fn resolve_member(
 ) -> (DispatchShape, Vec<Route>) {
     match receiver {
         ReceiverType::RecordRef => {
-            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::RecordRef, method_lc) {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::RecordRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::FieldRef => {
-            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::FieldRef, method_lc) {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::FieldRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::KeyRef => {
-            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::KeyRef, method_lc) {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::KeyRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::Framework(kind) => {
-            if let Some(bid) =
-                member_builtin_id_checked(MemberCatalogKind::Framework(kind), method_lc)
-            {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::Framework(kind), method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
@@ -771,7 +769,7 @@ pub fn resolve_member(
             // Zero source/ABI candidates in scope (or `table` unresolved):
             // Record built-in methods (SetRange, Find, Insert, ...) are
             // platform-intrinsic and resolve table-independently.
-            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::Record, method_lc) {
+            if let Some(bid) = member_builtin_id(MemberCatalogKind::Record, method_lc) {
                 return member_catalog_route(bid);
             }
             member_unknown_route()
@@ -841,7 +839,7 @@ pub fn resolve_member(
                 if !is_metadata_sensitive_instance_method(*kind, method_lc)
                     && let Some(fk) = object_instance_framework_kind(*kind)
                     && let Some(bid) =
-                        member_builtin_id_checked(MemberCatalogKind::Framework(&fk), method_lc)
+                        member_builtin_id(MemberCatalogKind::Framework(&fk), method_lc)
                 {
                     return member_catalog_route(bid);
                 }
@@ -952,7 +950,7 @@ pub fn resolve_member(
         }
         ReceiverType::EnumType { .. } => {
             // Enum instance statics: AsInteger / FromInteger / Names / Ordinals.
-            if let Some(bid) = member_builtin_id_checked(
+            if let Some(bid) = member_builtin_id(
                 MemberCatalogKind::Framework(&FrameworkKind::Enum),
                 method_lc,
             ) {
