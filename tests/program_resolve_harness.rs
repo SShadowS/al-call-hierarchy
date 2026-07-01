@@ -2435,3 +2435,159 @@ fn ws_builtin_shadow_arity_base_wrong_arity_falls_through_to_extension() {
         route.witness
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests 23+: beyond-1B.3b Task 2 — fail-closed same-arity SOURCE-overload
+// guard. `resolve_in_object` used to pick the FIRST arity-matched candidate
+// with no ambiguity check; worse, two same-name/same-arity SOURCE overloads
+// collapse to one `RoutineNodeId` (source `sig_fp` is always `0`), so
+// `build_program_graph`'s post-sort dedup could silently drop one of them.
+// `tests/r0-corpus/ws-overload-collision/`: `Ambiguous.Codeunit.al` declares
+// two `Resolve` overloads (arity 1, differing only by param TYPE); `Caller`
+// invokes `Target.Resolve(5)` (member-Object dispatch). A single-overload
+// `Control.Codeunit.al` proves the guard does not over-fire.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-overload-collision` and returns the full
+/// `resolve_full_program` report — shared by Tests 23a-23c below.
+fn ws_overload_collision_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-collision");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-collision")
+}
+
+/// Test 23a: `Target.Resolve(5)` against a same-name/same-arity SOURCE
+/// overload pair must NOT resolve to a confident `Source` route — no
+/// arg-type evidence exists to pick between the two overloads (full arg-type
+/// dispatch is out of scope for this task). Must be honest ambiguous/Unknown:
+/// `RouteTarget::Unresolved` + `Evidence::Unknown`, never a guessed pick-first
+/// route to either overload.
+#[test]
+fn ws_overload_collision_ambiguous_call_is_honest_unknown() {
+    let report = ws_overload_collision_report();
+    let edges = edges_for_caller(&report, "callambiguous");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallAmbiguous must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(
+        routes.len(),
+        1,
+        "member-Object call is single-dispatch (Exact)"
+    );
+    let route = &routes[0];
+
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "an unresolvable same-arity overload set must NEVER pick a route by \
+         guessing; got {route:?}"
+    );
+    assert_eq!(
+        route.evidence,
+        Evidence::Unknown,
+        "no arg-type evidence exists to disambiguate the two `Resolve` \
+         overloads — must be honest Unknown, not a confident Source \
+         pick-first; got {route:?}"
+    );
+    assert_eq!(route.witness, Witness::None);
+}
+
+/// Test 23b: the graph must not silently DROP one of the two colliding
+/// overloads. Builds the `ProgramGraph` directly (bypassing
+/// `resolve_full_program`'s obligation layer) and asserts BOTH raw `Resolve`
+/// entries survive `build_program_graph`'s post-sort dedup for the
+/// `Ambiguous.Codeunit.al` object — the collision is marked/preserved, never
+/// silently collapsed to one entry with no record.
+#[test]
+fn ws_overload_collision_graph_preserves_both_overloads() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+    use al_call_hierarchy::snapshot::SnapshotBuilder;
+
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-collision");
+    let snap = (SnapshotBuilder {
+        workspace_root: fixture,
+        local_providers: vec![],
+    })
+    .build()
+    .expect("snapshot must build for ws-overload-collision");
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        2,
+        "both `Resolve` overloads must survive the graph build — one must \
+         NEVER be silently dropped by the post-sort dedup; got {} entries: {:?}",
+        resolve_entries.len(),
+        resolve_entries.iter().map(|r| &r.name).collect::<Vec<_>>()
+    );
+    assert!(
+        resolve_entries.iter().all(|r| r.id.params_count == 1),
+        "both overloads share arity 1 (the genuine collision shape); got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| r.id.params_count)
+            .collect::<Vec<_>>()
+    );
+
+    // Sanity: the single-overload control target must NOT be duplicated —
+    // proves the preservation logic is collision-specific, not a blanket
+    // "never dedup" change.
+    let solo_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "solo")
+        .collect();
+    assert_eq!(
+        solo_entries.len(),
+        1,
+        "the single-overload control routine must be exactly one entry \
+         (no spurious ambiguity); got {} entries",
+        solo_entries.len()
+    );
+}
+
+/// Test 23c (control): a single-overload target (`Control.Solo`) must still
+/// resolve cleanly to `Evidence::Source` — the ambiguity guard must not
+/// over-fire on an ordinary, unambiguous procedure.
+#[test]
+fn ws_overload_collision_control_single_overload_resolves_cleanly() {
+    let report = ws_overload_collision_report();
+    let edges = edges_for_caller(&report, "callcontrol");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallControl must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(routes.len(), 1);
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "the single-overload control target must resolve cleanly; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "solo");
+    assert_eq!(rid.params_count, 1);
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+}

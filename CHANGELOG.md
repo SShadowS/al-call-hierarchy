@@ -8,6 +8,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **(resolve) Fail-closed same-arity SOURCE-overload guard — node soundness
+  prerequisite (beyond-1B.3b Task 2)**
+  (`src/program/build.rs`, `src/program/resolve/resolver.rs`,
+  `tests/r0-corpus/ws-overload-collision/` NEW, `tests/program_resolve_harness.rs`,
+  `tests/ir-l2-goldens/l2_features.snapshot`, `tests/parser-ir-goldens/projection.snapshot`) —
+  `RoutineNodeId.sig_fp` is always `0` for source-bearing routines, so two
+  DISTINCT source overloads sharing `(object, name_lc, params_count)` (same
+  name+arity, differing only by param TYPE) collide onto one `RoutineNodeId`.
+  `build_program_graph`'s post-sort `dedup_by` then silently dropped one of
+  them with no record, and `resolve_in_object` picked the FIRST arity-matched
+  candidate with no ambiguity check — a confident `Source` route to a
+  collapsed/pick-first node. Fixed in two parts: (1) `build.rs` now computes
+  each object's raw duplication factor BEFORE any dedup runs (the yardstick
+  that separates a legitimate whole-file re-parse — e.g. a sibling app
+  embedded as both workspace source and compiled dep — from a genuine
+  same-arity overload collision) and `dedup_routines_preserving_genuine_overloads`
+  preserves EVERY raw entry in a collision run instead of collapsing it, so
+  `ResolveIndex`'s existing `routines_by_obj_name` collection sees the true
+  candidate count with no signature/API changes needed anywhere downstream;
+  (2) `resolve_in_object` now collects ALL arity-matched candidates and
+  branches on count — exactly one resolves as before, zero or **more than
+  one** returns honest `Unresolved`/`Evidence::Unknown` (mirroring the
+  interface-implementer fan-out's pre-existing `>1 → Unresolved` rule) —
+  applied uniformly to every caller (`resolve_bare`'s own-object/extension-base,
+  member `Object`/`SelfObject` dispatch) since they all delegate through the
+  one function. Full arg-type DISPATCH to disambiguate remains explicitly out
+  of scope (no arg types are captured yet) — this only prevents a
+  confident-WRONG `Source` edge to a collapsed/guessed node, never fabricates
+  a resolution. New fixture `tests/r0-corpus/ws-overload-collision/` (two
+  `Resolve(Integer)`/`Resolve(Code[20])` overloads + a single-overload control
+  target) pins: the ambiguous call resolves honest `Unknown` (not a guessed
+  `Source`), both raw overloads survive the graph build (`graph.routines`
+  contains 2 `resolve` entries, not 1), and the control case still resolves
+  cleanly. CDO re-measurement (`CDO_WS`, isolated single-test runs, before/after
+  diffed via a temporary revert): a clean, isolated correction of exactly 30
+  previously-confident pick-first `Source` edges → honest `Unknown`
+  (`resolved_source` whole-program 8637→8607, `unknown` 1169→1199; primary
+  `real_unknown_rate` 6.46%→6.62%, still inside the existing 0.07 regression
+  ceiling) with **zero** change to every other histogram bucket, to
+  `genuine_wrong` (42→42, exact manifest match, no new divergence), or to the
+  `fresh_missing` completeness ceiling (191→191) — a pure soundness
+  correction, not a regression.
 - **(resolve) Source shadows builtin — lookup-precedence soundness fix +
   structural builtin-catalog match (beyond-1B.3b Task 1, incl. review-fix
   pass)**

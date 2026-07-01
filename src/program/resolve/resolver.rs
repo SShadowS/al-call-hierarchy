@@ -11,18 +11,22 @@
 //! 4. **Global builtin** — `is_global_builtin(name_lc)` → `Catalog` route.
 //! 5. **Unknown** — genuine resolution failure.
 //!
-//! # Arity matching (Phase 2 / Phase 3 Task 0)
+//! # Arity matching (Phase 2 / Phase 3 Task 0; ambiguity guard beyond-1B.3b Task 2)
 //!
 //! `RoutineNodeId` now carries `params_count`, so each overload (same name,
 //! different arity) is a distinct node in the graph and index.
 //! `routines_in_object` returns one entry per distinct overload.  An overload
-//! matches when `rid.params_count == arity`.  When the first (by sorted
-//! `RoutineNodeId` order) match is found it is returned.  When the name is found
-//! but NO overload matches the arity, an `Unknown` route is emitted — no
-//! false-confident edge to a wrong-arity target.  The caller still stops at that
-//! precedence level (does NOT fall through to extension-base / global-builtin),
-//! mirroring L3's MemberNotFound stop semantics while surfacing the gap honestly.
-//! Name-absent ⇒ `None` ⇒ fall through.
+//! matches when `rid.params_count == arity`.  When EXACTLY ONE match is found
+//! it is returned.  When the name is found but NO overload matches the arity,
+//! OR more than one same-arity overload matches (a genuine SOURCE-overload
+//! collision — source `sig_fp` is always 0, so two distinct same-arity
+//! overloads are indistinguishable at the id level; full arg-type dispatch to
+//! disambiguate is deferred), an `Unknown` route is emitted — no
+//! false-confident edge to a wrong-arity OR ambiguously-picked target.  The
+//! caller still stops at that precedence level (does NOT fall through to
+//! extension-base / global-builtin), mirroring L3's MemberNotFound stop
+//! semantics while surfacing the gap honestly.  Name-absent ⇒ `None` ⇒ fall
+//! through.
 //!
 //! # Witness↔evidence contract
 //!
@@ -160,11 +164,13 @@ fn make_routine_route(
 
 /// Try to resolve `name_lc` with `arity` arguments inside `obj_id`.
 ///
-/// Returns the first arity-matched overload as a `Source` route.  When the name
-/// is found but NO overload matches the arity, returns an `Unknown` route — no
-/// false-confident edge to a wrong-arity candidate (does NOT fall through to the
-/// next precedence level; see module-level doc).  Returns `None` only when the
-/// name is absent entirely in `obj_id`.
+/// Returns the UNIQUE arity-matched overload as a `Source` route.  When the
+/// name is found but NO overload matches the arity, OR more than one
+/// same-arity overload matches (a genuine SOURCE-overload collision; see
+/// module-level doc), returns an `Unknown` route — no false-confident edge to
+/// a wrong-arity OR ambiguously-picked candidate (does NOT fall through to
+/// the next precedence level; see module-level doc).  Returns `None` only
+/// when the name is absent entirely in `obj_id`.
 ///
 /// **SymbolOnly tier exception:** `params_count` is now populated from the ABI
 /// (Task 1), but arity matching for SymbolOnly routines remains deferred
@@ -200,14 +206,34 @@ fn resolve_in_object(
         ));
     }
 
-    // Arity-exact match: find the first (by sorted RoutineNodeId order) overload
-    // whose params_count == arity. With params_count in RoutineNodeId, each
-    // overload is a distinct node in the graph and index.
-    if let Some(rid) = candidates.iter().find(|rid| rid.params_count == arity) {
-        // TODO: disambiguate_by_arg_types when multiple same-arity overloads exist
-        // (overloads differing only by param type, rare in AL). Deferred to a
-        // later task; deterministic: first by RoutineNodeId sorted order.
-        return Some(make_routine_route(rid, obj_tier, body_map, graph));
+    // Arity-exact match: collect EVERY overload whose params_count == arity.
+    // With params_count in RoutineNodeId, each overload is normally a distinct
+    // node — but two DISTINCT SOURCE overloads sharing
+    // (object, name_lc, params_count) collide onto one `RoutineNodeId` (source
+    // `sig_fp` is always 0; see node.rs). `build_program_graph`'s dedup
+    // (beyond-1B.3b Task 2) preserves every raw entry in that genuine
+    // collision rather than silently dropping one, so >1 arity-matched
+    // candidates here is REAL, unresolved ambiguity: no arg-type evidence
+    // exists to pick between them (full arg-type dispatch is deferred — see
+    // module doc). Exactly one candidate resolves normally; more than one
+    // must fail closed — mirroring the interface-implementer fan-out's
+    // `>1 candidates → Unresolved` rule (this module, `resolve_member`'s
+    // `Interface` arm). Never pick-first.
+    let matched: Vec<&RoutineNodeId> = candidates
+        .iter()
+        .filter(|rid| rid.params_count == arity)
+        .collect();
+    match matched.len() {
+        0 => {}
+        1 => return Some(make_routine_route(matched[0], obj_tier, body_map, graph)),
+        _ => {
+            return Some(Route {
+                target: RouteTarget::Unresolved,
+                evidence: Evidence::Unknown,
+                conditions: vec![],
+                witness: Witness::None,
+            });
+        }
     }
 
     // Name found but no arity-matched overload: emit Unknown rather than a

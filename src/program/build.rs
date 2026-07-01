@@ -1,8 +1,10 @@
 //! Builds a `ProgramGraph` from an `AppSetSnapshot`.
 
+use std::collections::HashMap;
+
 use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
-use crate::program::node::{AppRef, AppRegistry};
+use crate::program::node::{AppRef, AppRegistry, ObjectNodeId};
 use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
 use crate::program::topology::DependencyGraph;
 use crate::snapshot::{AppSetSnapshot, parse_snapshot};
@@ -94,12 +96,27 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
     // Same app can appear as both a workspace source and an embedded dep (e.g.
     // sibling apps in a multi-app workspace whose compiled .app lands in
     // .alpackages).  extract_nodes would process the source twice, producing
-    // duplicate RoutineNode entries with identical ids.  Dedup after sort keeps
-    // the first occurrence (arbitrary but stable).
+    // duplicate ObjectNode/RoutineNode entries with identical ids.  Dedup after
+    // sort keeps the first occurrence (arbitrary but stable).
+    //
+    // Count each object's raw duplication factor BEFORE any dedup runs — it is
+    // the yardstick `dedup_routines_preserving_genuine_overloads` (below) uses
+    // to tell that legitimate whole-file re-parse apart from a genuine
+    // same-arity SOURCE overload collision (beyond-1B.3b Task 2). Two DISTINCT
+    // source procedures sharing `(object, name_lc, params_count)` collide onto
+    // one `RoutineNodeId` (source `sig_fp` is always `0` — see node.rs), so a
+    // blanket `dedup_by` would silently drop one of them with no record. A
+    // later confident `Source` route to the survivor would then be a
+    // false-positive (the cardinal sin this engine exists to avoid).
+    let mut obj_dup_counts: HashMap<ObjectNodeId, usize> = HashMap::new();
+    for o in &objects {
+        *obj_dup_counts.entry(o.id.clone()).or_insert(0) += 1;
+    }
+
     objects.sort_by(|a, b| a.id.cmp(&b.id));
     objects.dedup_by(|a, b| a.id == b.id);
     routines.sort_by(|a, b| a.id.cmp(&b.id));
-    routines.dedup_by(|a, b| a.id == b.id);
+    dedup_routines_preserving_genuine_overloads(&mut routines, &obj_dup_counts);
 
     // ── Step 5: build index from sorted objects ───────────────────────────────
     let obj_index = ObjectIndex::build(&objects);
@@ -111,6 +128,52 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         routines,
         obj_index,
     }
+}
+
+/// Collapse a SORTED `routines` vec's runs of equal `RoutineNodeId` down to
+/// the enclosing object's raw duplication factor — never below it.
+///
+/// A run whose length is fully explained by `obj_dup_counts` (the object
+/// itself was extracted that many times — e.g. a whole file re-parsed
+/// because its app appears as both workspace source and embedded dep; see
+/// the Step 4 comment above) collapses to one canonical entry, exactly like
+/// the previous blanket `dedup_by`. A run LONGER than that factor holds
+/// genuinely DISTINCT source routines that collided onto one `RoutineNodeId`
+/// (beyond-1B.3b Task 2: source `sig_fp` is always `0`, so two same-arity
+/// overloads are indistinguishable at the id level) — every entry in that
+/// excess is preserved so `ResolveIndex`/`resolve_in_object` observe the true
+/// candidate count downstream and can fail closed instead of guessing.
+/// Never drops a genuine collision silently.
+fn dedup_routines_preserving_genuine_overloads(
+    routines: &mut Vec<RoutineNode>,
+    obj_dup_counts: &HashMap<ObjectNodeId, usize>,
+) {
+    let mut out: Vec<RoutineNode> = Vec::with_capacity(routines.len());
+    let mut i = 0;
+    while i < routines.len() {
+        let mut j = i + 1;
+        while j < routines.len() && routines[j].id == routines[i].id {
+            j += 1;
+        }
+        let run_len = j - i;
+        let obj_dup = obj_dup_counts
+            .get(&routines[i].id.object)
+            .copied()
+            .unwrap_or(1)
+            .max(1);
+        if run_len > obj_dup {
+            // Genuine overload collision (or a compound case with BOTH a
+            // whole-file re-parse AND a genuine collision) — keep every raw
+            // entry so the true ambiguity is visible downstream.
+            out.extend(routines[i..j].iter().cloned());
+        } else {
+            // Fully explained by whole-file re-parse (or no duplication at
+            // all) — collapse to a single canonical entry, as before.
+            out.push(routines[i].clone());
+        }
+        i = j;
+    }
+    *routines = out;
 }
 
 // ---------------------------------------------------------------------------
