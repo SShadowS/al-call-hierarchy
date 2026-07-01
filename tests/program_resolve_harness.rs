@@ -4258,3 +4258,101 @@ fn ws_codeunit_rec_local_var_shadows_implicit_table_no() {
         rid.object
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests 28+: beyond-1B.3b Task 7 — `CurrPage.<part>.Page` subpage-instance
+// receivers (control-aware, fail-closed), end-to-end over
+// `ws-compound-receiver`.
+//
+// Root fix: `infer_receiver_type` matched the WHOLE lowercased receiver text
+// against its arms — a compound receiver like `"currpage.lines.page"` never
+// matched anything and fell through to `Unknown`. Step 0 now recognizes
+// EXACTLY the `<part>.Page` shape (one control segment + trailing `.Page`
+// accessor): a `Part` control's target resolves through the fail-closed
+// `ResolveIndex::resolve_object_ref` to the subpage Page object, carrying its
+// id MECHANICALLY on `ReceiverType::Object` so `resolve_member` short-
+// circuits rather than re-resolving by name. `CurrPage.<part>` alone (no
+// `.Page`) is the CONTROL — a structurally different receiver — and is
+// deliberately NOT modeled; nor are `SystemPart`/`UserControl` controls or
+// any chain deeper than one `.Page` accessor. All of those stay honest
+// `Unknown` rather than fabricate a route.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-compound-receiver` and returns the full
+/// `resolve_full_program` report — shared by Tests 28a-28e below.
+fn ws_compound_receiver_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-compound-receiver");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-compound-receiver")
+}
+
+/// Test 28 (fixtures a-e, combined): `"Customer Card"` (Page 50991)'s
+/// `OnOpenPage` has 9 call obligations — 1 POSITIVE + 8 NEGATIVE, all in one
+/// routine (mirrors `ws_page_rec`/`ws_codeunit_rec`'s per-routine grouping).
+///
+/// - (a) POSITIVE: `CurrPage.Lines.Page.RefreshLines()` resolves to
+///   `"Customer Card Part".RefreshLines` (id 50990), `Evidence::Source`,
+///   exact target id.
+/// - (b)-(e): every other call — the bare control (`Update`/`Editable`, no
+///   `.Page`), the deep chain (`Lines.Page.Foo.Bar`), the unknown part
+///   (`Nope`), and the `SystemPart`/`UserControl` controls (`Notes`/
+///   `MyAddIn`, WITH and WITHOUT `.Page`) — must ALL stay honest `Unknown`.
+///   Asserting the exact COUNT (8) alongside the uniform `Unknown`
+///   classification catches any one of them silently starting to resolve
+///   (which would drop the count) as well as any one of them being
+///   misclassified as something other than `Unknown`.
+#[test]
+fn ws_compound_receiver_currpage_part_page_resolves_subpage_all_others_stay_unknown() {
+    let report = ws_compound_receiver_report();
+    let edges = edges_for_object_routine(&report, 50991, "onopenpage");
+    assert_eq!(edges.len(), 9, "OnOpenPage must have 9 call obligations");
+
+    let source_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Source))
+        .collect();
+    assert_eq!(
+        source_edges.len(),
+        1,
+        "exactly ONE call must resolve — the CurrPage.Lines.Page subpage instance call"
+    );
+    let route = &source_edges[0].edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "refreshlines");
+    assert_eq!(rid.object.kind, ObjectKind::Page);
+    assert!(
+        rid.object.id_equals_number(50990),
+        "must resolve to \"Customer Card Part\" (id 50990); got {:?}",
+        rid.object
+    );
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+
+    let unknown_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Unknown))
+        .collect();
+    assert_eq!(
+        unknown_edges.len(),
+        8,
+        "the other 8 calls (bare control, deep chain, unknown part, \
+         SystemPart/UserControl with and without .Page) must ALL stay honest \
+         Unknown — none may be fabricated as a route to \"Customer Card \
+         Part\" or anything else"
+    );
+    for ce in &unknown_edges {
+        assert_eq!(
+            ce.edge.routes.first().map(|r| &r.target),
+            Some(&RouteTarget::Unresolved),
+            "an Unknown-evidence route must target Unresolved; got {:?}",
+            ce.edge.routes
+        );
+    }
+}

@@ -26,6 +26,8 @@ ws-codeunit-rec/src/TestRunnerCodeunit.Codeunit.al	4c24744240fc89a2
 ws-combined/src/hub.al	a76199f8713462d5
 ws-compose/src/caller.al	56fa54b2ec09eaa3
 ws-compose/src/customer.al	0022db5d7a079d98
+ws-compound-receiver/src/CustomerCard.Page.al	46c52066a8a0909f
+ws-compound-receiver/src/CustomerCardPart.Page.al	75cf772e7882c46c
 ws-d1/src/customer.al	0022db5d7a079d98
 ws-d1/src/jobs.al	331be5852c798801
 ws-d1-dep-terminal/src/caller.al	5a6f1033e4dac9ee

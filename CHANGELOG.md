@@ -69,6 +69,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and negative (absent → stays honest `Unknown`) cases.
 
 ### Added
+- **(resolve) `CurrPage.<part>.Page` subpage-instance receivers, control-aware
+  fail-closed (`regression_compound_receiver`, beyond-1B.3b Task 7)**
+  (`src/program/resolve/receiver.rs`, `src/program/resolve/resolver.rs`,
+  `tests/r0-corpus/ws-compound-receiver/` NEW, `tests/program_resolve_harness.rs`)
+  — `infer_receiver_type` matched the WHOLE lowercased receiver text against its
+  arms, so a compound receiver like `"currpage.lines.page"` never matched
+  anything and fell through to `Unknown` (the `compound_receiver` bucket, ≈47
+  CDO sites). A new Step 0 recognizes EXACTLY the `<part>.Page` shape (one
+  control segment + one trailing `.Page` accessor, quoted or unquoted, via a
+  new `parse_currpage_dot_page_segment` parser): a `Part` control's `target`
+  resolves through the fail-closed `ResolveIndex::resolve_object_ref` (Task 4)
+  to the subpage Page object — the CONTROL-vs-SUBPAGE-INSTANCE distinction a
+  prior reviewer flagged is load-bearing: `CurrPage.<part>` alone (no `.Page`)
+  addresses the CONTROL (`.Update`/`.Visible`, structural methods) and is
+  deliberately NOT modeled here; a `SystemPart`/`UserControl` control, an
+  unknown part name, a chain deeper than one `.Page` accessor, or a
+  non-`Unique` target resolution all fall through to honest `Unknown` rather
+  than fabricate a route (a wrong subpage is a false `Source` edge, the
+  cardinal sin). A PageExtension with no matching control of its own also
+  consults its extended BASE page's controls (`find_page_control`, mirroring
+  L3's `symbol_table::page_controls_for` merge) via a new shared
+  `resolve_pageext_base_page` helper, factored out of (and now reused by) the
+  existing Task 5 `resolve_pageext_base_source_table`. `ReceiverType::Object`
+  gains a third field, `id: Option<ObjectNodeId>`, so Step 0 carries the
+  resolved id MECHANICALLY rather than re-deriving it by name; `resolve_member`'s
+  `Object` arm short-circuits on a present `id` (bypassing `graph.resolve_object`
+  by-name entirely) — proven by a new unit test that supplies a deliberately
+  WRONG `name_lc` alongside a valid `id` and confirms resolution still follows
+  the id. 20 new `receiver.rs` unit tests (positive incl. quoted control name,
+  all 5 negative shapes, PageExtension base-control inheritance, low-level
+  parser edge cases) + 1 new `resolver.rs` id-short-circuit unit test + 1
+  end-to-end `tests/r0-corpus/ws-compound-receiver/` fixture (9 call
+  obligations in one routine: 1 positive + 8 negatives covering every
+  declined shape) asserting the exact positive route and that all 8 negatives
+  stay `Unknown`. CDO (`CDO_WS`): primary real-`unknown` rate 3.17%→2.81%
+  (whole-program 1.34%→1.19%, `unknown` 573→508, a 65-site drop); the L3
+  semantic audit's `fresh_missing` drops 150→102 with `genuine_wrong` staying
+  `0` before and after (soundness backstop unaffected, `matches` 6324→6360).
+  Sample-adjudicated 39+16 real CDO sites (`CDOActions.Page.HideActions` across
+  16 PageExtensions incl. a PageExtension-owned Part control;
+  `EMailTemplateLines.Page.SetVariantCaption`; `UserSetupSubPage.Page.
+  CreateUpdateTempRecs`/`.Changed`; `ConfigLines.Page.LoadConfigFromOnline`/
+  `LoadConfigFromFile`/`CreateTempTable`/`Import` resolving CROSS-APP into a
+  dependency's Page object; `TemplateMergeFields.Page.SetMergeFields`;
+  `ConflictSubform.Page.UpdateProgress`) hand-verified line-for-line against
+  the real CDO source and the target pages' declared procedures, plus a
+  qualitative check that CDO's abundant bare-control/`UserControl` sites
+  (`CurrPage.HTMLEditor.SetHTML(...)`, `CurrPage.PrintService.Configure(...)`,
+  `CurrPage.WebPageViewer.SetContent(...)`, etc. — no `.Page`) do not appear
+  among the newly-resolved routes. Deterministic across two runs (`cargo test
+  --workspace`, no `CDO_WS`, stays fully green) — the `ReceiverType::Object`
+  field addition rippled to ~15 existing test constructions (all updated to
+  `id: None`), zero other existing assertions changed.
 - **(resolve) Codeunit implicit `Rec` via `ObjectNode.table_no`, fail-closed;
   `TestRunner` honest-declined (beyond-1B.3b Task 6)**
   (`src/program/resolve/receiver.rs`, `tests/r0-corpus/ws-codeunit-rec/` NEW,

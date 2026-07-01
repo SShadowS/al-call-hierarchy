@@ -800,9 +800,21 @@ pub fn resolve_member(
             }
             member_unknown_route()
         }
-        ReceiverType::Object { kind, name_lc } => {
+        ReceiverType::Object { kind, name_lc, id } => {
             // Resolve the target object (topology-scoped from the calling app).
-            let Some(target) = graph.resolve_object(from_object.id.app, *kind, name_lc) else {
+            // Task 7: when Phase A already carried a resolved id MECHANICALLY
+            // (Step 0's `CurrPage.<part>.Page` subpage receiver, proven via
+            // the fail-closed `ResolveIndex::resolve_object_ref`), short-
+            // circuit on it directly rather than re-resolving by name — a
+            // second by-name lookup could in principle disagree with the id
+            // Phase A already verified unique (e.g. a same-named object
+            // resolving differently), silently substituting the WRONG
+            // subpage for the one the control's `target` actually names.
+            let target = match id {
+                Some(id) => graph.objects.iter().find(|o| &o.id == id),
+                None => graph.resolve_object(from_object.id.app, *kind, name_lc),
+            };
+            let Some(target) = target else {
                 // Target not in the graph — honest Unknown (not Opaque: we have no
                 // identity for an unresolvable typed receiver).
                 return member_unknown_route();
@@ -2177,6 +2189,7 @@ codeunit 50501 "Caller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Codeunit,
             name_lc: "mytarget".into(),
+            id: None,
         };
         let (shape, routes) =
             resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
@@ -2198,6 +2211,71 @@ codeunit 50501 "Caller"
             unreachable!()
         };
         assert_eq!(rid.name_lc, "dowork");
+    }
+
+    // Task 7: `ReceiverType::Object`'s carried `id` (mechanically resolved by
+    // Phase A — Step 0's `CurrPage.<part>.Page` subpage receiver) must make
+    // `resolve_member` short-circuit on the id DIRECTLY rather than
+    // re-resolving `name_lc` against the graph. Proven by giving a `name_lc`
+    // that resolves to nothing (`"doesnotexist"`) alongside a valid `id`: if
+    // the short-circuit were absent, this would fall back to the by-name
+    // lookup and emit an honest Unknown; with it, the call resolves via the
+    // carried id regardless of `name_lc`.
+    #[test]
+    fn resolve_member_object_carried_id_short_circuits_name_lookup() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 50502 "RealTarget"
+{
+    procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50503 "Caller2"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "RealTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "Caller2.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "caller2");
+        let real_target_id = find_obj(&graph, "realtarget").id.clone();
+
+        // `name_lc` is deliberately WRONG — a name that resolves to nothing —
+        // to prove the carried `id` is what actually drives resolution.
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "doesnotexist".into(),
+            id: Some(real_target_id.clone()),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            panic!(
+                "expected RouteTarget::Routine via the carried id, got {:?}",
+                routes[0].target
+            );
+        };
+        assert_eq!(rid.name_lc, "dowork");
+        assert_eq!(
+            rid.object, real_target_id,
+            "must dispatch against the CARRIED id, not a (failed) by-name lookup"
+        );
     }
 
     // (b) Codeunit.Run() (arity 0) → Exact, Routine(onrun), Source, SourceSpan
@@ -2233,6 +2311,7 @@ codeunit 50503 "RunCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Codeunit,
             name_lc: "runtarget".into(),
+            id: None,
         };
         // arity=0 is Cu.Run() with no record argument
         let (shape, routes) =
@@ -2335,6 +2414,7 @@ codeunit 50506 "AnotherCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Codeunit,
             name_lc: "anothertarget".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver,
@@ -2378,6 +2458,7 @@ codeunit 50507 "OrphanCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Codeunit,
             name_lc: "ghosttarget".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver,
@@ -2868,6 +2949,7 @@ codeunit 50611 "PageCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Page,
             name_lc: "mypage".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
@@ -2925,6 +3007,7 @@ codeunit 50613 "ReportCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Report,
             name_lc: "myreport".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver,
@@ -3085,6 +3168,7 @@ codeunit 50615 "AnotherPageCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Page,
             name_lc: "anotherpage".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver,
@@ -3137,6 +3221,7 @@ codeunit 50617 "ShadowCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Page,
             name_lc: "pagewithrunmodal".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
@@ -3553,6 +3638,7 @@ codeunit 50619 "EmptyPageCaller"
         let receiver = ReceiverType::Object {
             kind: ObjectKind::Page,
             name_lc: "emptypage".into(),
+            id: None,
         };
         let (shape, routes) = resolve_member(
             &receiver,
@@ -3968,6 +4054,7 @@ codeunit 50000 "Caller"
             &ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "depcu".into(),
+                id: None,
             },
             "ondepevent",
             1,
@@ -4001,6 +4088,7 @@ codeunit 50000 "Caller"
             &ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "depcu".into(),
+                id: None,
             },
             "dowork",
             0,

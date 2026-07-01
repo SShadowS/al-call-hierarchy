@@ -15,6 +15,15 @@
 //!
 //! Given a lowercased receiver name `receiver_lc`, inference proceeds:
 //!
+//! 0. **`CurrPage.<part>.Page` subpage-instance receivers** — a page control's
+//!    (`part(<part>; <SubPage>)`) SUBPAGE INSTANCE, distinct from the CONTROL
+//!    itself (`CurrPage.<part>` with no `.Page`, which addresses structural
+//!    control methods like `.Update`/`.Visible` and is NOT resolved here).
+//!    Only the exact `<part>.Page` shape (one control segment, one trailing
+//!    `.Page` accessor) resolves, and only for a `Part` control whose target
+//!    resolves unambiguously; a `SystemPart`/`UserControl`, a bare part, a
+//!    deeper chain, or an unresolved/ambiguous target all fall through to
+//!    `Unknown` (see [`infer_receiver_type`]'s Step 0).
 //! 1. **Singletons** — hardcoded platform names (`currpage`, `session`, `this`, …)
 //!    that are never declared as AL variables; returns immediately.
 //! 2. **Variable lookup** — searches `routine.params` then `routine.locals` then
@@ -51,7 +60,7 @@ use al_syntax::ir::{ObjectKind, RoutineDecl, VarDecl};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::ObjectNodeId;
-use crate::program::node_extract::{ObjectNode, ObjectRef};
+use crate::program::node_extract::{ObjectNode, ObjectRef, PageControlKind, PageControlNode};
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 
 // ---------------------------------------------------------------------------
@@ -154,7 +163,21 @@ pub enum ReceiverType {
     /// A first-class AL object type (Codeunit / Page / Report / Query / XmlPort)
     /// identified by kind and lowercased name.  Phase B resolves the method among
     /// the object's declared procedures via `graph.resolve_object`.
-    Object { kind: ObjectKind, name_lc: String },
+    Object {
+        kind: ObjectKind,
+        name_lc: String,
+        /// The resolved target's `ObjectNodeId`, when Phase A already proved
+        /// it MECHANICALLY (Task 7's `CurrPage.<part>.Page` subpage-instance
+        /// Step 0, via the fail-closed `ResolveIndex::resolve_object_ref`) —
+        /// carried through so `resolve_member`'s `Object` arm can
+        /// short-circuit on it directly instead of re-resolving `name_lc`
+        /// against the graph a second time (which could in principle land on
+        /// a different object than the one Step 0 actually verified unique).
+        /// `None` for every other `Object` receiver (declared-variable /
+        /// param / global lookup via [`classify_type_text`]), which still
+        /// resolves by name in `resolve_member` as before.
+        id: Option<ObjectNodeId>,
+    },
     /// An `Interface IFoo` receiver — Phase B fans out to every implementer.
     Interface { name_lc: String },
     /// An `Enum "Color"` receiver — enum statics (FromInteger/Names/Ordinals).
@@ -350,6 +373,9 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 /// expressions are handled by the caller before this function is reached).
 ///
 /// Inference order:
+/// 0. **`CurrPage.<part>.Page` subpage-instance receivers** — see the module
+///    doc's Step 0. Checked first because it is a COMPOUND (dotted) receiver
+///    text that none of steps 1-4 would otherwise positively type.
 /// 1. **Singletons** — `this`, `currpage`/`page`, `currreport`/`report`, and
 ///    other platform-provided names that are never declared as AL variables.
 /// 2. **Variable lookup** — `routine.params` → `routine.locals` →
@@ -373,6 +399,41 @@ pub fn infer_receiver_type(
     index: &ResolveIndex,
 ) -> ReceiverType {
     let from_app = from_object.id.app;
+
+    // -----------------------------------------------------------------------
+    // Step 0 — `CurrPage.<part>.Page` subpage-instance receivers (Task 7).
+    //
+    // A page's `part(<part>; <SubPage>)` control's SUBPAGE INSTANCE is
+    // accessed as `CurrPage.<part>.Page.<method>()`; resolving `<part>.Page`
+    // to the target Page object lets `resolve_member`'s ordinary `Object` arm
+    // dispatch the subpage's user procedures. This is DISTINCT from
+    // `CurrPage.<part>.<method>()` (no `.Page`), which addresses the CONTROL
+    // itself (structural methods like `.Update`/`.Visible`) — that shape
+    // falls through to `Unknown` here, never fabricated as a subpage call.
+    // `SystemPart`/`UserControl` controls and any chain deeper than one
+    // `.Page` accessor also fall through: a wrong subpage is a false
+    // `Source` edge, the cardinal sin, so anything short of an exact
+    // single-segment `<part>.Page` shape resolving to exactly one in-closure
+    // Page object declines rather than guesses.
+    // -----------------------------------------------------------------------
+    if let Some(rest) = receiver_lc.strip_prefix("currpage.")
+        && let Some(part_name_lc) = parse_currpage_dot_page_segment(rest)
+        && let Some(control) = find_page_control(&part_name_lc, from_object, graph, index)
+        && control.kind == PageControlKind::Part
+        && let ObjectRefResolution::Unique(page_id) = index.resolve_object_ref(
+            graph,
+            from_object.id.clone(),
+            ObjectKind::Page,
+            &control.target,
+        )
+        && let Some(page_obj) = graph.objects.iter().find(|o| o.id == page_id)
+    {
+        return ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: page_obj.name.to_ascii_lowercase(),
+            id: Some(page_id),
+        };
+    }
 
     // -----------------------------------------------------------------------
     // Step 1 — platform singletons (never declared as AL variables).
@@ -578,6 +639,31 @@ fn resolve_source_table_ref(
     }
 }
 
+/// Resolve a PageExtension's `extends_target` to the base Page's
+/// `ObjectNodeId`, scoped from `from_object`'s own dependency closure via the
+/// fail-closed [`ResolveIndex::resolve_object_ref`]. `None` when there is no
+/// `extends_target`, or resolution is anything other than `Unique`
+/// (ambiguous, out-of-closure, unresolved) — never guess. Shared by
+/// [`resolve_pageext_base_source_table`] (Task 5's implicit-`Rec` base-page
+/// lookup) and [`find_page_control`] (Task 7's PageExtension control merge).
+fn resolve_pageext_base_page(
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    let extends = from_object.extends_target.as_deref()?;
+    let base_ref = ObjectRef::Name {
+        raw: extends.to_string(),
+        normalized_lc: extends.to_ascii_lowercase(),
+    };
+    match index.resolve_object_ref(graph, from_object.id.clone(), ObjectKind::Page, &base_ref) {
+        ObjectRefResolution::Unique(id) => Some(id),
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => None,
+    }
+}
+
 /// Resolve a PageExtension's inherited `SourceTable`: follow `extends_target`
 /// to exactly one in-closure base Page, then read and resolve THAT page's own
 /// `source_table`. Any decline at either hop (ambiguous extends target,
@@ -592,22 +678,7 @@ fn resolve_pageext_base_source_table(
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<ObjectNodeId> {
-    let extends = from_object.extends_target.as_deref()?;
-    let base_ref = ObjectRef::Name {
-        raw: extends.to_string(),
-        normalized_lc: extends.to_ascii_lowercase(),
-    };
-    let base_id = match index.resolve_object_ref(
-        graph,
-        from_object.id.clone(),
-        ObjectKind::Page,
-        &base_ref,
-    ) {
-        ObjectRefResolution::Unique(id) => id,
-        ObjectRefResolution::Ambiguous
-        | ObjectRefResolution::OutOfClosure
-        | ObjectRefResolution::Unresolved => return None,
-    };
+    let base_id = resolve_pageext_base_page(from_object, graph, index)?;
     let base_page = graph.objects.iter().find(|o| o.id == base_id)?;
     resolve_source_table_ref(
         from_object.id.clone(),
@@ -615,6 +686,73 @@ fn resolve_pageext_base_source_table(
         graph,
         index,
     )
+}
+
+/// Find a `CurrPage.<part>` layout control by lowercased name, in the set
+/// visible to `from_object`: its own `page_controls` first; for a
+/// `PageExtension` with no matching control of its own, also the extended
+/// BASE page's controls (merged — mirrors L3's `symbol_table::
+/// page_controls_for`), resolved via the fail-closed
+/// [`resolve_pageext_base_page`] rather than a raw name lookup. An own
+/// PageExtension control of the same name always shadows the base page's
+/// (checked first, short-circuits before the base-page hop).
+///
+/// Returns an owned clone — `PageControlNode` is small (`Vec`-backed) and
+/// this sidesteps unifying the lifetime of a borrow from `from_object` with
+/// one from `graph.objects` in a single return type.
+fn find_page_control(
+    name_lc: &str,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<PageControlNode> {
+    if let Some(c) = from_object
+        .page_controls
+        .iter()
+        .find(|c| c.name_lc == name_lc)
+    {
+        return Some(c.clone());
+    }
+    if from_object.id.kind != ObjectKind::PageExtension {
+        return None;
+    }
+    let base_id = resolve_pageext_base_page(from_object, graph, index)?;
+    let base_page = graph.objects.iter().find(|o| o.id == base_id)?;
+    base_page
+        .page_controls
+        .iter()
+        .find(|c| c.name_lc == name_lc)
+        .cloned()
+}
+
+/// Parse the text following `"currpage."` (already lowercased by the caller)
+/// for the `<part>.page` subpage-instance shape (Task 7): a single, possibly
+/// quoted, control-name segment followed by EXACTLY one trailing `.page`
+/// accessor and nothing else. Returns the control name, quotes stripped
+/// (already lowercase since the input is).
+///
+/// Returns `None` — decline, honest `Unknown` — for: a bare part with no
+/// `.page` accessor (`CurrPage.Lines` — the CONTROL, distinct from the
+/// subpage INSTANCE); a chain deeper than one `.page` accessor
+/// (`CurrPage.Lines.Page.Foo`); or any other shape.
+fn parse_currpage_dot_page_segment(rest: &str) -> Option<String> {
+    let (segment, remainder) = if let Some(after_quote) = rest.strip_prefix('"') {
+        // Quoted control name: the segment runs to the next `"`. An escaped
+        // `""` literal-quote inside the name is not handled here (matching
+        // this module's existing `unquote_identifier`, which doesn't either)
+        // — such a name simply fails the `page_controls` lookup and declines.
+        let close = after_quote.find('"')?;
+        (&after_quote[..close], &after_quote[close + 1..])
+    } else {
+        match rest.find('.') {
+            Some(i) => (&rest[..i], &rest[i..]),
+            None => (rest, ""),
+        }
+    };
+    if segment.is_empty() || remainder != ".page" {
+        return None;
+    }
+    Some(segment.to_string())
 }
 
 /// Convert a [`ParsedType`] (pure string parse) to a [`ReceiverType`] by
@@ -634,7 +772,11 @@ fn parsed_type_to_receiver(
             // Resolve the name to get the canonical lowercased name from the
             // graph (handles both name-based and numeric-id references).
             let name_lc = resolve_object_name_lc(kind, &name, from_app, graph, index);
-            ReceiverType::Object { kind, name_lc }
+            ReceiverType::Object {
+                kind,
+                name_lc,
+                id: None,
+            }
         }
         ParsedType::Interface { name } => ReceiverType::Interface { name_lc: name },
         ParsedType::EnumType { name } => ReceiverType::EnumType { name_lc: name },
@@ -1167,7 +1309,8 @@ mod tests {
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
-                name_lc: "mycodeunit".into()
+                name_lc: "mycodeunit".into(),
+                id: None
             }
         );
     }
@@ -1185,7 +1328,8 @@ mod tests {
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
-                name_lc: "mycodeunit".into()
+                name_lc: "mycodeunit".into(),
+                id: None
             }
         );
     }
@@ -1698,7 +1842,8 @@ mod tests {
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
-                name_lc: "mycodeunit".into()
+                name_lc: "mycodeunit".into(),
+                id: None
             }
         );
     }
@@ -1758,7 +1903,8 @@ mod tests {
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
-                name_lc: "mycodeunit".into()
+                name_lc: "mycodeunit".into(),
+                id: None
             }
         );
     }
@@ -1878,5 +2024,367 @@ mod tests {
 
         let result = infer_receiver_type("text", &routine, &[], &from_obj, &graph, &index);
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Text));
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_currpage_dot_page_segment — low-level shape parse (Task 7)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_currpage_segment_unquoted_part_dot_page() {
+        assert_eq!(
+            parse_currpage_dot_page_segment("lines.page"),
+            Some("lines".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_currpage_segment_bare_part_no_page_is_none() {
+        // `CurrPage.Lines` (no `.Page`) — the CONTROL, not the subpage
+        // instance.
+        assert_eq!(parse_currpage_dot_page_segment("lines"), None);
+    }
+
+    #[test]
+    fn parse_currpage_segment_deep_chain_is_none() {
+        assert_eq!(parse_currpage_dot_page_segment("lines.page.foo"), None);
+    }
+
+    #[test]
+    fn parse_currpage_segment_quoted_part_dot_page() {
+        assert_eq!(
+            parse_currpage_dot_page_segment("\"sub lines\".page"),
+            Some("sub lines".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_currpage_segment_malformed_unterminated_quote_is_none() {
+        assert_eq!(parse_currpage_dot_page_segment("\"unterminated.page"), None);
+    }
+
+    #[test]
+    fn parse_currpage_segment_empty_is_none() {
+        assert_eq!(parse_currpage_dot_page_segment(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // infer_receiver_type — `CurrPage.<part>.Page` subpage-instance
+    // receivers (Task 7)
+    //
+    // Fixture: workspace app `w` with:
+    // - Page "SubPage" (id 50310) — the subpage instance target.
+    // - Page "HostPage" (id 50311) with THREE controls: `Lines` (Part →
+    //   SubPage), `"Sub Lines"` (Part → SubPage, quoted name), `Notes`
+    //   (SystemPart), `MyAddIn` (UserControl).
+    // - PageExtension "HostPageExt" (id 50312, extends HostPage) with NO
+    //   controls of its own — must inherit HostPage's via the merge.
+    // -----------------------------------------------------------------------
+
+    fn build_currpage_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let mk_id = |name: &str| crate::snapshot::AppId {
+            guid: String::new(),
+            name: name.into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let w = apps.intern(&mk_id("CurrPageW"));
+        let topology = crate::program::topology::DependencyGraph::default();
+
+        let subpage = make_object_node(w, ObjectKind::Page, "SubPage", Some(50310), None);
+
+        let mut host = make_object_node(w, ObjectKind::Page, "HostPage", Some(50311), None);
+        let subpage_target = ObjectRef::Name {
+            raw: "SubPage".into(),
+            normalized_lc: "subpage".into(),
+        };
+        host.page_controls = vec![
+            PageControlNode {
+                name_lc: "lines".into(),
+                kind: PageControlKind::Part,
+                target: subpage_target.clone(),
+            },
+            PageControlNode {
+                name_lc: "sub lines".into(),
+                kind: PageControlKind::Part,
+                target: subpage_target,
+            },
+            PageControlNode {
+                name_lc: "notes".into(),
+                kind: PageControlKind::SystemPart,
+                target: ObjectRef::Name {
+                    raw: "Notes".into(),
+                    normalized_lc: "notes".into(),
+                },
+            },
+            PageControlNode {
+                name_lc: "myaddin".into(),
+                kind: PageControlKind::UserControl,
+                target: ObjectRef::Name {
+                    raw: "MyAddIn".into(),
+                    normalized_lc: "myaddin".into(),
+                },
+            },
+        ];
+
+        let host_ext = make_object_node(
+            w,
+            ObjectKind::PageExtension,
+            "HostPageExt",
+            Some(50312),
+            Some("HostPage".into()),
+        );
+
+        let mut objects = vec![subpage, host, host_ext];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines: vec![],
+            obj_index,
+        };
+        (graph, w)
+    }
+
+    /// Test (a), POSITIVE: `CurrPage.Lines.Page` resolves to the SubPage
+    /// object, carrying its id mechanically.
+    #[test]
+    fn infer_currpage_part_page_resolves_subpage_object_with_id() {
+        let (graph, w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+        let subpage_id = graph
+            .resolve_object(w, ObjectKind::Page, "SubPage")
+            .unwrap()
+            .id
+            .clone();
+
+        let result =
+            infer_receiver_type("currpage.lines.page", &routine, &[], &host, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "subpage".into(),
+                id: Some(subpage_id),
+            }
+        );
+    }
+
+    /// POSITIVE, quoted control name: `CurrPage."Sub Lines".Page` resolves
+    /// identically — quotes must be stripped when matching `page_controls`.
+    #[test]
+    fn infer_currpage_quoted_part_page_resolves_subpage_object() {
+        let (graph, w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+        let subpage_id = graph
+            .resolve_object(w, ObjectKind::Page, "SubPage")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type(
+            "currpage.\"sub lines\".page",
+            &routine,
+            &[],
+            &host,
+            &graph,
+            &index,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "subpage".into(),
+                id: Some(subpage_id),
+            }
+        );
+    }
+
+    /// Test (b), NEGATIVE — control vs subpage: `CurrPage.Lines` (no
+    /// `.Page`) is the CONTROL, not the subpage instance — must stay
+    /// `Unknown`, never fabricated as `SubPage`.
+    #[test]
+    fn infer_currpage_bare_part_no_page_accessor_stays_unknown() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        let result = infer_receiver_type("currpage.lines", &routine, &[], &host, &graph, &index);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// Test (c), NEGATIVE — deep chain: `CurrPage.Lines.Page.Foo` (more than
+    /// one remaining segment) stays `Unknown`.
+    #[test]
+    fn infer_currpage_deep_chain_beyond_dot_page_stays_unknown() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        let result = infer_receiver_type(
+            "currpage.lines.page.foo",
+            &routine,
+            &[],
+            &host,
+            &graph,
+            &index,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// Test (d), NEGATIVE — unknown part: `CurrPage.Nope.Page` (no control
+    /// named "Nope") stays `Unknown`.
+    #[test]
+    fn infer_currpage_unknown_part_stays_unknown() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        let result =
+            infer_receiver_type("currpage.nope.page", &routine, &[], &host, &graph, &index);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// Test (e), NEGATIVE — SystemPart: even WITH a `.Page` accessor, a
+    /// SystemPart control must NOT resolve to a fabricated Object/Framework
+    /// route — Task 7 scope is `Part` only.
+    #[test]
+    fn infer_currpage_systempart_dot_page_stays_unknown_not_fabricated() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        let result =
+            infer_receiver_type("currpage.notes.page", &routine, &[], &host, &graph, &index);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// Test (e), NEGATIVE — UserControl: same as SystemPart, `.Page` on a
+    /// UserControl must decline, not fabricate a route.
+    #[test]
+    fn infer_currpage_usercontrol_dot_page_stays_unknown_not_fabricated() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        let result = infer_receiver_type(
+            "currpage.myaddin.page",
+            &routine,
+            &[],
+            &host,
+            &graph,
+            &index,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE — bare SystemPart/UserControl (no `.Page` at all) also stay
+    /// `Unknown`, exercising the ordinary "no .page suffix" decline path for
+    /// these control kinds too.
+    #[test]
+    fn infer_currpage_bare_systempart_and_usercontrol_stay_unknown() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
+        assert_eq!(
+            infer_receiver_type("currpage.notes", &routine, &[], &host, &graph, &index),
+            ReceiverType::Unknown
+        );
+        assert_eq!(
+            infer_receiver_type("currpage.myaddin", &routine, &[], &host, &graph, &index),
+            ReceiverType::Unknown
+        );
+    }
+
+    /// PageExtension merge: `HostPageExt` (extends `HostPage`, no controls
+    /// of its own) inherits `HostPage`'s `Lines` control via the fail-closed
+    /// base-page lookup — mirrors L3's `page_controls_for` merge.
+    #[test]
+    fn infer_currpage_pageext_inherits_base_page_control() {
+        let (graph, w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host_ext = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPageExt")
+            .unwrap()
+            .clone();
+        let subpage_id = graph
+            .resolve_object(w, ObjectKind::Page, "SubPage")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type(
+            "currpage.lines.page",
+            &routine,
+            &[],
+            &host_ext,
+            &graph,
+            &index,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "subpage".into(),
+                id: Some(subpage_id),
+            }
+        );
     }
 }
