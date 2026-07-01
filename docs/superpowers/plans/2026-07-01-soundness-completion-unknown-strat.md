@@ -207,6 +207,45 @@ Item-4 comment); Test `tests/r0-corpus/ws-visibility-local-protected/` + no-CDO 
 
 ---
 
+### Task 1.5: Apply the visibility filter to `resolve_bare` Step 2 (extension-base bare calls)
+
+**Inserted after Task 1** (Task 1 review recommendation). `resolve_bare`'s Step 2 ("extension base",
+`resolver.rs:606-618`) resolves a bare call against the caller's extended BASE object via `resolve_in_object`
+(`resolver.rs:195-235`) — which does ZERO access filtering. So a bare call from a `*Extension` object to a base-object
+member currently emits `Source` regardless of the member's access. The reviewer confirmed: `Protected` is INCIDENTALLY
+safe here (Step 2's caller is always a direct extension of the base → self-or-extends trivially holds), but **`local`**
+(a base object's own-object-scoped member reachable by a bare call from ANY of its extensions) and **cross-app `internal`**
+(the extension in a different app than the base) are genuine false-`Source` exposures — pre-existing, in the same
+fail-closed class this plan closes. **SOUNDNESS BEATS THE METRIC** (count may rise).
+
+**Files:** Modify `src/program/resolve/resolver.rs` (Step-2 site + optionally `resolve_in_object` or a wrapper); Test
+`tests/r0-corpus/ws-bare-extbase-visibility/` + no-CDO harness + CDO gate.
+
+- [ ] **Step 1: Write failing + control fixtures** — (a) `TableExtension ExtA extends Base` bare-calls a `local procedure
+  L()` declared on `Base` → honest `Unknown` (today: false `Source` to `Base.L`). (b) CONTROL: `ExtA` bare-calls a
+  `procedure Pub()` (public) on `Base` → resolves `Source` (unchanged — Step 2 must still work for public). (c) cross-app
+  `internal`: `ExtA` (app X) bare-calls an `internal procedure I()` on `Base` (app Y, X≠Y) → honest `Unknown`. (d) CONTROL:
+  `ExtA` bare-calls a `protected procedure P()` on `Base` → resolves `Source` (extension DOES see base protected — confirm
+  the incidentally-safe path stays correct). Also a `PageExtension`→base-Page variant of (a)/(b). Assert the EXACT pre-fix
+  wrong route for (a)/(c).
+- [ ] **Step 2: Run — fail** ((a) `Source` to `Base.L`; (c) `Source` to `Base.I`).
+- [ ] **Step 3: Implement** — at `resolve_bare`'s Step-2 site, apply the SAME caller-identity-aware access check Task 1
+  added (`object_has_visible_member_candidate(base_id, …, from_object.id)` — the extension is `from_object`, the base is
+  the candidate object): a base member is visible to the bare-calling extension per the Task-1 rule (`Local`→base-self only
+  = NOT visible to the extension; `Internal`→same-app; `Protected`→extension-of-base = visible; `Public`→visible). Prefer
+  reusing the Task-1 helper over duplicating the access logic; do NOT broadly add filtering to `resolve_in_object`'s OTHER
+  callers (bare Step 1 own-object, member Object/SelfObject) unless a fixture proves they need it — keep the change scoped
+  to the Step-2 extension-base path. (Minor cleanup while here: switch `object_extends`'s O(n) `graph.objects.iter().find`
+  to the sorted `binary_search_by` used by `lookup_routine_access`, `resolver.rs:241-247` — house-style consistency.)
+- [ ] **Step 4: Run — pass** (all incl. controls). Then (WITH `CDO_WS`, SINGLE tests) `cdo_l3_semantic_audit_no_fresh_wrong`
+  (`genuine_wrong` stays 0) + `cdo_full_program_coverage_and_self_reported_metric` — the count MAY rise (a Step-2 `local`/
+  cross-app-`internal` false-`Source` correctly becomes `Unknown`); record + spot-check the correction; raise the ratchet
+  with justification if it trips (soundness > coverage).
+- [ ] **Step 5: rustfmt + clippy + (no-CDO) test + commit** — `fix(resolve): access-filter resolve_bare Step 2 extension-base
+  bare calls — base local/cross-app-internal not visible to the extension (Task 1.5)`.
+
+---
+
 ### Task 2: `resolve_object_name_lc` shape-preservation (mirror the I1 `Record` fix)
 
 **Files:** Modify `src/program/resolve/receiver.rs`; Test (unit + a fixture). **Dormant on CDO like I1 — the proof is
