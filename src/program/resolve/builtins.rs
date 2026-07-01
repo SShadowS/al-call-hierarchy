@@ -79,6 +79,31 @@ pub fn global_builtin_id(name_lc: &str) -> Option<BuiltinId> {
     }
 }
 
+/// Structural (fail-closed) wrapper around [`global_builtin_id`] (beyond-1B.3b
+/// Task 1 Step 4).
+///
+/// # Why this exists
+///
+/// The catalog membership check is a lowercased EXACT-STRING lookup in a
+/// `phf::Set` (no hash/fingerprint digest is stored or compared — see the
+/// module-level "Clean-room boundary" doc) and `BuiltinId` is constructed
+/// directly from `name_lc`, so a name MISMATCH between the query and the
+/// returned id is impossible today by construction. This guard makes that
+/// invariant an executable, testable CONTRACT rather than an implicit
+/// property: it re-derives the catalog hit and asserts the returned
+/// `BuiltinId`'s name equals `name_lc` before handing back a route,
+/// fail-closed (`None`) on any mismatch. Callers in `resolver.rs` MUST use
+/// this (not [`global_builtin_id`] directly) to classify a `Catalog` route,
+/// so that any future catalog source (e.g. a fingerprint-keyed fast path)
+/// stays fail-closed against a same-fingerprint, different-name collision.
+pub fn global_builtin_id_checked(name_lc: &str) -> Option<BuiltinId> {
+    let id = global_builtin_id(name_lc)?;
+    if id.0 != name_lc {
+        return None;
+    }
+    Some(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +152,29 @@ mod tests {
         let id = global_builtin_id("message").expect("message is a builtin");
         assert_eq!(id.0, "message");
         assert!(global_builtin_id("not_a_builtin_at_all").is_none());
+    }
+
+    /// beyond-1B.3b Task 1 Step 4: the structural (fail-closed) wrapper agrees
+    /// with the raw lookup on real hits, and a near-miss name (NOT a member of
+    /// the catalog, even though it is textually adjacent to one) is correctly
+    /// REJECTED — never classified `builtin` by coincidence. The catalog has
+    /// no fingerprint/hash step to fool (membership is exact-string `phf::Set`
+    /// containment), so this also locks in that a fabricated
+    /// "fingerprint collision" cannot surface as a false `builtin`.
+    #[test]
+    fn global_builtin_id_checked_matches_raw_and_rejects_near_miss() {
+        let id = global_builtin_id_checked("message").expect("message is a builtin");
+        assert_eq!(id.0, "message");
+        assert_eq!(
+            global_builtin_id("message"),
+            global_builtin_id_checked("message"),
+            "checked wrapper must agree with the raw lookup on a real hit"
+        );
+
+        // Near-miss: not a real catalog member, despite being adjacent to one.
+        assert!(global_builtin_id_checked("strlenzzz_not_real").is_none());
+        assert!(global_builtin_id_checked("message_typo").is_none());
+        assert!(!is_global_builtin("strlenzzz_not_real"));
     }
 
     #[test]

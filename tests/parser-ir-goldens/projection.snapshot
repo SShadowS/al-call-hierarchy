@@ -1,5 +1,11 @@
 ws-api-page/src/api.al	b7b226f0f41a5ba9
 ws-argument-bindings/src/Codeunit.al	8fcbbe97c59a972c
+ws-builtin-shadow/Acme.Table.al	a0cac9abb6d1c7d1
+ws-builtin-shadow/ShadowCallerA.Codeunit.al	a8d2f39e9de71314
+ws-builtin-shadow/ShadowCallerB.Codeunit.al	a9878460b642c254
+ws-builtin-shadow/ShadowCallerC.Codeunit.al	c8488cf8e7ad89b0
+ws-builtin-shadow/ShadowCallerD.Codeunit.al	7fc7fdd2b4ce7948
+ws-builtin-shadow/ShadowCallerE.Codeunit.al	19fc35f3e3f71e92
 ws-builtin-unresolved/src/Caller.Codeunit.al	7ffc52920e35f4b8
 ws-calls/src/caller.al	96c344c8ad622918
 ws-calls/src/worker.al	36e57bc4b9025574

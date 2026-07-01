@@ -488,6 +488,33 @@ pub fn member_builtin_id(kind: MemberCatalogKind<'_>, method_lc: &str) -> Option
     Some(BuiltinId(format!("{prefix}::{method_lc}")))
 }
 
+/// Structural (fail-closed) wrapper around [`member_builtin_id`] (beyond-1B.3b
+/// Task 1 Step 4).
+///
+/// # Why this exists
+///
+/// Membership is decided by an EXACT-STRING lookup in a RECEIVER-KIND-SCOPED
+/// `phf::Set` (selected by `kind` — `RECORDREF`/`FIELDREF`/`KEYREF`/`RECORD`/
+/// per-`FrameworkKind`), with no hash/fingerprint digest stored or compared.
+/// The id's `"{prefix}::{method_lc}"` suffix is built directly from the query,
+/// so a name/receiver-kind mismatch is impossible today by construction. This
+/// guard makes that invariant an executable, testable CONTRACT: it re-derives
+/// the catalog hit and asserts the returned `BuiltinId`'s method-name suffix
+/// equals `method_lc` before handing back a route, fail-closed (`None`) on any
+/// mismatch. Callers in `resolver.rs` MUST use this (not [`member_builtin_id`]
+/// directly) to classify a `Catalog` route.
+pub fn member_builtin_id_checked(
+    kind: MemberCatalogKind<'_>,
+    method_lc: &str,
+) -> Option<BuiltinId> {
+    let id = member_builtin_id(kind, method_lc)?;
+    let suffix = id.0.rsplit("::").next().unwrap_or(id.0.as_str());
+    if suffix != method_lc {
+        return None;
+    }
+    Some(id)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -599,6 +626,28 @@ mod tests {
         assert_eq!(id4.0, "Record::insert");
 
         assert!(member_builtin_id(MemberCatalogKind::Framework(&kind), "notamethod").is_none());
+    }
+
+    /// beyond-1B.3b Task 1 Step 4: the structural (fail-closed) wrapper agrees
+    /// with the raw lookup on real hits (NAME + receiver-kind preserved in the
+    /// id), and a near-miss name is correctly rejected — never classified
+    /// `builtin` by coincidence. Membership is exact-string `phf::Set`
+    /// containment scoped by receiver kind (no fingerprint/hash step), so a
+    /// fabricated "fingerprint collision" cannot surface as a false `builtin`.
+    #[test]
+    fn member_builtin_id_checked_matches_raw_and_rejects_near_miss() {
+        let id = member_builtin_id_checked(MemberCatalogKind::Record, "setrange").unwrap();
+        assert_eq!(id.0, "Record::setrange");
+        assert_eq!(
+            member_builtin_id(MemberCatalogKind::Record, "setrange"),
+            member_builtin_id_checked(MemberCatalogKind::Record, "setrange"),
+            "checked wrapper must agree with the raw lookup on a real hit"
+        );
+
+        // Near-miss: not a real catalog member for this receiver kind.
+        assert!(member_builtin_id_checked(MemberCatalogKind::Record, "setrangex").is_none());
+        // Cross-kind miss: "strlen" is a Text/global method, not a Record method.
+        assert!(member_builtin_id_checked(MemberCatalogKind::Record, "strlen").is_none());
     }
 
     #[test]

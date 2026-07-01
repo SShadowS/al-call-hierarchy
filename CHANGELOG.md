@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **(resolve) Source shadows builtin — lookup-precedence soundness fix +
+  structural builtin-catalog match (beyond-1B.3b Task 1)**
+  (`src/program/resolve/resolver.rs`, `src/program/resolve/builtins.rs`,
+  `src/program/resolve/member_catalog.rs`, `tests/r0-corpus/ws-builtin-shadow/`
+  NEW, `tests/program_resolve_harness.rs`) — `resolve_member`'s `Record`
+  receiver arm was **catalog-FIRST**: a user/source table procedure whose
+  name+arity coincided with a genuine platform-intrinsic Record method (e.g.
+  `FieldNo`, `SetRecFilter`) was mis-classified `Evidence::Catalog` instead of
+  the correct `Evidence::Source` — AL semantics say a visible source/ABI
+  routine SHADOWS a same-named intrinsic. This was the root cause behind the
+  42 `builtin-catalog-fp-collision` semantic-audit divergences. Fixed by
+  gathering every visible source/ABI candidate across the base table AND its
+  TableExtensions FIRST, with explicit cardinality semantics: exactly one
+  candidate → `Source`/`Abi`/`Opaque`; **more than one → honest ambiguous
+  `Unknown`** (source ambiguity still shadows the catalog — never pick-first,
+  never fall through to a false intrinsic); zero candidates (or an
+  unresolved table) → consult the Record builtin catalog, preserving the
+  existing table-independent-builtin behavior. `resolve_bare`'s own-object
+  precedence was already source-before-catalog (investigated and confirmed
+  correct pre-fix; kept as a regression-locking fixture, not a second bug).
+  Added `global_builtin_id_checked`/`member_builtin_id_checked` — fail-closed
+  structural guards re-verifying the catalog hit's canonical NAME (and
+  implicit receiver-kind scoping, already enforced by per-kind `phf::Set`s)
+  before returning a `Catalog` route; all `resolve_bare`/`resolve_member`
+  catalog consult sites now go through the checked wrapper. **Investigation
+  note:** the catalog membership check is an exact-lowercase-string `phf::Set`
+  lookup (no fingerprint/hash digest is stored or compared anywhere in this
+  path — confirmed by reading `builtins.rs`, `member_catalog.rs`, and
+  `abi_ingest.rs`'s `param_type_fp`/`fnv1a`, which fingerprints ABI routine
+  *signatures* for `RoutineNodeId` identity, an unrelated concern), so a true
+  hash collision cannot occur today; the checked wrappers make that invariant
+  an executable contract (defense-in-depth) rather than an implicit property.
+  **Qualified-intrinsic bypass investigation:** the IR CAN represent a
+  fully-qualified platform call (`System.CreateGuid()` parses as an ordinary
+  `Member { receiver: "System", method: "CreateGuid" }`); no special-case code
+  was needed for the bypass because `Framework`-singleton receivers
+  (`System`/`Session`/`NavApp`/...) are classified unconditionally in
+  `infer_receiver_type`'s Step 1 (before any variable/source lookup) and
+  `resolve_member`'s `Framework` arm is catalog-or-`Unknown` only — it never
+  consults source candidates, so a local procedure structurally cannot shadow
+  a qualified platform call. New `tests/r0-corpus/ws-builtin-shadow/` fixture
+  (5 scenarios, asserted via 5 new `tests/program_resolve_harness.rs` Test-21
+  cases with exact route/evidence/target assertions) + 2 new
+  `resolver.rs` unit tests (genuine shadow + cross-TableExtension ambiguity) +
+  2 new catalog-layer unit tests (near-miss-name fail-closed regression).
+  Verified: all pre-existing `resolve_member`/`resolve_bare` tests (50) still
+  green; `cargo test --workspace` (no `CDO_WS`) fully green; `cargo clippy
+  --release --all-features -- -D warnings` clean; `cargo fmt --check` clean.
+  No `engine::l3`/`engine::l2` import added.
+
 ### Added
 - **Plan 1B.3b Task 4 (CAPSTONE): the fresh engine stands alone — L3 oracle
   retired from validation, verified + honestly documented**

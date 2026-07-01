@@ -36,14 +36,14 @@ use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
-use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
+use crate::program::resolve::builtins::{catalog_version, global_builtin_id_checked};
 use crate::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
     EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
     Witness, callee_fp,
 };
 use crate::program::resolve::index::ResolveIndex;
-use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
+use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id_checked};
 use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
 use crate::snapshot::TrustTier;
 
@@ -221,6 +221,34 @@ fn resolve_in_object(
     })
 }
 
+/// Whether `obj_id` (at trust tier `obj_tier`) carries a visible source/ABI
+/// candidate routine matching `method_lc`/`arity` — used by the Record-receiver
+/// source-shadows-catalog precedence check (beyond-1B.3b Task 1) to determine
+/// CARDINALITY across a multi-object scope (base table ∪ TableExtensions)
+/// WITHOUT committing to a route.
+///
+/// Mirrors the matching rule [`resolve_in_object`] applies internally: a
+/// SymbolOnly (ABI/dep) object counts ANY name match as a candidate (arity
+/// matching is deferred for ABI routines — same exception `resolve_in_object`
+/// documents); a source/ABI (non-SymbolOnly) tier object counts only an EXACT
+/// arity match.
+fn object_has_member_candidate(
+    obj_id: &ObjectNodeId,
+    obj_tier: TrustTier,
+    method_lc: &str,
+    arity: usize,
+    index: &ResolveIndex,
+) -> bool {
+    let candidates = index.routines_in_object(obj_id, method_lc);
+    if candidates.is_empty() {
+        return false;
+    }
+    if obj_tier == TrustTier::SymbolOnly {
+        return true;
+    }
+    candidates.iter().any(|rid| rid.params_count == arity)
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -273,7 +301,7 @@ pub fn resolve_bare(
     // attributable to this gap.
 
     // 4. Global builtin.
-    if let Some(builtin_id) = global_builtin_id(name_lc) {
+    if let Some(builtin_id) = global_builtin_id_checked(name_lc) {
         return vec![Route {
             target: RouteTarget::Builtin(builtin_id.clone()),
             evidence: Evidence::Catalog,
@@ -608,10 +636,17 @@ fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> b
 
 /// Resolve a member call (`receiver.method_lc(...)`) to its `(DispatchShape, Vec<Route>)`.
 ///
-/// # Implemented arms (Phase 3 Task 2 + Task 3 + Phase 4 Task 2)
-/// - `RecordRef` / `FieldRef` / `KeyRef` / `Framework(_)` → catalog lookup.
-/// - `Record{..}` → catalog-first (builtin Record methods); non-builtin → Unknown
-///   (TODO Task 4: full table-proc dispatch).
+/// # Implemented arms (Phase 3 Task 2 + Task 3 + Phase 4 Task 2; precedence
+/// fixed beyond-1B.3b Task 1)
+/// - `RecordRef` / `FieldRef` / `KeyRef` / `Framework(_)` → catalog lookup (these
+///   receivers have no source-declared procedures, so there is nothing to shadow).
+/// - `Record{..}` → **source-before-catalog**: a visible source/ABI table method
+///   (base table ∪ its TableExtensions) of matching name+arity SHADOWS a
+///   same-named platform-intrinsic Record method (AL semantics). Cardinality:
+///   exactly one visible candidate → `Source`/`Abi`/`Opaque`; more than one →
+///   honest ambiguous `Unknown` (never pick-first, never fall through to the
+///   catalog); zero candidates (or `table == None`) → consult the Record
+///   builtin catalog; no catalog hit either → `Unknown`.
 /// - `Object{kind, name_lc}` → resolve target object via `graph.resolve_object`, then
 ///   dispatch method via `resolve_in_object`.  Special case: `Codeunit.Run(arity≤1)` →
 ///   entry `OnRun` trigger (mirrors `resolve_object_run`).
@@ -635,83 +670,110 @@ pub fn resolve_member(
 ) -> (DispatchShape, Vec<Route>) {
     match receiver {
         ReceiverType::RecordRef => {
-            if let Some(bid) = member_builtin_id(MemberCatalogKind::RecordRef, method_lc) {
+            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::RecordRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::FieldRef => {
-            if let Some(bid) = member_builtin_id(MemberCatalogKind::FieldRef, method_lc) {
+            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::FieldRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::KeyRef => {
-            if let Some(bid) = member_builtin_id(MemberCatalogKind::KeyRef, method_lc) {
+            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::KeyRef, method_lc) {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::Framework(kind) => {
-            if let Some(bid) = member_builtin_id(MemberCatalogKind::Framework(kind), method_lc) {
+            if let Some(bid) =
+                member_builtin_id_checked(MemberCatalogKind::Framework(kind), method_lc)
+            {
                 member_catalog_route(bid)
             } else {
                 member_unknown_route()
             }
         }
         ReceiverType::Record { table } => {
-            // Catalog-first: Record built-in methods (SetRange, Find, Insert, ...) are
-            // platform-intrinsic and don't have in-source bodies.
-            if let Some(bid) = member_builtin_id(MemberCatalogKind::Record, method_lc) {
-                return member_catalog_route(bid);
-            }
-
-            // Non-builtin Record method: dispatch to the table's own procedures and
-            // its TableExtensions.  `table == None` means the table could not be
-            // resolved (e.g. implicit Rec on a Page/PageExtension where the source
-            // table is not on ObjectNode) — honest Unknown.
-            let Some(table_id) = table else {
-                return member_unknown_route();
-            };
-
-            // Look up the ObjectNode for the table to obtain its tier and name
-            // (needed for both resolve_in_object and table_extensions_of).
-            let Some((table_tier, table_name_lc)) = graph
-                .objects
-                .iter()
-                .find(|o| &o.id == table_id)
-                .map(|o| (o.tier, o.name.to_ascii_lowercase()))
-            else {
-                return member_unknown_route();
-            };
-
-            // 1. Try the base table first (single-dispatch; Exact not Multicast).
-            if let Some(route) = resolve_in_object(
-                table_id, table_tier, method_lc, arity, graph, index, body_map,
-            ) {
-                return (DispatchShape::Exact, vec![route]);
-            }
-
-            // 2. Try each TableExtension of this table (whole-snapshot, reverse-dep).
-            //    The UNION is to FIND the proc — first hit wins (Exact, not Multicast).
-            for ext_id in index.table_extensions_of(&table_name_lc) {
-                let ext_tier = graph
+            // Source-before-catalog (beyond-1B.3b Task 1): AL semantics say a
+            // visible source/ABI table method of matching name+arity SHADOWS a
+            // same-named platform-intrinsic Record method (Catalog). Gather
+            // every visible source/ABI candidate across the base table AND its
+            // TableExtensions FIRST; only consult the catalog when that scope
+            // has ZERO candidates (or the table itself is unresolved — builtins
+            // still resolve table-independently in that case).
+            //
+            // Cardinality (gpt round-2): exactly one candidate object → resolve
+            // it (Source/Abi/Opaque); more than one → honest ambiguous Unknown
+            // — source ambiguity STILL shadows the catalog, never fall through
+            // to a false intrinsic; zero → consult the catalog.
+            if let Some(table_id) = table {
+                // Look up the ObjectNode for the table to obtain its tier and
+                // name (needed for both resolve_in_object and
+                // table_extensions_of).
+                if let Some((table_tier, table_name_lc)) = graph
                     .objects
                     .iter()
-                    .find(|o| &o.id == ext_id)
-                    .map(|o| o.tier)
-                    .unwrap_or(TrustTier::Workspace);
-                if let Some(route) =
-                    resolve_in_object(ext_id, ext_tier, method_lc, arity, graph, index, body_map)
+                    .find(|o| &o.id == table_id)
+                    .map(|o| (o.tier, o.name.to_ascii_lowercase()))
                 {
-                    return (DispatchShape::Exact, vec![route]);
+                    // Visible scope: the base table plus every TableExtension of
+                    // it (whole-snapshot, reverse-dep).
+                    let mut scope: Vec<(ObjectNodeId, TrustTier)> =
+                        vec![(table_id.clone(), table_tier)];
+                    for ext_id in index.table_extensions_of(&table_name_lc) {
+                        let ext_tier = graph
+                            .objects
+                            .iter()
+                            .find(|o| &o.id == ext_id)
+                            .map(|o| o.tier)
+                            .unwrap_or(TrustTier::Workspace);
+                        scope.push((ext_id.clone(), ext_tier));
+                    }
+
+                    let mut candidate_objects = scope.iter().filter(|(oid, tier)| {
+                        object_has_member_candidate(oid, *tier, method_lc, arity, index)
+                    });
+                    let first = candidate_objects.next();
+                    let second = candidate_objects.next();
+
+                    match (first, second) {
+                        (None, _) => {
+                            // Zero source/ABI candidates: fall through to the
+                            // catalog below.
+                        }
+                        (Some(_), Some(_)) => {
+                            // More than one visible candidate (e.g. two sibling
+                            // TableExtensions both add a same-named/arity
+                            // method): honest ambiguous Unknown. Never
+                            // pick-first; never fall through to the catalog —
+                            // source ambiguity still shadows the intrinsic.
+                            return member_unknown_route();
+                        }
+                        (Some((oid, tier)), None) => {
+                            if let Some(route) = resolve_in_object(
+                                oid, *tier, method_lc, arity, graph, index, body_map,
+                            ) {
+                                return (DispatchShape::Exact, vec![route]);
+                            }
+                            // Unreachable in practice: `object_has_member_candidate`
+                            // already proved a candidate exists in `oid`.
+                        }
+                    }
                 }
             }
 
-            // Method not found on base table or any extension.
+            // Zero source/ABI candidates in scope (or `table` unresolved):
+            // Record built-in methods (SetRange, Find, Insert, ...) are
+            // platform-intrinsic and resolve table-independently.
+            if let Some(bid) = member_builtin_id_checked(MemberCatalogKind::Record, method_lc) {
+                return member_catalog_route(bid);
+            }
             member_unknown_route()
         }
         ReceiverType::Object { kind, name_lc } => {
@@ -779,7 +841,7 @@ pub fn resolve_member(
                 if !is_metadata_sensitive_instance_method(*kind, method_lc)
                     && let Some(fk) = object_instance_framework_kind(*kind)
                     && let Some(bid) =
-                        member_builtin_id(MemberCatalogKind::Framework(&fk), method_lc)
+                        member_builtin_id_checked(MemberCatalogKind::Framework(&fk), method_lc)
                 {
                     return member_catalog_route(bid);
                 }
@@ -890,7 +952,7 @@ pub fn resolve_member(
         }
         ReceiverType::EnumType { .. } => {
             // Enum instance statics: AsInteger / FromInteger / Names / Ordinals.
-            if let Some(bid) = member_builtin_id(
+            if let Some(bid) = member_builtin_id_checked(
                 MemberCatalogKind::Framework(&FrameworkKind::Enum),
                 method_lc,
             ) {
@@ -2452,9 +2514,15 @@ codeunit 50802 "ExtCaller"
         assert_eq!(rid.name_lc, "getbalance");
     }
 
-    // (c) Record builtin method → Catalog (catalog-first wins over any in-source proc)
+    // (c) Record builtin method, NO same-name source competitor → Catalog.
+    // (beyond-1B.3b Task 1: renamed from `..._wins_catalog_first` — the table
+    // here declares `GetBalance`, not `SetView`, so this was never actually
+    // testing catalog-vs-source precedence; it tests that a genuine builtin
+    // with zero visible source candidates still resolves Catalog.  The real
+    // shadowing case is covered by the `ws-builtin-shadow` r0-corpus fixture
+    // in `tests/program_resolve_harness.rs`.)
     #[test]
-    fn resolve_member_record_builtin_wins_catalog_first() {
+    fn resolve_member_record_builtin_with_no_source_competitor_resolves_catalog() {
         use crate::program::resolve::receiver::ReceiverType;
 
         let src_table: &'static str = r#"
@@ -2487,8 +2555,9 @@ codeunit 50901 "CatalogFirstCaller"
         };
         let from_obj = find_obj(&graph, "CatalogFirstCaller");
 
-        // "setview" is a Record catalog builtin — catalog check fires first;
-        // any in-source proc with this name cannot shadow a platform builtin.
+        // "setview" is a Record catalog builtin; "SomeTable" declares no
+        // "setview" procedure (base table or extension) — zero source
+        // candidates, so resolution correctly falls through to the catalog.
         let (shape, routes) =
             resolve_member(&receiver, "setview", 0, from_obj, &graph, &index, &body_map);
 
@@ -2590,6 +2659,150 @@ codeunit 51101 "NotFoundCaller"
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
         assert_eq!(routes[0].evidence, Evidence::Unknown);
+        assert_eq!(routes[0].witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // beyond-1B.3b Task 1 — source shadows builtin (lookup precedence)
+    // -----------------------------------------------------------------------
+
+    // (f) A user table procedure whose NAME+ARITY matches a genuine Record
+    // builtin (`FieldNo`) must SHADOW the catalog: resolves to the local
+    // Source, not `builtin`. This is the exact shape of the 42 real CDO
+    // `builtin-catalog-fp-collision` divergences (e.g. `Record::fieldno`,
+    // `Record::setrecfilter`).
+    #[test]
+    fn resolve_member_record_source_proc_shadows_same_named_builtin() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 50950 "Acme"
+{
+    procedure FieldNo(FieldName: Text): Integer
+    begin
+        exit(0);
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50951 "ShadowCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Acme.al", src_table);
+        let unit_caller = make_unit(app_id, "ShadowCaller.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Acme");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "ShadowCaller");
+
+        // "fieldno" IS a genuine Record catalog builtin (arity 1) — but the
+        // table declares its OWN FieldNo(FieldName: Text), matching arity 1.
+        let (shape, routes) =
+            resolve_member(&receiver, "fieldno", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "local FieldNo must SHADOW the catalog; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Source,
+            "shadowed call must be Source, not Catalog"
+        );
+        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.name_lc, "fieldno");
+        assert_eq!(rid.object.kind, ObjectKind::Table);
+    }
+
+    // (g) Two sibling TableExtensions of the same base table both declare a
+    // same-name/arity method that ALSO happens to be a Record builtin name:
+    // ambiguous source competition must shadow the catalog with an honest
+    // Unknown — never pick-first, never fall through to a false `builtin`.
+    #[test]
+    fn resolve_member_record_ambiguous_extension_competitors_shadow_catalog_as_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 50960 "Widget"
+{
+}
+"#;
+        // Two independent extensions of the SAME base table both add a
+        // `Rename` procedure (arity 1) — `rename` IS a Record catalog builtin.
+        let src_ext1: &'static str = r#"
+tableextension 50961 "WidgetExt1" extends Widget
+{
+    procedure Rename(NewName: Text)
+    begin
+    end;
+}
+"#;
+        let src_ext2: &'static str = r#"
+tableextension 50962 "WidgetExt2" extends Widget
+{
+    procedure Rename(NewName: Text)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50963 "AmbiguousCaller"
+{
+    procedure Test()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Widget.al", src_table);
+        let unit_ext1 = make_unit(app_id.clone(), "WidgetExt1.al", src_ext1);
+        let unit_ext2 = make_unit(app_id.clone(), "WidgetExt2.al", src_ext2);
+        let unit_caller = make_unit(app_id, "AmbiguousCaller.al", src_caller);
+        let units = [unit_table, unit_ext1, unit_ext2, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Widget");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "AmbiguousCaller");
+
+        let (shape, routes) =
+            resolve_member(&receiver, "rename", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "ambiguous source competitors must NOT pick-first AND must NOT \
+             fall through to a false Catalog hit; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown,
+            "source ambiguity must shadow the catalog as honest Unknown"
+        );
         assert_eq!(routes[0].witness, Witness::None);
     }
 

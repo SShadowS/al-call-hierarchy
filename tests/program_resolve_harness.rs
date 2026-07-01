@@ -918,7 +918,7 @@ fn event_teeth_non_circularity_reads_raw_ir() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::program::resolve::full::{
-    Coverage, ObligationId, coverage_holds, resolve_full_program,
+    ClassifiedEdge, Coverage, ObligationId, ProgramReport, coverage_holds, resolve_full_program,
 };
 
 // ---------------------------------------------------------------------------
@@ -2097,5 +2097,249 @@ fn fan_out_applicability_zero_violations() {
         appl_cdo.instance_builtin_routes_checked,
         appl_cdo.implicit_trigger_routes_checked,
         appl_cdo.event_routes_checked,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 21+: beyond-1B.3b Task 1 — source shadows builtin (lookup precedence)
+// + structural builtin-catalog match, end-to-end over `ws-builtin-shadow`.
+//
+// Root-cause fix: `resolve_member`'s Record arm was catalog-FIRST (a user
+// table method whose name+arity matched a genuine Record builtin was
+// mis-classified `Catalog` instead of the local `Source`). AL semantics: a
+// visible source/ABI routine of matching name+arity SHADOWS a same-named
+// intrinsic. This is the exact shape behind the 42 real CDO
+// `builtin-catalog-fp-collision` divergences.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-builtin-shadow` and returns the full
+/// `resolve_full_program` report — shared by Tests 21a-21e below.
+fn ws_builtin_shadow_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-builtin-shadow");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-builtin-shadow")
+}
+
+/// All classified edges whose call-site obligation's caller routine has
+/// `name_lc == caller_name_lc` (case-insensitive by construction — callers
+/// pass already-lowercased names).
+fn edges_for_caller<'a>(
+    report: &'a ProgramReport,
+    caller_name_lc: &str,
+) -> Vec<&'a ClassifiedEdge> {
+    report
+        .edges
+        .iter()
+        .filter(|ce| match &ce.obligation_id {
+            ObligationId::CallSite { caller, .. } => caller.name_lc == caller_name_lc,
+            ObligationId::Publisher(_) => false,
+        })
+        .collect()
+}
+
+/// Test 21a (fixture a): `R.FieldNo('No.')` on a `Record Acme` whose table
+/// declares its OWN `FieldNo(FieldName: Text): Integer` (arity 1, matching the
+/// call) must resolve to `Acme.FieldNo` with `Evidence::Source` — NOT the
+/// `Record::fieldno` catalog builtin (today, pre-fix: catalog-first → false
+/// `builtin`).
+#[test]
+fn ws_builtin_shadow_record_member_source_shadows_catalog() {
+    let report = ws_builtin_shadow_report();
+    let edges = edges_for_caller(&report, "calla");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallA must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(
+        routes.len(),
+        1,
+        "Record member call is single-dispatch (Exact)"
+    );
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "local Acme.FieldNo must SHADOW the Record::fieldno catalog builtin; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "fieldno");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert_eq!(rid.params_count, 1);
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+}
+
+/// Test 21b (fixture b): bare `Error('boom')` inside a Codeunit that ALSO
+/// declares a local `procedure Error(Msg: Text)` must resolve to the LOCAL
+/// `Error` (`Evidence::Source`), not the `error` global intrinsic.
+///
+/// NOTE: `resolve_bare`'s own-object-first precedence (module doc,
+/// `resolver.rs:1-12`) already implemented this correctly BEFORE the Task 1
+/// fix — the only genuinely catalog-FIRST arm was `resolve_member`'s Record
+/// arm (Test 21a). This is kept as the brief-mandated regression-locking
+/// fixture, not as a second bug reproduction.
+#[test]
+fn ws_builtin_shadow_bare_source_shadows_catalog() {
+    let report = ws_builtin_shadow_report();
+    let edges = edges_for_caller(&report, "callb");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallB must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(routes.len(), 1);
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "local ShadowCallerB.Error must SHADOW the global `error` intrinsic; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "error");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+}
+
+/// Test 21c (fixture c): genuine builtins with ZERO source competitors
+/// anywhere in the workspace must STAY `Catalog` after the precedence fix —
+/// `R.FieldCaption(1)` (Record builtin), bare `Message('hi')` (global
+/// builtin), and `J.Add(...)` on a `JsonObject` (framework-member builtin).
+///
+/// NOTE: deliberately NOT a `record_op_names()` method (`SetRange`/`Insert`/
+/// `Modify`/...) — those 28 names are classified `CalleeShape::RecordOp`
+/// (`extract.rs`) and resolved via the SEPARATE implicit-trigger path, not
+/// `resolve_member`'s Record arm; `FieldCaption` exercises the Record-arm
+/// catalog fallback this test targets.
+#[test]
+fn ws_builtin_shadow_genuine_builtins_stay_catalog() {
+    let report = ws_builtin_shadow_report();
+    let edges = edges_for_caller(&report, "callc");
+    assert_eq!(edges.len(), 3, "CallC has 3 call obligations");
+
+    let mut catalog_ids: Vec<String> = Vec::new();
+    for ce in &edges {
+        assert_eq!(ce.edge.routes.len(), 1);
+        let route = &ce.edge.routes[0];
+        assert_eq!(
+            route.evidence,
+            Evidence::Catalog,
+            "genuine builtin with no source competitor must stay Catalog; got {route:?}"
+        );
+        let RouteTarget::Builtin(BuiltinId(ref id)) = route.target else {
+            panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+        };
+        assert!(
+            matches!(route.witness, Witness::CatalogEntry { .. }),
+            "witness must be CatalogEntry; got {:?}",
+            route.witness
+        );
+        catalog_ids.push(id.clone());
+    }
+    catalog_ids.sort();
+    assert_eq!(
+        catalog_ids,
+        vec![
+            "JsonObject::add".to_string(),
+            "Record::fieldcaption".to_string(),
+            "message".to_string(),
+        ],
+        "all three genuine-builtin call sites must resolve to their expected catalog ids"
+    );
+}
+
+/// Test 21d (fixture d): a near-miss name (`ZzNotARealBuiltinFp`, not a real
+/// catalog member despite being textually adjacent to real builtins) must NOT
+/// be classified `builtin` — falls through to honest `Unknown`. Locks in that
+/// the catalog match is exact-string (no fingerprint/hash digest — see
+/// `builtins.rs`/`member_catalog.rs`), so a fabricated "fingerprint collision"
+/// cannot surface as a false `builtin`.
+#[test]
+fn ws_builtin_shadow_near_miss_name_is_not_classified_builtin() {
+    let report = ws_builtin_shadow_report();
+    let edges = edges_for_caller(&report, "calld");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallD must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(routes.len(), 1);
+    let route = &routes[0];
+
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "near-miss name must NOT resolve to any target; got {:?}",
+        route.target
+    );
+    assert_eq!(
+        route.evidence,
+        Evidence::Unknown,
+        "near-miss name must NOT be classified Catalog; got {route:?}"
+    );
+    assert_eq!(route.witness, Witness::None);
+}
+
+/// Test 21e (fixture e): qualified-intrinsic bypass. `CreateGuid()` (bare,
+/// inside a Codeunit that ALSO declares a local `procedure CreateGuid(): Guid`)
+/// must resolve to the LOCAL Source (shadowing the global `createguid`
+/// intrinsic); `System.CreateGuid()` (fully qualified) must STILL bind to the
+/// `System::createguid` Catalog entry — the local declaration does NOT shadow
+/// a qualified platform call, because `System.*` is dispatched via the
+/// `Framework(System)` singleton receiver, which never consults source
+/// candidates (a structurally distinct path from the bare-call shadow check;
+/// see `ws-builtin-shadow` Step-3 investigation note in the Task 1 report).
+#[test]
+fn ws_builtin_shadow_qualified_intrinsic_bypasses_local_shadow() {
+    let report = ws_builtin_shadow_report();
+    let edges = edges_for_caller(&report, "calle");
+    assert_eq!(
+        edges.len(),
+        2,
+        "CallE has 2 call obligations (bare + qualified)"
+    );
+
+    let mut source_hit = false;
+    let mut catalog_hit = false;
+    for ce in &edges {
+        assert_eq!(ce.edge.routes.len(), 1);
+        let route = &ce.edge.routes[0];
+        match route.evidence {
+            Evidence::Source => {
+                source_hit = true;
+                let RouteTarget::Routine(ref rid) = route.target else {
+                    panic!("expected RouteTarget::Routine, got {:?}", route.target);
+                };
+                assert_eq!(rid.name_lc, "createguid");
+                assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+            }
+            Evidence::Catalog => {
+                catalog_hit = true;
+                let RouteTarget::Builtin(BuiltinId(ref id)) = route.target else {
+                    panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+                };
+                assert_eq!(
+                    id, "System::createguid",
+                    "qualified call must bind to the System Framework catalog entry"
+                );
+            }
+            other => panic!("unexpected evidence {other:?} on CallE route: {route:?}"),
+        }
+    }
+    assert!(source_hit, "bare CreateGuid() must resolve to local Source");
+    assert!(
+        catalog_hit,
+        "System.CreateGuid() must resolve to Catalog despite the local shadow"
     );
 }
