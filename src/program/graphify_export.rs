@@ -614,14 +614,12 @@ fn object_kind_str(k: ObjectKind) -> &'static str {
 }
 
 fn routine_kind_str(r: &RoutineNode) -> &'static str {
-    if r.publisher_kind.is_some() {
-        "event_publisher"
-    } else if !r.event_subscribers.is_empty() {
-        "event_subscriber"
-    } else if r.is_trigger {
-        "trigger"
-    } else {
-        "procedure"
+    match r.publisher_kind {
+        Some(crate::program::resolve::event::PublisherKind::Platform) => "platform_event",
+        Some(_) => "event_publisher",
+        None if !r.event_subscribers.is_empty() => "event_subscriber",
+        None if r.is_trigger => "trigger",
+        None => "procedure",
     }
 }
 

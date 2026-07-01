@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(resolve) platform table-event subscriber wiring — synthetic `PublisherKind::Platform` publishers**
+  (`src/program/resolve/event.rs`, `src/program/build.rs`,
+  `src/program/graphify_export.rs`) — `[EventSubscriber(ObjectType::Table,
+  Database::X, 'OnAfterDeleteEvent'/'OnAfterValidateEvent'/…)]` targets a
+  platform-generated table event (implicit DB-trigger / field-validate) that has
+  **no publisher routine in source**, so the resolve index (which binds a
+  subscriber to a `publisher_kind`-bearing routine) found no candidate and the
+  subscriber **orphaned** — its integration edge ("this fires when X is deleted",
+  the charter's data-is-control-flow wiring) silently lost. On a real BC app this
+  orphaned ~27% of all subscribers (946/3410). `build_program_graph` now injects a
+  synthetic `PublisherKind::Platform` publisher routine on the table for each
+  subscribed `(table, event)` (the 8 CRUD `OnBefore/After{Insert,Modify,Delete,
+  Rename}Event` + `OnBefore/AfterValidateEvent`), collapsing per-field granularity
+  so the index's `(object, name)` candidate model binds each to exactly one
+  publisher; never shadows a real source publisher. Everything downstream — index
+  match, `emit_event_flow_edges`, obligation coverage, graphify export (new
+  `platform_event` routine kind) — flows through the existing publisher machinery
+  unchanged. Measured on DocumentOutput/Cloud (+ Continia/MS deps): orphaned
+  subscribers **946 → 342**, real publisher→subscriber wiring **2,464 → 3,068**
+  (+604), 436 platform publishers injected, obligation coverage still holds,
+  real-unknown unchanged (0.81%). Residual 342 are a distinct category (Codeunit
+  integration-event matching misses), not table events. 807 lib + 65 harness tests
+  green.
 - **(export) graphify adapter — `aldump --graphify-export <workspace>` + `program::graphify_export`**
   (`src/program/graphify_export.rs`, `src/program/resolve/full.rs`,
   `src/bin/aldump.rs`) — projects the whole-program **resolved** call graph into a
