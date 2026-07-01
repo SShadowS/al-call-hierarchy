@@ -383,6 +383,59 @@ Tasks 1–2), `needs_manual_review` (any dimension unavailable — fail closed, 
 
 ---
 
+### Task 5.5: Wire the implicit Base App / System App dependency into the `src/program` closure
+
+**Inserted after Task 5** (Task 5 review discovery, user-approved). **This is the DOMINANT lever** — the
+`src/program` closure builder reads only the explicit app.json `dependencies[]` array and never converts
+the top-level `application`/`platform` fields (Base App / System App) into topology edges. Real BC apps
+declare Base App via `application`, NOT `dependencies[]`, so Base App is systematically absent from every
+app's closure → 246 CDO PageExt sites (and all cross-Microsoft-layer resolution) resolve to
+`OutOfClosure`. Task 5's PageExt→base-page path and Tasks 6/7 all hit this identical wall until fixed.
+
+**Files:** Modify `src/snapshot/snapshot.rs` (implicit-dep injection at both dep-construction sites),
+possibly a shared constants location for the MS-tier GUIDs; Test (fixture + CDO re-measure).
+
+**Interfaces (Consumes/mirrors the existing template):** `src/engine/deps/cross_app_l3.rs:528-634` —
+`MS_APPLICATION_TIER` (Base App `437dbf0e-84ff-417a-965d-ed2bb9650972`, +System/Foundation) /
+`MS_PLATFORM_TIER` (System App `63ca2fa4-4f03-4f2b-a480-172fef340d3f`) + `read_workspace_declared_dependencies`
+(appends implicit MS deps when `application`/`platform` non-empty; mirrors al-sem). Reuse the constants
+(pure data, like `builtins.rs::global_builtins`) or relocate them to a neutral shared module — the
+implementer picks the cleaner architecture.
+
+- [ ] **Step 1: Write failing tests** — (a) a unit test on closure construction: an `AppUnit` whose
+  app.json has a non-empty `application` field gets `MS_APPLICATION_TIER` apps appended to its
+  `declared_deps` (and `platform` → `MS_PLATFORM_TIER`); an app with EMPTY `application`/`platform` gets
+  NONE (no spurious injection). (b) an end-to-end fixture `tests/r0-corpus/ws-baseapp-closure/`: a
+  workspace app declaring `application` in app.json + a synthetic Base App `.app` in `.alpackages`
+  containing a table/page with a procedure; the workspace calls that Base App object's procedure →
+  resolves `Evidence::Source`/`Abi` (was `OutOfClosure`→`Unknown`). A control app with NO `application`
+  field + the same call → stays honest `Unknown` (no injection).
+- [ ] **Step 2: Run — fail** (implicit deps not injected; the Base App call is `Unknown`).
+- [ ] **Step 3: Implement** — at BOTH `declared_deps` construction sites (`src/snapshot/snapshot.rs:100-103`
+  workspace `ws_declared_deps`; `:206` dep-app `dep_declared`): after reading the explicit `dependencies`,
+  append implicit `AppDependency` rows for `MS_APPLICATION_TIER` when the app's `application` field
+  (app.json for workspace; NavxManifest `App@Application` `src/app_package.rs:335` for dep apps) is
+  non-empty, and `MS_PLATFORM_TIER` when `platform` is non-empty — mirroring `cross_app_l3.rs:601-631`.
+  Guard against self-referential/cyclic injection (Base App must not implicitly depend on itself); the
+  existing `topology::closure` DFS is cycle-safe, and `build.rs`'s open-world skip means an implicit dep
+  with no matching snapshot app is harmlessly ignored. Do NOT inject when the field is absent/empty
+  (fixtures with minimal app.json stay unaffected — low ripple).
+- [ ] **Step 4: Run — pass** (fixture). Then the FULL no-CDO `cargo test --workspace`: some existing
+  fixture goldens MAY change IF a fixture sets `application` AND ships a Base-App-like `.app` — inspect
+  each changed golden, confirm the change is a CORRECT new resolution (not a regression), and rebaseline
+  with justification (`REGEN_TEMP_GOLDENS=1` where applicable). A fixture whose resolution changes
+  UNEXPECTEDLY is a finding, not a rebaseline.
+- [ ] **Step 5: CDO re-measure** (WITH `CDO_WS`, single tests): `cdo_full_program_coverage_and_self_reported_metric`
+  (expect a LARGE real-`unknown` rate DROP — the 246 PageExt sites + more) AND `cdo_l3_semantic_audit_no_fresh_wrong`
+  (expect `fresh_missing` to DROP SHARPLY from 176 as fresh converges to L3's already-Base-App-wired
+  resolution; `genuine_wrong` MUST stay 0 — fresh converging toward L3, never diverging; a NEW
+  `genuine_wrong` would mean a wrong cross-app resolution → a REAL bug, fix it, do not whitelist).
+  Hand-adjudicate a sample of newly-`Resolved` cross-MS-layer sites. Deterministic across two runs.
+- [ ] **Step 6: rustfmt + clippy + commit** — `fix(resolve): wire implicit Base App/System App dependency
+  into the program closure (application/platform targets) (beyond-1B.3b Task 5.5)`.
+
+---
+
 ### Task 6: `regression_codeunit_implicit_rec` — Codeunit `TableNo` implicit `Rec` (fail-closed, ≈24)
 
 **Files:** Modify `src/program/resolve/receiver.rs`; Test `tests/r0-corpus/ws-codeunit-rec/` + CDO correctness gate.
