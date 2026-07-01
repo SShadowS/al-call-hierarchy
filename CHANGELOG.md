@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(export) graphify adapter — `aldump --graphify-export <workspace>` + `program::graphify_export`**
+  (`src/program/graphify_export.rs`, `src/program/resolve/full.rs`,
+  `src/bin/aldump.rs`) — projects the whole-program **resolved** call graph into a
+  [graphify](https://github.com/safishamsi/graphify) node-link extraction document
+  (`{ nodes, edges, hyperedges }`) consumed by graphify's `build_from_json`, so
+  graphify's clustering / Obsidian-vault / HTML / Neo4j / MCP-query stack runs on
+  engine-resolved AL edges instead of graphify's generic name-matching AST resolver
+  (which has no AL parser and cannot resolve AL dispatch). One node per AL object +
+  routine (+ synthetic builtin/external/dynamic/unresolved targets so no edge
+  dangles); one edge per resolved route. The honest obligation taxonomy is bridged
+  to graphify's `EXTRACTED`/`INFERRED`/`AMBIGUOUS` confidence tiers **without
+  laundering** — `Source`/`Catalog`/`Abi` → `EXTRACTED`, `HonestDynamic`/
+  `HonestEmpty` → `INFERRED`, `Unknown` (the one true failure) → `AMBIGUOUS` — with
+  the full classification preserved verbatim in `obligation`/`evidence`/
+  `dispatch_shape` edge attributes. `EdgeKind` maps to `calls`/`calls_builtin`/
+  `calls_external`/`runs`/`triggers`/`raises_event`. Node ids are keyed on the
+  resolved app **name** (never the run-order-dependent interned `AppRef`). Verified
+  end-to-end: the emitted document round-trips through graphify's real
+  `build_from_json` with zero dangling edges, and the graphify confidence histogram
+  reproduces the engine's `--program-call-graph-stats` obligation histogram
+  (anti-laundering). `resolve_full_program` refactored to share a `build_context`
+  helper with the new `resolve_full_program_for_export` (behaviour-preserving; the
+  65-test program-resolve harness is unchanged). Mapping spec: `U:\Git\graphify\adapter.md`.
 - **(resolve) `resolve_bare` Step 3 — bare implicit-`Rec` dispatch, `with`-guarded + builtin-collision-fail-closed, visibility-scoped (follow-up plan v2.1 Task 3)**
   (`src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
   `src/program/resolve/receiver.rs`) — implements `resolve_bare`'s Step 3,

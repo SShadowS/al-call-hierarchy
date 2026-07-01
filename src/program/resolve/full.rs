@@ -44,7 +44,7 @@ use crate::program::resolve::resolver::{
     emit_event_flow_edges, resolve_bare, resolve_implicit_trigger, resolve_member,
     resolve_object_run,
 };
-use crate::snapshot::{ParsedUnit, SnapshotBuilder, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, ParsedUnit, SnapshotBuilder, parse_snapshot};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -626,6 +626,94 @@ fn resolve_full_program_from_parts(
 /// north-star metric: the resolution outcome comes entirely from this engine.
 #[must_use]
 pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
+    // ── Steps 1–4: shared setup (snapshot → graph → parse → primary app) ──────
+    let ctx = build_context(workspace_root)?;
+    let ProgramContext {
+        snap,
+        graph,
+        parsed,
+        primary_app_ref,
+        ws_file_set,
+    } = &ctx;
+    let primary_app_ref = *primary_app_ref;
+
+    // ── Step 5: Resolve all obligations ──────────────────────────────────────
+    let (edges, coverage) =
+        resolve_full_program_from_parts(graph, parsed, primary_app_ref, ws_file_set);
+
+    // ── Step 6: Histograms ────────────────────────────────────────────────────
+    // Collect references to all underlying Edge structs.
+    let all_edge_refs: Vec<&Edge> = edges.iter().map(|ce| &ce.edge).collect();
+    // `Histogram::of_edges` takes `&[Edge]` — we need owned slices.
+    // Build by iterating manually to avoid cloning.
+    let histogram = {
+        let mut h = Histogram::default();
+        for e in &all_edge_refs {
+            count_into_histogram(&mut h, e);
+        }
+        h
+    };
+    let primary_histogram = {
+        let mut h = Histogram::default();
+        for ce in &edges {
+            if is_primary_scope(ce, primary_app_ref) {
+                count_into_histogram(&mut h, &ce.edge);
+            }
+        }
+        h
+    };
+
+    // ── Step 7: ABI integrity ─────────────────────────────────────────────────
+    // Build a raw ABI index from dep .app files (independent of graph nodes).
+    let raw_abi_index = build_raw_abi_index_from_snapshot(snap, &graph.apps);
+    // Collect all underlying edges for the ABI check.
+    let plain_edges: Vec<Edge> = edges.iter().map(|ce| ce.edge.clone()).collect();
+    let abi_integrity = abi_ingestion_integrity(&plain_edges, &raw_abi_index);
+
+    Some(ProgramReport {
+        edges,
+        coverage,
+        histogram,
+        primary_histogram,
+        abi_integrity,
+        primary_app_ref,
+    })
+}
+
+/// Export-oriented entry: assemble the whole-program graph + classified edges +
+/// primary app ref, WITHOUT computing histograms / coverage / ABI integrity.
+///
+/// Consumed by [`crate::program::graphify_export`], which needs the assembled
+/// [`ProgramGraph`] (for node labels + app-name resolution) alongside the edges.
+/// Returns `None` on snapshot build failure (fail-closed), same as
+/// [`resolve_full_program`].
+#[must_use]
+pub fn resolve_full_program_for_export(
+    workspace_root: &Path,
+) -> Option<(ProgramGraph, Vec<ClassifiedEdge>, AppRef)> {
+    let ctx = build_context(workspace_root)?;
+    let (edges, _coverage) = resolve_full_program_from_parts(
+        &ctx.graph,
+        &ctx.parsed,
+        ctx.primary_app_ref,
+        &ctx.ws_file_set,
+    );
+    Some((ctx.graph, edges, ctx.primary_app_ref))
+}
+
+/// Shared setup for the whole-program resolvers: snapshot → program graph →
+/// parse → primary app ref + workspace file set. Single source of truth so
+/// [`resolve_full_program`] and [`resolve_full_program_for_export`] cannot drift.
+/// Returns `None` when the snapshot build fails or the workspace app is absent.
+struct ProgramContext {
+    snap: AppSetSnapshot,
+    graph: ProgramGraph,
+    parsed: Vec<ParsedUnit>,
+    primary_app_ref: AppRef,
+    ws_file_set: HashSet<String>,
+}
+
+fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
     let snap = (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),
@@ -652,46 +740,12 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
     // ── Step 4: Locate primary (workspace) app ────────────────────────────────
     let primary_app_ref = graph.apps.find(&snap.workspace_app)?;
 
-    // ── Step 5: Resolve all obligations ──────────────────────────────────────
-    let (edges, coverage) =
-        resolve_full_program_from_parts(&graph, &parsed, primary_app_ref, &ws_file_set);
-
-    // ── Step 6: Histograms ────────────────────────────────────────────────────
-    // Collect references to all underlying Edge structs.
-    let all_edge_refs: Vec<&Edge> = edges.iter().map(|ce| &ce.edge).collect();
-    // `Histogram::of_edges` takes `&[Edge]` — we need owned slices.
-    // Build by iterating manually to avoid cloning.
-    let histogram = {
-        let mut h = Histogram::default();
-        for e in &all_edge_refs {
-            count_into_histogram(&mut h, e);
-        }
-        h
-    };
-    let primary_histogram = {
-        let mut h = Histogram::default();
-        for ce in &edges {
-            if is_primary_scope(ce, primary_app_ref) {
-                count_into_histogram(&mut h, &ce.edge);
-            }
-        }
-        h
-    };
-
-    // ── Step 7: ABI integrity ─────────────────────────────────────────────────
-    // Build a raw ABI index from dep .app files (independent of graph nodes).
-    let raw_abi_index = build_raw_abi_index_from_snapshot(&snap, &graph.apps);
-    // Collect all underlying edges for the ABI check.
-    let plain_edges: Vec<Edge> = edges.iter().map(|ce| ce.edge.clone()).collect();
-    let abi_integrity = abi_ingestion_integrity(&plain_edges, &raw_abi_index);
-
-    Some(ProgramReport {
-        edges,
-        coverage,
-        histogram,
-        primary_histogram,
-        abi_integrity,
+    Some(ProgramContext {
+        snap,
+        graph,
+        parsed,
         primary_app_ref,
+        ws_file_set,
     })
 }
 

@@ -51,7 +51,8 @@ fn usage() -> ExitCode {
          --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
          --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
-         --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats] \
+         --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats | \
+         --graphify-export] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -64,6 +65,7 @@ fn main() -> ExitCode {
     let mut l3_call_graph_stats = false;
     let mut l3_call_graph_stats_cross_app = false;
     let mut program_call_graph_stats = false;
+    let mut graphify_export = false;
     let mut l3_unknown_breakdown = false;
     let mut l3_unknown_breakdown_cross_app = false;
     let mut l3_event_graph = false;
@@ -107,6 +109,10 @@ fn main() -> ExitCode {
         }
         if arg == "--l3-call-graph-stats-cross-app" {
             l3_call_graph_stats_cross_app = true;
+            continue;
+        }
+        if arg == "--graphify-export" {
+            graphify_export = true;
             continue;
         }
         if arg == "--l3-unknown-breakdown" {
@@ -1283,6 +1289,28 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize program-call-graph-stats: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if graphify_export {
+        // graphify ADAPTER: project the whole-program resolved call graph into a
+        // graphify node-link extraction document (`{ nodes, edges, hyperedges }`),
+        // consumed by graphify's `build_from_json` (see `graphify_export.rs` +
+        // `U:\Git\graphify\adapter.md`). Fail-closed → snapshot build error.
+        let Some(doc) = al_call_hierarchy::program::graphify_export::export_workspace(&workspace)
+        else {
+            eprintln!("aldump: error: graphify export failed (snapshot build error)");
+            return ExitCode::FAILURE;
+        };
+        return match serde_json::to_string_pretty(&doc) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize graphify export: {e}");
                 ExitCode::FAILURE
             }
         };
