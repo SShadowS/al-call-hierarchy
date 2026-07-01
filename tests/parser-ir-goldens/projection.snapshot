@@ -231,6 +231,9 @@ ws-member-call-codeunit/src/Unknown.Codeunit.al	c91e9baef453827e
 ws-member-call-resolution/src/Caller.Codeunit.al	ca3c3386b72ad4df
 ws-member-call-resolution/src/Helper.Codeunit.al	674cf323850b5e69
 ws-multi-object/src/codeunit-and-table.al	7f9dd2a44ac1f11c
+ws-object-name-shape/Caller.Codeunit.al	880eaf02f622cbd2
+ws-object-name-shape/Named80.Codeunit.al	2ecea5123d6f5291
+ws-object-name-shape/RealById.Codeunit.al	2dff3ef986485f0f
 ws-op-order/src/Caller.Codeunit.al	b65da3efd1817fb7
 ws-op-order/src/OORec.Table.al	775d37c244c8d91c
 ws-order-branch-error/src/BranchError.Codeunit.al	37fcbf35f0e38ed8

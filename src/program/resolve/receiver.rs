@@ -233,8 +233,18 @@ pub enum ParsedType {
     /// 18 by a later stringly-typed re-parse.
     Record { table_ref: ObjectRef },
     /// `Codeunit X` / `Page X` / `Report X` / `Query X` / `XmlPort X` — object
-    /// kind and (possibly numeric) name as written.
-    Object { kind: ObjectKind, name: String },
+    /// kind and the object reference, LOSSLESSLY shaped exactly like
+    /// `Record`'s `table_ref` above (this is the I1 mirror for Caller-A's
+    /// object-typed sibling): a numeric AL object id (`Codeunit 80`) is
+    /// [`ObjectRef::Id`]; a name (quoted or not, `Codeunit "Sales-Post"` /
+    /// `Codeunit MyMgt`) is [`ObjectRef::Name`]. Distinguishing the two shapes
+    /// here — rather than collapsing both to a bare string — is required so
+    /// `Codeunit 80` (numeric id 80) and `Codeunit "80"` (a codeunit literally
+    /// NAMED "80") can never be conflated by a later stringly-typed re-parse.
+    Object {
+        kind: ObjectKind,
+        object_ref: ObjectRef,
+    },
     /// `Interface <Name>` — lowercased interface name.
     Interface { name: String },
     /// `Enum <Name>` — lowercased enum name.
@@ -819,7 +829,6 @@ fn parsed_type_to_receiver(
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> ReceiverType {
-    let from_app = from_object.id.app;
     match pt {
         ParsedType::Record { table_ref } => {
             // Reuses the same fail-closed, shape-preserving helper Task 5's
@@ -832,15 +841,20 @@ fn parsed_type_to_receiver(
             let table = resolve_source_table_ref(from_object.id.clone(), &table_ref, graph, index);
             ReceiverType::Record { table }
         }
-        ParsedType::Object { kind, name } => {
-            // Resolve the name to get the canonical lowercased name from the
-            // graph (handles both name-based and numeric-id references).
-            let name_lc = resolve_object_name_lc(kind, &name, from_app, graph, index);
-            ReceiverType::Object {
-                kind,
-                name_lc,
-                id: None,
-            }
+        ParsedType::Object { kind, object_ref } => {
+            // Task 2 (mirrors I1): the SAME fail-closed, shape-preserving
+            // `resolve_object_ref` the `Record` arm above uses — `object_ref`
+            // is losslessly shaped (`ObjectRef::Id`/`Name`) by
+            // `parse_object_kind_type`, so `Codeunit 80` and `Codeunit "80"`
+            // can never be conflated here either. A `Unique` resolution
+            // carries the resolved `id` UP FRONT, so `resolve_member`'s
+            // `Object` arm short-circuits on it directly (mirrors Task 7's
+            // `CurrPage.<part>.Page` carried-id short-circuit) instead of
+            // re-deriving it from `name_lc` — no redundant second lookup for
+            // the (common) resolved case.
+            let (id, name_lc) =
+                resolve_object_ref_lc(kind, &object_ref, from_object.id.clone(), graph, index);
+            ReceiverType::Object { kind, name_lc, id }
         }
         ParsedType::Interface { name } => ReceiverType::Interface { name_lc: name },
         ParsedType::EnumType { name } => ReceiverType::EnumType { name_lc: name },
@@ -853,38 +867,77 @@ fn parsed_type_to_receiver(
     }
 }
 
-/// Resolve an object name (or numeric id string) to the canonical lowercased
-/// name of the matching `ObjectNode`, falling back to the lowercased input when
-/// no match is found.
-fn resolve_object_name_lc(
+/// Resolve a losslessly-shaped [`ObjectRef`] (Task 2, mirrors I1) to a target
+/// `ObjectNodeId` and its canonical lowercased name, via the same fail-closed,
+/// dependency-closure-scoped [`ResolveIndex::resolve_object_ref`] the `Record`
+/// arm's `SourceTable`/`TableNo` resolution (Tasks 5/6) already uses.
+///
+/// A numeric AL object id (`Codeunit 80`) is never conflated with a codeunit
+/// literally NAMED `"80"` (`Codeunit "80"`) the way the old
+/// `name.trim().parse::<i64>()` re-parse of an ALREADY-unquoted string used
+/// to (both collapsed to numeric id 80) — `object_ref`'s `Id`/`Name` shape is
+/// dispatched directly, with no string re-parsing at all.
+///
+/// Only [`ObjectRefResolution::Unique`] returns a resolved id; `Ambiguous`/
+/// `OutOfClosure`/`Unresolved` all decline to `None` — never guess (the
+/// cardinal sin) — falling back to [`object_ref_fallback_lc`] for `name_lc`
+/// so `resolve_member`'s `Object` arm can still attempt its own by-name
+/// lookup for the (rare, dormant — digit-named AL objects are ~never seen in
+/// real BC) unresolved case.
+fn resolve_object_ref_lc(
     kind: ObjectKind,
-    name: &str,
-    from_app: crate::program::node::AppRef,
+    object_ref: &ObjectRef,
+    from: ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-) -> String {
-    // Numeric reference.
-    if let Ok(n) = name.trim().parse::<i64>() {
-        if let Some(oid) = index.object_by_number(graph, from_app, kind, n)
-            && let Some(obj) = graph.objects.iter().find(|o| o.id == oid)
-        {
-            return obj.name.to_ascii_lowercase();
+) -> (Option<ObjectNodeId>, String) {
+    match index.resolve_object_ref(graph, from, kind, object_ref) {
+        ObjectRefResolution::Unique(id) => {
+            let name_lc = graph
+                .objects
+                .iter()
+                .find(|o| o.id == id)
+                .map(|o| o.name.to_ascii_lowercase())
+                .unwrap_or_else(|| object_ref_fallback_lc(object_ref));
+            (Some(id), name_lc)
         }
-        return name.to_ascii_lowercase();
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => (None, object_ref_fallback_lc(object_ref)),
     }
-    // Name-based reference.
-    if let Some(obj) = graph.resolve_object(from_app, kind, name) {
-        return obj.name.to_ascii_lowercase();
-    }
-    name.to_ascii_lowercase()
 }
 
-/// Build a [`ParsedType::Object`] for the given kind and raw name portion.
+/// The lowercased display text of an [`ObjectRef`], used only as the
+/// `name_lc` fallback when [`resolve_object_ref_lc`]'s shape-aware resolution
+/// did not find a unique target — a numeric id renders as its decimal text
+/// (matching legacy `resolve_object_name_lc` fallback behavior), never
+/// re-derived by parsing a string as `i64`.
+fn object_ref_fallback_lc(object_ref: &ObjectRef) -> String {
+    match object_ref {
+        ObjectRef::Name { normalized_lc, .. } => normalized_lc.clone(),
+        ObjectRef::Id(n) => n.to_string(),
+    }
+}
+
+/// Build a [`ParsedType::Object`] for the given kind and raw name portion,
+/// classifying quoted-vs-bare EXACTLY as `classify_type_text`'s `Record` arm
+/// does (Task 2, mirrors I1): a bare numeric string is [`ObjectRef::Id`];
+/// ANYTHING else — including a QUOTED numeric string, since the quote
+/// characters make it fail the `i64` parse before unquoting — is
+/// [`ObjectRef::Name`]. This decides shape BEFORE any unquoting happens, so
+/// `Codeunit 80` (numeric id) and `Codeunit "80"` (a codeunit literally named
+/// `"80"`) can never be conflated by a later re-parse of an already-unquoted
+/// string.
 fn parse_object_kind_type(kind: ObjectKind, name_rest: &str) -> ParsedType {
-    // For numeric references like `Codeunit 80`, the name_rest is "80" (no quotes).
-    // For named references like `Codeunit "Sales-Post"`, unquote to "Sales-Post".
-    let name = unquote_identifier(name_rest);
-    ParsedType::Object { kind, name }
+    let trimmed = name_rest.trim();
+    let object_ref = if let Ok(n) = trimmed.parse::<i64>() {
+        ObjectRef::Id(n)
+    } else {
+        let raw = unquote_identifier(trimmed);
+        let normalized_lc = raw.to_ascii_lowercase();
+        ObjectRef::Name { raw, normalized_lc }
+    };
+    ParsedType::Object { kind, object_ref }
 }
 
 /// Strip surrounding double-quotes from an identifier token.  Returns the
@@ -1197,11 +1250,12 @@ mod tests {
 
     #[test]
     fn classify_codeunit_numeric() {
+        // `Codeunit 80` (unquoted digits) is a NUMERIC id reference.
         assert_eq!(
             classify_type_text("Codeunit 80"),
             ParsedType::Object {
                 kind: ObjectKind::Codeunit,
-                name: "80".into()
+                object_ref: ObjectRef::Id(80)
             }
         );
     }
@@ -1212,7 +1266,113 @@ mod tests {
             classify_type_text("Codeunit \"Sales-Post\""),
             ParsedType::Object {
                 kind: ObjectKind::Codeunit,
-                name: "Sales-Post".into()
+                object_ref: ObjectRef::Name {
+                    raw: "Sales-Post".into(),
+                    normalized_lc: "sales-post".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_codeunit_quoted_numeric_name() {
+        // `Codeunit "80"` is a codeunit literally NAMED "80" — must NOT be
+        // confused with the numeric id reference `Codeunit 80` (Task 2, the
+        // I1 shape bug mirrored: both used to collapse to the same string
+        // "80" once quotes were stripped, silently coercing a quoted name
+        // into a guessed id).
+        assert_eq!(
+            classify_type_text("Codeunit \"80\""),
+            ParsedType::Object {
+                kind: ObjectKind::Codeunit,
+                object_ref: ObjectRef::Name {
+                    raw: "80".into(),
+                    normalized_lc: "80".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_page_numeric_and_quoted_numeric_name() {
+        assert_eq!(
+            classify_type_text("Page 80"),
+            ParsedType::Object {
+                kind: ObjectKind::Page,
+                object_ref: ObjectRef::Id(80)
+            }
+        );
+        assert_eq!(
+            classify_type_text("Page \"80\""),
+            ParsedType::Object {
+                kind: ObjectKind::Page,
+                object_ref: ObjectRef::Name {
+                    raw: "80".into(),
+                    normalized_lc: "80".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_report_numeric_and_quoted_numeric_name() {
+        assert_eq!(
+            classify_type_text("Report 80"),
+            ParsedType::Object {
+                kind: ObjectKind::Report,
+                object_ref: ObjectRef::Id(80)
+            }
+        );
+        assert_eq!(
+            classify_type_text("Report \"80\""),
+            ParsedType::Object {
+                kind: ObjectKind::Report,
+                object_ref: ObjectRef::Name {
+                    raw: "80".into(),
+                    normalized_lc: "80".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_query_numeric_and_quoted_numeric_name() {
+        assert_eq!(
+            classify_type_text("Query 80"),
+            ParsedType::Object {
+                kind: ObjectKind::Query,
+                object_ref: ObjectRef::Id(80)
+            }
+        );
+        assert_eq!(
+            classify_type_text("Query \"80\""),
+            ParsedType::Object {
+                kind: ObjectKind::Query,
+                object_ref: ObjectRef::Name {
+                    raw: "80".into(),
+                    normalized_lc: "80".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_xmlport_numeric_and_quoted_numeric_name() {
+        assert_eq!(
+            classify_type_text("XmlPort 80"),
+            ParsedType::Object {
+                kind: ObjectKind::XmlPort,
+                object_ref: ObjectRef::Id(80)
+            }
+        );
+        assert_eq!(
+            classify_type_text("XmlPort \"80\""),
+            ParsedType::Object {
+                kind: ObjectKind::XmlPort,
+                object_ref: ObjectRef::Name {
+                    raw: "80".into(),
+                    normalized_lc: "80".into()
+                }
             }
         );
     }
@@ -1524,21 +1684,186 @@ mod tests {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Task 2 (mirrors I1): `<Kind> 80` (numeric id) vs `<Kind> "80"` (an
+    // object literally NAMED "80") must resolve to two DIFFERENT objects,
+    // never conflated by a lossy string round-trip — the `ParsedType::Object`
+    // sibling of the `ParsedType::Record` fix directly above. Covers every
+    // kind `resolve_object_ref_lc`/`resolve_member`'s `Object` arm serves.
+    // -----------------------------------------------------------------------
+
+    /// Single-app fixture, parametrized by `kind`: an object DECLARED with
+    /// id 80 ("RealById") AND a separate object of the SAME kind literally
+    /// NAMED "80" (`declared_id: None` — its only identity is the
+    /// digit-string name), plus a `CallerCu` Codeunit (id 999) to serve as
+    /// `from_object`. Mirrors `build_numeric_name_shape_fixture` above,
+    /// generalized across object kinds.
+    fn build_object_numeric_name_shape_fixture(kind: ObjectKind) -> (ProgramGraph, AppRef) {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let app_id = AppId {
+            guid: String::new(),
+            name: "ObjShapeApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let app = apps.intern(&app_id);
+        let topology = DependencyGraph::default();
+
+        let mut objects = vec![
+            make_object_node(app, kind, "RealById", Some(80), None),
+            make_object_node(app, kind, "80", None, None),
+            make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None),
+        ];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines: vec![],
+            obj_index,
+        };
+        (graph, app)
+    }
+
+    /// Routine with `ById: <keyword> 80` (numeric) and `ByQuotedName:
+    /// <keyword> "80"` (quoted digit-string name) params, for the given AL
+    /// object-kind keyword (`"Codeunit"`/`"Page"`/`"Report"`/`"Query"`/
+    /// `"XmlPort"`).
+    fn build_object_numeric_name_shape_routine(keyword: &str) -> RoutineDecl {
+        let o = test_origin();
+        RoutineDecl {
+            kind: RoutineKind::Procedure,
+            name: "TestProc".into(),
+            name_origin: o.clone(),
+            params: vec![
+                Param {
+                    name: "ById".into(),
+                    by_ref: false,
+                    ty: Some(format!("{keyword} 80")),
+                    origin: o.clone(),
+                },
+                Param {
+                    name: "ByQuotedName".into(),
+                    by_ref: false,
+                    ty: Some(format!("{keyword} \"80\"")),
+                    origin: o.clone(),
+                },
+            ],
+            return_type: None,
+            locals: vec![],
+            attributes: vec![],
+            attributes_parsed: vec![],
+            access_modifier: None,
+            parse_incomplete: false,
+            dataitem_source_table: None,
+            enclosing_member: None,
+            body: None,
+            origin: o,
+        }
+    }
+
+    /// Shared assertion body for the per-kind Task 2 shape-preservation
+    /// tests below: `<keyword> 80` must resolve to the numeric-id-80 object
+    /// (`id: Some`, carried up front — Task 2's other half of the mirror);
+    /// `<keyword> "80"` must resolve to the DIFFERENT object literally named
+    /// "80", never the id-80 object — the exact pre-fix collapse bug.
+    fn assert_object_kind_shape_preserved(kind: ObjectKind, keyword: &str) {
+        let (graph, app) = build_object_numeric_name_shape_fixture(kind);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_object_numeric_name_shape_routine(keyword);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "CallerCu")
+            .unwrap()
+            .clone();
+
+        let by_id_id = graph
+            .resolve_object(app, kind, "RealById")
+            .unwrap()
+            .id
+            .clone();
+        let by_name_id = graph.resolve_object(app, kind, "80").unwrap().id.clone();
+        assert_ne!(
+            by_id_id, by_name_id,
+            "fixture sanity: the two {keyword} objects must be distinct"
+        );
+
+        let by_id = infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(
+            by_id,
+            ReceiverType::Object {
+                kind,
+                name_lc: "realbyid".into(),
+                id: Some(by_id_id),
+            },
+            "{keyword} 80 (numeric) must resolve to the id-80 object"
+        );
+
+        let by_quoted_name =
+            infer_receiver_type("byquotedname", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(
+            by_quoted_name,
+            ReceiverType::Object {
+                kind,
+                name_lc: "80".into(),
+                id: Some(by_name_id),
+            },
+            "{keyword} \"80\" (quoted name) must resolve to the object literally \
+             named \"80\", never the numeric id-80 object (pre-fix collapse bug)"
+        );
+    }
+
+    #[test]
+    fn caller_a_mirror_object_codeunit_numeric_vs_quoted_name_shape_preserved() {
+        assert_object_kind_shape_preserved(ObjectKind::Codeunit, "Codeunit");
+    }
+
+    #[test]
+    fn caller_a_mirror_object_page_numeric_vs_quoted_name_shape_preserved() {
+        assert_object_kind_shape_preserved(ObjectKind::Page, "Page");
+    }
+
+    #[test]
+    fn caller_a_mirror_object_report_numeric_vs_quoted_name_shape_preserved() {
+        assert_object_kind_shape_preserved(ObjectKind::Report, "Report");
+    }
+
+    #[test]
+    fn caller_a_mirror_object_query_numeric_vs_quoted_name_shape_preserved() {
+        assert_object_kind_shape_preserved(ObjectKind::Query, "Query");
+    }
+
+    #[test]
+    fn caller_a_mirror_object_xmlport_numeric_vs_quoted_name_shape_preserved() {
+        assert_object_kind_shape_preserved(ObjectKind::XmlPort, "XmlPort");
+    }
+
     #[test]
     fn infer_param_codeunit_by_name() {
         let (graph, app) = build_test_graph();
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
 
-        // "cuparam" → param `CuParam: Codeunit "MyCodeunit"` → Object{Codeunit, "mycodunit"}
+        // "cuparam" → param `CuParam: Codeunit "MyCodeunit"` → Object{Codeunit,
+        // "mycodeunit"}, `id` carried up front (Task 2: mirrors I1's `Record`
+        // — a `Unique` `resolve_object_ref` match is resolved in Phase A, not
+        // re-derived by a redundant Phase B by-name lookup).
         let result = infer_receiver_type("cuparam", &routine, &[], &from_obj, &graph, &index);
         assert_eq!(
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "mycodeunit".into(),
-                id: None
+                id: Some(mycodeunit_id)
             }
         );
     }
@@ -1549,15 +1874,21 @@ mod tests {
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
 
-        // "cunumparam" → param `CuNumParam: Codeunit 50100` → resolves to "mycodeunit"
+        // "cunumparam" → param `CuNumParam: Codeunit 50100` → resolves to
+        // "mycodeunit", `id` carried up front (Task 2, mirrors I1).
         let result = infer_receiver_type("cunumparam", &routine, &[], &from_obj, &graph, &index);
         assert_eq!(
             result,
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "mycodeunit".into(),
-                id: None
+                id: Some(mycodeunit_id)
             }
         );
     }
@@ -2170,6 +2501,11 @@ mod tests {
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
 
         let o = test_origin();
         let globals = vec![VarDecl {
@@ -2185,7 +2521,7 @@ mod tests {
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "mycodeunit".into(),
-                id: None
+                id: Some(mycodeunit_id)
             }
         );
     }
@@ -2229,6 +2565,11 @@ mod tests {
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
 
         let o = test_origin();
         // Global also named "CuParam" but with a different type
@@ -2246,7 +2587,7 @@ mod tests {
             ReceiverType::Object {
                 kind: ObjectKind::Codeunit,
                 name_lc: "mycodeunit".into(),
-                id: None
+                id: Some(mycodeunit_id)
             }
         );
     }

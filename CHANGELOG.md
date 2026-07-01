@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **soundness-completion plan Task 2: shape-preserving object-typed declared-var resolution
+  (`ParsedType::Object` → `ObjectRef`) — mirrors I1's `Record` fix for the `Object` sibling**
+  (`src/program/resolve/receiver.rs`). `ParsedType::Object { kind, name: String }` collapsed a
+  numeric AL object id (`Codeunit 80`) and a QUOTED digit-string name (`Codeunit "80"` — a
+  codeunit literally NAMED `80`) into the identical string `"80"` in `parse_object_kind_type`
+  BEFORE `resolve_object_name_lc` ever ran; that function then re-parsed the already-unquoted
+  string with `.parse::<i64>()`, so both shapes silently resolved by numeric id 80 — the exact
+  I1 `ParsedType::Record` shape-loss bug, still open for `Object`. `ParsedType::Object` now
+  carries a losslessly-shaped `object_ref: ObjectRef` (`Id`/`Name`, exactly like `Record`'s
+  `table_ref`), classified in `parse_object_kind_type` before any unquoting happens (a bare
+  numeric string is `Id`; a QUOTED numeric string fails the `i64` parse on the quote characters
+  and becomes `Name`, matching `classify_type_text`'s `Record` arm precedent). A new
+  `resolve_object_ref_lc` replaces `resolve_object_name_lc`, calling the same fail-closed,
+  dependency-closure-scoped `ResolveIndex::resolve_object_ref` Tasks 5/6 already use for
+  `SourceTable`/`TableNo` — no `.parse::<i64>()` call remains anywhere in this path. A `Unique`
+  resolution now carries the resolved id up front in `ReceiverType::Object` (mirrors Task 7's
+  `CurrPage.<part>.Page` carried-id short-circuit), so `resolve_member`'s `Object` arm no longer
+  needs a redundant second by-name lookup for the (common) resolved case. New unit tests cover
+  the numeric-vs-quoted-name distinction for all 5 kinds `resolve_object_ref_lc` serves
+  (Codeunit/Page/Report/Query/XmlPort), plus a new end-to-end call-graph fixture
+  (`tests/r0-corpus/ws-object-name-shape/`, loaded via `resolve_full_program`): `codeunit 80
+  RealById` (no `P()`) + `codeunit 50100 "80"` (declares `P()`) + a caller declaring `C:
+  Codeunit "80"; C.P()` — the fresh edge now correctly targets the NAMED codeunit
+  (`Evidence::Source`, id 50100), where pre-fix it collapsed to id 80 and produced a false
+  `Unknown` (id-80's `RealById` has no `P()`). TDD-verified: the end-to-end fixture failed
+  against the unmodified code with the exact predicted `Unknown` route before the fix landed.
+  CDO (`CDO_WS`): `genuine_wrong` stays 0; `real_unknown_rate` and every other CDO metric
+  UNCHANGED (dormant, like I1 — digit-named AL objects are ~never seen in real Business
+  Central).
 - **soundness-completion plan Task 1: caller-identity-aware member visibility — closes two
   latent false-`Source` gaps in `object_has_visible_member_candidate`** (its sole caller,
   `resolve_in_table_scope`, and `ResolveIndex`) — same-app `local` was treated as app-scoped

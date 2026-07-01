@@ -1082,6 +1082,78 @@ fn full_program_fixture_coverage_holds_and_histogram_is_correct() {
 }
 
 // ---------------------------------------------------------------------------
+// Task 2 (mirrors I1): end-to-end call-graph fixture — object-typed declared
+// var shape preservation (`ParsedType::Object` → `ObjectRef`).
+// ---------------------------------------------------------------------------
+
+/// Runs `resolve_full_program` over `tests/r0-corpus/ws-object-name-shape/` —
+/// see that directory's `PROOF.md` for the full write-up.
+///
+/// `codeunit 80 RealById` (no `P()`) and `codeunit 50100 "80"` (a codeunit
+/// literally NAMED `80`, declares `P()`) coexist; `Caller.Trigger` declares
+/// `C: Codeunit "80"` (a QUOTED name reference) and calls `C.P()`. Pre-fix,
+/// `resolve_object_name_lc` re-parsed the already-unquoted string `"80"` as
+/// the numeric id `80`, silently misrouting the receiver to `RealById` —
+/// which has no `P()` — producing a false `Unknown` edge instead of the
+/// correct `Source` edge to `Named80.P`. This is the exact `ParsedType::Object`
+/// sibling of the I1 `ParsedType::Record` shape-loss fix.
+#[test]
+fn object_name_shape_quoted_digit_name_resolves_to_named_object_not_numeric_id() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-object-name-shape");
+
+    let report = resolve_full_program(&fixture).expect("fixture must parse successfully");
+
+    assert!(
+        coverage_holds(&report.coverage),
+        "coverage contract violated: missing={:?}, extra={:?}",
+        report.coverage.missing,
+        report.coverage.extra,
+    );
+
+    // Locate the Caller.Trigger call site's edge (the only call site in the
+    // fixture — `C.P()`).
+    let call_edge = report
+        .edges
+        .iter()
+        .find(|ce| {
+            ce.edge.from.name_lc == "trigger" && ce.edge.from.object.key == ObjKey::Id(50101)
+        })
+        .expect("Caller.Trigger's C.P() call site must produce a classified edge");
+
+    assert_eq!(
+        call_edge.edge.routes.len(),
+        1,
+        "expected exactly one route: {:?}",
+        call_edge.edge.routes
+    );
+    let route = &call_edge.edge.routes[0];
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "C.P() must resolve via Source evidence (a same-app declared-var member \
+         call), not {:?} — route: {route:?}",
+        route.evidence
+    );
+
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!(
+            "expected RouteTarget::Routine (a resolved procedure), got {:?}",
+            route.target
+        );
+    };
+    assert_eq!(
+        rid.object.key,
+        ObjKey::Id(50100),
+        "C.P() must target Named80 (codeunit 50100, literally named \"80\"), \
+         NEVER RealById (codeunit id 80) — a wrong id here is exactly the I1-class \
+         shape-loss bug this fixture proves fixed. Got target object key: {:?}",
+        rid.object.key
+    );
+    assert_eq!(rid.name_lc, "p", "target routine must be Named80.P");
+}
+
+// ---------------------------------------------------------------------------
 // Test 12 (unit): dropped obligation → coverage_holds returns false
 // ---------------------------------------------------------------------------
 
@@ -4595,6 +4667,15 @@ fn resolve_module_has_no_stray_engine_l3_l2_imports() {
 // (indexing/diagnostic) caller was found, so no `resolve_object_first_by_
 // stable_id` escape hatch was created.
 //
+// Task 2 (mirrors I1) MIGRATED `receiver.rs`'s two entries (the
+// `resolve_object_name_lc` numeric/name fallback pair) to
+// `ResolveIndex::resolve_object_ref` — the exact "(b)" migration this guard's
+// own message anticipates: `ParsedType::Object` now carries a losslessly
+// shaped `ObjectRef` (mirrors `ParsedType::Record`'s `table_ref`), so
+// `resolve_object_ref_lc` calls `resolve_object_ref` directly instead of
+// `graph.resolve_object`/`index.object_by_number`. Their removal from
+// `expected` below is that migration being reflected, not a regression.
+//
 // This guard locks that audited set in place: a NEW call site appearing in
 // `src/program/resolve/*.rs` PRODUCTION code (before each file's `#[cfg(test)]`
 // module marker — test fixtures directly exercising the API are expected and
@@ -4639,14 +4720,6 @@ fn resolve_module_pick_first_base_function_callers_are_a_known_allowlist() {
         (
             "resolver.rs",
             "None => graph.resolve_object(from_object.id.app, *kind, name_lc),",
-        ),
-        (
-            "receiver.rs",
-            "if let Some(oid) = index.object_by_number(graph, from_app, kind, n)",
-        ),
-        (
-            "receiver.rs",
-            "if let Some(obj) = graph.resolve_object(from_app, kind, name) {",
         ),
         (
             "index.rs",

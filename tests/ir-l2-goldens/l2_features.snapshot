@@ -394,6 +394,9 @@ ws-member-call-resolution/src/Caller.Codeunit.al::0::OnRun	fd50af4a033b738b
 ws-member-call-resolution/src/Helper.Codeunit.al::0::LocalHelper	276476512e6c8944
 ws-member-call-resolution/src/Helper.Codeunit.al::0::PublicEntry	34fd312429dd9d54
 ws-multi-object/src/codeunit-and-table.al::0::DoWork	0a1ff90366ed3312
+ws-object-name-shape/Caller.Codeunit.al::0::Trigger	e4092338e2c417d5
+ws-object-name-shape/Named80.Codeunit.al::0::P	2ea3435949e43996
+ws-object-name-shape/RealById.Codeunit.al::0::Other	2ea3435949e43996
 ws-op-order/src/Caller.Codeunit.al::0::Run	c3ae17b738406aef
 ws-op-order/src/Caller.Codeunit.al::0::GuardOpen	65856182084f1957
 ws-order-branch-error/src/BranchError.Codeunit.al::0::RunBranchError	7066b6bbd8277e49
