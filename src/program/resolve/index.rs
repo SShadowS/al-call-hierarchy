@@ -117,10 +117,11 @@ pub struct ResolveIndex {
     /// `(object_id, name_lc)` → list of `RoutineNodeId`s (overloads, ≤1 in practice).
     routines_by_obj_name: HashMap<(ObjectNodeId, String), Vec<RoutineNodeId>>,
     /// `(app, kind, declared_id)` → `ObjectNodeId` (first in sorted order for
-    /// that app; duplicates within one app silently ignored). Feeds the
-    /// existing, more permissive [`Self::object_by_number`] (self-preferred,
-    /// "best"-tiebreak, no ambiguity signal — kept unchanged for its existing
-    /// callers).
+    /// that app; duplicates within one app silently ignored). Feeds
+    /// [`Self::object_by_number`] — self-preferred (own-app shadow), and
+    /// fail-closed (I1) on a genuine cross-app collision: more than one app
+    /// in the closure matching `(kind, declared_id)` DECLINES (`None`)
+    /// instead of picking the lowest `ObjectNodeId`.
     objs_by_number: HashMap<(AppRef, ObjectKind, i64), ObjectNodeId>,
     /// `(kind, declared_id)` → every `ObjectNodeId` across ALL apps sharing
     /// that (kind, id), in `graph.objects` sort order. GLOBAL (whole-snapshot,
@@ -322,12 +323,16 @@ impl ResolveIndex {
     }
 
     /// Resolve an object by its **numeric AL id** as seen from `from`
-    /// ([`WorldMode::CallerClosure`]).
+    /// ([`WorldMode::CallerClosure`]) — fail-closed (I1).
     ///
     /// Search order mirrors [`ProgramGraph::resolve_object`]:
-    /// 1. `from` itself (short-circuit before computing the closure).
-    /// 2. The lowest-`NodeId` object with the same `(kind, declared_id)` among
-    ///    `from`'s transitive dependency closure.
+    /// 1. `from` itself always wins (own-app shadow), short-circuiting before
+    ///    computing the closure.
+    /// 2. Otherwise, exactly ONE `(kind, declared_id)` match among `from`'s
+    ///    transitive dependency closure resolves; more than one VISIBLE
+    ///    dependency match is an unprovable cross-app collision and DECLINES
+    ///    (`None`) rather than guessing via the lowest-`NodeId` tiebreak (a
+    ///    confident WRONG pick is the cardinal sin — I1).
     ///
     /// Objects whose declaring app is NOT in the closure are invisible.
     ///
@@ -346,21 +351,25 @@ impl ResolveIndex {
             return Some(oid.clone());
         }
 
-        // Search the rest of the closure (cycle-safe; `from` is skipped below).
+        // No own-app declaration: search the rest of the closure (cycle-safe;
+        // `from` is skipped below). `objs_by_number` already holds at most
+        // one entry per `(app, kind, declared_id)` (first/lowest-id wins on a
+        // same-app duplicate), so at most one match can come from any single
+        // app — more than one app matching is a genuine cross-app collision.
         let closure = graph.topology.closure(from);
-        let mut best: Option<&ObjectNodeId> = None;
+        let mut found: Option<&ObjectNodeId> = None;
         for &app in &closure {
             if app == from {
                 continue;
             }
             if let Some(oid) = self.objs_by_number.get(&(app, kind, declared_id)) {
-                best = Some(match best {
-                    Some(b) if b <= oid => b,
-                    _ => oid,
-                });
+                if found.is_some() {
+                    return None; // >1 dependency declares this (kind, id) — decline.
+                }
+                found = Some(oid);
             }
         }
-        best.cloned()
+        found.cloned()
     }
 
     /// Resolve an [`ObjectRef`] (a `SourceTable`/`TableNo`/page-control target)
@@ -377,12 +386,13 @@ impl ResolveIndex {
     ///
     /// - [`ObjectRef::Id`] matches a declared numeric object id of the SAME
     ///   `kind` only, via [`Self::objects_by_id`] filtered to `from`'s
-    ///   dependency closure (self included). No shadow priority: numeric ids
-    ///   are supposed to be unique within one AL compile closure, so two
-    ///   distinct in-closure declarations of the same `(kind, id)` — an
-    ///   anomaly that a merged whole-program snapshot can surface even though
-    ///   a real compile never would — is `Ambiguous`, not resolved via a
-    ///   pick.
+    ///   dependency closure (self included). An object declared in `from`'s
+    ///   OWN app always wins over any dependency's same-`(kind, id)` object
+    ///   (own-app shadow — mirrors the Name arm below and matches
+    ///   `object_by_number`'s existing self-shortcut), so two DEPENDENCIES
+    ///   sharing an id — an anomaly that a merged whole-program snapshot can
+    ///   surface even though a real compile never would — is `Ambiguous` only
+    ///   when NEITHER is `from` itself.
     /// - [`ObjectRef::Name`] matches by `kind` + lowercased name within the
     ///   closure via [`Self::objects_by_name`]. An object declared in `from`'s
     ///   OWN app always wins over any dependency's same-named object (AL's
@@ -418,6 +428,15 @@ impl ResolveIndex {
                     .unwrap_or(&[]);
                 if candidates.is_empty() {
                     return ObjectRefResolution::Unresolved;
+                }
+                // Own-app shadow: `from`'s own declaration always wins over
+                // any dependency's same-`(kind, id)` object — mirrors the
+                // Name arm below, and matches `object_by_number`'s existing
+                // self-shortcut, so numeric-id resolution stays
+                // behavior-preserving for the already-covered self-declared
+                // case.
+                if let Some(own) = candidates.iter().find(|oid| oid.app == from.app) {
+                    return ObjectRefResolution::Unique(own.clone());
                 }
                 let in_closure: Vec<&ObjectNodeId> = candidates
                     .iter()
@@ -839,6 +858,78 @@ mod tests {
         assert!(found2.is_none(), "unknown app has empty closure");
     }
 
+    /// Three-app fixture for `object_by_number`'s I1 root-fix tests:
+    /// - AppA (`a`, the `from` app) depends on AppB and AppC.
+    /// - AppB and AppC both declare Table 900 (a genuine cross-app id
+    ///   collision, neither app is `a` itself).
+    /// - AppA and AppB both declare Table 950 (own-app-shadow case: A's own
+    ///   declaration must still win over B's colliding one).
+    fn build_three_app_fixture() -> (ProgramGraph, AppRef, AppRef, AppRef) {
+        let mut apps = AppRegistry::default();
+        let a = apps.intern(&make_app_id("AppA"));
+        let b = apps.intern(&make_app_id("AppB"));
+        let c = apps.intern(&make_app_id("AppC"));
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(a, b);
+        topology.add_dependency(a, c);
+
+        let mut objects = vec![
+            make_obj(b, ObjectKind::Table, Some(900), "SharedB", None, vec![]),
+            make_obj(c, ObjectKind::Table, Some(900), "SharedC", None, vec![]),
+            make_obj(a, ObjectKind::Table, Some(950), "OwnShadow", None, vec![]),
+            make_obj(b, ObjectKind::Table, Some(950), "OwnShadow", None, vec![]),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        (
+            ProgramGraph {
+                apps,
+                topology,
+                objects,
+                routines: vec![],
+                obj_index,
+            },
+            a,
+            b,
+            c,
+        )
+    }
+
+    #[test]
+    fn object_by_number_declines_on_cross_app_dependency_collision_never_lowest_id() {
+        let (graph, a, _b, _c) = build_three_app_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // AppB and AppC both declare Table 900 — neither is A's own app. The
+        // pre-fix behavior silently picked the lowest ObjectNodeId (I1); the
+        // fixed behavior must decline instead of guessing which dep "wins".
+        let found = idx.object_by_number(&graph, a, ObjectKind::Table, 900);
+        assert!(
+            found.is_none(),
+            "cross-app dependency collision on id 900 must decline (None), \
+             never silently pick the lowest id"
+        );
+    }
+
+    #[test]
+    fn object_by_number_own_app_shadow_survives_dependency_collision() {
+        let (graph, a, b, _c) = build_three_app_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // A declares its own Table 950; B ALSO declares a same-id table — A's
+        // own declaration must still win outright (shadow preserved).
+        let found = idx.object_by_number(&graph, a, ObjectKind::Table, 950);
+        assert!(found.is_some());
+        let oid = found.unwrap();
+        assert_eq!(
+            oid.app, a,
+            "own-app declaration must shadow a colliding dependency"
+        );
+        assert_ne!(oid.app, b);
+    }
+
     // -- resolve_object_ref tests ----------------------------------------------
 
     /// Fixture for `resolve_object_ref`:
@@ -851,6 +942,10 @@ mod tests {
     ///   `from`'s own app, so both the id- and name-arm see a genuine
     ///   cross-app ambiguity).
     /// - AppD: Table 900 "Foreign" — declared, but AppD is unreachable from A.
+    /// - AppA: Table 600 "OwnIdShadow" (own declaration); AppB: Table 600
+    ///   "TheirIdShadow" (dep, SAME id, DIFFERENT name — proves the Id arm's
+    ///   own-app-shadow matches purely on `(kind, id)`, ignoring name; A's own
+    ///   declaration must win outright, never `Ambiguous`).
     fn build_ref_fixture() -> (ProgramGraph, ObjectNodeId) {
         let mut apps = AppRegistry::default();
         let a = apps.intern(&make_app_id("AppA"));
@@ -870,6 +965,15 @@ mod tests {
             make_obj(b, ObjectKind::Table, Some(200), "OnlyInB", None, vec![]),
             make_obj(c, ObjectKind::Table, Some(100), "Item", None, vec![]),
             make_obj(d, ObjectKind::Table, Some(900), "Foreign", None, vec![]),
+            make_obj(a, ObjectKind::Table, Some(600), "OwnIdShadow", None, vec![]),
+            make_obj(
+                b,
+                ObjectKind::Table,
+                Some(600),
+                "TheirIdShadow",
+                None,
+                vec![],
+            ),
         ];
         objects.sort_by(|x, y| x.id.cmp(&y.id));
 
@@ -950,6 +1054,30 @@ mod tests {
         // 100 is declared as Table "Item" in BOTH AppB and AppC — neither is A.
         let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(100));
         assert_eq!(res, ObjectRefResolution::Ambiguous);
+    }
+
+    #[test]
+    fn resolve_object_ref_id_own_app_shadows_dependency() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+        let from_app = from.app;
+
+        // 600 is declared as a Table in BOTH A (own app) and B (a dep) — A's
+        // own declaration must win outright, mirroring the Name arm's
+        // own-app-shadow and matching `object_by_number`'s existing
+        // self-shortcut. Never `Ambiguous` when `from`'s own app is one of
+        // the colliding declarations.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(600));
+        match res {
+            ObjectRefResolution::Unique(oid) => {
+                assert_eq!(
+                    oid.app, from_app,
+                    "A's own Table 600 must win over B's same-id dep"
+                );
+                assert!(oid.id_equals_number(600));
+            }
+            other => panic!("expected Unique(A's Table 600), got {other:?}"),
+        }
     }
 
     #[test]

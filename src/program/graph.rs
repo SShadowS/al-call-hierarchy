@@ -40,12 +40,16 @@ pub struct ProgramGraph {
 }
 
 impl ProgramGraph {
-    /// Resolve `(kind, name)` as seen FROM `from`.
+    /// Resolve `(kind, name)` as seen FROM `from` — fail-closed (I1).
     ///
     /// Search order:
-    /// 1. An object declared in `from` itself (prefer nearest).
-    /// 2. The lowest-`ObjectNodeId`-ordered object among `from`'s dependency
-    ///    closure (deterministic tiebreak).
+    /// 1. An object declared in `from` itself always wins (own-app shadow) —
+    ///    short-circuits before any cross-app ambiguity check.
+    /// 2. Otherwise, exactly ONE match among `from`'s dependency closure
+    ///    resolves; more than one VISIBLE dependency match is an unprovable
+    ///    cross-app collision and this DECLINES (`None`) rather than guessing
+    ///    — a confident WRONG pick (the old lowest-`ObjectNodeId` tiebreak) is
+    ///    the cardinal sin (I1: a false `Source` route).
     ///
     /// An app that is **not** in `from`'s transitive dependency closure is
     /// never matched — topology-scoped, never flat-global.
@@ -66,9 +70,14 @@ impl ProgramGraph {
             return Some(&self.objects[idx]);
         }
 
-        // Search the rest of the closure (excludes `from` — already checked).
+        // No own-app declaration: search the rest of the closure. More than
+        // one VISIBLE dependency match is ambiguous — decline rather than
+        // pick the lowest `ObjectNodeId`. `by_app_kind_name` already holds at
+        // most one entry per `(app, kind, name_lc)` (first/lowest-id wins on
+        // a same-app duplicate — see `ObjectIndex::build`), so at most one
+        // match can come from any single app in the closure.
         let closure = self.topology.closure(from);
-        let mut best: Option<usize> = None;
+        let mut found: Option<usize> = None;
         for &app in &closure {
             if app == from {
                 continue;
@@ -78,13 +87,13 @@ impl ProgramGraph {
                 .by_app_kind_name
                 .get(&(app, kind, name_lc.clone()))
             {
-                best = Some(match best {
-                    Some(b) if self.objects[b].id <= self.objects[idx].id => b,
-                    _ => idx,
-                });
+                if found.is_some() {
+                    return None; // >1 dependency declares this (kind, name) — decline.
+                }
+                found = Some(idx);
             }
         }
-        best.map(|i| &self.objects[i])
+        found.map(|i| &self.objects[i])
     }
 
     /// Look up an interned `AppRef` by name (case-insensitive).
@@ -192,5 +201,100 @@ mod tests {
                 .is_none(),
             "OnlyInA must not be visible from B (B's closure excludes A)"
         );
+    }
+
+    /// Construct a three-app `ProgramGraph` entirely in memory (no I/O), for the
+    /// I1 root-fix tests (cross-app dependency collision must DECLINE, never
+    /// silently pick the lowest `ObjectNodeId`).
+    ///
+    /// Topology: A depends on B and C (B, C have no dependencies of their own).
+    /// Objects:
+    ///   - table "Shared"    in B and C (collides; neither is A's own app)
+    ///   - table "OwnShadow" in A AND B (A's own declaration must still win)
+    fn build_three_app_ambiguous_fixture() -> ProgramGraph {
+        let mut apps = AppRegistry::default();
+        let mk_id = |name: &str| AppId {
+            guid: String::new(),
+            name: name.into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let a = apps.intern(&mk_id("AppA"));
+        let b = apps.intern(&mk_id("AppB"));
+        let c = apps.intern(&mk_id("AppC"));
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(a, b);
+        topology.add_dependency(a, c);
+
+        let make_obj = |app: AppRef, declared_id: Option<i64>, name: &str| ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind: ObjectKind::Table,
+                key: match declared_id {
+                    Some(n) => ObjKey::Id(n),
+                    None => ObjKey::Name(name.to_ascii_lowercase()),
+                },
+            },
+            name: name.to_string(),
+            declared_id,
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+        };
+
+        let mut objects = vec![
+            make_obj(b, Some(100), "Shared"),
+            make_obj(c, Some(101), "Shared"),
+            make_obj(a, Some(200), "OwnShadow"),
+            make_obj(b, Some(201), "OwnShadow"),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+
+        ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines: vec![],
+            obj_index,
+        }
+    }
+
+    #[test]
+    fn resolve_object_declines_on_cross_app_dependency_collision_never_lowest_id() {
+        // AppB and AppC both declare table "Shared" — neither is A's own app.
+        // The pre-fix behavior silently picked the lowest ObjectNodeId (a
+        // confident WRONG guess — I1); the fixed behavior must decline
+        // (`None`) instead of guessing which dependency "wins".
+        let g = build_three_app_ambiguous_fixture();
+        let a = g.app_ref_by_name("AppA");
+
+        assert!(
+            g.resolve_object(a, ObjectKind::Table, "Shared").is_none(),
+            "cross-app dependency collision must decline (None), never silently pick the lowest id"
+        );
+    }
+
+    #[test]
+    fn resolve_object_own_app_shadow_survives_dependency_collision() {
+        // AppA declares its own "OwnShadow"; AppB ALSO declares a same-name
+        // table — A's own declaration must still win outright (own-app
+        // shadow preserved even though a dependency collision exists too).
+        let g = build_three_app_ambiguous_fixture();
+        let a = g.app_ref_by_name("AppA");
+        let b = g.app_ref_by_name("AppB");
+
+        let resolved = g.resolve_object(a, ObjectKind::Table, "OwnShadow").unwrap();
+        assert_eq!(
+            resolved.id.app, a,
+            "own-app declaration must shadow a colliding dependency"
+        );
+        assert_ne!(resolved.id.app, b);
     }
 }

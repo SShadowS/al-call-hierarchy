@@ -8,6 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **(resolve) Fail-closed object resolution at the root — `resolve_object`/
+  `object_by_number` are now ambiguity-aware; `resolve_object_ref`'s `Id` arm
+  gained own-app-shadow; `parsed_type_to_receiver`'s declared-var `Record` arm
+  is now shape-preserving; `resolve_table_id` deleted (I1)** (`src/program/graph.rs`,
+  `src/program/resolve/index.rs`, `src/program/resolve/receiver.rs`,
+  `tests/program_resolve_harness.rs`) — a cross-app same-name/id TABLE
+  collision (two dependency apps both declaring the same table) could make
+  `ProgramGraph::resolve_object`/`ResolveIndex::object_by_number` silently
+  pick the lowest `ObjectNodeId` as a confident `Source` edge, potentially
+  routing to the WRONG dependency's table — a false `Source` route is the
+  cardinal sin (I1). Root fix (not a wrapper): both base functions now
+  preserve the own-app shadow (a `from`-app declaration always wins) but
+  return `None` on more than one VISIBLE-in-closure dependency match, never
+  the old lowest-id tiebreak; every semantic caller (extension-base lookup,
+  `ObjectRun` target resolution, typed `Object` receiver dispatch, and
+  event-subscriber publisher resolution in `resolver.rs`/`index.rs`) inherits
+  the fail-closed behavior automatically since the base functions themselves
+  changed. A full caller audit (`rg "resolve_object\("` / `"object_by_number\("`
+  across `src`/`tests`) found every call site is a genuine semantic
+  AL-object-reference resolution — no non-semantic (indexing/diagnostic)
+  caller existed, so no pick-first escape hatch was needed. `resolve_object_ref`'s
+  `Id` arm gained the same own-app-shadow the `Name` arm already had (mirrors
+  `object_by_number`'s existing self-shortcut — behavior-preserving for the
+  self-declared case, newly correct for the cross-app-collision case).
+  `parsed_type_to_receiver`'s `Record` arm (`var R: Record <X>` declared-type
+  resolution, Caller A) now threads `from_object`'s `ObjectNodeId` and resolves
+  via the shared fail-closed `resolve_object_ref`/`resolve_source_table_ref`
+  helper instead of the deleted `resolve_table_id`; `ParsedType::Record` now
+  carries an `ObjectRef` (extended in `classify_type_text`) instead of a bare
+  lowercased string, so `Record 18` (numeric id) and `Record "18"` (a table
+  literally NAMED "18") are losslessly distinguished all the way through —
+  previously both collapsed to the same string `"18"` after quote-stripping,
+  so a quoted digit-string table NAME was silently coerced into a guessed
+  numeric id. `infer_implicit_rec`'s `TableExtension` arm (Caller B) was
+  rewritten on the `resolve_pageext_base_page`/`resolve_source_table_ref`
+  template (`resolve_tableext_base_table`, new). A new grep-guard test
+  (`resolve_module_pick_first_base_function_callers_are_a_known_allowlist`,
+  sibling to `resolve_module_has_no_stray_engine_l3_l2_imports`) locks the
+  audited PRODUCTION caller set of `resolve_object`/`object_by_number` in
+  `src/program/resolve/*.rs` so a future new call site must be deliberately
+  classified rather than silently inheriting pick-first-shaped assumptions.
+  CDO gate: `genuine_wrong` stays `0` and `real_unknown_rate` stays `2.81%`
+  (unchanged) — I1 is dormant on CDO since same-name tables across a real
+  compile closure are AL-illegal, so no CDO app exercises the cross-app
+  collision path; the fix is validated by new unit/e2e tests instead
+  (synthetic multi-app graphs, since a real buildable `.app` fixture cannot
+  express an illegal same-name collision).
 - **(resolve) Wire implicit Base App/System App dependency into the `src/program`
   closure — THE dominant lever for the real-`unknown` burndown (beyond-1B.3b
   Task 5.5)** (`src/dependencies.rs`, `src/snapshot/snapshot.rs`,

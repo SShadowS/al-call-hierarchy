@@ -223,9 +223,15 @@ pub enum ReceiverType {
 /// [`infer_receiver_type`].  No graph access is performed here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedType {
-    /// `Record <TableName>` — table name is lowercased, stripped of quotes and
-    /// a trailing ` temporary` modifier.
-    Record { table_name: String },
+    /// `Record <TableName>` — the table reference, LOSSLESSLY shaped: a
+    /// numeric AL object id (`Record 18`) is [`ObjectRef::Id`]; a name
+    /// (quoted or not, `Record Customer` / `Record "Customer"`) is
+    /// [`ObjectRef::Name`], stripped of quotes and a trailing ` temporary`
+    /// modifier. Distinguishing the two shapes here (rather than collapsing
+    /// both to a bare string) is the I1 Caller-A fix: `Record "18"` (a table
+    /// literally NAMED "18") must never be silently coerced into numeric id
+    /// 18 by a later stringly-typed re-parse.
+    Record { table_ref: ObjectRef },
     /// `Codeunit X` / `Page X` / `Report X` / `Query X` / `XmlPort X` — object
     /// kind and (possibly numeric) name as written.
     Object { kind: ObjectKind, name: String },
@@ -284,12 +290,22 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 
     match lc.as_str() {
         "record" => {
-            // Parse the table name: strip trailing " temporary" then unquote.
+            // Parse the table reference: strip trailing " temporary", then
+            // shape-classify — a numeric string is an `Id`, ANYTHING else
+            // (including a QUOTED numeric string, since the quote characters
+            // make it fail the `i64` parse before unquoting) is a `Name`.
+            // Mirrors `node_extract::parse_object_ref_value`'s identical
+            // numeric-vs-quoted-name distinction for `SourceTable`/`TableNo`.
             let stripped = strip_trailing_temporary(rest);
-            let name = unquote_identifier(stripped.trim());
-            ParsedType::Record {
-                table_name: name.to_ascii_lowercase(),
-            }
+            let stripped = stripped.trim();
+            let table_ref = if let Ok(n) = stripped.parse::<i64>() {
+                ObjectRef::Id(n)
+            } else {
+                let raw = unquote_identifier(stripped);
+                let normalized_lc = raw.to_ascii_lowercase();
+                ObjectRef::Name { raw, normalized_lc }
+            };
+            ParsedType::Record { table_ref }
         }
         "codeunit" => parse_object_kind_type(ObjectKind::Codeunit, rest),
         "page" => parse_object_kind_type(ObjectKind::Page, rest),
@@ -400,8 +416,6 @@ pub fn infer_receiver_type(
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> ReceiverType {
-    let from_app = from_object.id.app;
-
     // -----------------------------------------------------------------------
     // Step 0 — `CurrPage.<part>.Page` subpage-instance receivers (Task 7).
     //
@@ -494,7 +508,7 @@ pub fn infer_receiver_type(
         });
 
     if let Some(ty) = declared_ty {
-        return parsed_type_to_receiver(classify_type_text(ty), from_app, graph, index);
+        return parsed_type_to_receiver(classify_type_text(ty), from_object, graph, index);
     }
 
     // -----------------------------------------------------------------------
@@ -535,20 +549,20 @@ fn infer_implicit_rec(
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> ReceiverType {
-    let from_app = from_object.id.app;
     match from_object.id.kind {
         // A Table IS its own record.
         ObjectKind::Table => ReceiverType::Record {
             table: Some(from_object.id.clone()),
         },
-        // A TableExtension's implicit record is the base table.
-        ObjectKind::TableExtension => {
-            let table_id = from_object
-                .extends_target
-                .as_deref()
-                .and_then(|target| resolve_table_id(target, from_app, graph, index));
-            ReceiverType::Record { table: table_id }
-        }
+        // A TableExtension's implicit record is the base table (Caller B).
+        // Resolution goes through the same fail-closed
+        // `ResolveIndex::resolve_object_ref` as Page's `SourceTable` below —
+        // a guessed base table is the cardinal sin (I1), so anything short
+        // of a single unambiguous in-closure match stays `Record{table:
+        // None}`.
+        ObjectKind::TableExtension => ReceiverType::Record {
+            table: resolve_tableext_base_table(from_object, graph, index),
+        },
         // A Page's implicit Rec is typed by its own `SourceTable` property
         // (Task 5). Resolution goes through the fail-closed
         // `ResolveIndex::resolve_object_ref`: a guessed table is the cardinal
@@ -639,6 +653,28 @@ fn resolve_source_table_ref(
         | ObjectRefResolution::OutOfClosure
         | ObjectRefResolution::Unresolved => None,
     }
+}
+
+/// Resolve a TableExtension's `extends_target` to the base Table's
+/// `ObjectNodeId`, scoped from `from_object`'s own dependency closure via the
+/// fail-closed [`ResolveIndex::resolve_object_ref`] (Caller B, I1). `None`
+/// when there is no `extends_target`, or resolution is anything other than
+/// `Unique` (ambiguous, out-of-closure, unresolved) — never guess. Mirrors
+/// [`resolve_pageext_base_page`]'s template, `ObjectKind::Table` instead of
+/// `ObjectKind::Page`. `extends_target` is always a NAME in AL grammar (a
+/// TableExtension cannot `extends` by numeric id), so this always builds an
+/// [`ObjectRef::Name`], unlike `SourceTable`/`TableNo` which may be numeric.
+fn resolve_tableext_base_table(
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    let extends = from_object.extends_target.as_deref()?;
+    let base_ref = ObjectRef::Name {
+        raw: extends.to_string(),
+        normalized_lc: extends.to_ascii_lowercase(),
+    };
+    resolve_source_table_ref(from_object.id.clone(), &base_ref, graph, index)
 }
 
 /// Resolve a PageExtension's `extends_target` to the base Page's
@@ -759,15 +795,28 @@ fn parse_currpage_dot_page_segment(rest: &str) -> Option<String> {
 
 /// Convert a [`ParsedType`] (pure string parse) to a [`ReceiverType`] by
 /// resolving names against the graph.
+///
+/// `from_object` (rather than a bare `AppRef`) is required so the `Record`
+/// arm can drive [`ResolveIndex::resolve_object_ref`] (needs the full
+/// `ObjectNodeId`, not just the app) — the fail-closed, shape-preserving
+/// resolution Caller A needs (I1).
 fn parsed_type_to_receiver(
     pt: ParsedType,
-    from_app: crate::program::node::AppRef,
+    from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> ReceiverType {
+    let from_app = from_object.id.app;
     match pt {
-        ParsedType::Record { table_name } => {
-            let table = resolve_table_id(&table_name, from_app, graph, index);
+        ParsedType::Record { table_ref } => {
+            // Reuses the same fail-closed, shape-preserving helper Task 5's
+            // Page `SourceTable` resolution uses: `resolve_object_ref`'s
+            // `Id`/`Name` arms already dispatch on `table_ref`'s shape
+            // (`ObjectRef::Id`/`Name` — losslessly carried from
+            // `classify_type_text`), so `Record 18` and `Record "18"` can
+            // never be conflated, and >1 in-closure dependency match DECLINES
+            // to `None` rather than guessing (I1).
+            let table = resolve_source_table_ref(from_object.id.clone(), &table_ref, graph, index);
             ReceiverType::Record { table }
         }
         ParsedType::Object { kind, name } => {
@@ -789,24 +838,6 @@ fn parsed_type_to_receiver(
         ParsedType::Primitive => ReceiverType::Primitive,
         ParsedType::Dynamic => ReceiverType::Dynamic,
     }
-}
-
-/// Resolve a table name (which may be a numeric AL object id string) to an
-/// `ObjectNodeId`, topology-scoped to `from_app`.
-fn resolve_table_id(
-    table_name: &str,
-    from_app: crate::program::node::AppRef,
-    graph: &ProgramGraph,
-    index: &ResolveIndex,
-) -> Option<ObjectNodeId> {
-    // Numeric reference (dependency-app symbol form: `Record 18`).
-    if let Ok(n) = table_name.trim().parse::<i64>() {
-        return index.object_by_number(graph, from_app, ObjectKind::Table, n);
-    }
-    // Name-based reference.
-    graph
-        .resolve_object(from_app, ObjectKind::Table, table_name)
-        .map(|o| o.id.clone())
 }
 
 /// Resolve an object name (or numeric id string) to the canonical lowercased
@@ -1064,7 +1095,10 @@ mod tests {
         assert_eq!(
             classify_type_text("Record \"Customer\""),
             ParsedType::Record {
-                table_name: "customer".into()
+                table_ref: ObjectRef::Name {
+                    raw: "Customer".into(),
+                    normalized_lc: "customer".into()
+                }
             }
         );
     }
@@ -1074,7 +1108,10 @@ mod tests {
         assert_eq!(
             classify_type_text("Record Customer"),
             ParsedType::Record {
-                table_name: "customer".into()
+                table_ref: ObjectRef::Name {
+                    raw: "Customer".into(),
+                    normalized_lc: "customer".into()
+                }
             }
         );
     }
@@ -1084,7 +1121,10 @@ mod tests {
         assert_eq!(
             classify_type_text("Record Customer temporary"),
             ParsedType::Record {
-                table_name: "customer".into()
+                table_ref: ObjectRef::Name {
+                    raw: "Customer".into(),
+                    normalized_lc: "customer".into()
+                }
             }
         );
     }
@@ -1094,7 +1134,50 @@ mod tests {
         assert_eq!(
             classify_type_text("Record \"Customer\" temporary"),
             ParsedType::Record {
-                table_name: "customer".into()
+                table_ref: ObjectRef::Name {
+                    raw: "Customer".into(),
+                    normalized_lc: "customer".into()
+                }
+            }
+        );
+    }
+
+    // -- I1 Caller-A shape-preservation: numeric id vs quoted numeric name --
+
+    #[test]
+    fn classify_record_numeric_id() {
+        // `Record 18` (unquoted digits) is a NUMERIC id reference.
+        assert_eq!(
+            classify_type_text("Record 18"),
+            ParsedType::Record {
+                table_ref: ObjectRef::Id(18)
+            }
+        );
+    }
+
+    #[test]
+    fn classify_record_quoted_numeric_name() {
+        // `Record "18"` is a table literally NAMED "18" — must NOT be
+        // confused with the numeric id reference `Record 18` (I1 shape bug:
+        // both used to collapse to the same string "18" once quotes were
+        // stripped, silently coercing a quoted name into a guessed id).
+        assert_eq!(
+            classify_type_text("Record \"18\""),
+            ParsedType::Record {
+                table_ref: ObjectRef::Name {
+                    raw: "18".into(),
+                    normalized_lc: "18".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_record_numeric_id_temporary() {
+        assert_eq!(
+            classify_type_text("Record 18 temporary"),
+            ParsedType::Record {
+                table_ref: ObjectRef::Id(18)
             }
         );
     }
@@ -1298,6 +1381,136 @@ mod tests {
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::JsonObject));
     }
 
+    // -----------------------------------------------------------------------
+    // I1 Caller-A shape-preservation: `Record 18` (numeric id) vs
+    // `Record "18"` (a table literally NAMED "18") must resolve to two
+    // DIFFERENT tables, never conflated by a lossy string round-trip.
+    // -----------------------------------------------------------------------
+
+    /// Single-app fixture: Table id=18 "Customer" AND a separate table
+    /// literally NAMED "18" (`declared_id: None` — its only identity is the
+    /// digit-string name). Proves the two are distinguishable.
+    fn build_numeric_name_shape_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let app_id = AppId {
+            guid: String::new(),
+            name: "ShapeApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let app = apps.intern(&app_id);
+        let topology = DependencyGraph::default();
+
+        let mut objects = vec![
+            make_object_node(app, ObjectKind::Table, "Customer", Some(18), None),
+            make_object_node(app, ObjectKind::Table, "18", None, None),
+        ];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines: vec![],
+            obj_index,
+        };
+        (graph, app)
+    }
+
+    /// Routine with `ById: Record 18` (numeric) and `ByQuotedName: Record
+    /// "18"` (quoted digit-string name) params.
+    fn build_numeric_name_shape_routine() -> RoutineDecl {
+        let o = test_origin();
+        RoutineDecl {
+            kind: RoutineKind::Procedure,
+            name: "TestProc".into(),
+            name_origin: o.clone(),
+            params: vec![
+                Param {
+                    name: "ById".into(),
+                    by_ref: false,
+                    ty: Some("Record 18".into()),
+                    origin: o.clone(),
+                },
+                Param {
+                    name: "ByQuotedName".into(),
+                    by_ref: false,
+                    ty: Some("Record \"18\"".into()),
+                    origin: o.clone(),
+                },
+            ],
+            return_type: None,
+            locals: vec![],
+            attributes: vec![],
+            attributes_parsed: vec![],
+            access_modifier: None,
+            parse_incomplete: false,
+            dataitem_source_table: None,
+            enclosing_member: None,
+            body: None,
+            origin: o,
+        }
+    }
+
+    #[test]
+    fn caller_a_record_numeric_id_resolves_by_id_not_name() {
+        let (graph, app) = build_numeric_name_shape_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_numeric_name_shape_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let customer_id = graph
+            .resolve_object(app, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        // "byid" -> `ById: Record 18` (numeric) -> table id 18 ("Customer"),
+        // NEVER the table literally named "18".
+        let result = infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    #[test]
+    fn caller_a_record_quoted_numeric_name_resolves_by_name_not_id() {
+        let (graph, app) = build_numeric_name_shape_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_numeric_name_shape_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let named_18_id = graph
+            .resolve_object(app, ObjectKind::Table, "18")
+            .unwrap()
+            .id
+            .clone();
+        let customer_id = graph
+            .resolve_object(app, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+        assert_ne!(
+            named_18_id, customer_id,
+            "fixture sanity: the two tables must be distinct"
+        );
+
+        // "byquotedname" -> `ByQuotedName: Record "18"` (quoted name) -> the
+        // table literally NAMED "18", NEVER coerced into table id 18
+        // ("Customer") — the I1 shape bug this test locks in the fix for.
+        let result = infer_receiver_type("byquotedname", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(named_18_id)
+            }
+        );
+    }
+
     #[test]
     fn infer_param_codeunit_by_name() {
         let (graph, app) = build_test_graph();
@@ -1474,6 +1687,48 @@ mod tests {
     }
 
     #[test]
+    fn infer_rec_in_table_extension_ambiguous_base_declines_to_none() {
+        // Reuses `build_page_rec_fixture`'s "AmbTable" (declared in BOTH `a`
+        // and `b`, neither is `w`) — Caller B (`infer_implicit_rec`'s
+        // TableExtension arm) must DECLINE (`Record{table: None}`), never
+        // silently pick the lowest `ObjectNodeId` (I1).
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let te_obj = make_object_node(
+            w,
+            ObjectKind::TableExtension,
+            "AmbExt",
+            Some(50230),
+            Some("AmbTable".into()),
+        );
+
+        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_table_extension_out_of_closure_base_declines_to_none() {
+        // Reuses `build_page_rec_fixture`'s "Orphan" table, declared in an
+        // app `w` does not depend on.
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let te_obj = make_object_node(
+            w,
+            ObjectKind::TableExtension,
+            "OrphanExt",
+            Some(50231),
+            Some("Orphan".into()),
+        );
+
+        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
     fn infer_rec_in_page_is_record_none() {
         // No `SourceTable` property at all (`source_table: None` on ObjectNode)
         // — `make_object_node` never sets it, matching a Page with no property.
@@ -1612,6 +1867,78 @@ mod tests {
         // "Orphan" is declared, but in an app `w` does not depend on.
         let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index);
         assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn caller_a_e2e_two_dep_apps_same_name_table_declines_not_pick_first_source() {
+        // Two DEPENDENCY apps (`a`/`b` in `build_page_rec_fixture`) both
+        // declare `"AmbTable"` — an AL-illegal same-name collision WITHIN one
+        // real compile closure, but a genuine cross-app collision in a merged
+        // whole-program snapshot (I1). Neither is `w`'s own app, so Caller A
+        // (`parsed_type_to_receiver`'s `Record` arm, reached via a declared
+        // local `var R: Record "AmbTable"`) must DECLINE (`Record{table:
+        // None}`) end to end through BOTH Phase A (receiver-type inference)
+        // and Phase B (member-call resolution) — never silently pick the
+        // lower `ObjectNodeId` as a confident (and possibly WRONG) `Source`
+        // route, the cardinal sin.
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+
+        let o = test_origin();
+        let routine = RoutineDecl {
+            kind: RoutineKind::Procedure,
+            name: "Test".into(),
+            name_origin: o.clone(),
+            params: vec![],
+            return_type: None,
+            locals: vec![VarDecl {
+                name: "R".into(),
+                ty: Some("Record \"AmbTable\"".into()),
+                temporary: false,
+                origin: o.clone(),
+            }],
+            attributes: vec![],
+            attributes_parsed: vec![],
+            access_modifier: None,
+            parse_incomplete: false,
+            dataitem_source_table: None,
+            enclosing_member: None,
+            body: None,
+            origin: o,
+        };
+        let from_obj = make_object_node(w, ObjectKind::Codeunit, "Caller", Some(50300), None);
+
+        // Phase A: infer_receiver_type must decline, never resolve to either
+        // dep's AmbTable.
+        let receiver = infer_receiver_type("r", &routine, &[], &from_obj, &graph, &index);
+        assert_eq!(receiver, ReceiverType::Record { table: None });
+
+        // Phase B: a non-builtin method call on the declined receiver stays
+        // the honest Unknown (not a fabricated Source route to either dep's
+        // table) — closes the loop end to end (mirrors the already-covered
+        // `resolve_member_record_table_none_emits_unknown` invariant in
+        // `resolver.rs`, now driven by a genuine Phase-A ambiguity decline
+        // rather than a hand-constructed `Record{table: None}`).
+        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+        let (shape, routes) = crate::program::resolve::resolver::resolve_member(
+            &receiver,
+            "nonbuiltinproc",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, crate::program::resolve::edge::DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].evidence,
+            crate::program::resolve::edge::Evidence::Unknown
+        );
+        assert_eq!(
+            routes[0].target,
+            crate::program::resolve::edge::RouteTarget::Unresolved
+        );
     }
 
     #[test]

@@ -4528,3 +4528,159 @@ fn resolve_module_has_no_stray_engine_l3_l2_imports() {
         offenders,
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 30 (no CDO — always runs): Task 1 (I1) grep-guard — the caller set of
+// the pick-first base functions `ProgramGraph::resolve_object` /
+// `ResolveIndex::object_by_number` is a KNOWN, AUDITED allowlist.
+//
+// Task 1's root fix made both base functions fail-closed themselves (own-app
+// shadow preserved, but >1 VISIBLE-in-closure dependency match now DECLINES
+// (`None`) instead of silently picking the lowest `ObjectNodeId` — I1's
+// cardinal sin: a confident WRONG `Source` route). The Step-1 caller audit
+// found every existing call site is a legitimate SEMANTIC AL-object-reference
+// resolution (extension-base lookup, `ObjectRun` target resolution, typed
+// `Object` receiver dispatch, event-subscriber publisher resolution, and the
+// numeric/name fallback inside `resolve_object_name_lc`) that inherits the
+// fail-closed behavior automatically — none of them needed migrating to
+// `ResolveIndex::resolve_object_ref`, and NO genuinely non-semantic
+// (indexing/diagnostic) caller was found, so no `resolve_object_first_by_
+// stable_id` escape hatch was created.
+//
+// This guard locks that audited set in place: a NEW call site appearing in
+// `src/program/resolve/*.rs` PRODUCTION code (before each file's `#[cfg(test)]`
+// module marker — test fixtures directly exercising the API are expected and
+// unbounded, not part of this guard) that isn't already in the allowlist below
+// must be deliberately reviewed — is it a genuine semantic caller (inherits
+// the fix for free, add it here with justification), or does it need the
+// `Ambiguous`/`OutOfClosure` distinction (then it must call
+// `ResolveIndex::resolve_object_ref` instead, per `resolve_source_table_ref`
+// / `resolve_pageext_base_page` / `resolve_tableext_base_table`'s template)?
+// ---------------------------------------------------------------------------
+
+/// Fails if the set of PRODUCTION (pre-`#[cfg(test)]`) call sites of
+/// `.resolve_object(` / `.object_by_number(` in `src/program/resolve/*.rs`
+/// drifts from the Task 1 audited allowlist — new or removed call sites both
+/// trip this (both are worth a deliberate look: a removal might mean the
+/// caller was migrated to `resolve_object_ref` and this allowlist is now
+/// stale; an addition needs the classification above).
+///
+/// Matching is by TRIMMED LINE TEXT (not line number), the same
+/// comment-stripping convention as
+/// `resolve_module_has_no_stray_engine_l3_l2_imports`, so unrelated edits
+/// elsewhere in a file never spuriously trip this guard — only an edit to
+/// (or the addition/removal of) one of these specific call expressions does.
+#[test]
+fn resolve_module_pick_first_base_function_callers_are_a_known_allowlist() {
+    let resolve_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/program/resolve");
+
+    // (file_name, expected trimmed production call-site line).
+    let expected: Vec<(&str, &str)> = vec![
+        (
+            "resolver.rs",
+            "&& let Some(base_obj) = graph.resolve_object(from_object.id.app, base_kind, extends_target)",
+        ),
+        (
+            "resolver.rs",
+            "graph.resolve_object(from, object_kind, target_ref)",
+        ),
+        (
+            "resolver.rs",
+            ".object_by_number(graph, from, object_kind, n)",
+        ),
+        (
+            "resolver.rs",
+            "None => graph.resolve_object(from_object.id.app, *kind, name_lc),",
+        ),
+        (
+            "receiver.rs",
+            "if let Some(oid) = index.object_by_number(graph, from_app, kind, n)",
+        ),
+        (
+            "receiver.rs",
+            "if let Some(obj) = graph.resolve_object(from_app, kind, name) {",
+        ),
+        (
+            "index.rs",
+            "let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name)",
+        ),
+    ];
+
+    let mut found: Vec<(String, String)> = Vec::new();
+    let mut scanned_files = 0usize;
+
+    let entries = std::fs::read_dir(&resolve_dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", resolve_dir.display()));
+    for entry in entries {
+        let entry = entry.expect("readable dir entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or_default()
+            .to_string();
+        scanned_files += 1;
+
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        // Only PRODUCTION code — everything from the file's `#[cfg(test)]`
+        // module marker onward is test fixture code, exempt from this guard.
+        let production_code = match content.find("\n#[cfg(test)]") {
+            Some(idx) => &content[..idx],
+            None => &content[..],
+        };
+        for raw_line in production_code.lines() {
+            let code = match raw_line.find("//") {
+                Some(idx) => &raw_line[..idx],
+                None => raw_line,
+            };
+            let trimmed = code.trim();
+            // Exclude the `object_by_number` FUNCTION DEFINITION itself (not
+            // a call site) — the only line matching `object_by_number(` that
+            // is a `fn` declaration rather than an invocation.
+            if trimmed.starts_with("pub fn object_by_number(")
+                || trimmed.starts_with("fn object_by_number(")
+            {
+                continue;
+            }
+            if trimmed.contains("resolve_object(") || trimmed.contains("object_by_number(") {
+                found.push((file_name.clone(), trimmed.to_string()));
+            }
+        }
+    }
+
+    assert!(
+        scanned_files > 5,
+        "grep-guard scanned suspiciously few files ({scanned_files}) under \
+         {} — directory listing may be broken (test would pass vacuously)",
+        resolve_dir.display(),
+    );
+
+    let mut found_sorted = found.clone();
+    found_sorted.sort();
+    let mut expected_sorted: Vec<(String, String)> = expected
+        .iter()
+        .map(|(f, l)| (f.to_string(), l.to_string()))
+        .collect();
+    expected_sorted.sort();
+
+    assert_eq!(
+        found_sorted, expected_sorted,
+        "the set of PRODUCTION call sites of resolve_object()/object_by_number() \
+         in src/program/resolve/*.rs drifted from the Task 1 (I1) audited \
+         allowlist. Every semantic caller inherits the root fix's fail-closed \
+         behavior for free — but a NEW call site must still be deliberately \
+         classified: (a) a genuine semantic caller → add it to `expected` in \
+         this test with a one-line justification, or (b) a caller that needs \
+         the Ambiguous/OutOfClosure distinction → migrate it to \
+         `ResolveIndex::resolve_object_ref` instead (see \
+         `resolve_source_table_ref`/`resolve_pageext_base_page`/ \
+         `resolve_tableext_base_table` for the template). A REMOVED expected \
+         entry likely means a caller was migrated to `resolve_object_ref` and \
+         this allowlist is now stale — delete the corresponding `expected` \
+         entry.\nfound:\n{found_sorted:#?}\nexpected:\n{expected_sorted:#?}",
+    );
+}
