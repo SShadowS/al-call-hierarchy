@@ -4670,6 +4670,63 @@ codeunit 50710 "CustDeleteSub"
         );
     }
 
+    // (c3) subscriber to a platform PAGE event (OnOpenPageEvent) wires via a
+    // synthetic Platform publisher on the page.
+    #[test]
+    fn platform_page_event_subscriber_wires_via_synthetic_publisher() {
+        let pg_src: &'static str = r#"
+page 21 "Customer Card"
+{
+    layout { area(Content) { } }
+}
+"#;
+        let sub_src: &'static str = r#"
+codeunit 50711 "CustCardOpenSub"
+{
+    [EventSubscriber(ObjectType::Page, Page::"Customer Card", 'OnOpenPageEvent', '', false, false)]
+    local procedure OnOpenCustCard(var Rec: Record Customer)
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let units = vec![
+            make_unit(app_id.clone(), "CustomerCard.al", pg_src),
+            make_unit(app_id, "CustCardOpenSub.al", sub_src),
+        ];
+        let mut graph = build_graph(&units, None);
+        crate::program::build::inject_platform_event_publishers(&mut graph);
+
+        let pg = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "Customer Card")
+            .expect("Customer Card page");
+        let synth = graph
+            .routines
+            .iter()
+            .find(|r| {
+                r.id.object == pg.id
+                    && r.id.name_lc == "onopenpageevent"
+                    && r.publisher_kind
+                        == Some(crate::program::resolve::event::PublisherKind::Platform)
+            })
+            .expect("synthetic platform publisher injected on the page");
+
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let e = edges
+            .iter()
+            .find(|e| e.from == synth.id)
+            .expect("EventFlow edge from the synthetic page publisher");
+        assert_eq!(
+            e.routes.len(),
+            1,
+            "subscriber must bind as the single route"
+        );
+    }
+
     // (d) non-Manual subscriber → route IS in default_reachable_routes
     #[test]
     fn event_flow_non_manual_subscriber_default_reachable() {

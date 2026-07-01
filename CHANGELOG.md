@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **(resolve) platform PAGE-event subscriber wiring (extends the table-event synthesis)**
+  (`src/program/resolve/event.rs`, `src/program/build.rs`) — extends synthetic
+  `PublisherKind::Platform` publishers to PAGE platform events (`OnOpenPageEvent`,
+  `OnClosePageEvent`, `OnQueryClosePageEvent`, `OnAfterGetRecordEvent`,
+  `OnAfterGetCurrRecordEvent`, `OnNewRecordEvent`, `On{Insert,Modify,Delete}
+  RecordEvent`, `On{Before,After}ValidateEvent`, `On{Before,After}ActionEvent`),
+  routed by the subscriber's `ObjectType::Page`. Page record/lifecycle/action
+  subscriptions were the dominant residual after the table-event + `Sender` fixes.
+  Measured on DocumentOutput/Cloud: orphaned subscribers **142 → 6** (99.8% of all
+  3410 subscribers now wired); the residual 6 are individual Base App / test-lib
+  edge cases. Coverage holds; real-unknown unchanged. 809 lib tests (new
+  `platform_page_event_subscriber_wires_via_synthetic_publisher`).
+
 ### Fixed
 - **(resolve) event subscriber–publisher arity match ignored the implicit `Sender` param**
   (`src/program/resolve/index.rs`) — `ResolveIndex`'s candidate filter used

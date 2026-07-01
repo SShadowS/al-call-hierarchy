@@ -7,7 +7,7 @@ use crate::program::graph::{ObjectIndex, ProgramGraph};
 use crate::program::node::{AppRef, AppRegistry, RoutineNodeId};
 use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
 use crate::program::resolve::event::{
-    PublisherKind, is_platform_table_event, platform_event_display_name,
+    PublisherKind, is_platform_page_event, is_platform_table_event, platform_event_display_name,
 };
 use crate::program::topology::DependencyGraph;
 use crate::snapshot::{AppSetSnapshot, parse_snapshot};
@@ -170,14 +170,18 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 
     for sub in &graph.routines {
         for args in &sub.event_subscribers {
-            // Only the platform TABLE events; everything else already resolves
-            // through the normal `[IntegrationEvent]` publisher path.
-            if args.publisher_object_type != "table" || !is_platform_table_event(&args.event_name) {
-                continue;
-            }
-            // Resolve the publisher table from the subscriber's app (fail-closed).
+            // Recognize the platform TABLE and PAGE events (implicit DB triggers /
+            // field validate / page lifecycle / record / action) that have no
+            // publisher routine in source. Everything else resolves through the
+            // normal `[IntegrationEvent]` publisher path.
+            let pub_kind = match args.publisher_object_type.as_str() {
+                "table" if is_platform_table_event(&args.event_name) => ObjectKind::Table,
+                "page" if is_platform_page_event(&args.event_name) => ObjectKind::Page,
+                _ => continue,
+            };
+            // Resolve the publisher object from the subscriber's app (fail-closed).
             let Some(pub_obj) =
-                graph.resolve_object(sub.id.object.app, ObjectKind::Table, &args.publisher_name)
+                graph.resolve_object(sub.id.object.app, pub_kind, &args.publisher_name)
             else {
                 continue;
             };

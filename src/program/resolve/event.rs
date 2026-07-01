@@ -177,10 +177,37 @@ pub fn is_platform_table_event(name_lc: &str) -> bool {
     )
 }
 
-/// Canonical PascalCase display name for a platform table event; `name_lc` must
-/// satisfy [`is_platform_table_event`]. Falls back to a generic label otherwise.
+/// True when `name_lc` is a platform-generated PAGE event that AL raises
+/// implicitly (page lifecycle, record navigation, page-level record CRUD, field
+/// validate, or action). These have NO publisher routine in source — a
+/// `[EventSubscriber(ObjectType::Page, Page::X, 'OnOpenPageEvent'/
+/// 'OnModifyRecordEvent'/'OnAfterValidateEvent'/'OnAfterActionEvent'/…)]` binds
+/// to a synthetic [`PublisherKind::Platform`] publisher on the page.
+pub fn is_platform_page_event(name_lc: &str) -> bool {
+    matches!(
+        name_lc,
+        "onopenpageevent"
+            | "onclosepageevent"
+            | "onqueryclosepageevent"
+            | "onaftergetrecordevent"
+            | "onaftergetcurrrecordevent"
+            | "onnewrecordevent"
+            | "oninsertrecordevent"
+            | "onmodifyrecordevent"
+            | "ondeleterecordevent"
+            | "onbeforevalidateevent"
+            | "onaftervalidateevent"
+            | "onbeforeactionevent"
+            | "onafteractionevent"
+    )
+}
+
+/// Canonical PascalCase display name for a platform table/page event; `name_lc`
+/// must satisfy [`is_platform_table_event`] or [`is_platform_page_event`]. Falls
+/// back to a generic label otherwise.
 pub fn platform_event_display_name(name_lc: &str) -> &'static str {
     match name_lc {
+        // Table DB triggers.
         "onbeforeinsertevent" => "OnBeforeInsertEvent",
         "onafterinsertevent" => "OnAfterInsertEvent",
         "onbeforemodifyevent" => "OnBeforeModifyEvent",
@@ -189,8 +216,21 @@ pub fn platform_event_display_name(name_lc: &str) -> &'static str {
         "onafterdeleteevent" => "OnAfterDeleteEvent",
         "onbeforerenameevent" => "OnBeforeRenameEvent",
         "onafterrenameevent" => "OnAfterRenameEvent",
+        // Shared table/page field validate.
         "onbeforevalidateevent" => "OnBeforeValidateEvent",
         "onaftervalidateevent" => "OnAfterValidateEvent",
+        // Page lifecycle / record / action.
+        "onopenpageevent" => "OnOpenPageEvent",
+        "onclosepageevent" => "OnClosePageEvent",
+        "onqueryclosepageevent" => "OnQueryClosePageEvent",
+        "onaftergetrecordevent" => "OnAfterGetRecordEvent",
+        "onaftergetcurrrecordevent" => "OnAfterGetCurrRecordEvent",
+        "onnewrecordevent" => "OnNewRecordEvent",
+        "oninsertrecordevent" => "OnInsertRecordEvent",
+        "onmodifyrecordevent" => "OnModifyRecordEvent",
+        "ondeleterecordevent" => "OnDeleteRecordEvent",
+        "onbeforeactionevent" => "OnBeforeActionEvent",
+        "onafteractionevent" => "OnAfterActionEvent",
         _ => "PlatformEvent",
     }
 }
