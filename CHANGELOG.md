@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **(resolve) event subscriber–publisher arity match ignored the implicit `Sender` param**
+  (`src/program/resolve/index.rs`) — `ResolveIndex`'s candidate filter used
+  `publisher.params_count >= sub_params`, but an `[IntegrationEvent(IncludeSender=
+  true, …)]` (also Business/Internal) prepends an implicit `Sender` parameter that
+  a subscriber captures, so a subscriber to a 0-explicit-param publisher legally
+  declares arity 1 (`procedure OnRegisterManualSetup(var Sender: Codeunit …)`).
+  `0 >= 1` is false, so every `IncludeSender` subscriber was dropped and its
+  integration edge lost. The bound is now the AL-correct Sender-tolerant
+  `sub_params <= params_count + 1` (never rejects a valid subscriber); overload
+  disambiguation prefers an exact-arity match and only falls back to the `+1`
+  (Sender) match, so genuine ambiguity is still recorded. Measured on
+  DocumentOutput/Cloud: orphaned subscribers **342 → 142** (+200 wired), **all
+  workspace-app subscribers now bound (0 orphans)**; residual 142 are
+  base-application-internal. Coverage holds; real-unknown unchanged. 808 lib tests
+  (new `subscribers_of_include_sender_publisher_binds_arity_one_subscriber`).
+
 ### Added
 - **(resolve) platform table-event subscriber wiring — synthetic `PublisherKind::Platform` publishers**
   (`src/program/resolve/event.rs`, `src/program/build.rs`,
