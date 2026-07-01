@@ -1005,7 +1005,8 @@ fn event_teeth_non_circularity_reads_raw_ir() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::program::resolve::full::{
-    ClassifiedEdge, Coverage, ObligationId, ProgramReport, coverage_holds, resolve_full_program,
+    ClassifiedEdge, Coverage, ObligationId, ProgramReport, coverage_holds, is_primary_scope,
+    resolve_full_program,
 };
 
 // ---------------------------------------------------------------------------
@@ -1330,6 +1331,50 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
         report.abi_integrity.abi_routes_total,
         report.abi_integrity.abi_mapped,
         report.abi_integrity.abi_unmapped,
+    );
+
+    // ── Stratification invariant: sum(unknownByReason) == unknown count ──────
+    // (soundness completion plan v2.1, Task 4 Step 2). The fixture-scoped test
+    // `unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons`
+    // already pins this over 6 curated `ws-*` corpora; this asserts the SAME
+    // exhaustive-stratification invariant over the REAL CDO corpus (the
+    // production input `aldump --program-call-graph-stats`'s `unknownByReason`
+    // serves), so a future decline site that produces `ObligationOutcome::
+    // Unknown` without tagging an `Evidence::Unknown(UnknownReason)` route
+    // (e.g. an empty-routes non-fanout edge, or a `RouteTarget::Unresolved`
+    // route carrying non-`Unknown` evidence) cannot silently understate the
+    // breakdown while `unknown` itself climbs undetected. Gated here (not just
+    // fixtures) because CDO is the only corpus large/diverse enough to have
+    // caught the real +10 Task-1.5 soundness correction in the first place.
+    use al_call_hierarchy::program::resolve::edge::unknown_reason_breakdown;
+    let whole_by_reason = unknown_reason_breakdown(report.edges.iter().map(|ce| &ce.edge));
+    let whole_by_reason_sum: usize = whole_by_reason.values().sum();
+    assert_eq!(
+        whole_by_reason_sum, h.unknown,
+        "whole-program: sum(unknownByReason)={whole_by_reason_sum} must equal the \
+         Unknown-obligation count={} — a mismatch means a decline site is \
+         reaching ObligationOutcome::Unknown without tagging an UnknownReason; \
+         breakdown={whole_by_reason:?}",
+        h.unknown,
+    );
+    let primary_by_reason = unknown_reason_breakdown(
+        report
+            .edges
+            .iter()
+            .filter(|ce| is_primary_scope(ce, report.primary_app_ref))
+            .map(|ce| &ce.edge),
+    );
+    let primary_by_reason_sum: usize = primary_by_reason.values().sum();
+    assert_eq!(
+        primary_by_reason_sum, ph.unknown,
+        "primary-scoped: sum(unknownByReason)={primary_by_reason_sum} must equal \
+         the Unknown-obligation count={} — a mismatch means a decline site is \
+         reaching ObligationOutcome::Unknown without tagging an UnknownReason; \
+         breakdown={primary_by_reason:?}",
+        ph.unknown,
+    );
+    eprintln!(
+        "unknownByReason (primary)={primary_by_reason:?}\nunknownByReason (whole)={whole_by_reason:?}"
     );
 
     // ── Regression guard: primary real_unknown_rate ≤ recorded ceiling ───────

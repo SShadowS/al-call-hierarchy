@@ -135,6 +135,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   histograms. CDO (`CDO_WS`): `real_unknown_rate`/`unknown` COUNT UNCHANGED (primary 1.97%,
   356 both whole-program and primary-scoped — byte-identical to the pre-Task-3 measurement);
   `cdo_l3_semantic_audit_no_fresh_wrong` still `genuine_wrong=0` with the goldens untouched.
+- **soundness-completion plan Task 4 (FINAL, CAPSTONE): re-measured, the residual
+  stratified breakdown pinned as the next plan's roadmap, the stratification invariant
+  now gated on CDO — the plan is closed** (`tests/program_resolve_harness.rs`; no
+  resolver source changes — verification + gate + docs, by design). Closes the
+  soundness-completion arc (Tasks 1, 1.5, 2, 3, all already individually logged above
+  in this same `[Unreleased]` section). **Stated plainly: this plan HARDENED soundness
+  and STRATIFIED the residual; it did NOT reduce the real-`unknown` count** — the count
+  ROSE 346→356 as a direct, verified consequence of Task 1.5's soundness correction (a
+  false-`Source`→honest-`Unknown` fix); burning the residual down is the NEXT,
+  data-driven plan this task's breakdown table exists to prioritize.
+  - **Re-measured 2026-07-01, byte-identical to Task 3's own CDO run** (independent
+    single-threaded release re-run against the live `CDO_WS` workspace): primary
+    real-`unknown` rate **1.97%** (`unknown=356/18104`, exact `realUnknownRate=
+    0.019664162615996465`); whole-program **0.83%** (`unknown=356/42843`, exact
+    `0.008309408771561283`). Coverage holds (`parsed_obligations==classified_edges==
+    42843`), `abi_unmapped=0`. `cdo_l3_semantic_audit_no_fresh_wrong`: `genuine_wrong=0`,
+    `fresh_missing=4`, `fresh_wrong=149` (all 149 adjudicated `fresh_ahead_dispatch`,
+    51/51 `l3_error_intrinsic` overlay entries applied) — all EXACTLY matching Task
+    1.5/Task 3's own recorded numbers, no drift.
+  - **The 356 residual by `UnknownReason` (the measured deliverable this task exists to
+    record):**
+
+    | Reason | Count | % of 356 |
+    |---|---|---|
+    | `compoundReceiver` | 167 | 46.9% |
+    | `untrackedReceiver` | 91 | 25.6% |
+    | `overloadAmbiguous` | 56 | 15.7% |
+    | `memberNotFound` | 25 | 7.0% |
+    | `receiverOutOfClosure` | 10 | 2.8% |
+    | `internalNotVisible` | 6 | 1.7% |
+    | `builtinPrecedenceCollision` | 1 | 0.3% |
+    | (all other 8 `UnknownReason` variants) | 0 | — |
+
+    **Next-plan levers, ranked:** `compoundReceiver` + `untrackedReceiver` = 258/356
+    (73%) — genuine RESOLUTION gaps (chained/subpage receivers, untracked
+    variable/singleton receivers), the biggest burndown opportunity.
+    `overloadAmbiguous` + `memberNotFound` + `receiverOutOfClosure` = 91/356 (26%) —
+    charter §5 candidates for honest-sub-state RECLASSIFICATION (routing genuinely-honest
+    outcomes like overload-ambiguity or a genuinely-absent member out of real-`unknown`
+    into a distinct `ObligationOutcome`, pending a fresh external review per the plan's
+    own roadmap — proven per-route genuine, never laundered). `internalNotVisible` (6) is
+    Task 1.5's own correction, already root-caused. `builtinPrecedenceCollision` (1) is a
+    single residual site.
+  - **Stratification invariant now GATED on CDO, not just fixtures**: `sum(unknownByReason)
+    == unknown` — and, structurally (by `Evidence::Unknown(UnknownReason)`'s payload being
+    REQUIRED at construction, never `Option`), "every `Unknown` obligation carries a
+    reason" — was previously pinned only over 6 curated fixture workspaces
+    (`unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons`, always-run, no
+    `CDO_WS`). `cdo_full_program_coverage_and_self_reported_metric` now asserts the SAME
+    invariant over the REAL CDO corpus (both whole-program and primary-scoped
+    `unknown_reason_breakdown`), closing the gap where a future decline site reaching
+    `ObligationOutcome::Unknown` without tagging a reason (e.g. an empty-routes
+    non-fanout edge, or an `Unresolved`-target route carrying non-`Unknown` evidence)
+    could silently understate `aldump`'s `unknownByReason` while `unknown` itself climbed
+    undetected — CDO is the only corpus large/diverse enough to have caught this class of
+    gap historically (it is exactly how Task 1.5's own +10 was found).
+  - **Ratchets: unchanged, all still hold with margin** (never loosened; Task 1.5 already
+    raised these with a soundness justification, this task only re-confirms):
+    `primary_rate <= 0.021` (measured 0.0197); primary + whole-program `unknown` COUNT
+    `<= 365` (measured 356, the same ~9-count margin Task 1.5 left); `FRESH_MISSING_CEILING
+    = 10` (measured 4); `FRESH_WRONG_CEILING = 149` (measured 149, exact, zero margin);
+    `genuine_wrong == 0` hard gate (measured 0).
+  - **Gates**: `cargo clippy --release --all-features -- -D warnings` clean (no `--tests`);
+    `cargo fmt --check` clean; `cargo test --workspace` green (no `CDO_WS`, 159 test
+    binaries incl. doctests, including the fixture-scoped stratification invariant and
+    `resolve_module_has_no_stray_engine_l3_l2_imports` — no `engine::l3`/`engine::l2`
+    import exists anywhere under `src/program/resolve` beyond the one sanctioned
+    `builtins.rs::global_builtins` exception); the full `program_resolve_harness.rs` CDO
+    suite (6 tests) + `program_graph.rs` + `snapshot_robustness.rs` CDO tests green under
+    `CDO_WS` + `ENFORCE_CDO_WS=1`, single-threaded, release, deterministic (two consecutive
+    `resolve_full_program` runs produce byte-identical histograms); `git status` clean on
+    `tests/goldens/semantic-edges/` after the full CDO run (goldens byte-identical —
+    structurally guaranteed since Task 3, as `Evidence`/`Route` carry no
+    `Serialize`/`Deserialize` derive).
+  - **Roadmap follow-ups carried forward** (non-blocking, tracked for the next plan): (1)
+    `resolve_bare` Step 2→3's `reason` overwrite is unconditional, under-reporting
+    access-exclusion vs. with-guard/out-of-closure on overlap when both could apply (fix:
+    first-non-default-wins priority; the dominant reason buckets above are unaffected);
+    (2) `full.rs`'s `count_into_histogram` duplicates `edge.rs`'s evidence-scoring logic
+    (dedup candidate); (3) `ObsoleteState` (an obsolete-`Removed` member cannot link in
+    AL — a latent false-`Source`, needs ingest-tier support before it can be checked);
+    (4) `ReceiverType::Object`/`SelfObject` arms' `resolve_in_object` calls remain
+    access-UNFILTERED — the 3rd instance of the pattern Task 1.5 fixed for `resolve_bare`
+    Step 2 (`SelfObject` is incidentally safe; `Object` cross-app member calls are a
+    residual false-`Source` exposure, same shape as the bug this plan's Task 1.5 closed);
+    (5) `resolve_object_name_lc`'s `id: None` by-name-reparse fallback is the INVERSE of
+    the bug Task 2 fixed (a numeric string that fails the `Id` parse could coincidentally
+    match an object NAMED that digit-string) — pre-existing, dormant on real AL (digit-named
+    objects are ~never seen in practice), tracked here rather than fixed speculatively.
 - **follow-up plan v2.1 Task 4 (FINAL, CAPSTONE): the fail-closed object-resolution +
   bare implicit-`Rec` follow-up arc is closed — re-measured, ratchets tightened to the
   new floor** (`tests/program_resolve_harness.rs`; no resolver source changes — this
