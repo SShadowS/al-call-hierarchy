@@ -1380,20 +1380,30 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // ── Regression guard: primary real_unknown_rate ≤ recorded ceiling ───────
     // Ceiling history: 6.46% (2026-06-30, 1B.3a) → 0.07 (~8% headroom) →
     // 0.030 (beyond-1B.3b Tasks 1-7 + 5.5, recorded 2.81%) → 0.022 (follow-up
-    // plan v2.1 Task 3, recorded 1.91%). follow-up plan v2.1 Task 4 (FINAL,
-    // arc capstone) RE-CONFIRMED 1.91% by an independent re-run on
-    // 2026-07-01 (primary unknown=346/18104; whole-program 0.81%,
-    // unknown=346/42843 — byte-identical to Task 3's own measurement, no
-    // drift). Ratchets only ever TIGHTEN: 0.021 gives a tiny deterministic
-    // margin above the measured 0.0191 without re-opening prior headroom a
-    // future regression could hide in.
+    // plan v2.1 Task 3, recorded 1.91%) → 0.021 (follow-up plan v2.1 Task 4,
+    // FINAL arc capstone, RE-CONFIRMED 1.91% by an independent re-run on
+    // 2026-07-01: primary unknown=346/18104; whole-program 0.81%,
+    // unknown=346/42843 — byte-identical, no drift).
+    //
+    // RAISED 2026-07-02 (uniform-access-and-compound-receiver plan, Task 1):
+    // 0.021 → 0.023, measured 0.0225 (2.25%). A SOUNDNESS CORRECTION, not a
+    // regression — "soundness beats the metric" (plan v2.1 Task 1's own
+    // charter). Task 1 makes `resolve_in_object` PER-CANDIDATE access-aware
+    // (it previously did ZERO access filtering): the `ReceiverType::Object`
+    // arm (`resolve_member`, gap D) and both `Interface`-impl fan-out
+    // delegates (gap F/G) could false-resolve a cross-app `internal` member
+    // to `Source`. Ratchets only ever TIGHTEN in the direction of PRECISION;
+    // this is the documented exception where soundness may raise the count —
+    // see the `unknown` COUNT ceiling below for the verified root cause.
+    // 0.023 gives a tiny deterministic margin above the measured 0.0225.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.021,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.021 \
-         (recorded 2026-07-01 post follow-up plan v2.1 Task 4: 1.91%, was 2.81% \
-         pre-follow-up, 6.46% pre-beyond-1B.3b) — engine regressed; investigate \
-         before raising the ceiling"
+        primary_rate <= 0.023,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.023 \
+         (recorded 2026-07-02 post uniform-access-and-compound-receiver Task 1: \
+         2.25%, was 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
+         pre-beyond-1B.3b) — engine regressed; investigate before raising the \
+         ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1423,27 +1433,53 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `f4b69b55-...`, per `app.json`'s `dependencies`) — confirmed by
     // extracting that dependency's embedded ShowMyCode source directly (the
     // 3 procedures ARE `internal`, cross-app, was false `Source` pre-fix).
-    // 365 keeps the same ~9-count deterministic margin the prior ceiling used.
+    //
+    // RAISED AGAIN 2026-07-02 (uniform-access-and-compound-receiver plan,
+    // Task 1): 356→407 (+51), ANOTHER SOUNDNESS CORRECTION — closes the
+    // `resolve_in_object` gap Task 1.5 above deliberately left open (that fix
+    // only access-filtered `resolve_bare`'s Step 2 caller; `resolve_in_object`
+    // ITSELF still did zero filtering for the `ReceiverType::Object` arm and
+    // the `Interface`-impl fan-out). All +51 land in the `InternalNotVisible`
+    // bucket EXCLUSIVELY — every other `unknownByReason` bucket
+    // (`CompoundReceiver`=167, `UntrackedReceiver`=91, `OverloadAmbiguous`=56,
+    // `BuiltinPrecedenceCollision`=1, `ReceiverOutOfClosure`=10,
+    // `MemberNotFound`=25) is BYTE-IDENTICAL before/after, confirming the fix
+    // is surgically scoped to cross-app `internal` access exclusion with zero
+    // collateral effect. Spot-check VERIFIED against CDO source (58 distinct
+    // call sites; sampled across `CDO eDoc PrePost Valid.` and `CDO
+    // eCandidates Event Handler`): e.g. `IPrePostValidator.Validate(...)`
+    // (an `Interface "CTS-CDN IPrePostValidator"` fan-out call, gap G) and
+    // `sender.GetReceiverType()` where `sender: Page "CTS-CDN Connect
+    // eCandidates"` (an `Object`-arm call, gap D) — both targeting the SAME
+    // "Continia Delivery Network" (`CTS-CDN`) dependency app already
+    // identified as the source of the Task 1.5 divergence above, whose
+    // members are declared `internal`. The companion `cdo_l3_semantic_audit_
+    // no_fresh_wrong` gate confirms `genuine_wrong` stays 0 and `matches`
+    // against the L3 golden IMPROVED (+50: 6460→6510) with `fresh_wrong`
+    // improving too (149→148) — net a strict soundness gain, not a
+    // regression. 415 keeps the same ~8-count deterministic margin the prior
+    // ceiling used.
     assert!(
-        ph.unknown <= 365,
-        "primary unknown count {} exceeds ceiling 365 (recorded 2026-07-01 post \
-         soundness completion plan v2.1 Task 1.5: 356 — a verified soundness \
-         correction, was 346 post follow-up plan v2.1 Task 4, 508 \
-         pre-follow-up) — engine regressed; investigate before raising the \
-         ceiling",
+        ph.unknown <= 415,
+        "primary unknown count {} exceeds ceiling 415 (recorded 2026-07-02 post \
+         uniform-access-and-compound-receiver plan Task 1: 407 — a verified \
+         soundness correction, was 356 post soundness completion plan v2.1 \
+         Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 pre-follow-up) — \
+         engine regressed; investigate before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
     // future regression lands in a dependency-internal (non-primary) routine
     // — the primary-scoped count above would not catch that on its own.
-    // RAISED 2026-07-01 alongside the primary ceiling above (same Task 1.5
-    // soundness correction; whole-program `unknown`=356, same value as
-    // primary today — see comment above); 365 gives the same tiny margin.
+    // RAISED 2026-07-02 alongside the primary ceiling above (same Task 1
+    // soundness correction; whole-program `unknown`=407, same value as
+    // primary today — see comment above); 415 gives the same tiny margin.
     assert!(
-        h.unknown <= 365,
-        "whole-program unknown count {} exceeds ceiling 365 (recorded 2026-07-01 \
-         post soundness completion plan v2.1 Task 1.5: 356 — a verified \
-         soundness correction, was 346 post follow-up plan v2.1 Task 4, 508 \
+        h.unknown <= 415,
+        "whole-program unknown count {} exceeds ceiling 415 (recorded 2026-07-02 \
+         post uniform-access-and-compound-receiver plan Task 1: 407 — a \
+         verified soundness correction, was 356 post soundness completion \
+         plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 \
          pre-follow-up) — engine regressed; investigate before raising the \
          ceiling",
         h.unknown,
@@ -2012,21 +2048,32 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // Recorded 2026-07-01: `fresh_wrong_count=149` (all 149 adjudicated
     // `fresh_ahead_dispatch`, 0 `genuine_wrong`). Task 4 (FINAL, arc
     // capstone) RE-CONFIRMED the same 149 by an independent re-run
-    // (byte-identical, no drift) and pins the ceiling to EXACTLY the
+    // (byte-identical, no drift) and pinned the ceiling to EXACTLY the
     // measured value — zero margin, matching `genuine_wrong`'s own
     // zero-tolerance philosophy — so that even ONE new `fresh_wrong` site
     // (whether a genuine `fresh_ahead_dispatch` refinement or a
     // misclassified `genuine_wrong`) trips this gate for manual review
     // rather than silently passing inside slack; a ratchet never loosens.
-    const FRESH_WRONG_CEILING: usize = 149;
+    //
+    // TIGHTENED 2026-07-02 (uniform-access-and-compound-receiver plan,
+    // Task 1): 149→148 — an IMPROVEMENT (not a soundness-forced rise like
+    // the `unknown` ceilings above). `resolve_in_object`'s new per-candidate
+    // access filter reclassified one former `fresh_wrong` site (fresh
+    // resolved to a WRONG target, per the L3 golden) into an honest `Unknown`
+    // — which the L3-comparison now counts among `matches` (both sides
+    // agree there's no confident target) rather than a mismatch. All 148
+    // remaining sites stay adjudicated `fresh_ahead_dispatch`, `genuine_wrong`
+    // stays 0.
+    const FRESH_WRONG_CEILING: usize = 148;
     assert!(
         audit.fresh_wrong_count <= FRESH_WRONG_CEILING,
         "DIVERGENCE REGRESSION: fresh_wrong_count={} exceeds the recorded \
-         ceiling {} (recorded 2026-07-01 post follow-up plan v2.1 Task 4, arc \
-         capstone: 149, all fresh_ahead_dispatch, genuine_wrong=0) — a new site \
-         diverged from the L3-validated golden; investigate (is it a new \
-         fresh_ahead_dispatch refinement, or a genuine_wrong that the \
-         adjudication heuristic mis-classified?) before raising the ceiling.",
+         ceiling {} (recorded 2026-07-02 post uniform-access-and-compound-receiver \
+         Task 1: 148, all fresh_ahead_dispatch, genuine_wrong=0; was 149 post \
+         follow-up plan v2.1 Task 4) — a new site diverged from the \
+         L3-validated golden; investigate (is it a new fresh_ahead_dispatch \
+         refinement, or a genuine_wrong that the adjudication heuristic \
+         mis-classified?) before raising the ceiling.",
         audit.fresh_wrong_count,
         FRESH_WRONG_CEILING,
     );

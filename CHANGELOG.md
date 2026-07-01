@@ -8,6 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **uniform-access-and-compound-receiver plan Task 1: `resolve_in_object` is now PER-CANDIDATE
+  access-aware — closes the last two false-`Source` gaps in `resolve_member`, the `Object`-arm
+  and both `Interface`-impl fan-out delegates** (`src/program/resolve/resolver.rs`).
+  `resolve_in_object` (the shared arity-matching routine lookup 7 callers share) previously did
+  ZERO access filtering of its own; callers A (`resolve_in_table_scope`)/B (`resolve_bare` Step 1
+  self)/C (`resolve_bare` Step 2 extension-base, Task 1.5)/E (`SelfObject`) were pre-gated or
+  self-referential no-ops, but D (`resolve_member`'s `ReceiverType::Object` general dispatch) and
+  F/G (the `Interface` SymbolOnly/Source-impl fan-out delegates) had no such gate, so a cross-app
+  `internal` or same-app-but-different-object `local` member reached through an Object receiver
+  or an interface implementer could false-resolve to `Source`. Added a new
+  `routine_candidate_is_visible` predicate (the per-`Access` rule — Public always visible;
+  Local only to the declaring object itself; Internal only same-app; Protected only to self or a
+  direct kind-compatible extension via `ResolveIndex::object_extends`; an access-lookup miss
+  fails closed) applied PER CANDIDATE rather than existentially, and threaded `from_object:
+  &ObjectNodeId` through all 7 callers. **The overload-narrowing guard:** selection now computes
+  `pre_filter_count` (arity-matched candidates BEFORE visibility) and only picks the lone visible
+  survivor when it was ALSO the lone candidate pre-filter; if access narrowed an
+  originally-ambiguous (`pre_filter_count > 1`) same-arity set down to one visible candidate, that
+  is NOT a safe selection (arg types are unproven, so access alone can't prove which overload the
+  call meant) — it stays an honest `Unknown(OverloadAmbiguous)` rather than manufacturing a false
+  `Source`. `Codeunit.Run`/`resolve_object_run` (entry-trigger dispatch) and event-subscriber
+  edge emission both bypass `resolve_in_object` entirely and are untouched. 15 new unit tests in
+  `src/program/resolve/resolver.rs` cover the full matrix: positive controls (cross-app `public`,
+  same-app `internal`, direct-extension `protected`, `this.LocalProc()`, bare own `local`,
+  same-app internal interface-impl, `Codeunit.Run`-with-no-`OnRun` opaque control) and negatives
+  (Object-arm cross-app `internal`/same-app `local`-cross-object/non-extension `protected`
+  same-app+cross-app/wrong-kind-extension `protected`, the mixed-access same-arity overload guard,
+  cross-app `internal` interface implementer excluded while a sibling `public` implementer still
+  resolves, and a user-defined member literally named `Run` with arity 2 proving the
+  `Codeunit.Run` exemption is scoped to arity≤1, not name-based) — TDD-verified against the
+  pre-fix code (temporarily neutralized `routine_candidate_is_visible`, confirmed the exact wrong
+  `Source` routes the fix corrects, then restored). CDO (`CDO_WS`): `genuine_wrong` stays 0;
+  primary/whole `unknown` count rose 356→407 (+51, ALL in the `InternalNotVisible` bucket — every
+  other `unknownByReason` bucket byte-identical), `real_unknown_rate` 1.97%→2.25% — a SOUNDNESS
+  CORRECTION, not a regression (ratchets raised with this justification). Spot-checked against
+  real CDO source (e.g. `Interface "CTS-CDN IPrePostValidator"` fan-out calls and a `Page
+  "CTS-CDN Connect eCandidates"` Object-receiver call, both targeting the same
+  "Continia Delivery Network" dependency app the Task 1.5 divergence was already traced to). The
+  companion `cdo_l3_semantic_audit_no_fresh_wrong` gate IMPROVED alongside this fix: `matches`
+  against the L3 golden rose 6460→6510 and `fresh_wrong` fell 149→148 (ceiling tightened to match),
+  `fresh_missing` unchanged at 4.
 - **soundness-completion plan Task 2: shape-preserving object-typed declared-var resolution
   (`ParsedType::Object` → `ObjectRef`) — mirrors I1's `Record` fix for the `Object` sibling**
   (`src/program/resolve/receiver.rs`). `ParsedType::Object { kind, name: String }` collapsed a

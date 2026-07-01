@@ -185,26 +185,61 @@ fn unresolved_route(reason: UnknownReason) -> Route {
     }
 }
 
-/// Try to resolve `name_lc` with `arity` arguments inside `obj_id`.
+/// Try to resolve `name_lc` with `arity` arguments inside `obj_id`, as called
+/// from the identity `from_object` (Task 1 — beyond-1B.3b-follow-up:
+/// PER-CANDIDATE access filtering; see [`routine_candidate_is_visible`]).
 ///
-/// Returns the UNIQUE arity-matched overload as a `Source` route.  When the
-/// name is found but NO overload matches the arity, OR more than one
-/// same-arity overload matches (a genuine SOURCE-overload collision; see
-/// module-level doc), returns an `Unknown` route — no false-confident edge to
-/// a wrong-arity OR ambiguously-picked candidate (does NOT fall through to
-/// the next precedence level; see module-level doc).  Returns `None` only
-/// when the name is absent entirely in `obj_id`.
+/// Returns the UNIQUE arity-matched, VISIBLE-from-`from_object` overload as a
+/// `Source` route. Returns `None` only when the name is absent entirely in
+/// `obj_id` (genuine absence — callers may fall through to a further
+/// precedence level). Every other outcome (arity mismatch, access exclusion,
+/// or an unresolved overload ambiguity) is `Some(Unresolved{Unknown(reason)})`
+/// — a decline that STOPS at this precedence level rather than falling
+/// through (mirrors L3's MemberNotFound stop semantics; see module doc).
+///
+/// # Selection rule (the overload-narrowing guard — do NOT weaken)
+///
+/// 1. Zero arity-matched candidates (`pre_filter_count == 0`): name found but
+///    no overload matches the arity → `Unknown(OverloadAmbiguous)`.
+/// 2. `pre_filter_count >= 1`: partition the arity-matched set by
+///    [`routine_candidate_is_visible`].
+///    - **0 visible** → access excluded every arity-matched candidate →
+///      `Unknown(access_exclusion_reason(..))` (falls back to
+///      `IndexIntegrationGap` only in the defensive case where a candidate
+///      caused the exclusion but the reason-finder couldn't re-derive why —
+///      should never happen, since the two functions apply the identical
+///      per-`Access` rule).
+///    - **Exactly 1 visible AND `pre_filter_count == 1`** → the visible
+///      candidate WAS the only overload to begin with; access filtering
+///      changed nothing about cardinality → resolve it.
+///    - **Exactly 1 visible BUT `pre_filter_count > 1`** → access narrowed an
+///      originally-AMBIGUOUS same-arity set down to one. This is NOT a safe
+///      selection: the pre-filter set was ambiguous (no arg-type evidence to
+///      pick between overloads — full arg-type dispatch is deferred), so
+///      access removing the OTHER sibling(s) doesn't prove the call meant
+///      THIS one. Selecting the lone survivor would MANUFACTURE a false
+///      `Source` route from what is actually still an unproven overload
+///      choice → `Unknown(OverloadAmbiguous)`, exactly like the >1-visible
+///      case below.
+///    - **>1 visible** → genuine unresolved ambiguity (mirrors the
+///      interface-implementer fan-out's `>1 candidates → Unresolved` rule) →
+///      `Unknown(OverloadAmbiguous)`. Never pick-first.
 ///
 /// **SymbolOnly tier exception:** `params_count` is now populated from the ABI
 /// (Task 1), but arity matching for SymbolOnly routines remains deferred
 /// (caller-side type inference not yet implemented).  Any name match immediately
 /// produces an `Opaque` boundary route (via [`make_routine_route`]) rather than
-/// a false Unknown that would regress vs L3's External resolution.
+/// a false Unknown that would regress vs L3's External resolution. SymbolOnly
+/// routines are also public-by-construction at ABI ingestion time (see
+/// [`object_has_visible_member_candidate`]'s doc), so this short-circuit is
+/// never a soundness gap.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `from_object` (Task 1); each is a distinct identity/lookup input, grouping would obscure call sites.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
     name_lc: &str,
     arity: usize,
+    from_object: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
@@ -236,28 +271,90 @@ fn resolve_in_object(
     // `sig_fp` is always 0; see node.rs). `build_program_graph`'s dedup
     // (beyond-1B.3b Task 2) preserves every raw entry in that genuine
     // collision rather than silently dropping one, so >1 arity-matched
-    // candidates here is REAL, unresolved ambiguity: no arg-type evidence
-    // exists to pick between them (full arg-type dispatch is deferred — see
-    // module doc). Exactly one candidate resolves normally; more than one
-    // must fail closed — mirroring the interface-implementer fan-out's
-    // `>1 candidates → Unresolved` rule (this module, `resolve_member`'s
-    // `Interface` arm). Never pick-first.
+    // candidates here is REAL, unresolved ambiguity absent further evidence.
     let matched: Vec<&RoutineNodeId> = candidates
         .iter()
         .filter(|rid| rid.params_count == arity)
         .collect();
-    match matched.len() {
-        0 => {}
-        1 => return Some(make_routine_route(matched[0], obj_tier, body_map, graph)),
-        _ => {
-            return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
-        }
+    let pre_filter_count = matched.len();
+    if pre_filter_count == 0 {
+        // Name found but no arity-matched overload: emit Unknown rather than
+        // a false-confident route to a wrong-arity candidate. Does NOT fall
+        // through to extension-base / global-builtin — mirrors L3's
+        // MemberNotFound stop.
+        return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
     }
 
-    // Name found but no arity-matched overload: emit Unknown rather than a
-    // false-confident route to a wrong-arity candidate. Does NOT fall through
-    // to extension-base / global-builtin — mirrors L3's MemberNotFound stop.
-    Some(unresolved_route(UnknownReason::OverloadAmbiguous))
+    // Per-candidate visibility filter (Task 1): partition the arity-matched
+    // set by whether it is visible from `from_object`'s identity.
+    let visible: Vec<&RoutineNodeId> = matched
+        .iter()
+        .copied()
+        .filter(|rid| routine_candidate_is_visible(rid, from_object, graph, index))
+        .collect();
+
+    match visible.len() {
+        0 => {
+            let reason = access_exclusion_reason(
+                obj_id,
+                obj_tier,
+                name_lc,
+                arity,
+                from_object,
+                graph,
+                index,
+            )
+            .unwrap_or(UnknownReason::IndexIntegrationGap);
+            Some(unresolved_route(reason))
+        }
+        // Overload-narrowing guard: only select the lone survivor when it was
+        // ALSO the lone candidate before visibility filtering. If access
+        // narrowed an originally-ambiguous (`pre_filter_count > 1`) set down
+        // to one, that is NOT a safe selection — fall through to the `_` arm.
+        1 if pre_filter_count == 1 => {
+            Some(make_routine_route(visible[0], obj_tier, body_map, graph))
+        }
+        _ => Some(unresolved_route(UnknownReason::OverloadAmbiguous)),
+    }
+}
+
+/// Whether a single, CONCRETE arity-matched routine candidate `rid` is
+/// visible from the calling object's identity `from_object` — the
+/// PER-CANDIDATE counterpart to [`object_has_visible_member_candidate`]
+/// (which only answers EXISTENTIALLY: "does SOME visible candidate exist").
+/// [`resolve_in_object`] needs to know WHICH SPECIFIC candidate(s) survive so
+/// it can apply the overload-narrowing guard rather than blindly picking the
+/// sole visible survivor of an originally-ambiguous set.
+///
+/// Mirrors the per-`Access` rule [`object_has_visible_member_candidate`]
+/// already established (see that function's doc for the full soundness
+/// rationale) — RESOLVED OBJECT IDENTITY, never a lowercased-name comparison:
+///
+/// - [`Access::Public`] → always visible.
+/// - [`Access::Local`] → visible ONLY when `rid.object == *from_object` (the
+///   candidate's declaring object IS the calling object itself).
+/// - [`Access::Internal`] → visible when `rid.object.app == from_object.app`
+///   (app-scoped; cross-app `internal` fails closed).
+/// - [`Access::Protected`] → visible when `rid.object == *from_object` (self)
+///   OR `index.object_extends(graph, from_object, &rid.object)` is `true`
+///   (`from_object` is a DIRECT, kind-compatible extension of the
+///   candidate's declaring object).
+/// - Lookup miss (`None`) → fails closed (excluded), never assumed visible.
+fn routine_candidate_is_visible(
+    rid: &RoutineNodeId,
+    from_object: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    match lookup_routine_access(graph, rid) {
+        Some(Access::Public) => true,
+        Some(Access::Local) => rid.object == *from_object,
+        Some(Access::Internal) => rid.object.app == from_object.app,
+        Some(Access::Protected) => {
+            rid.object == *from_object || index.object_extends(graph, from_object, &rid.object)
+        }
+        None => false,
+    }
 }
 
 /// Whether `obj_id` (at trust tier `obj_tier`) carries a visible source/ABI
@@ -565,7 +662,16 @@ fn resolve_in_table_scope(
         }
         (Some(_), Some(_)) => TableScopeOutcome::Ambiguous,
         (Some((oid, tier)), None) => {
-            match resolve_in_object(oid, *tier, name_lc, arity, graph, index, body_map) {
+            match resolve_in_object(
+                oid,
+                *tier,
+                name_lc,
+                arity,
+                &from_object.id,
+                graph,
+                index,
+                body_map,
+            ) {
                 Some(route) => TableScopeOutcome::Resolved(DispatchShape::Exact, vec![route]),
                 // Defensive: `object_has_visible_member_candidate` already
                 // confirmed a visible arity match exists, so `resolve_in_object`
@@ -679,6 +785,7 @@ pub fn resolve_bare(
         from_object.tier,
         name_lc,
         arity,
+        &from_object.id,
         graph,
         index,
         body_map,
@@ -722,9 +829,16 @@ pub fn resolve_bare(
             graph,
             index,
         ) {
-            if let Some(route) =
-                resolve_in_object(&base_id, base_tier, name_lc, arity, graph, index, body_map)
-            {
+            if let Some(route) = resolve_in_object(
+                &base_id,
+                base_tier,
+                name_lc,
+                arity,
+                &from_object.id,
+                graph,
+                index,
+                body_map,
+            ) {
                 return vec![route];
             }
         } else if let Some(r) = access_exclusion_reason(
@@ -1335,6 +1449,7 @@ pub fn resolve_member(
                 target_tier,
                 method_lc,
                 arity,
+                &from_object.id,
                 graph,
                 index,
                 body_map,
@@ -1363,6 +1478,7 @@ pub fn resolve_member(
                 from_object.tier,
                 method_lc,
                 arity,
+                &from_object.id,
                 graph,
                 index,
                 body_map,
@@ -1406,7 +1522,14 @@ pub fn resolve_member(
                     // declare `method_lc` at all (`resolve_in_object` returns
                     // `None` only on a name-absent `candidates.is_empty()`).
                     let route = resolve_in_object(
-                        impl_id, impl_tier, method_lc, arity, graph, index, body_map,
+                        impl_id,
+                        impl_tier,
+                        method_lc,
+                        arity,
+                        &from_object.id,
+                        graph,
+                        index,
+                        body_map,
                     )
                     .unwrap_or_else(|| unresolved_route(UnknownReason::MemberNotFound));
                     routes.push(route);
@@ -1427,7 +1550,14 @@ pub fn resolve_member(
                                 // (should never fire; `resolve_in_object`
                                 // itself finds `matched.len() == 1`).
                                 let route = resolve_in_object(
-                                    impl_id, impl_tier, method_lc, arity, graph, index, body_map,
+                                    impl_id,
+                                    impl_tier,
+                                    method_lc,
+                                    arity,
+                                    &from_object.id,
+                                    graph,
+                                    index,
+                                    body_map,
                                 )
                                 .unwrap_or_else(|| {
                                     unresolved_route(UnknownReason::IndexIntegrationGap)
@@ -6178,5 +6308,890 @@ codeunit 50000 "Caller"
             AbiEventKind::None,
             "regular dep procedure must carry None event_kind"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 1 (feat/resolve-access-uniform-and-compound-receiver): per-candidate
+    // access filter in `resolve_in_object` — closes the `ReceiverType::Object`
+    // arm (gap D) + both `Interface`-impl delegates (gaps F/G), which
+    // previously did ZERO access filtering. `Codeunit.Run`/`resolve_object_run`
+    // and event-subscriber dispatch are UNTOUCHED (they bypass
+    // `resolve_in_object` entirely) — the negative/control fixtures below pin
+    // that boundary too. See `.superpowers/sdd/task-1-report.md` and
+    // `tests/r0-corpus/ws-object-interface-visibility/` for the full matrix +
+    // compiler-semantics writeup.
+    // -----------------------------------------------------------------------
+
+    // --- POSITIVE controls: must still resolve to Source -------------------
+
+    // (D-pos-1) Object receiver, cross-app, `public` method.
+    #[test]
+    fn resolve_member_object_cross_app_public_method_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53900 "PubXTarget"
+{
+    procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53901 "PubXCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_a = make_app_id("PrimaryApp1");
+        let app_b = make_app_id("DepApp1");
+        let unit_target = make_unit(app_b, "PubXTarget.al", src_target);
+        let unit_caller = make_unit(app_a, "PubXCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("PrimaryApp1", "DepApp1")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PubXCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "pubxtarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a `public` cross-app Object-receiver method must still resolve \
+             to Source (gap D positive control); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (D-pos-2) Object receiver, same-app, `internal` method.
+    #[test]
+    fn resolve_member_object_same_app_internal_method_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53910 "IntXTarget"
+{
+    internal procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53911 "IntXCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "IntXTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "IntXCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IntXCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "intxtarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a same-app `internal` Object-receiver method must resolve to \
+             Source (gap D positive control — Internal is app-scoped); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (D-pos-3) Object receiver, direct PageExtension → base Page `protected` method.
+    #[test]
+    fn resolve_member_object_direct_extension_protected_method_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 53920 "ProtXBase"
+{
+    protected procedure Prot()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 53921 "ProtXBaseExt" extends ProtXBase
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "ProtXBase.al", src_page);
+        let unit_ext = make_unit(app_id, "ProtXBaseExt.al", src_ext);
+        let units = [unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ProtXBaseExt");
+        assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "protxbase".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "prot", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a direct PageExtension calling its base's `protected` method \
+             via an Object receiver must resolve to Source (gap D positive \
+             control); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (B-pos) bare call to the caller's own `local` procedure (gap B is
+    // pre-gated/self-no-op — this pins that threading `from_object` through
+    // Step 1 changed nothing observable).
+    #[test]
+    fn bare_own_local_procedure_resolves_to_source() {
+        let src: &'static str = r#"
+codeunit 53930 "BareLocalSelf"
+{
+    local procedure DoFoo()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "BareLocalSelf.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "BareLocalSelf");
+        let routes = resolve_bare(
+            from_obj,
+            "dofoo",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a bare call to the caller's OWN `local` procedure must resolve \
+             to Source (gap B self-no-op control); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (E-pos) `this.LocalProc()` — SelfObject receiver dispatching to the
+    // caller's own `local` procedure (gap E is pre-gated/self-no-op).
+    #[test]
+    fn resolve_member_self_object_local_procedure_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src: &'static str = r#"
+codeunit 53940 "SelfLocalCaller"
+{
+    local procedure LocalProc()
+    begin
+    end;
+
+    procedure Trigger()
+    begin
+        this.LocalProc();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "SelfLocalCaller.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SelfLocalCaller");
+        let (shape, routes) = resolve_member(
+            &ReceiverType::SelfObject,
+            "localproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "`this.LocalProc()` (SelfObject receiver) must resolve its own \
+             `local` procedure to Source (gap E self-no-op control); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // --- NEGATIVES: must become honest Unknown ------------------------------
+
+    // (D-neg-1) Object receiver, cross-app `internal` — pre-fix this
+    // false-resolved to `RouteTarget::Routine(IntNTarget.Secret)`.
+    #[test]
+    fn resolve_member_object_cross_app_internal_method_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53950 "IntNTarget"
+{
+    internal procedure Secret()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53951 "IntNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_a = make_app_id("PrimaryApp2");
+        let app_b = make_app_id("DepApp2");
+        let unit_target = make_unit(app_b, "IntNTarget.al", src_target);
+        let unit_caller = make_unit(app_a, "IntNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("PrimaryApp2", "DepApp2")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IntNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "intntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app `internal` method reached via an Object receiver \
+             must NOT resolve to Source (gap D — pre-fix this false-resolved \
+             to RouteTarget::Routine(IntNTarget.Secret)); got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (D-neg-2) Object receiver, same-app but DIFFERENT (non-extension)
+    // object's `local` — pre-fix this false-resolved to
+    // `RouteTarget::Routine(LocNTarget.Hidden)`.
+    #[test]
+    fn resolve_member_object_same_app_local_cross_object_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53960 "LocNTarget"
+{
+    local procedure Hidden()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53961 "LocNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "LocNTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "LocNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "LocNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "locntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "hidden", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a same-app but DIFFERENT object's `local` method reached via an \
+             Object receiver must NOT resolve to Source (gap D — AL `local` \
+             is OBJECT-scoped, not app-scoped; pre-fix this false-resolved \
+             to RouteTarget::Routine(LocNTarget.Hidden)); got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (D-neg-3) THE OVERLOAD-NARROWING GUARD: two textually distinct
+    // same-arity overloads of `Foo` (Integer vs Text) differing only in
+    // access modifier + param TYPE — `RoutineNodeId` collides for both
+    // (source `sig_fp` is always `0`; see node.rs /
+    // `build::dedup_routines_preserving_genuine_overloads`), so the
+    // pre-filter set is genuinely ambiguous (2 same-arity candidates).
+    // Calling cross-app with 1 (unproven-type) argument must NEVER resolve
+    // to Source, even though exactly one physical overload (`Foo(Integer)`,
+    // `public`) happens to be visible and the other (`Foo(Text)`,
+    // `internal`) is cross-app-excluded — access alone cannot prove which
+    // overload the call meant.
+    #[test]
+    fn resolve_member_object_mixed_access_same_arity_overload_never_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53970 "OverloadNTarget"
+{
+    procedure Foo(p: Integer)
+    begin
+    end;
+
+    internal procedure Foo(p: Text)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53971 "OverloadNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_a = make_app_id("PrimaryApp3");
+        let app_b = make_app_id("DepApp3");
+        let unit_target = make_unit(app_b, "OverloadNTarget.al", src_target);
+        let unit_caller = make_unit(app_a, "OverloadNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("PrimaryApp3", "DepApp3")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        // Sanity: both overloads really did survive as one params_count==1
+        // collision (proves the fixture actually exercises the guard, not a
+        // degenerate single-candidate case).
+        let target_obj = find_obj(&graph, "OverloadNTarget");
+        let foo_candidates = index.routines_in_object(&target_obj.id, "foo");
+        assert_eq!(
+            foo_candidates.len(),
+            2,
+            "fixture must produce TWO same-arity `Foo` candidates; got {:?}",
+            foo_candidates
+        );
+
+        let from_obj = find_obj(&graph, "OverloadNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "overloadntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            !matches!(routes[0].target, RouteTarget::Routine(_)),
+            "mixed-access same-arity overload (public Foo(Integer) + \
+             internal Foo(Text)) called cross-app with an unproven-type arg \
+             must NEVER resolve to Source — access-narrowing to the lone \
+             visible overload would manufacture a false resolution (the \
+             overload-narrowing guard); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (D-neg-4) Object receiver, same-app but UNRELATED (non-extension)
+    // object's `protected` method.
+    #[test]
+    fn resolve_member_object_same_app_non_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53980 "ProtNTarget"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53981 "ProtNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "ProtNTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "ProtNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ProtNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "protntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a same-app but UNRELATED (non-extension) object's `protected` \
+             method reached via an Object receiver must NOT resolve to \
+             Source (gap D); got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (D-neg-5) Object receiver, cross-app UNRELATED (non-extension)
+    // object's `protected` method — a fortiori excluded vs the same-app case.
+    #[test]
+    fn resolve_member_object_cross_app_non_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53990 "ProtXNTarget"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53991 "ProtXNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_a = make_app_id("PrimaryApp4");
+        let app_b = make_app_id("DepApp4");
+        let unit_target = make_unit(app_b, "ProtXNTarget.al", src_target);
+        let unit_caller = make_unit(app_a, "ProtXNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("PrimaryApp4", "DepApp4")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ProtXNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "protxntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app UNRELATED (non-extension) object's `protected` \
+             method reached via an Object receiver must NOT resolve to \
+             Source (gap D, a fortiori excluded vs the same-app case); \
+             got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (D-neg-6) Object receiver, WRONG-KIND extension: a Table and a Page
+    // share the literal name "Shared"; a PageExtension `extends Shared`
+    // resolves (kind-compatibly) against the PAGE, never the Table. The
+    // Table's `protected` method must stay invisible — the PageExtension
+    // does NOT directly extend the Table (wrong kind), despite sharing the
+    // extends-target NAME with an object it DOES directly extend.
+    #[test]
+    fn resolve_member_object_wrong_kind_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 54000 "Shared"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_page: &'static str = r#"
+page 54001 "Shared"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 54002 "SharedExt" extends Shared
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "SharedTable.al", src_table);
+        let unit_page = make_unit(app_id.clone(), "SharedPage.al", src_page);
+        let unit_ext = make_unit(app_id, "SharedExt.al", src_ext);
+        let units = [unit_table, unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SharedExt");
+        assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
+        let table_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case("shared") && o.id.kind == ObjectKind::Table)
+            .expect("table Shared");
+        let page_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case("shared") && o.id.kind == ObjectKind::Page)
+            .expect("page Shared");
+
+        // Sanity: kind-compatible resolution — the extension relationship
+        // holds against the Page, never the Table.
+        assert!(index.object_extends(&graph, &from_obj.id, &page_obj.id));
+        assert!(!index.object_extends(&graph, &from_obj.id, &table_obj.id));
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Table,
+            name_lc: "shared".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a PageExtension must NOT see a same-named-but-WRONG-KIND \
+             Table's `protected` method via an Object receiver (gap D); \
+             got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // (G-neg / G-pos combined) Interface fan-out: a `public` implementer and
+    // a CROSS-APP `internal` implementer of the SAME interface member. AL
+    // does not require an interface-implementing procedure to be `public`
+    // (a compiler-valid construct) — the `internal` implementer dispatches
+    // fine for a SAME-app caller (see the sibling positive test below) but
+    // must be excluded for a caller in a DIFFERENT app, while the `public`
+    // implementer's route is unaffected either way.
+    #[test]
+    fn resolve_member_interface_cross_app_internal_impl_excluded_public_impl_still_resolves() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_pub_impl: &'static str = r#"
+codeunit 54010 "PubImplX" implements IFoo
+{
+    procedure Bar()
+    begin
+    end;
+}
+"#;
+        let src_int_impl: &'static str = r#"
+codeunit 54011 "IntImplX" implements IFoo
+{
+    internal procedure Bar()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 54012 "IfaceCallerX"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_impl = make_app_id("ImplAppX");
+        let app_caller = make_app_id("CallerAppX");
+        let unit_pub_impl = make_unit(app_impl.clone(), "PubImplX.al", src_pub_impl);
+        let unit_int_impl = make_unit(app_impl, "IntImplX.al", src_int_impl);
+        let unit_caller = make_unit(app_caller, "IfaceCallerX.al", src_caller);
+        let units = [unit_pub_impl, unit_int_impl, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("CallerAppX", "ImplAppX")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCallerX");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Polymorphic);
+        assert_eq!(
+            routes.len(),
+            2,
+            "two implementers -> two routes; got {:?}",
+            routes
+        );
+
+        let pub_impl_id = find_obj(&graph, "PubImplX").id.clone();
+        let int_impl_id = find_obj(&graph, "IntImplX").id.clone();
+
+        let pub_route = routes
+            .iter()
+            .find(|r| matches!(&r.target, RouteTarget::Routine(rid) if rid.object == pub_impl_id))
+            .expect("public implementer must have a Routine route");
+        assert_eq!(pub_route.evidence, Evidence::Source);
+
+        let int_route_resolved_to_source = routes
+            .iter()
+            .any(|r| matches!(&r.target, RouteTarget::Routine(rid) if rid.object == int_impl_id));
+        assert!(
+            !int_route_resolved_to_source,
+            "the cross-app `internal` implementer must NOT emit a \
+             Routine/Source route (gap G — pre-fix this false-resolved); \
+             got {:?}",
+            routes
+        );
+
+        // The other route (not the public implementer's) must be an honest
+        // Unresolved/Unknown — the internal implementer's excluded route.
+        let other_route = routes
+            .iter()
+            .find(|r| !matches!(&r.target, RouteTarget::Routine(rid) if rid.object == pub_impl_id))
+            .expect("the internal implementer's route must be present, not dropped");
+        assert_eq!(other_route.target, RouteTarget::Unresolved);
+        assert!(matches!(other_route.evidence, Evidence::Unknown(_)));
+    }
+
+    // (G-pos) SAME-app `internal` interface implementer — a positive control
+    // proving `internal` is app-scoped, not interface-scoped: the sibling
+    // test above proves the CROSS-app case is excluded.
+    #[test]
+    fn resolve_member_interface_same_app_internal_impl_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_int_impl: &'static str = r#"
+codeunit 54020 "IntImplY" implements IFoo
+{
+    internal procedure Bar()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 54021 "IfaceCallerY"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_impl = make_unit(app_id.clone(), "IntImplY.al", src_int_impl);
+        let unit_caller = make_unit(app_id, "IfaceCallerY.al", src_caller);
+        let units = [unit_impl, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "IfaceCallerY");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Polymorphic);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a SAME-app `internal` interface implementer must resolve to \
+             Source (gap G positive control — Internal is app-scoped, not \
+             interface-scoped); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (D-neg-7) A user-defined member LITERALLY named `Run`, arity 2 —
+    // the `Codeunit.Run(arity<=1)` OnRun-trigger special case only engages
+    // for arity<=1, so this falls through to the GENERAL resolve_in_object
+    // dispatch. Proves "Run" is not a blanket access-filter exemption — only
+    // the actual entry-trigger dispatch is.
+    #[test]
+    fn resolve_member_object_user_defined_run_cross_app_internal_excluded_not_run_exempt() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 54030 "RunNTarget"
+{
+    internal procedure Run(a: Integer; b: Integer)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 54031 "RunNCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_a = make_app_id("PrimaryApp5");
+        let app_b = make_app_id("DepApp5");
+        let unit_target = make_unit(app_b, "RunNTarget.al", src_target);
+        let unit_caller = make_unit(app_a, "RunNCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("PrimaryApp5", "DepApp5")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RunNCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "runntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "run", 2, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a user-defined 2-arg `Run` procedure declared `internal` in a \
+             cross-app codeunit must NOT resolve to Source — the \
+             OnRun-trigger special case is scoped to arity<=1 and must not \
+             blanket-exempt every member literally named \"Run\"; got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    // --- Run/ObjectRun exemption control: bypasses resolve_in_object -------
+
+    // (Run-control) `Codeunit.Run()` on a codeunit with NO `OnRun` trigger —
+    // must emit an Opaque AbiSymbol boundary route, never a synthesized
+    // Source. This path (`resolve_member`'s inline Codeunit.Run special
+    // case) bypasses `resolve_in_object` entirely and is untouched by Task 1.
+    #[test]
+    fn resolve_member_codeunit_run_no_onrun_trigger_emits_opaque_not_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 54040 "NoOnRunTarget"
+{
+    procedure SomethingElse()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 54041 "NoOnRunCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "NoOnRunTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "NoOnRunCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "NoOnRunCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "noonruntarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            !matches!(routes[0].target, RouteTarget::Routine(_)),
+            "Codeunit.Run() on a codeunit with NO OnRun trigger must never \
+             synthesize a Source route; got {:?}",
+            routes[0].target
+        );
+        assert!(
+            matches!(routes[0].target, RouteTarget::AbiSymbol { .. }),
+            "must be an Opaque AbiSymbol boundary route (object exists, \
+             OnRun trigger absent — unaffected by the access filter since \
+             Codeunit.Run bypasses resolve_in_object entirely); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Opaque);
     }
 }
