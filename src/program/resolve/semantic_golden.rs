@@ -802,6 +802,155 @@ pub fn load_anon_event_golden(path: &Path) -> Option<AnonEventGolden> {
     Some(golden)
 }
 
+// ---------------------------------------------------------------------------
+// beyond-1B.3b Task 3: source-adjudicated overlay for `genuine_wrong` sites
+// ---------------------------------------------------------------------------
+
+/// Verdict meaning L3 mis-resolved a genuine platform intrinsic to a
+/// coincidentally-named source routine — fresh's `builtin` classification is
+/// CORRECT. The only verdict [`apply_adjudicated_overrides`] acts on;
+/// `fresh_false_builtin`/`needs_manual_review` entries (if any ever appear)
+/// are recorded in the overlay but deliberately left OUT of the overlay
+/// application — a site with either of those verdicts stays `genuine_wrong`
+/// (visible to the hard gate) until the underlying fresh bug is fixed.
+pub const VERDICT_L3_ERROR_INTRINSIC: &str = "l3_error_intrinsic";
+
+/// Schema version for the committed `adjudicated-overrides.json`.
+pub const ADJUDICATED_OVERRIDES_SCHEMA_VERSION: u32 = 1;
+
+/// One committed, independently-source-adjudicated correction for a
+/// `genuine_wrong` site enumerated in `known-genuine-divergences.json`.
+///
+/// # Independence (non-circularity invariant)
+///
+/// Every field is derived ONLY from: the AL SOURCE at `(unit, line)` (read
+/// directly from a real CDO workspace — `callee_text`, `arity`,
+/// `receiver_kind`), the source-symbol inventory (grepping the SAME unit for
+/// a competing local `procedure <name>(` declaration — the lookup-precedence
+/// shadow check Task 1 fixed), and the structural builtin catalog
+/// (`builtins::is_global_builtin` / `member_catalog::member_builtin` —
+/// `catalog_key`). `catalog_key` is a CANONICAL CATALOG STRING in the exact
+/// `BuiltinId` format the catalog itself produces (bare lowercase name for a
+/// global builtin, `Prefix::method` for a member builtin) — NEVER a
+/// serialized fresh `Edge`/`CanonicalTarget`/graph-node id. None of these
+/// fields are derived by calling [`crate::program::resolve::full::resolve_full_program`]
+/// or reading a fresh-computed edge.
+///
+/// See `tests/goldens/semantic-edges/adjudicated-overrides.json` (the
+/// committed dataset) and
+/// `tests/program_resolve_harness.rs::cdo_genuine_wrong_is_precedence_adjudicated`
+/// (the CDO-gated test that RE-DERIVES every field from LIVE CDO source at
+/// test time — independently of this struct's own committed values — and
+/// asserts agreement; a `source_sha256` mismatch fails loudly as source
+/// drift rather than silently passing).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdjudicatedOverride {
+    pub from_app_guid: String,
+    pub from_object_kind: String,
+    pub from_object_lc: String,
+    pub from_routine_lc: String,
+    /// `EdgeKind` discriminant — see [`GoldenSiteKey::edge_kind`].
+    pub edge_kind: u8,
+    pub unit: String,
+    pub line: u32,
+    pub callee_fp: u64,
+    pub callee_text: String,
+    pub arity: usize,
+    pub receiver_kind: String,
+    pub catalog_key: String,
+    pub verdict: String,
+    pub source_sha256: String,
+    pub note: String,
+}
+
+impl AdjudicatedOverride {
+    /// Rebuild the plaintext [`GoldenSiteKey`] this override applies to (the
+    /// SAME identity fields [`canonical_to_golden_key`] would have produced
+    /// for the original fresh/L3 edge at this site).
+    fn site_key(&self) -> GoldenSiteKey {
+        GoldenSiteKey {
+            from_app_guid: self.from_app_guid.clone(),
+            from_object_kind: self.from_object_kind.clone(),
+            from_object_lc: self.from_object_lc.clone(),
+            from_routine_lc: self.from_routine_lc.clone(),
+            edge_kind: self.edge_kind,
+            unit: self.unit.clone(),
+            line: self.line,
+            callee_fp: self.callee_fp,
+        }
+    }
+}
+
+/// The committed adjudication overlay (`adjudicated-overrides.json`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AdjudicatedOverrides {
+    pub description: String,
+    pub schema_version: u32,
+    pub entries: Vec<AdjudicatedOverride>,
+}
+
+/// Path to the committed adjudication overlay.
+#[must_use]
+pub fn adjudicated_overrides_path() -> PathBuf {
+    semantic_edges_golden_dir().join("adjudicated-overrides.json")
+}
+
+/// Load + validate the committed adjudication overlay. Same fail-closed
+/// contract as [`load_anon_golden`]: `None` on missing/unparseable/wrong-
+/// schema-version, never panics.
+#[must_use]
+pub fn load_adjudicated_overrides(path: &Path) -> Option<AdjudicatedOverrides> {
+    let json = std::fs::read_to_string(path).ok()?;
+    let overrides: AdjudicatedOverrides = serde_json::from_str(&json).ok()?;
+    if overrides.schema_version != ADJUDICATED_OVERRIDES_SCHEMA_VERSION {
+        return None;
+    }
+    Some(overrides)
+}
+
+/// Overlay `overrides` onto `golden` IN-MEMORY: for every entry whose verdict
+/// is [`VERDICT_L3_ERROR_INTRINSIC`], replace the anonymized L3 target set at
+/// that site with the single adjudicated catalog target (a `Builtin`-kind
+/// [`GoldenTarget`] — `kind: 255`, `object_lc: catalog_key` — matching
+/// `differential.rs`'s own `RouteTarget::Builtin` → `CanonicalTarget`
+/// encoding), anonymized the SAME way [`anonymize_target`] anonymizes a live
+/// `Builtin` route.
+///
+/// `cdo-anon.json` itself is NEVER touched by this function — it mutates only
+/// the caller's IN-MEMORY `AnonSemanticGolden` (loaded fresh from disk each
+/// call). Entries whose verdict is NOT [`VERDICT_L3_ERROR_INTRINSIC`] are
+/// skipped (left as the original, still-wrong L3 target) — those sites stay
+/// `genuine_wrong` until fixed at the source.
+///
+/// Returns the number of overrides actually applied (matched an existing
+/// golden entry). A caller comparing this against the number of
+/// `l3_error_intrinsic` entries in `overrides` can detect drift between the
+/// committed golden and the committed overlay (e.g. a renamed/rebuilt
+/// `cdo-anon.json` that no longer contains a site the overlay expects).
+pub fn apply_adjudicated_overrides(
+    golden: &mut AnonSemanticGolden,
+    overrides: &AdjudicatedOverrides,
+) -> usize {
+    let mut applied = 0usize;
+    for ov in &overrides.entries {
+        if ov.verdict != VERDICT_L3_ERROR_INTRINSIC {
+            continue;
+        }
+        let anon_key = anonymize_site_key(&ov.site_key(), anon::SITE_DOMAIN_V1);
+        if let Ok(idx) = golden.entries.binary_search_by(|e| e.site.cmp(&anon_key)) {
+            let target = GoldenTarget {
+                kind: 255,
+                app: None,
+                object_lc: ov.catalog_key.clone(),
+                routine_lc: None,
+            };
+            golden.entries[idx].targets = BTreeSet::from([anonymize_target(&target)]);
+            applied += 1;
+        }
+    }
+    applied
+}
+
 /// Merge `new_entries` into the GITIGNORED local de-anonymization map at
 /// `path`, creating it if absent. Existing entries win on key collision
 /// (first writer's plaintext is kept — there should never be a genuine
@@ -1927,12 +2076,30 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     // ── Load the committed, anonymized golden (NO project_l3 call here) ──────
     let golden = load_anon_golden(&cdo_anon_golden_path());
     let golden_loaded = golden.is_some();
-    let golden = golden.unwrap_or_default();
+    let mut golden = golden.unwrap_or_default();
     let l3_total = golden.entries.len();
     // 1B.3b Task 1 fix (Fix 4): warn (never fail) when CDO_WS has drifted
     // from the golden's mint-time stamp.
     if golden_loaded {
         warn_on_workspace_drift(&golden.metadata, workspace_root);
+    }
+
+    // ── beyond-1B.3b Task 3: overlay the source-adjudicated corrections ──────
+    // IN-MEMORY only — `cdo-anon.json` itself is never mutated. Sites whose
+    // adjudicated verdict is `l3_error_intrinsic` get their L3 target
+    // replaced with the independently-confirmed catalog target BEFORE the
+    // diff below, so fresh is compared against the ADJUDICATED oracle, not
+    // the raw (known-wrong) L3 one. See `apply_adjudicated_overrides`.
+    if let Some(overrides) = load_adjudicated_overrides(&adjudicated_overrides_path()) {
+        let intrinsic_count = overrides
+            .entries
+            .iter()
+            .filter(|e| e.verdict == VERDICT_L3_ERROR_INTRINSIC)
+            .count();
+        let applied = apply_adjudicated_overrides(&mut golden, &overrides);
+        eprintln!(
+            "Adjudication overlay: {applied}/{intrinsic_count} l3_error_intrinsic override(s) applied"
+        );
     }
 
     // ── Build graph for AppRegistry (needed for project_fresh) ───────────────

@@ -1204,11 +1204,24 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::program::resolve::semantic_golden::{
-    ANON_GOLDEN_SCHEMA_VERSION, GoldenSiteKey, SemanticGolden, cdo_anon_golden_path,
-    cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_anon_event_golden,
+    ANON_GOLDEN_SCHEMA_VERSION, AdjudicatedOverride, GoldenSiteKey, SemanticGolden,
+    adjudicated_overrides_path, cdo_anon_golden_path, cdo_event_anon_golden_path,
+    cdo_trigger_anon_golden_path, load_adjudicated_overrides, load_anon_event_golden,
     load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden, run_cdo_event_audit,
     run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability, run_semantic_diff,
 };
+
+// beyond-1B.3b Task 3: the INDEPENDENT adjudication test's inputs — the
+// structural builtin catalog (the SAME data the fresh resolver's `builtin`
+// classification itself is built on; using it directly here is sanctioned by
+// the brief's "structural catalog" independence criterion) and a hasher for
+// the `source_sha256` drift check. Deliberately NOT importing
+// `resolve_full_program`/`Edge`/`CanonicalEdge` anywhere near the adjudicator
+// — see `cdo_genuine_wrong_is_precedence_adjudicated`'s doc comment.
+use al_call_hierarchy::program::resolve::builtins::is_global_builtin;
+use al_call_hierarchy::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
+use al_call_hierarchy::program::resolve::receiver::FrameworkKind;
+use sha2::{Digest, Sha256};
 
 /// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 1 — the `CDO_WS` presence check).
 ///
@@ -1638,6 +1651,28 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
         audit.genuine_wrong_count,
         manifest_keys.len(),
     );
+    // beyond-1B.3b Task 3: ALL 42 manifest entries are now adjudicated
+    // `l3_error_intrinsic` and overlaid (`run_cdo_semantic_audit` applies
+    // `adjudicated-overrides.json` in-memory before diffing) — fresh is
+    // compared against the ADJUDICATED target for these sites, which fresh
+    // matches by construction (that agreement is what the independent
+    // adjudication in `cdo_genuine_wrong_is_precedence_adjudicated`
+    // confirms). So `genuine_wrong_count` must now be EXACTLY 0: a nonzero
+    // count means either the overlay failed to apply (a wiring bug) or a
+    // genuinely NEW disjoint divergence appeared that is not one of the 42
+    // known/adjudicated sites — both are real bugs, not "still-acceptable
+    // known wrongness". The manifest/set-membership checks above stay as
+    // defense-in-depth for that second case.
+    assert_eq!(
+        audit.genuine_wrong_count, 0,
+        "genuine_wrong_count={} (expected 0): all 42 known-genuine-divergences.json sites \
+         are adjudicated l3_error_intrinsic and should have been overlaid to match fresh \
+         exactly (see adjudicated-overrides.json / apply_adjudicated_overrides). A nonzero \
+         count means either the overlay didn't apply (check for an \
+         'Adjudication overlay: N/42' log line above — N should be 42) or a genuinely NEW \
+         divergence appeared beyond the 42 adjudicated ones.",
+        audit.genuine_wrong_count,
+    );
 
     // fresh_ahead_dispatch is always ALLOWED (printed above for visibility).
 
@@ -1925,11 +1960,377 @@ fn committed_goldens_metadata_is_valid() {
         .get("entries")
         .and_then(|e| e.as_array())
         .expect("manifest must have 'entries' array");
+
+    // ── beyond-1B.3b Task 3: manifest + overlay invariants (replaces the bare
+    // `assert_eq!(len, 42)`) ────────────────────────────────────────────────
+    //
+    // Every `known-genuine-divergences.json` entry now carries an adjudicated
+    // `verdict` (Task 3). Split: 42 `l3_error_intrinsic` / 0
+    // `fresh_false_builtin` (would mean Tasks 1-2 left a real fresh bug
+    // unabsorbed) / 0 `needs_manual_review` (fail-closed — an unresolved
+    // dimension is never silently treated as passing).
+    let mut manifest_site_keys: std::collections::HashSet<(String, u64, u64)> =
+        std::collections::HashSet::new();
+    let mut manifest_intrinsic_keys: std::collections::HashSet<(String, u64, u64)> =
+        std::collections::HashSet::new();
+    for entry in manifest_entries {
+        let unit = entry["unit"]
+            .as_str()
+            .expect("manifest entry missing 'unit'")
+            .to_string();
+        let line = entry["line"]
+            .as_u64()
+            .expect("manifest entry missing 'line'");
+        let callee_fp = entry["callee_fp"]
+            .as_u64()
+            .expect("manifest entry missing 'callee_fp'");
+        let verdict = entry["verdict"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                panic!("manifest entry {unit}:{line} missing non-empty 'verdict' (Task 3)")
+            });
+        assert!(
+            matches!(
+                verdict,
+                "l3_error_intrinsic" | "fresh_false_builtin" | "needs_manual_review"
+            ),
+            "manifest entry {unit}:{line} has unrecognized verdict {verdict:?}"
+        );
+        let key = (unit.clone(), line, callee_fp);
+        assert!(
+            manifest_site_keys.insert(key.clone()),
+            "duplicate site key in known-genuine-divergences.json: {unit}:{line} fp={callee_fp}"
+        );
+        if verdict == "l3_error_intrinsic" {
+            manifest_intrinsic_keys.insert(key);
+        }
+    }
     assert_eq!(
         manifest_entries.len(),
         42,
         "known-genuine-divergences.json must carry exactly 42 adjudicated entries \
-         (1B.3a baseline) — this assertion is UNCONDITIONAL (no CDO_WS needed)"
+         (beyond-1B.3b Task 3: 42 l3_error_intrinsic / 0 fresh_false_builtin / \
+         0 needs_manual_review) — this assertion is UNCONDITIONAL (no CDO_WS needed)"
+    );
+    assert_eq!(
+        manifest_intrinsic_keys.len(),
+        42,
+        "expected all 42 known-genuine-divergences.json entries to be adjudicated \
+         l3_error_intrinsic; a non-42 count means a fresh_false_builtin or \
+         needs_manual_review survivor slipped through — investigate before relying \
+         on the overlay"
+    );
+
+    // The adjudication overlay itself (`adjudicated-overrides.json`) — also
+    // unconditionally checkable (pure JSON, no CDO_WS needed to validate its
+    // SHAPE; the CDO-gated `cdo_genuine_wrong_is_precedence_adjudicated` test
+    // re-verifies its CONTENT against live source).
+    let overrides =
+        load_adjudicated_overrides(&adjudicated_overrides_path()).unwrap_or_else(|| {
+            panic!(
+                "adjudicated-overrides.json missing/invalid at {}",
+                adjudicated_overrides_path().display(),
+            )
+        });
+    let mut override_site_keys: std::collections::HashSet<(String, u64, u64)> =
+        std::collections::HashSet::new();
+    for ov in &overrides.entries {
+        assert!(!ov.callee_text.is_empty(), "override missing callee_text");
+        assert!(!ov.catalog_key.is_empty(), "override missing catalog_key");
+        assert!(
+            !ov.receiver_kind.is_empty(),
+            "override missing receiver_kind"
+        );
+        assert_eq!(
+            ov.source_sha256.len(),
+            64,
+            "override source_sha256 must be a 64-hex-char SHA-256 digest (unit={})",
+            ov.unit
+        );
+        assert!(
+            ov.source_sha256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "override source_sha256 must be lowercase hex (unit={})",
+            ov.unit
+        );
+        assert!(!ov.verdict.is_empty(), "override missing verdict");
+        let key = (ov.unit.clone(), ov.line as u64, ov.callee_fp);
+        assert!(
+            override_site_keys.insert(key),
+            "duplicate site key in adjudicated-overrides.json: {}:{} fp={}",
+            ov.unit,
+            ov.line,
+            ov.callee_fp
+        );
+    }
+    // Every `l3_error_intrinsic` manifest entry must have a matching overlay
+    // entry (also verdict `l3_error_intrinsic`) — the overlay is what
+    // actually makes `run_cdo_semantic_audit` stop flagging these sites, so a
+    // manifest entry without a matching overlay entry would silently keep
+    // failing the CDO gate despite claiming to be adjudicated.
+    let override_intrinsic_keys: std::collections::HashSet<(String, u64, u64)> = overrides
+        .entries
+        .iter()
+        .filter(|ov| ov.verdict == "l3_error_intrinsic")
+        .map(|ov| (ov.unit.clone(), ov.line as u64, ov.callee_fp))
+        .collect();
+    assert_eq!(
+        manifest_intrinsic_keys, override_intrinsic_keys,
+        "every known-genuine-divergences.json entry adjudicated l3_error_intrinsic must \
+         have a matching adjudicated-overrides.json entry (also l3_error_intrinsic), and \
+         vice versa — the two sets diverged"
+    );
+    assert_eq!(
+        overrides.entries.len(),
+        42,
+        "adjudicated-overrides.json must carry exactly 42 entries (one per adjudicated \
+         known-genuine-divergences.json site; beyond-1B.3b Task 3)"
+    );
+
+    // ── Non-circularity invariant (testable): overlay entries hold CANONICAL
+    // CATALOG KEYS / expected-route FACTS, never a serialized fresh edge id.
+    // Parse the raw JSON (not the typed struct, which would silently drop an
+    // unexpected field) and assert no entry's key set contains anything
+    // shaped like a fresh-computed graph/edge/routine identifier.
+    let overrides_json: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(adjudicated_overrides_path())
+            .expect("adjudicated-overrides.json must be readable"),
+    )
+    .expect("adjudicated-overrides.json must be valid JSON");
+    const FORBIDDEN_FRESH_EDGE_ID_FIELDS: &[&str] = &[
+        "resolved_target",
+        "resolved_target_id",
+        "fresh_edge_id",
+        "fresh_target",
+        "edge_id",
+        "routine_node_id",
+        "object_node_id",
+        "target_id",
+        "route_target",
+    ];
+    for ov in overrides_json["entries"]
+        .as_array()
+        .expect("overrides 'entries' must be an array")
+    {
+        let obj = ov
+            .as_object()
+            .expect("override entry must be a JSON object");
+        for forbidden in FORBIDDEN_FRESH_EDGE_ID_FIELDS {
+            assert!(
+                !obj.contains_key(*forbidden),
+                "adjudicated-overrides.json entry carries a fresh-edge-id-shaped field \
+                 {forbidden:?} — overlay entries must hold only canonical catalog keys \
+                 (name+arity+receiver-kind) derived independently of fresh's output, \
+                 NEVER a serialized fresh edge/route/graph-node id (non-circularity \
+                 invariant)"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test 19b (CDO env-gated, beyond-1B.3b Task 3): genuine_wrong sites are
+// precedence-adjudicated from INDEPENDENT source criteria
+// ---------------------------------------------------------------------------
+
+/// Case-insensitive, whole-token scan for a LOCAL `procedure <name>(`
+/// declaration anywhere in `unit_content` — the lookup-precedence "does a
+/// source competitor shadow the catalog hit" check (Task 1: Source shadows
+/// Catalog).
+///
+/// Pure text search over the SAME live CDO source the test reads — no
+/// engine/resolver/graph involvement whatsoever. Deliberately permissive
+/// (matches any object member named `name`, not just ones reachable from a
+/// specific call site) so it stays conservative: a false POSITIVE here would
+/// only push a site toward `fresh_false_builtin`/re-investigation, never
+/// toward a false PASS.
+fn unit_declares_procedure_named(unit_content: &str, name_lc: &str) -> bool {
+    let lc = unit_content.to_ascii_lowercase();
+    let bytes = lc.as_bytes();
+    let needle = "procedure";
+    let mut start = 0usize;
+    while let Some(pos) = lc[start..].find(needle) {
+        let abs = start + pos;
+        let before_ok = abs == 0 || {
+            let c = bytes[abs - 1];
+            !(c.is_ascii_alphanumeric() || c == b'_')
+        };
+        let after_idx = abs + needle.len();
+        let after_ok = after_idx < bytes.len() && bytes[after_idx].is_ascii_whitespace();
+        if before_ok && after_ok {
+            let mut i = after_idx;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            let tok_start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let tok = &lc[tok_start..i];
+            if tok == name_lc {
+                let mut j = i;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == b'(' {
+                    return true;
+                }
+            }
+        }
+        start = abs + needle.len();
+    }
+    false
+}
+
+/// Independently re-derive an [`AdjudicatedOverride`]'s verdict from LIVE
+/// `unit_content` plus the structural builtin catalog — see
+/// `semantic_golden.rs`'s `AdjudicatedOverride` doc comment for the full
+/// independence contract this function embodies: it calls ONLY
+/// [`is_global_builtin`]/[`member_builtin`] (the structural catalog) and
+/// [`unit_declares_procedure_named`] (a plain-text scan of the SAME unit) —
+/// never `resolve_full_program`, never a fresh-computed `Edge`.
+fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str {
+    let method_lc = ov
+        .catalog_key
+        .rsplit("::")
+        .next()
+        .unwrap_or(&ov.catalog_key)
+        .to_ascii_lowercase();
+
+    let catalog_match = match ov.receiver_kind.as_str() {
+        "Global" => is_global_builtin(&method_lc),
+        "PageInstance" => member_builtin(
+            MemberCatalogKind::Framework(&FrameworkKind::PageInstance),
+            &method_lc,
+        ),
+        "Record" => member_builtin(MemberCatalogKind::Record, &method_lc),
+        "RecordRef" => member_builtin(MemberCatalogKind::RecordRef, &method_lc),
+        _ => return "needs_manual_review", // unrecognized receiver kind — fail closed
+    };
+    if !catalog_match {
+        // The claimed catalog member doesn't actually exist for this
+        // receiver kind — fresh's builtin claim would be unsupported.
+        return "fresh_false_builtin";
+    }
+    if unit_declares_procedure_named(unit_content, &method_lc) {
+        // A source competitor shadows the catalog hit (Task 1 lookup
+        // precedence: Source shadows Catalog) — fresh should have picked the
+        // source routine, so a `builtin` claim here would be a fresh bug.
+        return "fresh_false_builtin";
+    }
+    "l3_error_intrinsic"
+}
+
+/// beyond-1B.3b Task 3: for every entry in the committed adjudication overlay
+/// (`adjudicated-overrides.json`), INDEPENDENTLY re-derive its verdict from
+/// LIVE CDO source + the structural builtin catalog (never from fresh's
+/// output, never from this override's own `verdict`/`catalog_key` fields) and
+/// assert it matches the committed value. Also re-hashes the unit at test
+/// time and FAILS LOUDLY on any `source_sha256` mismatch (source drift —
+/// CDO_WS is a dirty live workspace with uncommitted edits) rather than
+/// silently trusting a possibly-stale adjudication.
+///
+/// Fail-closed: ANY `needs_manual_review` or `fresh_false_builtin` survivor
+/// is a real bug (a mis-adjudicated site, or a genuine fresh-catalog gap
+/// Tasks 1-2 should have absorbed) and fails the test — never auto-passed.
+#[test]
+fn cdo_genuine_wrong_is_precedence_adjudicated() {
+    let Some(ws) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    let overrides =
+        load_adjudicated_overrides(&adjudicated_overrides_path()).unwrap_or_else(|| {
+            panic!(
+                "adjudicated-overrides.json missing/invalid at {}",
+                adjudicated_overrides_path().display(),
+            )
+        });
+    assert!(
+        !overrides.entries.is_empty(),
+        "adjudicated-overrides.json must be non-empty"
+    );
+
+    let mut l3_error_intrinsic = 0usize;
+    let mut fresh_false_builtin = 0usize;
+    let mut needs_manual_review = 0usize;
+
+    for ov in &overrides.entries {
+        let path = ws.join(&ov.unit);
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read adjudicated unit {}: {e}", path.display()));
+
+        // ── source_sha256 drift check — FAIL, never silently skip ──────────
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let actual_sha: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            actual_sha,
+            ov.source_sha256,
+            "SOURCE DRIFT at {} ({}:{}): the CDO unit has changed since this adjudication \
+             was recorded. Re-verify the site against the CURRENT source, then update \
+             adjudicated-overrides.json's source_sha256 (and re-derive the verdict if the \
+             call site itself changed).",
+            path.display(),
+            ov.unit,
+            ov.line,
+        );
+
+        // ── callee_text sanity: still on the claimed (1-based) line ────────
+        let line_1based = ov.line as usize + 1;
+        let lines: Vec<&str> = content.lines().collect();
+        let line_text = lines.get(line_1based - 1).copied().unwrap_or("");
+        assert!(
+            line_text
+                .to_ascii_lowercase()
+                .contains(&ov.callee_text.to_ascii_lowercase()),
+            "callee_text {:?} not found on {}:{} (line drifted?) — line reads: {:?}",
+            ov.callee_text,
+            ov.unit,
+            line_1based,
+            line_text,
+        );
+
+        // ── independent verdict re-derivation ───────────────────────────────
+        let verdict = derive_verdict(ov, &content);
+        assert_eq!(
+            verdict, ov.verdict,
+            "independently-derived verdict for {}:{} (catalog_key={:?}, receiver_kind={:?}) \
+             is {:?}, but the committed adjudication says {:?} — re-investigate before \
+             trusting the overlay.",
+            ov.unit, ov.line, ov.catalog_key, ov.receiver_kind, verdict, ov.verdict,
+        );
+
+        match verdict {
+            "l3_error_intrinsic" => l3_error_intrinsic += 1,
+            "fresh_false_builtin" => fresh_false_builtin += 1,
+            _ => needs_manual_review += 1,
+        }
+    }
+
+    eprintln!(
+        "Test 19b — independent source adjudication: l3_error_intrinsic={l3_error_intrinsic} \
+         fresh_false_builtin={fresh_false_builtin} needs_manual_review={needs_manual_review} \
+         (total={})",
+        overrides.entries.len(),
+    );
+
+    assert_eq!(
+        needs_manual_review, 0,
+        "needs_manual_review must be 0 — any survivor is an unresolved adjudication \
+         dimension (fail-closed, never auto-passed)"
+    );
+    assert_eq!(
+        fresh_false_builtin, 0,
+        "fresh_false_builtin must be 0 — any survivor is a real fresh-catalog bug that \
+         Tasks 1-2 should have absorbed (source shadows catalog, or the claimed catalog \
+         member doesn't actually exist)"
     );
 }
 

@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **(resolve) Precedence-adjudicate `genuine_wrong=42` via a source-identity
+  overlay — L3 golden UNTOUCHED (beyond-1B.3b Task 3)**
+  (`tests/goldens/semantic-edges/adjudicated-overrides.json` NEW,
+  `tests/goldens/semantic-edges/known-genuine-divergences.json`,
+  `src/program/resolve/semantic_golden.rs`, `tests/program_resolve_harness.rs`) —
+  the 42 CDO `genuine_wrong` sites (fresh classifies the call a platform
+  `builtin`; the frozen L3 golden `cdo-anon.json` emits a source-procedure
+  target for the same callee) were adjudicated by DIRECTIONALITY, INDEPENDENTLY
+  of fresh's output: for each site, open the CDO source at `(unit, line)`, read
+  the actual call syntax + receiver, confirm the claimed name+receiver-kind is a
+  real member of the STRUCTURAL builtin catalog (`builtins::is_global_builtin` /
+  `member_catalog::member_builtin`), and grep the SAME unit for a competing local
+  `procedure <name>(` declaration (the Task-1 lookup-precedence shadow check).
+  Result: all 42 are `l3_error_intrinsic` (fresh is CORRECT — a genuine
+  intrinsic that L3 mis-resolved to a coincidentally-named source routine); ZERO
+  `fresh_false_builtin`, ZERO `needs_manual_review`. Corrections live in a NEW
+  SEPARATE overlay `adjudicated-overrides.json` (canonical catalog keys
+  name+arity+receiver-kind + a `source_sha256` per unit + a human note — NEVER a
+  serialized fresh edge/route/graph-node id); `cdo-anon.json` is left byte-for-byte
+  UNTOUCHED. `run_cdo_semantic_audit` now loads `cdo-anon.json`, applies the
+  overlay IN-MEMORY (`apply_adjudicated_overrides` — replaces the L3 target of
+  each `l3_error_intrinsic` site with the adjudicated `Builtin` catalog target),
+  then diffs fresh against the OVERLAID oracle: `genuine_wrong` drops 42→0
+  (`fresh_wrong=132`, all `fresh_ahead_dispatch`), with the resolver's own output
+  UNCHANGED (whole-program `real_unknown_rate=2.80%`, primary `6.62%`,
+  `resolved_source=8607`, `unknown=1199` — identical to the Task-2 baseline;
+  `fresh_missing=191` ceiling holds; audit deterministic, `paired=11377>0`). New
+  CDO-gated test `cdo_genuine_wrong_is_precedence_adjudicated` RE-DERIVES every
+  verdict from LIVE source + the catalog at test time (never from fresh, never
+  from the overlay's own committed fields), FAILS LOUDLY on any `source_sha256`
+  drift (CDO_WS is a dirty live workspace), and asserts 0 `fresh_false_builtin` /
+  0 `needs_manual_review` (fail-closed — an unresolved dimension is never
+  auto-passed). The bare `assert_eq!(manifest_len, 42)` was replaced with full
+  manifest+overlay invariants (per-entry `verdict`/`callee_text`/`source_sha256`,
+  no dup site keys, every `l3_error_intrinsic` has a matching overlay entry and
+  vice-versa, and a testable non-circularity guard: overlay entries carry NO
+  fresh-edge-id-shaped field). All invariant/metadata checks are UNCONDITIONAL
+  (pass without `CDO_WS`, public CI).
 - **(resolve) Fail-closed same-arity SOURCE-overload guard — node soundness
   prerequisite (beyond-1B.3b Task 2, incl. review-fix pass)**
   (`src/program/build.rs`, `src/program/node_extract.rs`,
