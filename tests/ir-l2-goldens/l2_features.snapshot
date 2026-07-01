@@ -15,6 +15,8 @@ ws-bare-implicit-rec/IRPageB.Page.al::0::GetDisplayText	ce1fa500dfac96d2
 ws-bare-implicit-rec/IRPageC.Page.al::0::OnOpenPage	33b97efb6ad295fa
 ws-bare-implicit-rec/IRPageD.Page.al::0::OnOpenPage	2dcadfe0387c261f
 ws-bare-implicit-rec/IRPageE.Page.al::0::OnOpenPage	72bb3c82cc2f5ab4
+ws-bare-implicit-rec/IRPageExt2Ext.PageExtension.al::0::CallOnlyOnTable	ebdb69f01c2378a2
+ws-bare-implicit-rec/IRPageExt2SrcTable.Table.al::0::OnlyOnTable	05d59e4129c14efe
 ws-bare-implicit-rec/IRPageExtBasePage.Page.al::0::Foo	b9e2456a88bb5e2a
 ws-bare-implicit-rec/IRPageExtJ.PageExtension.al::0::CallFoo	04dba6e19227d58c
 ws-bare-implicit-rec/IRPageExtSrcTable.Table.al::0::Foo	a33ec412ef94b761
@@ -30,6 +32,8 @@ ws-bare-implicit-rec/IRTableA.Table.al::0::GetDisplayText	b90052b548f7beec
 ws-bare-implicit-rec/IRTableAExtC.TableExtension.al::0::ExtProc	c3aa572eb45f2555
 ws-bare-implicit-rec/IRTableAExtD.TableExtension.al::0::Dup	ab3c1c462e1818f6
 ws-bare-implicit-rec/IRTableAExtD.TableExtension.al::1::Dup	5314e26adebd69a2
+ws-bare-implicit-rec/IRTableExtA.TableExtension.al::0::CallShared	9059452bd8d1e842
+ws-bare-implicit-rec/IRTableExtB.TableExtension.al::0::SharedProc	1e7f24608c47c699
 ws-bare-implicit-rec/IRWithTables.Table.al::0::GetNameW	d4024779581f0735
 ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run	6378e9310d30e2a5
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al::0::Run	a19777337a1266d1

@@ -4995,3 +4995,109 @@ fn ws_bare_implicit_rec_strict_kind_report_and_codeunit_tableno_stay_unknown() {
          TableNo; got {cu_route:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Review-fix fixtures (Task 3 NEEDS-FIXES finding): the original (a)-(k) set
+// covers Step 3's implicit-Rec table computation for all four eligible
+// `ObjectKind`s (Table/Page/TableExtension/PageExtension), but only the
+// `Page` arm ((a)/(c)) had a fixture where Step 3 actually FIRES and returns
+// `Evidence::Source` from a POSITIVE call site of that exact kind: `Table`
+// ((i)) short-circuits at Step 1; `TableExtension` appears only as a
+// resolution TARGET ((c)/(d)), never as the CALLER; `PageExtension` ((j)) is
+// the NEGATIVE case where Step 2 wins and Step 3 is never entered. The two
+// tests below close that gap — a bare call inside a `TableExtension`
+// resolving through the sibling-extension union, and a bare call inside a
+// `PageExtension` resolving through the base page's inherited `SourceTable`.
+// ---------------------------------------------------------------------------
+
+/// Review-fix fixture, POSITIVE — `TableExtension` CALLER reaching Step 3 via
+/// the sibling-extension union: `IR TableExt A`'s `CallShared` makes a bare
+/// call to `SharedProc()`, declared ONLY on the SIBLING TableExtension
+/// `IR TableExt B` (both extend "IR TableExt Base T"). Step 1 (own object)
+/// and Step 2 (extension base, base-table-only) both decline — only Step 3's
+/// `resolve_in_table_scope` (base table ∪ ALL its visible TableExtensions)
+/// finds it, via the sibling.
+#[test]
+fn ws_bare_implicit_rec_tableextension_caller_resolves_sibling_via_step3() {
+    let report = ws_bare_implicit_rec_report();
+    let edges = edges_for_object_routine(&report, 50995, "callshared");
+    assert_eq!(
+        edges.len(),
+        1,
+        "IR TableExt A.CallShared has 1 call obligation"
+    );
+    let ce = edges[0];
+    assert_eq!(ce.edge.kind, EdgeKind::Call);
+    let route = &ce.edge.routes[0];
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "bare SharedProc() must resolve through Step 3's sibling-extension \
+         union; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "sharedproc");
+    assert_eq!(
+        rid.object.kind,
+        ObjectKind::TableExtension,
+        "must resolve to the SIBLING extension's SharedProc, not the base \
+         table's; got {:?}",
+        rid.object
+    );
+    assert!(
+        rid.object.id_equals_number(50994),
+        "must resolve to \"IR TableExt B\" (id 50994), NOT the caller \
+         \"IR TableExt A\" (50995) or the base table (50993); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+/// Review-fix fixture, POSITIVE — `PageExtension` CALLER reaching Step 3 via
+/// the base page's inherited `SourceTable`: `IR PageExt2 Ext`'s
+/// `CallOnlyOnTable` makes a bare call to `OnlyOnTable()`, declared ONLY on
+/// `IR PageExt2 Src Table` (the `SourceTable` of the base page "IR PageExt2
+/// Base Page", which does NOT declare `OnlyOnTable` itself). Step 1 (own
+/// object) and Step 2 (extension base, base-PAGE-only) both decline — only
+/// Step 3's `resolve_pageext_base_source_table` → `resolve_in_table_scope`
+/// finds it, on the SourceTable.
+#[test]
+fn ws_bare_implicit_rec_pageextension_caller_resolves_sourcetable_via_step3() {
+    let report = ws_bare_implicit_rec_report();
+    let edges = edges_for_object_routine(&report, 50998, "callonlyontable");
+    assert_eq!(
+        edges.len(),
+        1,
+        "IR PageExt2 Ext.CallOnlyOnTable has 1 call obligation"
+    );
+    let ce = edges[0];
+    assert_eq!(ce.edge.kind, EdgeKind::Call);
+    let route = &ce.edge.routes[0];
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "bare OnlyOnTable() must resolve through Step 3's PageExtension \
+         SourceTable lookup; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "onlyontable");
+    assert_eq!(
+        rid.object.kind,
+        ObjectKind::Table,
+        "must resolve to the SourceTable's OnlyOnTable, not the base page's \
+         or the extension's; got {:?}",
+        rid.object
+    );
+    assert!(
+        rid.object.id_equals_number(50996),
+        "must resolve to \"IR PageExt2 Src Table\" (id 50996), NOT the base \
+         page \"IR PageExt2 Base Page\" (50997) or the caller \"IR PageExt2 \
+         Ext\" (50998); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
