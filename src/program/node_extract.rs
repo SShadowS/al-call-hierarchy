@@ -57,9 +57,9 @@ pub enum PageControlKind {
 }
 
 /// One `part` / `systempart` / `usercontrol` layout control on a
-/// Page/PageExtension, in document order. Resolves `CurrPage.<name>…` member
-/// calls (Tasks 5–7 of the beyond-1B.3b plan; not yet consumed as of this
-/// addition).
+/// Page/PageExtension, in document order. Consumed by Task 7's Step 0 in
+/// `infer_receiver_type` to resolve `CurrPage.<part>.Page` subpage-instance
+/// receivers (beyond-1B.3b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageControlNode {
     pub name_lc: String,

@@ -369,8 +369,10 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 
 /// Phase A: infer the [`ReceiverType`] of a member-call receiver expression.
 ///
-/// `receiver_lc` is the lowercased receiver name (simple identifier — compound
-/// expressions are handled by the caller before this function is reached).
+/// `receiver_lc` is the lowercased receiver text: usually a simple identifier,
+/// but Step 0 also recognizes the `currpage.<part>.page` compound form (a
+/// subpage-instance receiver) — any other compound expression that reaches here
+/// unrecognized falls through to `Unknown` (fail-closed).
 ///
 /// Inference order:
 /// 0. **`CurrPage.<part>.Page` subpage-instance receivers** — see the module
