@@ -4076,3 +4076,185 @@ fn ws_baseapp_closure_control_no_application_field_stays_unknown() {
     );
     assert_eq!(route.evidence, Evidence::Unknown);
 }
+
+// ---------------------------------------------------------------------------
+// Tests 26+: beyond-1B.3b Task 6 — Codeunit implicit `Rec` via
+// `ObjectNode.table_no`, end-to-end over `ws-codeunit-rec`.
+//
+// Root fix: `infer_implicit_rec`'s Codeunit arm used to unconditionally
+// return `Unknown` (Codeunit had no arm at all — it fell into the catch-all).
+// It now resolves `ObjectNode.table_no` through the fail-closed
+// `ResolveIndex::resolve_object_ref` (Task 4), the direct analog of Task 5's
+// Page/`SourceTable` fix: a single unambiguous in-closure match yields
+// `Record{table: Some(id)}`; a declared-but-unresolved `TableNo` (cross-app
+// ambiguity, out-of-closure) stays `Record{table: None}` — mirroring Page's
+// non-`Unique` treatment, since a Record entity DOES exist there (builtins
+// still resolve table-independently). No `TableNo` at all — including
+// `Subtype = Test`/`TestRunner` codeunits, which never declare one — has no
+// implicit-Rec entity to type at all and stays the honest `Unknown`, never
+// `Record{table: None}`.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-codeunit-rec` and returns the full
+/// `resolve_full_program` report — shared by Tests 26a-26e below.
+fn ws_codeunit_rec_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-codeunit-rec");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-codeunit-rec")
+}
+
+/// Test 26a (fixture a, POSITIVE): `Item Recalc` (Codeunit 50971, `TableNo =
+/// Item`) has 3 call obligations in `OnRun`:
+/// - `Rec.Recalculate()` — a NON-builtin table procedure — must resolve to
+///   `Item.Recalculate` with `Evidence::Source` and the exact target id. This
+///   is the Task 6 fix: before it, the Codeunit's implicit Rec was always
+///   `Unknown`, so this call was an honest `Unknown` too.
+/// - `Rec.FieldCaption(1)` — a genuine Record-catalog builtin — must STAY
+///   `Evidence::Catalog` (table-independent per the `ReceiverType::Record`
+///   doc; resolving the table must not disturb genuine builtins).
+/// - `Rec.SetRange(...)` — a `record_op_names` call — dispatches through the
+///   SEPARATE implicit-trigger fan-out (`CalleeShape::RecordOp`), not
+///   `resolve_member`'s catalog; `"setrange"` is not one of the
+///   insert/modify/delete/validate/rename triggers that fan-out maps, so it
+///   legitimately produces ZERO routes both BEFORE and AFTER the fix —
+///   resolving the table must not mis-reclassify it as `Source` or `Unknown`.
+#[test]
+fn ws_codeunit_rec_table_no_resolves_non_builtin_and_preserves_builtins() {
+    let report = ws_codeunit_rec_report();
+    let edges = edges_for_object_routine(&report, 50971, "onrun");
+    assert_eq!(
+        edges.len(),
+        3,
+        "Item Recalc.OnRun must have 3 call obligations"
+    );
+
+    let call_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .collect();
+    assert_eq!(
+        call_edges.len(),
+        2,
+        "2 Member calls (Recalculate, FieldCaption)"
+    );
+
+    let source_edge = call_edges
+        .iter()
+        .find(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Source))
+        .expect("one call edge must be Evidence::Source (Recalculate)");
+    assert_eq!(source_edge.edge.routes.len(), 1, "single-dispatch call");
+    let route = &source_edge.edge.routes[0];
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "recalculate");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(50970),
+        "must resolve to the Item table (id 50970); got {:?}",
+        rid.object
+    );
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+
+    let catalog_edge = call_edges
+        .iter()
+        .find(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Catalog))
+        .expect("one call edge must be Evidence::Catalog (FieldCaption)");
+    let croute = &catalog_edge.edge.routes[0];
+    let RouteTarget::Builtin(BuiltinId(ref id)) = croute.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", croute.target);
+    };
+    assert_eq!(id, "Record::fieldcaption");
+
+    let record_op_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::ImplicitTrigger)
+        .collect();
+    assert_eq!(record_op_edges.len(), 1, "1 RecordOp call (SetRange)");
+    let ro = record_op_edges[0];
+    assert_eq!(ro.edge.shape, DispatchShape::Multicast);
+    assert!(
+        ro.edge.routes.is_empty(),
+        "SetRange fans out to zero object/field triggers (not in the \
+         insert/modify/delete/validate/rename map) — must stay honest-empty, \
+         NOT reclassified Source or Unknown; got {:?}",
+        ro.edge.routes
+    );
+}
+
+/// Test 26b (fixture b, NEGATIVE): a Codeunit with no `TableNo` property at
+/// all has no implicit-Rec entity — the non-builtin `Rec.Foo()` stays honest
+/// `Unknown`.
+#[test]
+fn ws_codeunit_rec_no_table_no_stays_unknown() {
+    let report = ws_codeunit_rec_report();
+    let edges = edges_for_object_routine(&report, 50972, "onrun");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+/// Test 26c (fixture c, NEGATIVE): `Subtype = TestRunner` never declares
+/// `TableNo` (no statically-typed implicit Rec for Test/TestRunner codeunits
+/// — unhandled even in the legacy L3 engine). Falls into the same "no
+/// `TableNo`" arm as 26b — `Rec.Bar()` stays honest `Unknown`, nothing
+/// fabricated for the Subtype.
+#[test]
+fn ws_codeunit_rec_test_runner_subtype_stays_unknown() {
+    let report = ws_codeunit_rec_report();
+    let edges = edges_for_object_routine(&report, 50973, "onrun");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+/// Test 26d (fixture d, NEGATIVE — the soundness backstop): `"Amb Table"` is
+/// declared as a Table in BOTH dependency apps (CodeunitRecLibA and
+/// CodeunitRecLibB), neither of which is this workspace's own app —
+/// `resolve_object_ref` must DECLINE (`Ambiguous`), never guess one of the
+/// two. `TableNo` IS declared, so the implicit Rec stays `Record{table:
+/// None}` internally, but `Rec.Baz()` (non-builtin) still resolves to the
+/// honest `Unknown` route since there is no table to look the method up
+/// against.
+#[test]
+fn ws_codeunit_rec_cross_app_ambiguous_table_no_declines_to_unknown() {
+    let report = ws_codeunit_rec_report();
+    let edges = edges_for_object_routine(&report, 50974, "onrun");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "ambiguous cross-app TableNo must NOT resolve to either dependency's table"
+    );
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+/// Test 26e: a LOCAL `var Rec: Record "Other Table"` in `OnRun` shadows the
+/// implicit Rec (variable lookup, step 2 of `infer_receiver_type`, runs
+/// BEFORE step 3's implicit-Rec/TableNo resolution). Even though `Shadow Var
+/// Codeunit`'s own `TableNo = Item`, `Rec.OtherProc()` must resolve against
+/// the DECLARED type "Other Table" (id 50975), never against Item.
+#[test]
+fn ws_codeunit_rec_local_var_shadows_implicit_table_no() {
+    let report = ws_codeunit_rec_report();
+    let edges = edges_for_object_routine(&report, 50976, "onrun");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "otherproc");
+    assert!(
+        rid.object.id_equals_number(50975),
+        "must resolve to \"Other Table\" (id 50975), NOT Item (50970); got {:?}",
+        rid.object
+    );
+}

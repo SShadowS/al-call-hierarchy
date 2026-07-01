@@ -69,6 +69,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and negative (absent → stays honest `Unknown`) cases.
 
 ### Added
+- **(resolve) Codeunit implicit `Rec` via `ObjectNode.table_no`, fail-closed;
+  `TestRunner` honest-declined (beyond-1B.3b Task 6)**
+  (`src/program/resolve/receiver.rs`, `tests/r0-corpus/ws-codeunit-rec/` NEW,
+  `tests/program_resolve_harness.rs`) — the direct analog of Task 5:
+  `infer_implicit_rec`'s Codeunit arm used to unconditionally return `Unknown`
+  (Codeunit had no arm at all). It now resolves the object's own `table_no`
+  through the fail-closed `ResolveIndex::resolve_object_ref` (Task 4): a
+  single unambiguous in-closure match yields `Record{table: Some(id)}`; a
+  declared-but-unresolved `TableNo` (cross-app name ambiguity, out-of-closure)
+  stays `Record{table: None}` — mirroring Page's non-`Unique` treatment,
+  since a Record entity DOES exist there and builtins still resolve
+  table-independently. This differs from Page in one deliberate way: a
+  Codeunit only gets an implicit-Rec entity AT ALL when `TableNo` is declared
+  — no `TableNo` (including `Subtype = Test`/`TestRunner` codeunits, which
+  never declare one; no statically-typed implicit Rec for them, unhandled
+  even in the legacy L3 engine) stays the honest `Unknown`, never
+  `Record{table: None}` (there is no Record entity to type in the first
+  place). `ObjectNode` does not track `Subtype` at all — the `TableNo`
+  presence check alone already produces the correct decline for
+  Test/TestRunner codeunits, nothing fabricated. 4 new `receiver.rs` unit
+  tests (own-table unique/no-`TableNo`/ambiguous/out-of-closure, reusing Task
+  5's page-rec fixture topology) + 5 new end-to-end
+  `tests/r0-corpus/ws-codeunit-rec/` fixtures covering the positive case,
+  three negatives (no `TableNo`; `Subtype = TestRunner`; cross-app ambiguous
+  `TableNo` across two dependency apps sharing a table name), and a
+  local-`var`-shadow case. CDO (`CDO_WS`): primary real-`unknown` rate
+  3.30%→3.17% (whole-program 1.39%→1.34%); the L3 semantic audit's
+  `fresh_missing` drops 174→150 (a 24-site drop, matching the
+  `codeunit_implicit_rec` bucket size exactly) with `genuine_wrong` staying
+  `0` before and after (soundness backstop unaffected) — 5 sample sites
+  across 2 distinct Codeunit/Table pairs hand-verified against the real CDO
+  source (`CDO Queue Management`→`CDO Queue Entry.HandleEntry`, `CDO Merge
+  Field Value Finder`→`CDO E-Mail Codeunit Parameter.SetReturnValue` ×4), all
+  confirmed correct. Deterministic across two runs (`cargo test --workspace`,
+  no `CDO_WS`, stays fully green); incidentally refreshed one pre-existing
+  golden entry (`ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run`)
+  that had drifted from unrelated `tree-sitter-al` grammar movement, verified
+  present on clean HEAD before this task's changes.
 - **(resolve) Page/PageExtension implicit `Rec` via `ObjectNode.source_table`,
   topology-aware fail-closed (beyond-1B.3b Task 5)**
   (`src/program/resolve/receiver.rs`, `tests/r0-corpus/ws-page-rec/` NEW,

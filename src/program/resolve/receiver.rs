@@ -25,12 +25,15 @@
 //!    Customer`; the declared type is used in that case).
 //! 3. **Implicit Rec / xRec** — reached only when no variable named `rec`/`xrec`
 //!    was found in step 2: resolves to the enclosing object's implicit record type
-//!    (Table self-id, TableExtension base, Page/PageExtension via `SourceTable` —
-//!    topology-aware, fail-closed through `ResolveIndex::resolve_object_ref`, see
-//!    [`infer_implicit_rec`] — or `Record{None}` for Report/ReportExtension, whose
-//!    implicit Rec is per-dataitem scoped rather than object-level and is not yet
-//!    modeled). Returns `Unknown` for object kinds that have no implicit record
-//!    (e.g. Codeunit).
+//!    (Table self-id, TableExtension base, Page/PageExtension via `SourceTable`,
+//!    Codeunit via `TableNo` — topology-aware, fail-closed through
+//!    `ResolveIndex::resolve_object_ref`, see [`infer_implicit_rec`] — or
+//!    `Record{None}` for Report/ReportExtension, whose implicit Rec is
+//!    per-dataitem scoped rather than object-level and is not yet modeled).
+//!    A Codeunit with no `TableNo` declared at all (including `Subtype =
+//!    Test`/`TestRunner`, which never declares one) has no implicit-Rec
+//!    entity to type and returns `Unknown`; every other object kind not
+//!    listed above (Report/ReportExtension aside) also returns `Unknown`.
 //! 4. **Static framework type name** — when the receiver name matches a framework
 //!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
 //!    found, type it as `Framework(kind)` so Phase B dispatches the static method
@@ -513,6 +516,35 @@ fn infer_implicit_rec(
             };
             ReceiverType::Record { table }
         }
+        // A Codeunit's implicit Rec is typed by its own `TableNo` property
+        // (Task 6 — the direct analog of Task 5's Page/`SourceTable` fix).
+        // Unlike Page (which ALWAYS has an implicit Rec, typed or not), a
+        // Codeunit only gets an implicit Rec when `TableNo` is declared at
+        // all — `None` here means there is no implicit-Rec entity to type,
+        // so this stays the honest `Unknown` (not `Record{table: None}`).
+        // `Subtype = Test`/`TestRunner` codeunits fall into this same `None`
+        // arm: they never declare `TableNo` (no statically-typed implicit
+        // Rec — unhandled even in the legacy L3 engine), so nothing is
+        // fabricated for them; `ObjectNode` does not track `Subtype` at all,
+        // deliberately, since the `TableNo`-presence check alone already
+        // produces the correct honest decline.
+        //
+        // When `TableNo` IS declared, resolution goes through the same
+        // fail-closed `ResolveIndex::resolve_object_ref` as Page's
+        // `SourceTable`, and mirrors its non-`Unique` treatment: a single
+        // unambiguous in-closure match yields `Record{table: Some(id)}`;
+        // anything else (cross-app ambiguity, out-of-closure, unresolved)
+        // stays `Record{table: None}` rather than guessing — a wrong table
+        // is a false `Source` edge, the cardinal sin. Builtins
+        // (SetRange/FindSet/…) still resolve table-independently in Phase B
+        // either way; only a non-builtin method call on a table-less Record
+        // becomes the honest `Unknown`.
+        ObjectKind::Codeunit => match &from_object.table_no {
+            Some(r) => ReceiverType::Record {
+                table: resolve_source_table_ref(from_object.id.clone(), r, graph, index),
+            },
+            None => ReceiverType::Unknown,
+        },
         // Report / ReportExtension: EXCLUDED for now. A report's implicit Rec
         // is scoped PER-DATAITEM (each `dataitem(...)` block sources its own
         // table; a report can have several, nested), not a single object-level
@@ -1539,6 +1571,93 @@ mod tests {
 
         let result = infer_receiver_type("rec", &routine, &[], &cu_obj, &graph, &index);
         assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    // -----------------------------------------------------------------------
+    // infer_implicit_rec — Codeunit TableNo resolution (Task 6)
+    //
+    // Reuses `build_page_rec_fixture`'s Customer (in `w`)/AmbTable (cross-app
+    // ambiguous, in `a` and `b`)/Orphan (out of `w`'s closure) tables — the
+    // same topology shapes Task 5 exercised for Page's `SourceTable`, now
+    // driving a Codeunit's `TableNo` instead.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn infer_rec_in_codeunit_resolves_table_no_unique() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut cu = make_object_node(w, ObjectKind::Codeunit, "ItemCu", Some(50230), None);
+        cu.table_no = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    #[test]
+    fn infer_rec_in_codeunit_no_table_no_is_unknown() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        // No `TableNo` declared at all — this is also the shape of a
+        // `Subtype = Test`/`TestRunner` codeunit (never declares `TableNo`):
+        // no implicit-Rec entity exists at all, so this is the honest
+        // `Unknown`, NOT `Record{table: None}` (that variant is reserved for
+        // "a Record entity exists but its table failed to resolve", which
+        // does not apply when there is no `TableNo` to resolve in the first
+        // place).
+        let cu = make_object_node(w, ObjectKind::Codeunit, "PlainCu", Some(50231), None);
+
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    #[test]
+    fn infer_rec_in_codeunit_ambiguous_table_no_declines_to_record_none() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut cu = make_object_node(w, ObjectKind::Codeunit, "AmbCu", Some(50232), None);
+        cu.table_no = Some(amb_table_ref());
+
+        // "AmbTable" is declared in BOTH `a` and `b` (neither is `w`) — must
+        // DECLINE, never guess one of the two. `TableNo` IS present, so this
+        // stays `Record{table: None}` (mirroring Page's non-`Unique`
+        // treatment: builtins still resolve table-independently in Phase B),
+        // not `Unknown`.
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_codeunit_out_of_closure_table_no_declines_to_record_none() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut cu = make_object_node(w, ObjectKind::Codeunit, "OrphanCu", Some(50233), None);
+        cu.table_no = Some(orphan_table_ref());
+
+        // "Orphan" is declared, but in an app `w` does not depend on.
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
     }
 
     #[test]

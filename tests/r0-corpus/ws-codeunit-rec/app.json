@@ -1,0 +1,22 @@
+{
+	"id": "dddd4444-0000-0000-0000-000000000004",
+	"name": "CodeunitRec Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50970, "to": 50999 }],
+	"dependencies": [
+		{
+			"id": "eeee5555-0000-0000-0000-000000000005",
+			"name": "CodeunitRecLibA",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		},
+		{
+			"id": "ffff6666-0000-0000-0000-000000000006",
+			"name": "CodeunitRecLibB",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		}
+	]
+}

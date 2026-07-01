@@ -7,7 +7,7 @@ ws-argument-bindings/src/Codeunit.al::0::HelperLocalRecord	e10bd60c73655cbe
 ws-argument-bindings/src/Codeunit.al::0::HelperLiteral	233ea62584b2523d
 ws-argument-bindings/src/Codeunit.al::0::HelperExpression	e1ff94bd44bca26a
 ws-argument-bindings/src/Codeunit.al::0::HelperImplicitRec	759203342bd6aca7
-ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run	f04bd00c50926909
+ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run	6378e9310d30e2a5
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al::0::Run	a19777337a1266d1
 ws-builtin-shadow/Acme.Table.al::0::FieldNo	e745de7563a4d71c
 ws-builtin-shadow/ShadowCallerA.Codeunit.al::0::CallA	b2ec4dbe37b780e8
@@ -30,6 +30,13 @@ ws-callsite-resolutions/src/Caller.Codeunit.al::0::OnRun	6de2bd59869faa1a
 ws-callsite-resolutions/src/Caller.Codeunit.al::0::DirectTarget	013e15ec2eff9e04
 ws-callsite-resolutions/src/Caller.Codeunit.al::0::RunByVariable	1658af73e8eb1b48
 ws-callsite-resolutions/src/Caller.Codeunit.al::1::CallViaVariable	40d689ffa8e6d1b9
+ws-codeunit-rec/src/AmbiguousCodeunit.Codeunit.al::0::OnRun	b9692be7c4abc78b
+ws-codeunit-rec/src/Item.Table.al::0::Recalculate	1f25a93a5f3c3a88
+ws-codeunit-rec/src/ItemRecalcCodeunit.Codeunit.al::0::OnRun	c454409a0d1350cd
+ws-codeunit-rec/src/NoTableNoCodeunit.Codeunit.al::0::OnRun	7fa97faf8c13b351
+ws-codeunit-rec/src/OtherTable.Table.al::0::OtherProc	46ca0d0353b330af
+ws-codeunit-rec/src/ShadowVarCodeunit.Codeunit.al::0::OnRun	bfa0d04de6cb0012
+ws-codeunit-rec/src/TestRunnerCodeunit.Codeunit.al::0::OnRun	4a1dc8167163d5f3
 ws-combined/src/hub.al::0::FanOut	eddfe98e59db76d3
 ws-combined/src/hub.al::0::StepA	62f43b03dd7723c9
 ws-combined/src/hub.al::0::StepB	da24a49b41f7f69a
