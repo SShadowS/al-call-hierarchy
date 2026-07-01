@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **(resolve) Wire implicit Base App/System App dependency into the `src/program`
+  closure — THE dominant lever for the real-`unknown` burndown (beyond-1B.3b
+  Task 5.5)** (`src/dependencies.rs`, `src/snapshot/snapshot.rs`,
+  `src/engine/deps/cross_app_l3.rs`, `src/program/resolve/abi_check.rs`,
+  `src/program/resolve/semantic_golden.rs`, `tests/r0-corpus/ws-baseapp-closure(-control)/`
+  NEW, `tests/goldens/semantic-edges/*.json`) — the `src/program` dependency-closure
+  builder read ONLY the explicit app.json `dependencies[]` array and never
+  converted the top-level `application`/`platform` fields (Base App / System
+  App) into topology edges. Real BC apps declare Base App via `application`,
+  NOT `dependencies[]`, so Base App was systematically ABSENT from every app's
+  closure — every cross-Microsoft-layer call (PageExtensions, `Record`/`Codeunit`
+  vars typed at a Base App object, …) resolved `OutOfClosure` → an honest but
+  wrong `Unknown`. `crate::dependencies::append_implicit_ms_tier_deps` now
+  appends implicit `AppDependency` rows for `MS_APPLICATION_TIER`
+  (Base App `437dbf0e-84ff-417a-965d-ed2bb9650972` + Foundation/System-tier)
+  when `application` is non-empty, and `MS_PLATFORM_TIER` (System App
+  `63ca2fa4-4f03-4f2b-a480-172fef340d3f`) when `platform` is non-empty — reusing
+  the GUID/name tier DATA already defined in `engine::deps::cross_app_l3`
+  (now `pub(crate)`, mirroring the existing `engine::l3::global_builtins` reuse
+  precedent) rather than duplicating it. Wired at BOTH `declared_deps`
+  construction sites in `SnapshotBuilder::build` (the workspace unit AND every
+  dependency unit — a dep can itself implicitly depend on Base App/System App
+  via its own manifest), with a self-referential guard (an app never gains
+  itself as an implicit dependency) and NO injection when `application`/
+  `platform` is absent or empty (fixtures with a minimal app.json are
+  unaffected). Two related pre-existing latent bugs, dormant only because
+  Base App was never reachable before, were surfaced and fixed as part of this
+  change: (1) `abi_check.rs`'s ABI-ingestion-integrity check flagged
+  `resolve_object_run`'s implicit-entry-trigger Opaque-fallback keys
+  (`onrun`/`onopenpage`/`onprereport`) as "unmapped" — entry triggers
+  structurally never appear in a `.app`'s `SymbolReference.json` `Methods`
+  array (verified against real Base Application source: two Warehouse pages
+  carry zero `Methods` entries) for ANY BC app, so this was never a real
+  ingestion bug; `is_entry_trigger_boundary_key` now exempts this exact key
+  shape. (2) Base App ships full embedded (ShowMyCode) AL source, so two
+  newly-reachable calls (`SalesInvHeader.SendRecords()`,
+  `CustomerConsentMgt.ConfirmUserConsent()`) resolved correctly with
+  `Evidence::Source` to real Base App procedures — independently verified by
+  extracting and reading Base App's actual embedded source — while L3's frozen
+  golden paired the same two sites with unrelated targets (a collapsed nested-
+  event-subscriber set for the first; a different call's target entirely for
+  the second, an L3 site/line-bookkeeping defect). Both are genuine L3-golden
+  defects, not fresh bugs, and are adjudicated via the SAME `adjudicated-
+  overrides.json` mechanism beyond-1B.3b Task 3 established (a new
+  `CrossAppSourceProcedure` target shape alongside the existing
+  builtin-catalog shape; `known-genuine-divergences.json` grows from 42→44
+  entries, independently re-verified at test time against Base App's real
+  source, never against a fresh-computed edge). CDO (`CDO_WS`): primary
+  real-`unknown` rate 6.50%→3.30% (whole-program 2.75%→1.39%) — a LARGE drop,
+  as expected; `fresh_missing` 176→174 (workspace-internal buckets Tasks
+  4-7 own; Base App closure's effect is almost entirely on the rate, not this
+  narrower L3-paired-completeness metric); `genuine_wrong` stays 0 (adjudicated,
+  not whitelisted — every new divergence was independently source-verified
+  fresh-correct before adjudication). 3 new `dependencies.rs` unit tests + 3
+  new `snapshot.rs` `AppUnit`-level tests + 1 new `abi_check.rs` exemption
+  unit test (+ a negative control) + 2 new end-to-end fixtures
+  (`ws-baseapp-closure`/`ws-baseapp-closure-control`, a hand-built synthetic
+  Base App `.app`) proving the positive (application field present → resolves)
+  and negative (absent → stays honest `Unknown`) cases.
+
 ### Added
 - **(resolve) Page/PageExtension implicit `Rec` via `ObjectNode.source_table`,
   topology-aware fail-closed (beyond-1B.3b Task 5)**

@@ -50,6 +50,70 @@ pub fn parse_app_json(path: &Path) -> Result<Vec<AppDependency>> {
     Ok(app_json.dependencies)
 }
 
+/// Append IMPLICIT Microsoft Application-/Platform-tier dependency rows to an
+/// app's `declared_deps` (beyond-1B.3b Task 5.5 — THE dominant lever for the
+/// real-`unknown` burndown).
+///
+/// Real BC apps declare Base App / System App via the top-level `application`/
+/// `platform` VERSION STRING fields in app.json (or the NavxManifest
+/// `App@Application`/`App@Platform` attributes for a dependency `.app`) — NEVER
+/// via `dependencies[]`. Before this, `src/program`'s closure builder read only
+/// the explicit `dependencies[]` array, so Base App/System App were
+/// systematically absent from every app's dependency closure and every
+/// cross-Microsoft-layer call resolved `OutOfClosure` → `Unknown`.
+///
+/// Mirrors `engine::deps::cross_app_l3::read_workspace_declared_dependencies`
+/// (the existing, already-correct implicit-dep template used by the isolated
+/// `engine::l4` subsystem) and, transitively, al-sem `parseWorkspaceDependencies`:
+/// a non-empty `application` appends [`crate::engine::deps::cross_app_l3::MS_APPLICATION_TIER`]
+/// (using the `application` string as each row's `version`); a non-empty
+/// `platform` appends [`crate::engine::deps::cross_app_l3::MS_PLATFORM_TIER`]
+/// likewise. An empty/absent field injects NOTHING — fixtures with a minimal
+/// app.json (no `application`/`platform`) stay unaffected (low ripple).
+///
+/// `own_guid` guards against self-referential injection: an app never
+/// implicitly depends on itself (e.g. if Base App's own manifest carried a
+/// non-empty `application`, it must not gain itself as a "dependency" — the
+/// `DependencyGraph::closure` DFS is cycle-safe regardless, but a self-edge is
+/// still meaningless topology noise). Tier entries whose GUID matches
+/// `own_guid` are skipped.
+pub fn append_implicit_ms_tier_deps(
+    declared: &mut Vec<AppDependency>,
+    own_guid: &str,
+    application: Option<&str>,
+    platform: Option<&str>,
+) {
+    use crate::engine::deps::cross_app_l3::{MS_APPLICATION_TIER, MS_PLATFORM_TIER};
+
+    if let Some(app_ver) = application.filter(|s| !s.is_empty()) {
+        for (guid, name) in MS_APPLICATION_TIER {
+            if *guid == own_guid {
+                continue;
+            }
+            declared.push(AppDependency {
+                app_id: guid.to_string(),
+                name: name.to_string(),
+                publisher: "Microsoft".to_string(),
+                version: app_ver.to_string(),
+            });
+        }
+    }
+
+    if let Some(plat_ver) = platform.filter(|s| !s.is_empty()) {
+        for (guid, name) in MS_PLATFORM_TIER {
+            if *guid == own_guid {
+                continue;
+            }
+            declared.push(AppDependency {
+                app_id: guid.to_string(),
+                name: name.to_string(),
+                publisher: "Microsoft".to_string(),
+                version: plat_ver.to_string(),
+            });
+        }
+    }
+}
+
 /// Find the .alpackages folder for a project.
 pub fn find_alpackages_folder(project_root: &Path) -> Option<PathBuf> {
     let alpackages = project_root.join(".alpackages");
@@ -391,6 +455,115 @@ pub fn resolve_all(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // beyond-1B.3b Task 5.5: append_implicit_ms_tier_deps
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn implicit_deps_appended_when_application_and_platform_non_empty() {
+        let mut declared: Vec<AppDependency> = Vec::new();
+        append_implicit_ms_tier_deps(
+            &mut declared,
+            "aaaa0000-0000-0000-0000-000000000000",
+            Some("24.0.0.0"),
+            Some("24.0.0.0"),
+        );
+        // 3 MS_APPLICATION_TIER rows + 2 MS_PLATFORM_TIER rows.
+        assert_eq!(declared.len(), 5, "got {declared:?}");
+        assert!(
+            declared
+                .iter()
+                .any(|d| d.app_id == "437dbf0e-84ff-417a-965d-ed2bb9650972"
+                    && d.name == "Base Application"
+                    && d.version == "24.0.0.0"),
+            "Base App must be injected from `application`; got {declared:?}"
+        );
+        assert!(
+            declared
+                .iter()
+                .any(|d| d.app_id == "63ca2fa4-4f03-4f2b-a480-172fef340d3f"
+                    && d.name == "System Application"
+                    && d.version == "24.0.0.0"),
+            "System App must be injected from `platform`; got {declared:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_deps_none_when_application_and_platform_absent() {
+        let mut declared: Vec<AppDependency> = Vec::new();
+        append_implicit_ms_tier_deps(
+            &mut declared,
+            "aaaa0000-0000-0000-0000-000000000000",
+            None,
+            None,
+        );
+        assert!(
+            declared.is_empty(),
+            "no application/platform must inject nothing; got {declared:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_deps_none_when_application_and_platform_empty_string() {
+        let mut declared: Vec<AppDependency> = Vec::new();
+        append_implicit_ms_tier_deps(
+            &mut declared,
+            "aaaa0000-0000-0000-0000-000000000000",
+            Some(""),
+            Some(""),
+        );
+        assert!(
+            declared.is_empty(),
+            "empty-string application/platform must inject nothing (not just absent); got {declared:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_deps_application_only_does_not_inject_platform_tier() {
+        let mut declared: Vec<AppDependency> = Vec::new();
+        append_implicit_ms_tier_deps(
+            &mut declared,
+            "aaaa0000-0000-0000-0000-000000000000",
+            Some("24.0.0.0"),
+            None,
+        );
+        assert_eq!(
+            declared.len(),
+            3,
+            "only MS_APPLICATION_TIER; got {declared:?}"
+        );
+        assert!(
+            declared
+                .iter()
+                .all(|d| d.app_id != "63ca2fa4-4f03-4f2b-a480-172fef340d3f"),
+            "System App must NOT be injected when `platform` is absent; got {declared:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_deps_self_guard_skips_own_guid() {
+        // Base App's own GUID happens to equal an MS_APPLICATION_TIER entry —
+        // it must never gain itself as an implicit dependency.
+        let mut declared: Vec<AppDependency> = Vec::new();
+        append_implicit_ms_tier_deps(
+            &mut declared,
+            "437dbf0e-84ff-417a-965d-ed2bb9650972", // Base App's own guid
+            Some("24.0.0.0"),
+            None,
+        );
+        assert_eq!(
+            declared.len(),
+            2,
+            "Base App entry self-skipped; got {declared:?}"
+        );
+        assert!(
+            declared
+                .iter()
+                .all(|d| d.app_id != "437dbf0e-84ff-417a-965d-ed2bb9650972"),
+            "must not inject Base App as its own dependency; got {declared:?}"
+        );
+    }
 
     #[test]
     fn test_parse_version() {

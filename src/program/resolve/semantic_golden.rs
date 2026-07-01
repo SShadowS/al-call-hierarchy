@@ -868,8 +868,41 @@ pub struct AdjudicatedOverride {
     pub callee_fp: u64,
     pub callee_text: String,
     pub arity: usize,
+    /// For the original 42 `builtin-catalog-fp-collision` entries: one of
+    /// `Global`/`PageInstance`/`Record`/`RecordRef` (a structural-catalog
+    /// member). beyond-1B.3b Task 5.5 adds a NEW shape, `CrossAppSourceProcedure`
+    /// — L3 mis-resolves a call that fresh resolves, WITH SOURCE EVIDENCE, to a
+    /// real cross-app procedure (e.g. Microsoft Base Application ships full
+    /// ShowMyCode source; L3's frozen golden mis-assigned this site to an
+    /// unrelated target — see `target_*` fields below). Entries of this NEW
+    /// shape carry an empty `catalog_key` (not a builtin) and populate
+    /// `target_kind`/`target_app_guid`/`target_object_lc`/`target_routine_lc`
+    /// instead.
     pub receiver_kind: String,
+    /// Canonical catalog string (`builtin-catalog-fp-collision` shape only);
+    /// empty for `CrossAppSourceProcedure` entries.
+    #[serde(default)]
     pub catalog_key: String,
+    /// `CrossAppSourceProcedure` shape ONLY (beyond-1B.3b Task 5.5): the
+    /// REAL resolved target's `object_kind_tag` (`differential.rs`'s
+    /// `object_kind_str_to_tag` encoding — codeunit=0, table=1, …), matching
+    /// how `differential::project_target` encodes a `RouteTarget::Routine`.
+    #[serde(default)]
+    pub target_kind: Option<u8>,
+    /// `CrossAppSourceProcedure` shape ONLY: the target routine's owning
+    /// app's GUID (independently verified — the TARGET app's own real
+    /// embedded source, e.g. re-extracted from its `.app`, NOT read from any
+    /// fresh-computed edge).
+    #[serde(default)]
+    pub target_app_guid: Option<String>,
+    /// `CrossAppSourceProcedure` shape ONLY: the target object's declared
+    /// numeric id (as a decimal string) or lowercased name.
+    #[serde(default)]
+    pub target_object_lc: Option<String>,
+    /// `CrossAppSourceProcedure` shape ONLY: the target routine's lowercased
+    /// name.
+    #[serde(default)]
+    pub target_routine_lc: Option<String>,
     pub verdict: String,
     pub source_sha256: String,
     pub note: String,
@@ -922,11 +955,19 @@ pub fn load_adjudicated_overrides(path: &Path) -> Option<AdjudicatedOverrides> {
 
 /// Overlay `overrides` onto `golden` IN-MEMORY: for every entry whose verdict
 /// is [`VERDICT_L3_ERROR_INTRINSIC`], replace the anonymized L3 target set at
-/// that site with the single adjudicated catalog target (a `Builtin`-kind
-/// [`GoldenTarget`] — `kind: 255`, `object_lc: catalog_key` — matching
-/// `differential.rs`'s own `RouteTarget::Builtin` → `CanonicalTarget`
-/// encoding), anonymized the SAME way [`anonymize_target`] anonymizes a live
-/// `Builtin` route.
+/// that site with the single adjudicated target, anonymized the SAME way
+/// [`anonymize_target`] anonymizes a live route. Two target SHAPES:
+///
+/// - `catalog_key` populated (the original 42 `builtin-catalog-fp-collision`
+///   entries): a `Builtin`-kind [`GoldenTarget`] — `kind: 255`, `object_lc:
+///   catalog_key` — matching `differential.rs`'s own `RouteTarget::Builtin` →
+///   `CanonicalTarget` encoding.
+/// - `target_kind`/`target_app_guid`/`target_object_lc`/`target_routine_lc`
+///   ALL populated (beyond-1B.3b Task 5.5's `CrossAppSourceProcedure` shape):
+///   a `Routine`-kind [`GoldenTarget`], matching `differential.rs`'s
+///   `RouteTarget::Routine` → `CanonicalTarget` encoding — used when fresh
+///   resolves, WITH independently-verified source evidence, to a real
+///   cross-app procedure that L3's frozen golden mis-assigned.
 ///
 /// `cdo-anon.json` itself is NEVER touched by this function — it mutates only
 /// the caller's IN-MEMORY `AnonSemanticGolden` (loaded fresh from disk each
@@ -950,11 +991,24 @@ pub fn apply_adjudicated_overrides(
         }
         let anon_key = anonymize_site_key(&ov.site_key(), anon::SITE_DOMAIN_V1);
         if let Ok(idx) = golden.entries.binary_search_by(|e| e.site.cmp(&anon_key)) {
-            let target = GoldenTarget {
-                kind: 255,
-                app: None,
-                object_lc: ov.catalog_key.clone(),
-                routine_lc: None,
+            let target = match (
+                ov.target_kind,
+                &ov.target_app_guid,
+                &ov.target_object_lc,
+                &ov.target_routine_lc,
+            ) {
+                (Some(kind), Some(app_guid), Some(object_lc), Some(routine_lc)) => GoldenTarget {
+                    kind,
+                    app: Some(app_guid.clone()),
+                    object_lc: object_lc.clone(),
+                    routine_lc: Some(routine_lc.clone()),
+                },
+                _ => GoldenTarget {
+                    kind: 255,
+                    app: None,
+                    object_lc: ov.catalog_key.clone(),
+                    routine_lc: None,
+                },
             };
             golden.entries[idx].targets = BTreeSet::from([anonymize_target(&target)]);
             applied += 1;
@@ -2192,6 +2246,23 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
             fresh_ahead_dispatch_count += 1;
         } else if let Some(plain_site) = reverse_site.get(&fw.site) {
             genuine_wrong_sites.push(plain_site.clone());
+            if std::env::var("DEBUG_GENUINE_WRONG_TARGETS").is_ok() {
+                eprintln!("  DEBUG_GENUINE_WRONG_TARGETS site={plain_site:?}");
+                for t in &fw.fresh_targets {
+                    eprintln!(
+                        "    fresh_target: obj={:?} routine={:?}",
+                        deanon.get(&t.object_id.0),
+                        t.routine_id.as_ref().and_then(|r| deanon.get(&r.0)),
+                    );
+                }
+                for t in &fw.l3_targets {
+                    eprintln!(
+                        "    l3_target:    obj={:?} routine={:?}",
+                        deanon.get(&t.object_id.0),
+                        t.routine_id.as_ref().and_then(|r| deanon.get(&r.0)),
+                    );
+                }
+            }
         }
         // A fw.site with no `reverse_site` entry cannot happen: `fw` is built
         // from `fresh_anon`'s keys, and `reverse_site` is populated 1:1 with

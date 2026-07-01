@@ -189,6 +189,46 @@ pub struct AbiIntegrityReport {
 // Integrity check
 // ---------------------------------------------------------------------------
 
+/// True when `key` is an OBJECT'S IMPLICIT ENTRY-TRIGGER boundary (the
+/// `opaque_boundary_route` fallback in `resolver.rs::resolve_object_run`,
+/// beyond-1B.3b Task 5.5), not a genuine ABI-ingested Method.
+///
+/// Entry triggers (`OnRun`/`OnOpenPage`/`OnPreReport`) are PLATFORM-INTRINSIC
+/// per object kind — every Page implicitly has an `OnOpenPage` hook whether or
+/// not source overrides it — and structurally NEVER appear in a `.app`'s
+/// `SymbolReference.json` `Methods` array (triggers are declared with the
+/// `trigger` keyword, not `procedure`, and the ABI schema only exposes
+/// procedures as Methods; verified against a real Microsoft Base Application
+/// package — Warehouse pages 7341/7342 carry zero `Methods` entries). So a
+/// raw-ABI-index miss for this EXACT key shape is not an ingestion bug, it is
+/// the permanent, universal absence of a trigger from the Methods surface —
+/// true for every BC app, not a data-quality issue with one dependency.
+///
+/// This can NEVER mask a real key-derivation bug: `resolve_object_run` only
+/// reaches the synthesized-key fallback when `index.routines_in_object` (a
+/// NAME-ONLY lookup, no arity filter) already found ZERO candidates for the
+/// trigger name — built from the exact same `abi.objects[].routines` data
+/// `raw_abi_index` independently re-parses. Whenever this shape is produced,
+/// `raw_abi_index.contains(key)` would independently also be `false`, so
+/// exempting this shape changes no other outcome.
+///
+/// Keep in sync with `resolver.rs::entry_trigger_name` (Page -> "onopenpage",
+/// Report -> "onprereport", everything else -> "onrun").
+fn is_entry_trigger_boundary_key(key: &AbiRoutineKey) -> bool {
+    if key.routine_kind != AbiRoutineKind::Procedure
+        || key.event_kind != AbiEventKind::None
+        || key.params_count != 0
+    {
+        return false;
+    }
+    let entry_trigger_name = match key.object_type.as_str() {
+        "page" => "onopenpage",
+        "report" => "onprereport",
+        _ => "onrun",
+    };
+    key.routine_name_lc == entry_trigger_name
+}
+
 /// Verify that every `AbiSymbol` route in `edges` maps back to an entry in
 /// `raw_abi_index`.
 ///
@@ -197,7 +237,12 @@ pub struct AbiIntegrityReport {
 /// For each `RouteTarget::AbiSymbol { key }` route: the `AbiRoutineKey`'s
 /// `(object_type, object_number/object_name_lc, routine_name_lc, params_count,
 /// routine_kind, event_kind)` tuple must be present in `raw_abi_index` for
-/// the same `AppRef`.
+/// the same `AppRef` — UNLESS the key is an implicit entry-trigger boundary
+/// (see [`is_entry_trigger_boundary_key`]), which is exempt: it asserts only
+/// "this object exists" (already independently confirmed by
+/// `graph.resolve_object`/`object_by_number` before `resolve_object_run`
+/// reaches this fallback), not "this Method is ABI-listed" — the latter is a
+/// claim entry triggers can never satisfy, by AL/ABI schema construction.
 ///
 /// # What this does NOT check
 ///
@@ -220,7 +265,7 @@ pub fn abi_ingestion_integrity(edges: &[Edge], raw_abi_index: &RawAbiIndex) -> A
         for route in edge.all_routes() {
             if let RouteTarget::AbiSymbol { key } = &route.target {
                 abi_routes_total += 1;
-                if raw_abi_index.contains(key) {
+                if is_entry_trigger_boundary_key(key) || raw_abi_index.contains(key) {
                     abi_mapped += 1;
                 } else {
                     abi_unmapped_sites.push(UnmappedAbiSite { key: key.clone() });

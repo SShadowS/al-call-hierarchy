@@ -1,5 +1,7 @@
 ws-api-page/src/api.al	b7b226f0f41a5ba9
 ws-argument-bindings/src/Codeunit.al	8fcbbe97c59a972c
+ws-baseapp-closure/src/WsBaseCaller.Codeunit.al	2c81b3861519cb84
+ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al	cb20b32909be32c3
 ws-builtin-shadow/Acme.Table.al	a0cac9abb6d1c7d1
 ws-builtin-shadow/ShadowCallerA.Codeunit.al	a8d2f39e9de71314
 ws-builtin-shadow/ShadowCallerB.Codeunit.al	a9878460b642c254

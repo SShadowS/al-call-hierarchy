@@ -529,7 +529,13 @@ pub struct DeclaredDependencyDecl {
 /// `dependencies[]` — they are implicit, declared via the `application` field in
 /// app.json. Mirrors al-sem `MS_APPLICATION_TIER` in `workspace-dependencies.ts`
 /// (same GUIDs, names, publisher, ORDER).
-const MS_APPLICATION_TIER: &[(&str, &str)] = &[
+///
+/// `pub(crate)` (beyond-1B.3b Task 5.5): this is the single source of truth for
+/// the tier data — `crate::dependencies::append_implicit_ms_tier_deps` reuses it
+/// (pure DATA, like `program::resolve::builtins::global_builtins`) to wire the
+/// SAME implicit deps into the `src/program` topology closure, not just this
+/// isolated `engine::l4` subsystem.
+pub(crate) const MS_APPLICATION_TIER: &[(&str, &str)] = &[
     ("c1335042-3002-4257-bf8a-75c898ccb1b8", "Application"),
     ("437dbf0e-84ff-417a-965d-ed2bb9650972", "Base Application"),
     (
@@ -542,7 +548,9 @@ const MS_APPLICATION_TIER: &[(&str, &str)] = &[
 /// `dependencies[]` — they are implicit, declared via the `platform` field in
 /// app.json. Mirrors al-sem `MS_PLATFORM_TIER` in `workspace-dependencies.ts`
 /// (same GUIDs, names, publisher, ORDER).
-const MS_PLATFORM_TIER: &[(&str, &str)] = &[
+///
+/// `pub(crate)` (beyond-1B.3b Task 5.5) — see [`MS_APPLICATION_TIER`] doc.
+pub(crate) const MS_PLATFORM_TIER: &[(&str, &str)] = &[
     ("63ca2fa4-4f03-4f2b-a480-172fef340d3f", "System Application"),
     ("8874ed3a-0643-4247-9ced-7a7002f7135d", "System"),
 ];

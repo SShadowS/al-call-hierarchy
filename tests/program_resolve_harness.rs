@@ -607,6 +607,92 @@ fn abi_integrity_catches_unmapped_route() {
     );
 }
 
+/// Test 13b (beyond-1B.3b Task 5.5): an implicit ENTRY-TRIGGER boundary key
+/// (the `resolve_object_run` Opaque fallback's synthesized key — object
+/// exists, but the trigger name is never listed in the raw ABI `Methods`
+/// array by AL/ABI-schema construction) must be treated as MAPPED even
+/// though the raw index genuinely has no entry for it. `dep_pub_abi()`
+/// carries a Codeunit 50100 with ZERO methods named `onrun` — this proves
+/// the exemption, not a coincidental raw-index hit.
+#[test]
+fn abi_integrity_exempts_entry_trigger_boundary_key() {
+    let abi = dep_pub_abi();
+    let index = RawAbiIndex::build([(AppRef(1), &abi)]);
+
+    let entry_trigger_key = AbiRoutineKey {
+        app: AppRef(1),
+        object_type: "codeunit".into(),
+        object_number: 50100,
+        object_name_lc: String::new(),
+        routine_name_lc: "onrun".into(),
+        params_count: 0,
+        param_type_fp: 0,
+        routine_kind: AbiRoutineKind::Procedure,
+        event_kind: AbiEventKind::None,
+    };
+
+    let caller = test_rid(0, ObjectKind::Codeunit, 99, "caller");
+    let edge = single_route_edge(
+        caller,
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: entry_trigger_key.clone(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: entry_trigger_key,
+            },
+        },
+    );
+
+    let report = abi_ingestion_integrity(&[edge], &index);
+    assert_eq!(
+        report,
+        AbiIntegrityReport {
+            abi_routes_total: 1,
+            abi_mapped: 1,
+            abi_unmapped: 0,
+            abi_unmapped_sites: vec![],
+        },
+        "an entry-trigger boundary key (onrun/onopenpage/onprereport, Procedure/None, \
+         0 params) must be exempt from the raw-ABI-Methods lookup — it asserts object \
+         existence, not Methods-list membership, which entry triggers can never satisfy"
+    );
+
+    // Sanity: the SAME object/params/kind shape but a DIFFERENT (non-entry-trigger)
+    // routine name must NOT be exempt — still genuinely unmapped.
+    let non_trigger_key = AbiRoutineKey {
+        app: AppRef(1),
+        object_type: "codeunit".into(),
+        object_number: 50100,
+        object_name_lc: String::new(),
+        routine_name_lc: "notatrigger".into(),
+        params_count: 0,
+        param_type_fp: 0,
+        routine_kind: AbiRoutineKind::Procedure,
+        event_kind: AbiEventKind::None,
+    };
+    let edge2 = single_route_edge(
+        test_rid(0, ObjectKind::Codeunit, 99, "caller"),
+        Route {
+            target: RouteTarget::AbiSymbol {
+                key: non_trigger_key.clone(),
+            },
+            evidence: Evidence::Opaque,
+            conditions: vec![],
+            witness: Witness::AbiSymbol {
+                key: non_trigger_key,
+            },
+        },
+    );
+    let report2 = abi_ingestion_integrity(&[edge2], &index);
+    assert_eq!(
+        report2.abi_unmapped, 1,
+        "a non-entry-trigger name must still be caught as genuinely unmapped"
+    );
+}
+
 /// Test 14: an event-publisher-target route whose key says `EventPublisher /
 /// Integration` → maps to the event-publisher ABI entry (Task-1 fix verified).
 /// A key with the WRONG `routine_kind` (Procedure) must be caught as unmapped.
@@ -1120,8 +1206,8 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // ── ABI ingestion integrity ──────────────────────────────────────────────
     assert_eq!(
         report.abi_integrity.abi_unmapped, 0,
-        "ABI ingestion integrity: {} route key(s) not found in raw SymbolReference",
-        report.abi_integrity.abi_unmapped
+        "ABI ingestion integrity: {} route key(s) not found in raw SymbolReference\n{:#?}",
+        report.abi_integrity.abi_unmapped, report.abi_integrity.abi_unmapped_sites
     );
 
     // ── Self-reported taxonomy'd histogram (print for record) ────────────────
@@ -1205,10 +1291,11 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 
 use al_call_hierarchy::program::resolve::semantic_golden::{
     ANON_GOLDEN_SCHEMA_VERSION, AdjudicatedOverride, GoldenSiteKey, SemanticGolden,
-    adjudicated_overrides_path, cdo_anon_golden_path, cdo_event_anon_golden_path,
-    cdo_trigger_anon_golden_path, load_adjudicated_overrides, load_anon_event_golden,
-    load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden, run_cdo_event_audit,
-    run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability, run_semantic_diff,
+    VERDICT_L3_ERROR_INTRINSIC, adjudicated_overrides_path, cdo_anon_golden_path,
+    cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_adjudicated_overrides,
+    load_anon_event_golden, load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden,
+    run_cdo_event_audit, run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability,
+    run_semantic_diff,
 };
 
 // beyond-1B.3b Task 3: the INDEPENDENT adjudication test's inputs — the
@@ -2008,16 +2095,17 @@ fn committed_goldens_metadata_is_valid() {
     }
     assert_eq!(
         manifest_entries.len(),
-        42,
-        "known-genuine-divergences.json must carry exactly 42 adjudicated entries \
-         (beyond-1B.3b Task 3: 42 l3_error_intrinsic / 0 fresh_false_builtin / \
+        44,
+        "known-genuine-divergences.json must carry exactly 44 adjudicated entries \
+         (beyond-1B.3b Task 3: 42 builtin-catalog-fp-collision; beyond-1B.3b Task 5.5: \
+         +2 CrossAppSourceProcedure — all 44 l3_error_intrinsic / 0 fresh_false_builtin / \
          0 needs_manual_review) — this assertion is UNCONDITIONAL (no CDO_WS needed)"
     );
     assert_eq!(
         manifest_intrinsic_keys.len(),
-        42,
-        "expected all 42 known-genuine-divergences.json entries to be adjudicated \
-         l3_error_intrinsic; a non-42 count means a fresh_false_builtin or \
+        44,
+        "expected all 44 known-genuine-divergences.json entries to be adjudicated \
+         l3_error_intrinsic; a non-44 count means a fresh_false_builtin or \
          needs_manual_review survivor slipped through — investigate before relying \
          on the overlay"
     );
@@ -2037,7 +2125,19 @@ fn committed_goldens_metadata_is_valid() {
         std::collections::HashSet::new();
     for ov in &overrides.entries {
         assert!(!ov.callee_text.is_empty(), "override missing callee_text");
-        assert!(!ov.catalog_key.is_empty(), "override missing catalog_key");
+        // `catalog_key` is required for the `builtin-catalog-fp-collision` shape;
+        // the `CrossAppSourceProcedure` shape (beyond-1B.3b Task 5.5) carries an
+        // empty `catalog_key` and populates `target_*` instead.
+        assert!(
+            !ov.catalog_key.is_empty()
+                || (ov.receiver_kind == "CrossAppSourceProcedure"
+                    && ov.target_kind.is_some()
+                    && ov.target_app_guid.is_some()
+                    && ov.target_object_lc.is_some()
+                    && ov.target_routine_lc.is_some()),
+            "override missing catalog_key (and not a fully-populated \
+             CrossAppSourceProcedure target)"
+        );
         assert!(
             !ov.receiver_kind.is_empty(),
             "override missing receiver_kind"
@@ -2084,9 +2184,9 @@ fn committed_goldens_metadata_is_valid() {
     );
     assert_eq!(
         overrides.entries.len(),
-        42,
-        "adjudicated-overrides.json must carry exactly 42 entries (one per adjudicated \
-         known-genuine-divergences.json site; beyond-1B.3b Task 3)"
+        44,
+        "adjudicated-overrides.json must carry exactly 44 entries (one per adjudicated \
+         known-genuine-divergences.json site; beyond-1B.3b Task 3 + Task 5.5)"
     );
 
     // ── Non-circularity invariant (testable): overlay entries hold CANONICAL
@@ -2444,6 +2544,158 @@ fn arity_source_count_is_sound(callee_text: &str) -> bool {
     }
 }
 
+// ---------------------------------------------------------------------------
+// beyond-1B.3b Task 5.5: independent verification for the `CrossAppSourceProcedure`
+// override shape — a REAL procedure declared in a dependency app's own embedded
+// (ShowMyCode) source, verified WITHOUT reading any fresh-computed edge.
+// ---------------------------------------------------------------------------
+
+/// Find the `.app` file in `ws`'s `.alpackages` whose NavxManifest `App@Id`
+/// equals `guid` (case-insensitive). Scans every `.app` present — mirrors
+/// `crate::dependencies::load_all_apps`'s "every package found is parsed"
+/// discovery, independent of any snapshot/graph the fresh resolver built.
+fn find_app_by_guid(ws: &std::path::Path, guid: &str) -> std::path::PathBuf {
+    let alpackages = ws.join(".alpackages");
+    let entries = std::fs::read_dir(&alpackages)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", alpackages.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("app") {
+            continue;
+        }
+        if let Ok(pkg) = al_call_hierarchy::app_package::extract_app_package(&path)
+            && pkg.metadata.app_id.eq_ignore_ascii_case(guid)
+        {
+            return path;
+        }
+    }
+    panic!(
+        "no .app in {} carries App@Id={guid:?}",
+        alpackages.display()
+    );
+}
+
+/// Independently confirm that `app_path`'s OWN embedded (ShowMyCode) AL
+/// source declares a `procedure <routine_lc>(` inside an object block headed
+/// `<object_kind_word> <object_lc> "..."` (or `<object_kind_word> <object_lc>` /
+/// unquoted for a name-only key) — a plain-text scan of the TARGET app's real
+/// source, structurally identical in spirit to [`unit_declares_procedure_named`]
+/// but reading the DEPENDENCY's source, not the CDO-side caller's. Returns the
+/// matching source file's virtual path for diagnostics, or `None` if no such
+/// declaration is found anywhere in the embedded source.
+fn target_app_declares_procedure(
+    app_path: &std::path::Path,
+    object_lc: &str,
+    routine_lc: &str,
+) -> Option<String> {
+    let files = al_call_hierarchy::snapshot::embedded::extract_embedded_source(app_path)
+        .unwrap_or_else(|e| {
+            panic!(
+                "cannot extract embedded source from {}: {e}",
+                app_path.display()
+            )
+        });
+    let object_header_needle = format!(" {object_lc} ");
+    for f in &files {
+        let lc = f.text.to_ascii_lowercase();
+        if !lc.contains(&object_header_needle) {
+            continue;
+        }
+        if unit_declares_procedure_named(&f.text, routine_lc) {
+            return Some(f.virtual_path.clone());
+        }
+    }
+    None
+}
+
+/// beyond-1B.3b Task 5.5: independently verify one `CrossAppSourceProcedure`
+/// override entry — the counterpart to [`assert_shape_matches_receiver_kind`]
+/// + [`derive_verdict`] for the `builtin-catalog-fp-collision` shape, but for
+/// a cross-app SOURCE-PROCEDURE target instead of a platform-builtin one.
+///
+/// Confirms, entirely from LIVE data never touching a fresh-computed edge:
+/// 1. `callee_text` is a member call whose method component matches
+///    `target_routine_lc` (shape sanity — catches a stale/typo'd override).
+/// 2. The claimed target app (`target_app_guid`) has a `.app` present in
+///    `ws`'s `.alpackages` ([`find_app_by_guid`]).
+/// 3. That app's OWN embedded source really declares
+///    `procedure <target_routine_lc>(` on object `target_object_lc`
+///    ([`target_app_declares_procedure`]).
+///
+/// Panics (fail-closed) on any check failure — never silently skipped.
+fn verify_cross_app_source_procedure_override(ov: &AdjudicatedOverride, ws: &std::path::Path) {
+    let target_kind = ov.target_kind.unwrap_or_else(|| {
+        panic!(
+            "{}:{}: CrossAppSourceProcedure override missing target_kind",
+            ov.unit, ov.line
+        )
+    });
+    let target_app_guid = ov.target_app_guid.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: CrossAppSourceProcedure override missing target_app_guid",
+            ov.unit, ov.line
+        )
+    });
+    let target_object_lc = ov.target_object_lc.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: CrossAppSourceProcedure override missing target_object_lc",
+            ov.unit, ov.line
+        )
+    });
+    let target_routine_lc = ov.target_routine_lc.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: CrossAppSourceProcedure override missing target_routine_lc",
+            ov.unit, ov.line
+        )
+    });
+
+    // ── shape sanity: callee_text's method matches target_routine_lc ────────
+    match parse_callee_shape(&ov.callee_text) {
+        CallShape::Member { method, .. } => assert_eq!(
+            method.to_ascii_lowercase(),
+            target_routine_lc,
+            "{}:{}: callee_text {:?}'s method does not match target_routine_lc {:?}",
+            ov.unit,
+            ov.line,
+            ov.callee_text,
+            target_routine_lc,
+        ),
+        CallShape::Global(_) => panic!(
+            "{}:{}: CrossAppSourceProcedure callee_text {:?} is not a member call",
+            ov.unit, ov.line, ov.callee_text
+        ),
+    }
+
+    // ── target app + object/routine really exist in the target's own source ──
+    let app_path = find_app_by_guid(ws, target_app_guid);
+    let found = target_app_declares_procedure(&app_path, target_object_lc, target_routine_lc);
+    assert!(
+        found.is_some(),
+        "{}:{}: target app {} ({}) has no embedded source declaring `procedure {}(` on \
+         object {} — the CrossAppSourceProcedure override target is unverifiable",
+        ov.unit,
+        ov.line,
+        target_app_guid,
+        app_path.display(),
+        target_routine_lc,
+        target_object_lc,
+    );
+    eprintln!(
+        "CrossAppSourceProcedure verified: {}:{} -> target_app={target_app_guid} \
+         target_object={target_object_lc} target_routine={target_routine_lc} \
+         (found in {})",
+        ov.unit,
+        ov.line,
+        found.unwrap(),
+    );
+    // `target_kind` itself has no independent source-side representation to
+    // cross-check (object-kind words in AL source are unambiguous — a
+    // mismatched `target_kind` would only matter for the OVERLAY's applied
+    // GoldenTarget shape, checked structurally by `apply_adjudicated_overrides`
+    // matching `differential.rs`'s own `object_kind_str_to_tag` encoding).
+    let _ = target_kind;
+}
+
 /// beyond-1B.3b Task 3: for every entry in the committed adjudication overlay
 /// (`adjudicated-overrides.json`), INDEPENDENTLY re-derive/cross-check it
 /// from LIVE CDO source + the structural builtin catalog (never from
@@ -2539,6 +2791,23 @@ fn cdo_genuine_wrong_is_precedence_adjudicated() {
             line_1based,
             line_text,
         );
+
+        // ── CrossAppSourceProcedure shape (beyond-1B.3b Task 5.5): a SEPARATE
+        // independent-verification path — the target is a real cross-app
+        // procedure, not a structural-catalog builtin, so the builtin-shape
+        // checks below (shape/receiver_kind, arity, catalog-membership
+        // verdict derivation) do not apply. Verify against the TARGET app's
+        // own embedded source instead, then move to the next entry.
+        if ov.receiver_kind == "CrossAppSourceProcedure" {
+            verify_cross_app_source_procedure_override(ov, &ws);
+            assert_eq!(
+                ov.verdict, VERDICT_L3_ERROR_INTRINSIC,
+                "{}:{}: CrossAppSourceProcedure entries must be verdict l3_error_intrinsic",
+                ov.unit, ov.line
+            );
+            l3_error_intrinsic += 1;
+            continue;
+        }
 
         // ── shape / receiver_kind cross-check — BEFORE trusting either ──────
         assert_shape_matches_receiver_kind(ov);
@@ -3709,5 +3978,101 @@ fn ws_page_rec_report_dataitem_stays_excluded_and_unknown() {
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+// ---------------------------------------------------------------------------
+// Tests 24+: beyond-1B.3b Task 5.5 — implicit Base App/System App dependency
+// wired into the `src/program` closure via app.json `application`/`platform`.
+//
+// Root fix: the `src/program` closure builder (`src/snapshot/snapshot.rs`)
+// used to read ONLY the explicit app.json `dependencies[]` array. Real BC apps
+// declare Base App via the top-level `application` field, NOT `dependencies[]`
+// — so Base App was systematically absent from every app's closure and every
+// cross-Microsoft-layer call resolved `OutOfClosure` (an honest `Unknown`).
+// `crate::dependencies::append_implicit_ms_tier_deps` now appends implicit
+// `AppDependency` rows for Base App/System App whenever `application`/
+// `platform` is non-empty, mirroring the already-correct
+// `engine::deps::cross_app_l3::read_workspace_declared_dependencies` template.
+//
+// Both fixtures below ship an IDENTICAL synthetic Base App `.app`
+// (`437dbf0e-84ff-417a-965d-ed2bb9650972`, Table 9999 "Base App Widget" with
+// non-builtin procedure `DoBaseThing`) in `.alpackages/` and an identical
+// workspace call site (`Codeunit 50100 "WS Base Caller".Run` ->
+// `BaseRec.DoBaseThing()`). The ONLY difference is whether app.json declares
+// `application` — proving the injection is gated on that field, not a side
+// effect of the Base App `.app` merely being present on disk.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-baseapp-closure` (app.json HAS `application`).
+fn ws_baseapp_closure_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-baseapp-closure");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-baseapp-closure")
+}
+
+/// Loads `tests/r0-corpus/ws-baseapp-closure-control` (app.json has NO
+/// `application` field).
+fn ws_baseapp_closure_control_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-baseapp-closure-control");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-baseapp-closure-control")
+}
+
+/// Test 24a (POSITIVE): with `application` set, Base App is implicitly wired
+/// into the workspace's closure, so `BaseRec.DoBaseThing()` resolves to the
+/// synthetic Base App table's procedure. The dep `.app` ships NO embedded
+/// source (SymbolOnly tier, ABI-only) — per `make_routine_route`, a resolved
+/// SymbolOnly boundary is `Evidence::Opaque` + `RouteTarget::AbiSymbol` (a
+/// "Resolved" boundary route, matching L3's External treatment of dep
+/// symbols), NOT `Unresolved`/`Unknown`. Before the Task 5.5 fix this call was
+/// an honest `Unknown` (`OutOfClosure` — Base App wasn't even in the closure).
+#[test]
+fn ws_baseapp_closure_resolves_via_implicit_application_dependency() {
+    let report = ws_baseapp_closure_report();
+    let edges = edges_for_object_routine(&report, 50100, "run");
+    assert_eq!(edges.len(), 1, "Run has exactly 1 call obligation");
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(
+        route.evidence,
+        Evidence::Opaque,
+        "Base App must now be in-closure via the implicit `application` \
+         dependency and resolve as an ABI boundary (not Unknown); got {:?}",
+        route
+    );
+    let RouteTarget::AbiSymbol { ref key } = route.target else {
+        panic!("expected RouteTarget::AbiSymbol, got {:?}", route.target);
+    };
+    assert_eq!(key.routine_name_lc, "dobasething");
+    assert_eq!(key.object_type, "table");
+    assert_eq!(
+        key.object_number, 9999,
+        "must resolve to the synthetic Base App Widget table (id 9999); got {:?}",
+        key
+    );
+    assert!(
+        matches!(route.witness, Witness::AbiSymbol { .. }),
+        "Base App is a SymbolOnly-tier dep app (no embedded source) — witness \
+         must be AbiSymbol; got {:?}",
+        route.witness
+    );
+}
+
+/// Test 24b (NEGATIVE/CONTROL): the identical call, with the identical Base
+/// App `.app` present in `.alpackages`, but app.json has NO `application`
+/// field — no implicit dependency is injected, Base App stays out of the
+/// closure, and the call stays honest `Unknown` (`OutOfClosure`).
+#[test]
+fn ws_baseapp_closure_control_no_application_field_stays_unknown() {
+    let report = ws_baseapp_closure_control_report();
+    let edges = edges_for_object_routine(&report, 50100, "run");
+    assert_eq!(edges.len(), 1, "Run has exactly 1 call obligation");
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "without `application`, Base App must stay OUT of the closure — no injection"
+    );
     assert_eq!(route.evidence, Evidence::Unknown);
 }

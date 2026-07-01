@@ -97,10 +97,23 @@ impl SnapshotBuilder {
 
         let ws_compilation = context_from_app_json(&app_json);
         // Workspace's declared dependencies (with their GUIDs) from app.json.
-        let ws_declared_deps: Vec<crate::dependencies::AppDependency> = app_json
+        let mut ws_declared_deps: Vec<crate::dependencies::AppDependency> = app_json
             .get("dependencies")
             .and_then(|d| serde_json::from_value(d.clone()).ok())
             .unwrap_or_default();
+        // Implicit Microsoft Application-/Platform-tier deps (beyond-1B.3b Task
+        // 5.5 — THE dominant lever): real BC apps declare Base App / System App
+        // via the top-level `application`/`platform` VERSION fields, never via
+        // `dependencies[]`. Without this, Base App is systematically absent from
+        // every workspace's closure and every cross-Microsoft-layer call
+        // resolves `OutOfClosure` -> `Unknown`. See
+        // `crate::dependencies::append_implicit_ms_tier_deps` doc.
+        crate::dependencies::append_implicit_ms_tier_deps(
+            &mut ws_declared_deps,
+            &workspace_app.guid,
+            ws_compilation.application.as_deref(),
+            ws_compilation.platform.as_deref(),
+        );
 
         let ws_source_provider = WorkspaceProvider { root: ws.clone() };
         let ws_source = ws_source_provider
@@ -203,7 +216,18 @@ impl SnapshotBuilder {
             // Real compilation basis + declared deps from the dep's manifest
             // (computed before `rd.package` is moved into `abi`).
             let dep_compilation = context_from_metadata(&rd.package.metadata);
-            let dep_declared = rd.package.metadata.dependencies.clone();
+            let mut dep_declared = rd.package.metadata.dependencies.clone();
+            // Implicit Microsoft Application-/Platform-tier deps for THIS dep
+            // app too (beyond-1B.3b Task 5.5) — a dependency app (e.g. a
+            // Foundation-tier app) can itself implicitly depend on Base
+            // App/System App via its own manifest `Application`/`Platform`
+            // attributes, same as the workspace.
+            crate::dependencies::append_implicit_ms_tier_deps(
+                &mut dep_declared,
+                &dep_id.guid,
+                dep_compilation.application.as_deref(),
+                dep_compilation.platform.as_deref(),
+            );
             apps.push(AppUnit {
                 provenance: Provenance {
                     app: dep_id.clone(),
@@ -328,6 +352,108 @@ mod tests {
         assert_eq!(
             same, 1,
             "workspace .app cached in .alpackages must not be added as a self-dependency"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // beyond-1B.3b Task 5.5 (Step 1a): implicit Base App/System App injection
+    // into the workspace `AppUnit.declared_deps`. No CDO_WS needed — a bare
+    // temp workspace with only app.json (no .al source, no .alpackages) is
+    // enough, since `WorkspaceProvider::try_provide` tolerates zero source
+    // files (`Ok(None)`, not an error).
+    // -----------------------------------------------------------------------
+
+    fn write_minimal_app_json(dir: &std::path::Path, extra_fields: &str) {
+        let app_json = format!(
+            r#"{{
+    "id": "11111111-0000-0000-0000-000000000001",
+    "name": "Task5.5 Probe",
+    "publisher": "probe",
+    "version": "1.0.0.0"{extra}
+}}"#,
+            extra = if extra_fields.is_empty() {
+                String::new()
+            } else {
+                format!(",\n{extra_fields}")
+            }
+        );
+        std::fs::write(dir.join("app.json"), app_json).expect("write app.json");
+    }
+
+    #[test]
+    fn appunit_gets_ms_application_tier_when_application_field_non_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_app_json(dir.path(), r#""application": "24.0.0.0""#);
+        let snap = SnapshotBuilder {
+            workspace_root: dir.path().to_path_buf(),
+            local_providers: vec![],
+        }
+        .build()
+        .expect("snapshot build");
+        let ws_unit = &snap.apps[0];
+        assert_eq!(
+            ws_unit.declared_deps.len(),
+            3,
+            "MS_APPLICATION_TIER has 3 entries; got {:?}",
+            ws_unit.declared_deps
+        );
+        assert!(
+            ws_unit
+                .declared_deps
+                .iter()
+                .any(|d| d.app_id == "437dbf0e-84ff-417a-965d-ed2bb9650972"
+                    && d.name == "Base Application"
+                    && d.version == "24.0.0.0"),
+            "Base App must be injected; got {:?}",
+            ws_unit.declared_deps
+        );
+    }
+
+    #[test]
+    fn appunit_gets_ms_platform_tier_when_platform_field_non_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_app_json(dir.path(), r#""platform": "24.0.0.0""#);
+        let snap = SnapshotBuilder {
+            workspace_root: dir.path().to_path_buf(),
+            local_providers: vec![],
+        }
+        .build()
+        .expect("snapshot build");
+        let ws_unit = &snap.apps[0];
+        assert_eq!(
+            ws_unit.declared_deps.len(),
+            2,
+            "MS_PLATFORM_TIER has 2 entries; got {:?}",
+            ws_unit.declared_deps
+        );
+        assert!(
+            ws_unit
+                .declared_deps
+                .iter()
+                .any(|d| d.app_id == "63ca2fa4-4f03-4f2b-a480-172fef340d3f"
+                    && d.name == "System Application"
+                    && d.version == "24.0.0.0"),
+            "System App must be injected; got {:?}",
+            ws_unit.declared_deps
+        );
+    }
+
+    #[test]
+    fn appunit_gets_no_implicit_deps_when_application_and_platform_absent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_app_json(dir.path(), "");
+        let snap = SnapshotBuilder {
+            workspace_root: dir.path().to_path_buf(),
+            local_providers: vec![],
+        }
+        .build()
+        .expect("snapshot build");
+        let ws_unit = &snap.apps[0];
+        assert!(
+            ws_unit.declared_deps.is_empty(),
+            "no application/platform field must inject NOTHING (low ripple on \
+             minimal fixtures); got {:?}",
+            ws_unit.declared_deps
         );
     }
 }
