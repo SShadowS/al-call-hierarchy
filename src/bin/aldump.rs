@@ -52,7 +52,7 @@ fn usage() -> ExitCode {
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
          --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
          --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats | \
-         --graphify-export] \
+         --graphify-export | --integration-points] \
          <workspace-or-.app>"
     );
     ExitCode::FAILURE
@@ -66,6 +66,7 @@ fn main() -> ExitCode {
     let mut l3_call_graph_stats_cross_app = false;
     let mut program_call_graph_stats = false;
     let mut graphify_export = false;
+    let mut integration_points = false;
     let mut l3_unknown_breakdown = false;
     let mut l3_unknown_breakdown_cross_app = false;
     let mut l3_event_graph = false;
@@ -113,6 +114,10 @@ fn main() -> ExitCode {
         }
         if arg == "--graphify-export" {
             graphify_export = true;
+            continue;
+        }
+        if arg == "--integration-points" {
+            integration_points = true;
             continue;
         }
         if arg == "--l3-unknown-breakdown" {
@@ -1311,6 +1316,28 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("aldump: error: failed to serialize graphify export: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if integration_points {
+        // INTEGRATION-POINTS REPORT: the resolved event wiring as a "who-reacts-to-
+        // what" slice scoped to the workspace's integration surface (see
+        // `program::integration_report`). Fail-closed → snapshot build error.
+        let Some(report) =
+            al_call_hierarchy::program::integration_report::report_workspace(&workspace)
+        else {
+            eprintln!("aldump: error: integration-points report failed (snapshot build error)");
+            return ExitCode::FAILURE;
+        };
+        return match serde_json::to_string_pretty(&report) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("aldump: error: failed to serialize integration-points report: {e}");
                 ExitCode::FAILURE
             }
         };

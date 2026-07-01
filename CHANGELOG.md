@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(export) integration-points report — `aldump --integration-points` + `program::integration_report`**
+  (`src/program/integration_report.rs`, `src/bin/aldump.rs`) — a dedicated
+  "who-reacts-to-what" projection of the resolved event wiring, scoped to the
+  workspace app's **integration surface**: **inbound** (workspace subscribes to an
+  external/platform event — "what external changes my app hooks into"),
+  **outbound** (an external app subscribes to a workspace event — "what extension
+  points my app exposes, and who uses them"), and **internal**. Each event lists
+  its publisher (app / object / event / kind) and every bound subscriber (app /
+  object / procedure / conditions / cross-app), with whole-program totals in the
+  summary. Measured on DocumentOutput/Cloud: 25,440 events / 3,404 subscriptions /
+  395 cross-app whole-program; **68-event workspace surface** (53 inbound, 20
+  outbound, 2 internal) — e.g. the app hooks Base App `Customer.OnAfterDeleteEvent`
+  / `Purch.-Post.OnAfterProcessPurchLines`, and exposes `"CDO Events".
+  OnAfterCreateDocument` consumed by 2 apps. Completes P2 (event hyperedges +
+  integration-points view). New test `inbound_workspace_subscription_reported`.
 - **(export) graphify hyperedges — event neighbourhoods + interface families (P2)**
   (`src/program/graphify_export.rs`) — the graphify adapter now populates
   `hyperedges` (previously always empty) with the non-pairwise integration
