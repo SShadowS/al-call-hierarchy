@@ -164,6 +164,53 @@ the charter (§5 taxonomy, §6 no-false-certainty, §8 metric).
 
 ---
 
+### Task 1.5: Model `internalsVisibleTo` (friend apps) — cross-app `internal` visible to declared friends
+
+**Inserted after Task 1** (Task-1 review finding). Task 1 correctly fails closed on cross-app `internal`, but the CDO
+measurement proved that 100% of the resulting `InternalNotVisible` bucket (all 60 sites — the +51 Task 1 added AND the 9
+pre-existing from the prior merged plan) are calls from CDO to `internal` members of the CTS-CDN dependency, whose manifest
+`<InternalsVisibleTo>` **explicitly declares CDO a friend** → these calls are AL-LEGAL. Declining them is an OVER-DECLINE, not
+a soundness win. AL: an `internal` member is visible within its declaring app AND to any app that app's manifest lists in
+`<InternalsVisibleTo>`. The friend list is ALREADY fully parsed in each dependency's `.app` manifest before tier selection —
+it is simply an unread field. Model it: cross-app `internal` → visible IFF the declaring app declares the caller a friend.
+This RESTORES the 60 friend calls to correct `Source` (`genuine_wrong` stays 0 — resolving to the right target) and drops
+CDO real-`unknown` below 1.97% with SOUND semantics (declines only TRUE-stranger cross-app internal). Also correct Task 1's
+narrative (report/CHANGELOG/ratchet comments claiming "soundness correction").
+
+**Files:** Modify `src/app_package.rs` (parse), `src/snapshot/snapshot.rs` + `src/program/build.rs` (carry/wire),
+`src/program/graph.rs` (the map), `src/program/resolve/resolver.rs` (the rule); Test `tests/r0-corpus/ws-friend-app-internal/`
++ no-CDO harness + CDO gate.
+
+- [ ] **Step 1: Write failing + control fixtures** — (a) cross-app `internal` call from app A to app B where B's manifest lists
+  A as a friend → resolves `Source`, exact id (today: `Unknown`/`InternalNotVisible`). (b) CONTROL — cross-app `internal` from
+  A to app C where C does NOT list A → honest `Unknown` (true stranger stays declined). (c) DIRECTIONALITY: B lists A as friend
+  does NOT make A's internals visible to B (friendship is one-directional, per the declaring app) — B→A internal stays
+  `Unknown` unless A also lists B. (d) same-app `internal` still resolves (unchanged). Assert the exact pre-fix `Unknown` route
+  for (a).
+- [ ] **Step 2: Run — fail** ((a) is `Unknown`).
+- [ ] **Step 3: Implement** — (i) `src/app_package.rs::parse_manifest`: add `internals_visible_to: Vec<FriendApp{id,name,
+  publisher}>` to `AppMetadata`; parse `<InternalsVisibleTo><Module Id=.. Name=.. Publisher=../></InternalsVisibleTo>` (same
+  `descendants().filter(has_tag_name("Module"))` pattern already used for `<Dependency>`). (ii) `snapshot.rs`: carry
+  `rd.package.metadata.internals_visible_to` onto the `AppUnit` (mirror `declared_deps` at `snapshot.rs:219/240`). (iii)
+  `build.rs`: a "Step 3b" beside the dependency-topology wiring — for each unit, resolve each friend GUID to an `AppRef`
+  (guid-first, name+publisher fallback, skip-if-absent — open-world, matching dependency resolution), populate
+  `friends: HashMap<AppRef, BTreeSet<AppRef>>` (key = app EXPOSING internals → set of allowed caller AppRefs) as a new
+  `ProgramGraph` field (`graph.rs:32-34`, beside `apps`/`topology`). (iv) `resolver.rs`: extend the `Access::Internal` arm in
+  BOTH `routine_candidate_is_visible` AND `object_has_visible_member_candidate` from `obj_id.app == from_object.app` to
+  `obj_id.app == from_object.app || graph.friends.get(&obj_id.app).is_some_and(|f| f.contains(&from_object.app))`; update the
+  out-of-scope doc comment (`resolver.rs:432`).
+- [ ] **Step 4: Run — pass** (all incl. controls). Then (WITH `CDO_WS`, SINGLE tests) `cdo_l3_semantic_audit_no_fresh_wrong`
+  (`genuine_wrong` stays 0 — the restored friend edges must resolve to the CORRECT target, and `fresh_missing` must not rise)
+  + `cdo_full_program_coverage_and_self_reported_metric` (the `InternalNotVisible` bucket should DROP toward 0; real-`unknown`
+  drops below 1.97%). ADJUDICATE a sample of restored `Source` edges (correct target?). Re-TIGHTEN the Task-1 ratchets (rate
+  0.023→ the new lower floor; count 415→ new) with a dated justification. **Correct the Task-1 narrative** in `CHANGELOG.md`
+  (the +51 was a transient over-decline now resolved by friend modeling — the combined Task-1+1.5 story is: decline
+  true-stranger cross-app internal, resolve friend-authorized cross-app internal).
+- [ ] **Step 5: rustfmt + clippy + (no-CDO) test + commit** — `feat(resolve): model internalsVisibleTo friend apps — cross-app
+  internal visible to declared friends (restores CDO→CTS-CDN legal calls; Task 1.5)`.
+
+---
+
 ### Task 2: Enabling primitives — thread the receiver `ExprId`; add `return_type` to source `RoutineNode` (golden-neutral)
 
 **Files:** Modify `src/program/resolve/extract.rs`, `full.rs`, `receiver.rs` (signature), `src/program/node_extract.rs`; Test
